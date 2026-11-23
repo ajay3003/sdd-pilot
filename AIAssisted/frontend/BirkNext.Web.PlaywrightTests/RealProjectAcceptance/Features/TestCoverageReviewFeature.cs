@@ -20,8 +20,8 @@ public sealed class TestCoverageReviewFeature : AcceptanceFeature
 
     private static readonly (string Key, string Selector)[] Views =
     [
-        ("overview", "[data-testid=tco-projects]"), ("journeys", "[data-testid=tco-journey], [data-testid=tco-no-journeys]"), ("components", "[data-testid=tco-component]"),
-        ("requirements", "[data-testid=tco-behavior]"), ("duplicates", "[data-testid=tco-overlap], [data-testid=tco-no-overlaps]"), ("scope", "[data-testid=tco-scope-keep]"),
+        ("overview", "[data-testid=tco-projects]"), ("journeys", "[data-testid=tco-journey], [data-testid=tco-no-journeys]"), ("components", "[data-testid=tco-component], [data-testid=tco-no-components]"),
+        ("requirements", "[data-testid=tco-behavior], [data-testid=tco-no-behaviors]"), ("duplicates", "[data-testid=tco-overlap], [data-testid=tco-no-overlaps]"), ("scope", "[data-testid=tco-scope-keep]"),
         ("documentation", "[data-testid=tco-doc-preview]"),
     ];
 

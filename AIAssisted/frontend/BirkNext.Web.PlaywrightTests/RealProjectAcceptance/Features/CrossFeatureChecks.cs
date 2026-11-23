@@ -88,7 +88,9 @@ public sealed class NavigationPersistenceFeature : AcceptanceFeature
         result.Observe("snapshot after navigation", afterNavigation).Observe("snapshot after reload", afterReload).Observe("explorer after reload", explorer);
         if (!string.Equals(afterNavigation, context.Workspace.SourceSnapshotId, StringComparison.OrdinalIgnoreCase)) result.Defect("navigation-lost-snapshot", "Navigation changed the current snapshot.");
         if (state != "[data-testid=sa-current]" || !string.Equals(afterReload, context.Workspace.SourceSnapshotId, StringComparison.OrdinalIgnoreCase)) result.Defect("reload-lost-snapshot", "A reload lost the imported snapshot.");
-        if (explorer is not ("Loaded" or "SelectionRequired")) result.Defect("reload-lost-workspace", $"After reload the Specification Explorer is {explorer}.");
+        // Empty is correct when the archive has no Specification; with one, a reload must keep it.
+        if (RoleImported(context, "Specification") ? explorer is not ("Loaded" or "SelectionRequired") : explorer is not ("Empty" or "Loaded" or "SelectionRequired"))
+            result.Defect("reload-lost-workspace", $"After reload the Specification Explorer is {explorer}.");
         result.Data = DataState.RealDataObserved;
         result.Provenance = result.Findings.Count == 0 ? ProvenanceState.Traced : ProvenanceState.Missing;
     }

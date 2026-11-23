@@ -17,6 +17,7 @@ public static class BrowserAcceptanceFeatureRegistry
         ["traceability/suggestions"] = "Legacy Traceability Suggestions: hidden unless the legacy navigation flag is enabled.",
         ["code-traceability"] = "Legacy Code Traceability: hidden unless the legacy navigation flag is enabled.",
         ["ai-change-auditor"] = "AI Change Review: optional feature, off by default; reviews an AI-proposed diff, not a project archive.",
+        ["getting-started"] = "Recommended Workflow: retired 2026-11-19; /getting-started redirects to the Dashboard, which carries its review decisions and workspace actions.",
         ["admin/system-settings"] = "System Settings: exercised through Target Environments, Security Configuration and the three diagnostics sections.",
     };
 
@@ -25,7 +26,6 @@ public static class BrowserAcceptanceFeatureRegistry
         // Project Inputs first: the run's single import establishes the workspace every later feature is checked against.
         new ProjectImportFeature(),
         // Getting Started
-        new RecommendedWorkflowFeature(),
         new UserGuideFeature(),
         new DashboardFeature(),
         // Project Inputs

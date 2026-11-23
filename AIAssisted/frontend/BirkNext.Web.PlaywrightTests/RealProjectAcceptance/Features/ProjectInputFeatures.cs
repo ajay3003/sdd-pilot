@@ -38,9 +38,12 @@ public sealed class ProjectImportFeature : AcceptanceFeature
         if (!string.Equals(previewSha, sha, StringComparison.OrdinalIgnoreCase))
             result.Defect("fingerprint-mismatch", "The import preview fingerprint differs from the archive SHA-256 measured before import.");
 
-        // The project name is shown in the preview only; record it before importing.
-        var previewName = (await session.Page.Locator("[data-testid=pi-project-name]").EvaluateAllAsync<string[]>(
-            "els => els.map(e => (e.firstChild && e.firstChild.nodeType === 3 ? e.firstChild.textContent : e.innerText).trim())")).FirstOrDefault() ?? "";
+        // The project name is shown in the preview only; record it before importing. A new project has an editable name field (its note says
+        // "Suggested from the archive file name: …"); an existing project is named in the preview's Project row.
+        var nameInput = session.Page.Locator("[data-testid=pi-new-project-name]");
+        var previewName = await nameInput.CountAsync() > 0 ? (await nameInput.First.InputValueAsync()).Trim()
+            : (await session.Page.Locator("[data-testid=pi-project-name]").EvaluateAllAsync<string[]>(
+                "els => els.map(e => (e.firstChild && e.firstChild.nodeType === 3 ? e.firstChild.textContent : e.innerText).trim())")).FirstOrDefault() ?? "";
         result.Observe("project name (preview)", previewName);
         await session.Page.Locator("[data-testid=pi-import]").ClickAsync();
         if (await session.WaitAnyAsync(900_000, "[data-testid=pi-result]", "[data-testid=pi-failure]") != "[data-testid=pi-result]")
@@ -53,6 +56,8 @@ public sealed class ProjectImportFeature : AcceptanceFeature
         // A role is imported when it has a detected artifact or several candidates; "Not found"/"Missing" states are absent roles.
         var detected = ambiguous.Count(r => r.Split('=', 2)[1] is var state && state.Length > 0
             && !System.Text.RegularExpressions.Regex.IsMatch(state, "not|missing|absent|none", System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+        context.Shared[ImportRolesKey] = ambiguous.Select(r => r.Split('=', 2)).Where(r => r.Length == 2)
+            .ToDictionary(r => r[0], r => r[1], StringComparer.OrdinalIgnoreCase) as IReadOnlyDictionary<string, string>;
         var sourceState = await session.AttrAsync("[data-testid=pi-source]", "data-state");
         var snapshotId = await session.AttrAsync("[data-testid=pi-snapshot-id]", "title");
         var importId = await session.TextAsync("[data-testid=pi-import-id]");
@@ -81,7 +86,7 @@ public sealed class ProjectImportFeature : AcceptanceFeature
         result.Observe("workspace", context.Workspace.WorkspaceId).Observe("project", context.Workspace.ProjectName);
 
         // The snapshot must point back to THIS import and THIS archive.
-        var snapshot = await SnapshotAsync(context, session, ct);
+        var snapshot = await SnapshotListedAsync(context, session, ct) ? await SnapshotAsync(context, session, ct) : null;
         if (snapshot is not { } snap)
         {
             result.Defect("snapshot-not-listed", "The snapshot produced by the import is not listed by Source Analysis.");
@@ -101,45 +106,6 @@ public sealed class ProjectImportFeature : AcceptanceFeature
     }
 }
 
-/// <summary>Recommended Workflow recognises the imported project: documents and source inputs reflect it, no false "not provided".</summary>
-public sealed class RecommendedWorkflowFeature : AcceptanceFeature
-{
-    public override string FeatureId => "recommended-workflow";
-    public override string DisplayName => "Recommended Workflow";
-    public override string Area => "Getting Started";
-    public override string Route => "/getting-started";
-    public override AcceptanceMode MinimumMode => AcceptanceMode.Smoke;
-
-    protected override async Task RunAsync(RealProjectAcceptanceContext context, PlaywrightAcceptanceSession session, FeatureResultBuilder result, CancellationToken ct)
-    {
-        await OpenAsync(session, result);
-        if (await session.WaitAnyAsync(60_000, "[data-testid=rw-inputs]", "[data-testid=rw-no-workspace]", "[data-testid=rw-workspace-error]") != "[data-testid=rw-inputs]")
-        {
-            result.Defect("workflow-project-not-recognised", "Recommended Workflow does not show the imported project's inputs.");
-            result.Evidence = EvidenceState.NotVerified;
-            return;
-        }
-        var documents = await session.AttrAsync("[data-testid=rw-input][data-kind=Documents]", "data-status");
-        var source = await session.AttrAsync("[data-testid=rw-input][data-kind=Source]", "data-status");
-        var target = await session.AttrAsync("[data-testid=rw-input][data-kind=Target]", "data-status");
-        var project = await session.TextAsync("[data-testid=rw-project]");
-        var roles = await session.TextAsync("[data-testid=rw-artifact-roles]");
-        var steps = await session.Page.Locator("[data-testid=rw-step]").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-step') + ':' + e.getAttribute('data-state'))");
-        result.Observe("documents input", documents).Observe("source input", source).Observe("target input", target).Observe("project", project).Observe("artifact roles", roles).Observe("steps", string.Join(", ", steps));
-        RecordIdentity(context, FeatureId, "project", project);
-        if (documents is "Absent" or "Unknown") result.Defect("workflow-false-absent", $"Documents input is {documents} although the import detected {context.Workspace.ImportedDocuments} document role(s).");
-        if (context.Workspace.SourceDetected && source is "Absent" or "Unknown") result.Defect("workflow-false-absent", $"Source input is {source} although the import created a snapshot.");
-        if (roles.StartsWith("None", StringComparison.OrdinalIgnoreCase) || roles.Contains("Not provided", StringComparison.OrdinalIgnoreCase))
-            result.Defect("workflow-false-zero", $"Artifact roles shown as \"{roles}\" for an imported project with documents.");
-        var blocked = steps.Count(st => st.EndsWith(":Blocked", StringComparison.Ordinal));
-        if (blocked > 0)
-            result.Note($"{blocked} review step(s) are Blocked: review gates need a chosen artifact revision, and the import kept several candidates per role (by design).");
-        if (target is "Ready") result.Warn("target-ready-without-target", "Target input reports Ready although the acceptance run configured no Target Environment.");
-        result.Data = DataState.RealDataObserved;
-        result.Provenance = ProvenanceState.NotApplicable;
-    }
-}
-
 /// <summary>Dashboard reflects the imported project (origin, roles, artifact cards) and neutral states for anything not run.</summary>
 public sealed class DashboardFeature : AcceptanceFeature
 {
@@ -154,21 +120,24 @@ public sealed class DashboardFeature : AcceptanceFeature
         await OpenAsync(session, result);
         await session.Page.Locator("[data-testid=db-workspace-panel]").WaitForAsync();
         await session.WaitAnyAsync(30_000, "[data-testid=db-workspace-name]", "[data-testid=db-import-project]");
+        await session.WaitAnyAsync(30_000, "[data-testid=db-artifact-card]");
         var name = await session.TextAsync("[data-testid=db-workspace-name]");
-        var origin = await session.TextAsync("[data-testid=db-workspace-origin]");
+        // The origin is the import notice and the imported evidence packages (no separate origin line since 2026-11).
+        var origin = string.Join(" · ", new[] { await session.TextAsync("[data-testid=db-import-success]"), await session.TextAsync("[data-testid=db-workspace-packages]") }.Where(t => t.Length > 0));
         var roles = await session.TextAsync("[data-testid=db-workspace-roles]");
-        var loadedCards = await session.CountAsync("[data-testid=db-artifact-card].db-artifact-loaded");
-        var governance = await session.TextAsync("[data-testid=db-governance-value]");
-        result.Observe("workspace", name).Observe("origin", origin).Observe("roles", roles).Observe("loaded artifact cards", loadedCards).Observe("governance", governance);
+        var loadedCards = await session.CountAsync("[data-testid=db-artifact-card][data-availability=Available]");
+        var governance = await session.AttrAsync("[data-testid=db-health-area][data-key=governance]", "data-status") ?? "";
+        result.Observe("workspace", name).Observe("origin", origin).Observe("roles", roles).Observe("available artifact cards", loadedCards).Observe("governance", governance);
         RecordIdentity(context, FeatureId, "project", name.Replace("📁", "").Trim());
         if (await session.ExistsAsync("[data-testid=db-workspace-empty]")) result.Defect("dashboard-onboarding-after-import", "The dashboard shows the empty state although a project was imported.");
         if (name.Length == 0) result.Defect("dashboard-project-not-recognised", "The dashboard does not name the current workspace.");
         if (roles.Contains("unavailable", StringComparison.OrdinalIgnoreCase) || roles.Contains("Unable", StringComparison.OrdinalIgnoreCase))
             result.Defect("dashboard-roles-unavailable", $"Artifact availability reads \"{roles}\".");
-        if (!origin.Contains("Imported", StringComparison.OrdinalIgnoreCase)) result.Warn("dashboard-origin", $"Origin reads \"{origin}\" instead of the imported archive.");
-        if (governance.Length > 0 && governance != "—" && governance.Contains('%')) result.Warn("dashboard-governance-value", $"Governance shows {governance} although no decision was made in this run.");
-        result.DataFromCount(loadedCards, DataState.NotAssessed);
-        if (loadedCards == 0) result.Defect("dashboard-false-zero", "No artifact card is marked available for an imported project with documents.");
+        if (!origin.Contains("import", StringComparison.OrdinalIgnoreCase)) result.Warn("dashboard-origin", $"Origin reads \"{origin}\" instead of the imported archive.");
+        if (governance is not ("" or "NotAssessed" or "NotApplicable")) result.Warn("dashboard-governance-value", $"Governance is {governance} although no decision was made in this run.");
+        result.DataFromCount(loadedCards, context.Workspace.ImportedDocuments > 0 ? DataState.NotAssessed : DataState.NoApplicableData);
+        if (loadedCards == 0 && context.Workspace.ImportedDocuments > 0)
+            result.Defect("dashboard-false-zero", $"No artifact card is marked available although the import found {context.Workspace.ImportedDocuments} document role(s).");
         await ExportAsync(session, result, session.Page.GetByRole(AriaRole.Button, new() { Name = "Export HTML" }), context);
     }
 }
@@ -177,7 +146,7 @@ public sealed class DashboardFeature : AcceptanceFeature
 public sealed class UserGuideFeature : AcceptanceFeature
 {
     public override string FeatureId => "user-guide";
-    public override string DisplayName => "User Guide";
+    public override string DisplayName => "User Guide (Help Center)";
     public override string Area => "Getting Started";
     public override string Route => "/user-guide";
     public override AcceptanceType AcceptanceType => AcceptanceType.Navigation;
@@ -186,11 +155,13 @@ public sealed class UserGuideFeature : AcceptanceFeature
     protected override async Task RunAsync(RealProjectAcceptanceContext context, PlaywrightAcceptanceSession session, FeatureResultBuilder result, CancellationToken ct)
     {
         await OpenAsync(session, result);
-        await session.Page.Locator("#overview").WaitForAsync();
-        var sections = await session.CountAsync("section[id]");
+        // The User Guide is the Help Center since 2026-11: a home with categories and topic links, articles opened by topic.
+        await session.Page.Locator("[data-testid=ug-page]").WaitForAsync();
+        var sections = await session.CountAsync("[data-testid=ug-category]");
+        var topics = await session.CountAsync("[data-testid=ug-category-link]");
         var links = await session.CountAsync("main a[href]");
-        result.Observe("sections", sections).Observe("links", links);
-        if (sections == 0) result.Defect("user-guide-empty", "The User Guide rendered no sections.");
+        result.Observe("categories", sections).Observe("topic links", topics).Observe("links", links);
+        if (sections == 0 || topics == 0) result.Defect("user-guide-empty", "The Help Center rendered no categories or topics.");
         result.Data = DataState.NoApplicableData;
     }
 }

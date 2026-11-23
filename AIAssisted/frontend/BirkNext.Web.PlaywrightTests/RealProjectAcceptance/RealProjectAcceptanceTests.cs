@@ -41,6 +41,7 @@ public sealed class RealProjectAcceptanceTests(ITestOutputHelper output)
         var frontendBackend = Environment.GetEnvironmentVariable("BIRKNEXT_ACCEPTANCE_FRONTEND_BACKEND_URL") is { Length: > 0 } configured ? configured : "http://localhost:5000";
 
         RealProjectAcceptanceResult result;
+        List<string> consoleErrors, failedResponses;
         await using (var session = await PlaywrightAcceptanceSession.StartAsync(frontend, backend, frontendBackend, artifacts, AxeScriptPath()))
         {
             var context = new RealProjectAcceptanceContext
@@ -50,17 +51,21 @@ public sealed class RealProjectAcceptanceTests(ITestOutputHelper output)
             };
             var runner = new RealProjectAcceptanceRunner(BrowserAcceptanceFeatureRegistry.Create(), output.WriteLine);
             result = await runner.RunAsync(context);
-            if (session.ConsoleErrors.Count > 0)
-                output.WriteLine($"Browser console errors ({session.ConsoleErrors.Count}): {string.Join(" | ", session.ConsoleErrors.Distinct().Take(10))}");
-            Assert.Empty(session.ConsoleErrors);
-            output.WriteLine("Browser console errors: 0");
+            consoleErrors = [.. session.ConsoleErrors];
+            failedResponses = [.. session.ErrorResponses.Distinct()];
         }
+        // The report is written first: a console error must not cost the run its report (Tiltak 2, 2026-11-22).
         var (json, html) = AcceptanceReportWriter.Write(result, root);
         output.WriteLine($"Report: {json}");
         output.WriteLine($"Report: {html}");
         output.WriteLine(string.Join(", ", result.Summary.Select(kv => $"{kv.Key}={kv.Value}")));
         foreach (var (feature, finding) in result.Defects) output.WriteLine($"DEFECT {feature}: [{finding.Code}] {finding.Message}");
+        if (failedResponses.Count > 0) output.WriteLine($"HTTP error responses ({failedResponses.Count}): {string.Join(" | ", failedResponses.Take(10))}");
+        if (consoleErrors.Count > 0)
+            output.WriteLine($"Browser console errors ({consoleErrors.Count}): {string.Join(" | ", consoleErrors.Distinct().Take(10))}");
+        else output.WriteLine("Browser console errors: 0");
 
+        Assert.Empty(consoleErrors);
         Assert.True(result.Succeeded, $"Real-project acceptance found defects — see {html}");
     }
 

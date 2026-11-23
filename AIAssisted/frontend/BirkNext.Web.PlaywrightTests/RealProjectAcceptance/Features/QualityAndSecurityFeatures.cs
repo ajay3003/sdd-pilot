@@ -80,7 +80,8 @@ public sealed class TargetGatedFeature(
             ["[data-testid=e2e-summary]", "[data-testid=e2e-no-flows]"], ["[data-testid=e2e-run]"],
             note: "No critical flows are configured for an imported project; flows run against a target and were not executed."),
         new("security-classification", "Security Classification", "Security", "/security-classification-review",
-            ["[data-testid=sc-no-target]", "[data-testid=sc-summary]"], ["[data-testid=sc-run]"],
+            // The static-only run (data-mode=static) reads source and configuration and needs no target; only the run with live checks is gated.
+            ["[data-testid=sc-no-target]", "[data-testid=sc-summary]", "[data-testid=sc-live-readiness]"], ["[data-testid=sc-run][data-mode=static-runtime]"],
             s => (Has(s, "securityClassificationEvidence") ? 1 : 0, "classification evidence block on the snapshot"),
             type: AcceptanceType.Source, note: "Classification source evidence was extracted at import; the review is scoped by Target Environment and was not run."),
     ];

@@ -4,13 +4,14 @@ namespace BirkNext.RealProjectAcceptance.Datasets;
 /// The first real dataset: the external M2LB archive (never committed). TEST INFRASTRUCTURE ONLY — nothing in BirkNext production
 /// references this type. Expectations are semantic facts established from this exact archive's contents (file inventory of the
 /// SHA-256 below: Azure pipeline YAML under .pipeline/, autodoc OpenAPI documents, GraphQL SDL files, autodoc generated documentation,
-/// .csproj package manifests, appsettings configuration; no Terraform and no XSD files) — not guesses and not exact counts, except the
+/// .csproj package manifests, appsettings configuration, XML Schemas of the Meldingsutveksler receiver; no Terraform) — not guesses and not exact counts, except the
 /// Explorer Text Coverage baseline, which applies only when the archive hash matches.
 /// </summary>
 public sealed class M2lbDatasetProvider : IRealProjectDatasetProvider
 {
     public const string Id = "M2LB";
-    public const string Sha256 = "c850a1b2813bbf6e2a9eba1f311d63ff0332eacf35764cd6b767489ac22dc41e";
+    // Re-pinned 2026-11-23 to AIAssisted/testdata/M2LB.zip: the earlier acceptance archive (c850a1b2…) is no longer available.
+    public const string Sha256 = "22339207cd2ef2f75ea418f66037c2ccacd8df7aad3cd89ddf73bd2a439c28f0";
 
     public string DatasetId => Id;
     public string ArchiveEnvironmentVariable => "BIRKNEXT_REAL_PROJECT_M2LB";
@@ -24,7 +25,7 @@ public sealed class M2lbDatasetProvider : IRealProjectDatasetProvider
         DatasetId = Id,
         DisplayName = "M2LB (modulert 2. linje barnevern)",
         ArchivePath = archivePath,
-        // BIRKNEXT_REAL_PROJECT_M2LB_SHA256 may pin another approved archive version; the default is the historical acceptance archive.
+        // BIRKNEXT_REAL_PROJECT_M2LB_SHA256 may pin another approved archive version; the default is the testdata archive.
         ExpectedSha256 = Environment.GetEnvironmentVariable("BIRKNEXT_REAL_PROJECT_M2LB_SHA256") is { Length: 64 } pinned ? pinned : Sha256,
         ProjectNotes = ".NET/C# services with a Blazor frontend, GraphQL and REST APIs, Azure Pipelines and Spec Kit documents per module.",
         ExpectedTechnologyHints = [".NET", "C#", "Blazor", "GraphQL"],
@@ -46,7 +47,7 @@ public sealed class M2lbDatasetProvider : IRealProjectDatasetProvider
             ["environment-analysis"] = Real("appsettings configuration exists"),
             ["contract-openapi"] = Real("autodoc/openapi.yaml documents exist"),
             ["contract-graphql"] = Real(".graphql SDL files exist"),
-            ["contract-xsd"] = None("the archive contains no .xsd files"),
+            ["contract-xsd"] = Real("MeldingsutvekslerReceiver/**/Skjema/*.xsd message schemas exist"),
             ["iac-terraform"] = None("the archive contains no .tf files"),
             ["generated-documentation"] = Real("autodoc/ generated documentation exists"),
             // Component/journey names below are acceptance expectations about this dataset only; production code knows none of them.

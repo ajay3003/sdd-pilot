@@ -25,6 +25,16 @@ public sealed class DocumentQualityReviewFeature : AcceptanceFeature
         var run = session.Page.GetByRole(AriaRole.Button, new() { Name = "Run Document Quality Review" });
         if (await run.CountAsync() == 0 && await session.CountAsync(".qr-input-panel-toggle") > 0)
             await session.Page.Locator(".qr-input-panel-toggle").First.ClickAsync();
+        if ((await run.CountAsync() == 0 || !await run.First.IsEnabledAsync()) && await session.ExistsAsync("[data-testid=qr-selection-required]"))
+        {
+            // Several candidates per role: the review waits for an explicit choice (by design), as Requirements Traceability does.
+            result.Execution = ExecutionStatus.Partial;
+            result.Evidence = EvidenceState.NotVerified;
+            result.Data = DataState.NotAssessed;
+            result.Observe("waiting for", (await session.TextAsync("[data-testid=qr-selection-required]")).Replace('\n', ' '));
+            result.Note("The import kept several candidates per role; Document Quality Review needs a chosen artifact first (by design).");
+            return;
+        }
         if (await run.CountAsync() == 0 || !await run.First.IsEnabledAsync())
         {
             var reason = await session.TextAsync("[data-testid=qr-run-disabled-reason]");
@@ -56,7 +66,8 @@ public sealed class RequirementsTraceabilityFeature : AcceptanceFeature
     protected override async Task RunAsync(RealProjectAcceptanceContext context, PlaywrightAcceptanceSession session, FeatureResultBuilder result, CancellationToken ct)
     {
         await OpenAsync(session, result);
-        var state = await session.WaitAnyAsync(120_000, ".at-health-bar", "[data-testid=at-no-documents]", "[data-testid=at-selection-required]");
+        var state = await session.WaitAnyAsync(120_000, ".at-health-bar", "[data-testid=at-no-documents]", "[data-testid=at-selection-required]",
+            "[data-testid=at-input-status][data-status=Insufficient]");
         var workspace = await session.TextAsync("[data-testid=at-workspace-context]");
         result.Observe("workspace context", workspace.Replace('\n', ' ')).Observe("state", state);
         if (state == "[data-testid=at-selection-required]")
@@ -65,6 +76,22 @@ public sealed class RequirementsTraceabilityFeature : AcceptanceFeature
             result.Evidence = EvidenceState.PartiallyVerified;
             result.Note("Several candidate artifacts per role: traceability waits for an explicit choice (by design).");
             result.Data = DataState.RealDataObserved;
+            return;
+        }
+        if (state == "[data-testid=at-input-status][data-status=Insufficient]")
+        {
+            // Links need two artifacts (e.g. Specification and Plan); with one role there is nothing to trace, and the page says so.
+            result.Observe("artifacts selected", await session.AttrAsync("[data-testid=at-input-status]", "data-loaded"));
+            result.Data = DataState.NoApplicableData;
+            result.Evidence = EvidenceState.NotVerified;
+            result.Note("Only one traceable artifact role is in the archive: at least two are needed to assess links (correct state).");
+            return;
+        }
+        if (state == "[data-testid=at-no-documents]" && !new[] { "Constitution", "Specification", "Plan", "Tasks" }.Any(r => RoleImported(context, r)))
+        {
+            result.Data = DataState.NoApplicableData;
+            result.Evidence = EvidenceState.NotVerified;
+            result.Note("The archive has no Constitution, Specification, Plan or Tasks document: no documents is the correct state.");
             return;
         }
         if (state != ".at-health-bar")

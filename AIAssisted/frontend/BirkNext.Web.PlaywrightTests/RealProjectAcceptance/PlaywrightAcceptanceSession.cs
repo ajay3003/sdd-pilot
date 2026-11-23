@@ -26,6 +26,8 @@ public sealed class PlaywrightAcceptanceSession : IAsyncDisposable
     public List<string> PageErrors { get; } = [];
     public List<string> ConsoleErrors { get; } = [];
     public List<string> FailedRequests { get; } = [];
+    /// <summary>Responses with status 400 or higher (method, status, path): the browser's "Failed to load resource" console errors name no URL.</summary>
+    public List<string> ErrorResponses { get; } = [];
     public string? AxeScriptPath { get; }
 
     private PlaywrightAcceptanceSession(IPlaywright playwright, IBrowser browser, IBrowserContext context, IPage page, HttpClient backend, string frontendUrl, string artifacts, string? axe)
@@ -59,6 +61,7 @@ public sealed class PlaywrightAcceptanceSession : IAsyncDisposable
         page.PageError += (_, error) => session.PageErrors.Add(error.Split('\n')[0]);
         page.Console += (_, message) => { if (message.Type == "error") session.ConsoleErrors.Add(message.Text.Split('\n')[0]); };
         page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
+        page.Response += (_, response) => { if (response.Status >= 400) session.ErrorResponses.Add($"{response.Request.Method} {response.Status} {new Uri(response.Url).PathAndQuery}"); };
         page.SetDefaultTimeout(60_000);
 
         if (frontendConfiguredBackendUrl is { Length: > 0 } configured && !SameOrigin(configured, backendUrl))

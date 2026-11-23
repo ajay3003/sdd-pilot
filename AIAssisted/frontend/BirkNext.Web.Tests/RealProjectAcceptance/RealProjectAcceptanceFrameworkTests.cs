@@ -217,6 +217,10 @@ public sealed class RealProjectAcceptanceFrameworkTests : IDisposable
         new FeatureResultBuilder().DataFromCount(0).Data.Should().Be(DataState.NoApplicableData);
         new FeatureResultBuilder().DataFromCount(0, DataState.NotAssessed).Data.Should().Be(DataState.NotAssessed);
         new FeatureResultBuilder().DataFromCount(3).Data.Should().Be(DataState.RealDataObserved);
+        // Nothing assessed is never Verified: the builder says NotVerified instead of leaving the default pass.
+        new FeatureResultBuilder().DataFromCount(0, DataState.NotAssessed).Evidence.Should().Be(EvidenceState.NotVerified);
+        new FeatureResultBuilder().DataFromCount(0).Evidence.Should().Be(EvidenceState.Verified, "no applicable data is an honest, verified empty result");
+        new FeatureResultBuilder { Evidence = EvidenceState.PartiallyVerified }.DataFromCount(0, DataState.NotAssessed).Evidence.Should().Be(EvidenceState.PartiallyVerified);
     }
 
     // ── report ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -271,7 +275,8 @@ public sealed class RealProjectAcceptanceFrameworkTests : IDisposable
 
         m2lb.ArchivePath.Should().BeNull("the archive is external and only ever configured per machine");
         m2lb.ExpectedSha256.Should().MatchRegex("^[0-9a-f]{64}$");
-        m2lb.Expectations["contract-xsd"].Presence.Should().Be(ExpectedDataPresence.NotApplicable);
+        m2lb.Expectations["contract-xsd"].Presence.Should().Be(ExpectedDataPresence.RealData);
+        m2lb.Expectations["iac-terraform"].Presence.Should().Be(ExpectedDataPresence.NotApplicable);
         m2lb.Expectations["fqr-runtime"].Presence.Should().Be(ExpectedDataPresence.RuntimeNotVerified);
         m2lb.RuntimeProfile.Should().BeNull("no runtime target is paired: runtime acceptance is NotVerified by design");
         m2lb.HashBoundBaselines.Keys.Should().OnlyContain(k => k.StartsWith("explorer-coverage.", StringComparison.Ordinal));

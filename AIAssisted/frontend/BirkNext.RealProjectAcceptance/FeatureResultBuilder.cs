@@ -25,6 +25,8 @@ public sealed class FeatureResultBuilder
     public FeatureResultBuilder DataFromCount(int count, DataState whenEmpty = DataState.NoApplicableData)
     {
         Data = count > 0 ? DataState.RealDataObserved : whenEmpty;
+        // Nothing assessed cannot be Verified: a feature that found nothing to assess says so instead of claiming a pass.
+        if (Data is DataState.NotAssessed or DataState.Unsupported && Evidence == EvidenceState.Verified) Evidence = EvidenceState.NotVerified;
         return this;
     }
 

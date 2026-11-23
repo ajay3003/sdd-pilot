@@ -28,9 +28,9 @@ public sealed class SourceAnalysisFeature : AcceptanceFeature
         var origin = await session.TextAsync("[data-testid=sa-current-origin]");
         var importRef = await session.AttrAsync("[data-testid=sa-import-provenance]", "data-import");
         var fingerprint = await session.AttrAsync("[data-testid=sa-current-fingerprint]", "title");
-        var rows = await session.Page.Locator("[data-testid=sa-evidence-row]").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-area') + '=' + e.getAttribute('data-status'))");
-        var areas = await session.Page.Locator("[data-testid=sa-area-card]").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-area') + '=' + e.getAttribute('data-status'))");
-        result.Observe("snapshot", shown).Observe("origin", origin).Observe("import", importRef).Observe("evidence areas", string.Join(", ", rows)).Observe("analysis areas", string.Join(", ", areas));
+        var areas = await session.Page.Locator("[data-testid=sa-area-card]").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-key') + '=' + e.getAttribute('data-state'))");
+        result.Observe("snapshot", shown).Observe("origin", origin).Observe("import", importRef).Observe("analysis areas", string.Join(", ", areas));
+        if (areas.Length == 0) result.Defect("source-analysis-no-areas", "The Source Analysis overview shows no analysis areas for the imported snapshot.");
         RecordIdentity(context, FeatureId, "snapshot", shown);
         if (!string.Equals(shown, context.Workspace.SourceSnapshotId, StringComparison.OrdinalIgnoreCase))
             result.Defect("source-analysis-wrong-snapshot", "Source Analysis shows a different snapshot than the one the import created.");
@@ -67,6 +67,12 @@ public sealed class TechnologyCoverageFeature : AcceptanceFeature
         await session.WaitAnyAsync(60_000, "[data-testid=tc-detected]", "[data-testid=tc-no-technologies]", "[data-testid=tc-unavailable]");
         var snapshotLabel = await session.TextAsync("[data-testid=tc-snapshot]");
         var count = await session.TextAsync("[data-testid=tc-technologies]");
+        // The technology rows are on the "Detected" tab (2026-11); the project tab carries the counts and reviews.
+        if (await session.ExistsAsync("[data-testid=tc-tab][data-tab=detected]"))
+        {
+            await session.Page.Locator("[data-testid=tc-tab][data-tab=detected]").ClickAsync();
+            await session.WaitAnyAsync(30_000, "tr[data-testid^=tc-tech-]", "[data-testid=tc-detected-count]");
+        }
         var rows = await session.Page.Locator("tr[data-testid^=tc-tech-]").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-testid').substring(8) + '=' + (e.getAttribute('data-overall') || '—'))");
         result.Observe("snapshot", snapshotLabel).Observe("technologies", count).Observe("rows", string.Join(", ", rows)).Observe("no-target notice", await session.ExistsAsync("[data-testid=tc-no-target]") ? "shown" : "absent");
         if (snapshotLabel is "" or "None") result.Defect("technology-coverage-no-snapshot", "Technology Coverage does not use the imported snapshot.");
@@ -92,13 +98,14 @@ public sealed class DependencyReviewFeature : AcceptanceFeature
     {
         await OpenAsync(session, result);
         await session.Page.Locator("[data-testid=dr-mode][data-mode=Source]").ClickAsync();
-        var picked = await session.WaitAnyAsync(60_000, "[data-testid=dr-use-current]", "[data-testid=dr-primary]");
+        var picked = await session.WaitAnyAsync(60_000, "[data-testid=dr-use-current]", "select[data-testid=dr-primary]", "[data-testid=dr-primary-summary]");
         if (picked == "[data-testid=dr-use-current]") await session.Page.Locator("[data-testid=dr-use-current]").ClickAsync();
-        else if (picked == "[data-testid=dr-primary]" && context.Workspace.SourceSnapshotId is { } id) await session.Page.Locator("[data-testid=dr-primary]").SelectOptionAsync(id);
-        else { result.Defect("dependency-review-no-snapshot", "Dependency Review offers no Source Analysis snapshot."); result.Evidence = EvidenceState.NotVerified; return; }
-        var run = session.Page.Locator("[data-testid=dr-run]");
-        await session.Page.WaitForFunctionAsync("() => { const b = document.querySelector('[data-testid=dr-run]'); return b && !b.disabled; }", null, new() { Timeout = 60_000 });
-        await run.ClickAsync();
+        else if (picked == "select[data-testid=dr-primary]" && context.Workspace.SourceSnapshotId is { } id) await session.Page.Locator("select[data-testid=dr-primary]").SelectOptionAsync(id);
+        else if (picked is null) { result.Defect("dependency-review-no-snapshot", "Dependency Review offers no Source Analysis snapshot."); result.Evidence = EvidenceState.NotVerified; return; }
+        // The review runs from the readiness card's single next action (2026-11; there is no separate Run button).
+        const string run = "[data-testid=dr-next-action][data-action=RunSourceReview]";
+        await session.Page.WaitForFunctionAsync("s => { const b = document.querySelector(s); return b && !b.disabled; }", run, new() { Timeout = 60_000 });
+        await session.Page.Locator(run).ClickAsync();
         await session.Page.WaitForFunctionAsync("() => { const s = document.querySelector('[data-testid=dr-status]'); const e = document.querySelector('[data-testid=dr-error]'); return e || (s && /completed/i.test(s.innerText)); }", null, new() { Timeout = 300_000 });
         if (await session.ExistsAsync("[data-testid=dr-error]"))
         {
@@ -106,10 +113,15 @@ public sealed class DependencyReviewFeature : AcceptanceFeature
             result.Defect("dependency-review-failed", await session.TextAsync("[data-testid=dr-error]"));
             return;
         }
+        // Counts are in the result summary; the reviewed snapshots in the "Source scope" section.
+        var facts = await session.Page.Locator("[data-testid=dr-summary-scope] dl > div").EvaluateAllAsync<string[]>("els => els.map(e => e.querySelector('dt').innerText + '=' + e.querySelector('dd').innerText)");
+        int Fact(string label) => facts.Where(f => f.StartsWith(label + "=", StringComparison.OrdinalIgnoreCase)).Select(f => Number(f[(label.Length + 1)..])).FirstOrDefault();
+        var declared = Fact("Dependencies discovered");
+        var repositories = Fact("Repositories reviewed");
+        await session.Page.Locator("[data-testid=dr-section][data-section=scope]").ClickAsync();
+        await session.Page.Locator("[data-testid=dr-result-scope-entry]").First.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 30_000 });
         var primary = await session.AttrAsync("[data-testid=dr-result-scope-entry][data-role=Primary]", "data-snapshot");
-        var depCounts = await session.Page.Locator("[data-testid=dr-dep-count]").AllInnerTextsAsync();
-        var declared = depCounts.Sum(Number);
-        result.Observe("status", await session.TextAsync("[data-testid=dr-status]")).Observe("primary snapshot", primary).Observe("repositories", depCounts.Count).Observe("declared dependencies", declared);
+        result.Observe("status", await session.TextAsync("[data-testid=dr-status]")).Observe("primary snapshot", primary).Observe("repositories", repositories).Observe("declared dependencies", declared);
         RecordIdentity(context, FeatureId, "snapshot", primary);
         result.Provenance = string.Equals(primary, context.Workspace.SourceSnapshotId, StringComparison.OrdinalIgnoreCase) ? ProvenanceState.Traced : ProvenanceState.Missing;
         if (result.Provenance == ProvenanceState.Missing) result.Defect("dependency-review-wrong-snapshot", "The stored result is scoped to another snapshot than the import's.");
@@ -154,7 +166,7 @@ public sealed class PipelineReviewFeature : AcceptanceFeature
             if (defined > 0 && pipelines == 0) result.Defect("pipeline-review-false-zero", $"The snapshot has {defined} pipeline definition(s) but Pipeline Review shows 0.");
         }
         result.DataFromCount(pipelines, DataState.NoApplicableData);
-        await ExportAsync(session, result, session.Page.Locator("[data-testid=pr-export]"), context);
+        await ExportMenuAsync(session, result, "pr-export", context);
     }
 }
 
@@ -239,7 +251,15 @@ public sealed class ContractEvidenceFeature(string featureId, string displayName
         await session.NavigateAsync("/source-analysis");
         result.Browser = BrowserState.Rendered;
         await EnsureSourceOverviewAsync(session);
-        await session.Page.Locator($"[data-testid=area-{area.Replace("/", "").ToLowerInvariant()}]").ClickAsync();
+        // Since 2026-11 Source Analysis has four areas (Overview, Architecture, Data, Quality evidence); the evidence domains (Contracts,
+        // Infrastructure, CI/CD, …) are views inside Quality evidence.
+        var view = area.Replace("/", "").ToLowerInvariant();
+        if (await session.ExistsAsync($"[data-testid=area-{view}]")) await session.Page.Locator($"[data-testid=area-{view}]").ClickAsync();
+        else
+        {
+            await session.Page.Locator("[data-testid=area-qualityevidence]").ClickAsync();
+            await session.Page.Locator($"[data-testid=sa-quality-{view}]").ClickAsync();
+        }
         await session.Page.WaitForTimeoutAsync(400);
     }
 }
@@ -259,7 +279,13 @@ public sealed class InfrastructureEvidenceFeature : AcceptanceFeature
         var status = snap is { } s ? Str(s, "evidenceDomains", "infrastructure", "status") : null;
         var resources = snap is { } s2 ? Arr(s2, "evidenceDomains", "infrastructure", "resources").Count() : 0;
         await ContractEvidenceFeature.OpenSourceAreaAsync(session, result, "Infrastructure");
-        var notAssessed = await session.ExistsAsync("[data-testid=sd-infra-not-assessed]", 10_000);
+        await session.WaitAnyAsync(30_000, "[data-testid=infrastructure-workspace]", "[data-testid=sd-infra-not-assessed]");
+        var notAssessed = await session.ExistsAsync("[data-testid=sd-infra-not-assessed]", 2_000);
+        if (resources > 0 && await session.ExistsAsync("[data-testid=sd-infra-tab-resources]"))
+        {
+            await session.Page.Locator("[data-testid=sd-infra-tab-resources]").ClickAsync();
+            await session.WaitAnyAsync(30_000, "[data-testid=sd-infra-resource]", "[data-testid=sd-infra-resources-empty]");
+        }
         var shownResources = await session.CountAsync("[data-testid=sd-infra-resource]");
         result.Observe("status", status).Observe("resources in snapshot", resources).Observe("resources shown", shownResources).Observe("not-assessed notice", notAssessed ? "shown" : "absent");
         result.DataFromCount(resources, DataState.NoApplicableData);

@@ -72,15 +72,31 @@ public abstract class AcceptanceFeature : IRealProjectAcceptanceFeature
     {
         if (context.Shared.TryGetValue(SnapshotKey, out var cached)) return (JsonElement)cached;
         if (context.Workspace.SourceSnapshotId is not { } id) return null;
-        var list = await session.GetJsonAsync("api/source-analysis", ct);
-        if (list is not { ValueKind: JsonValueKind.Array } array) return null;
-        foreach (var snapshot in array.EnumerateArray())
-            if (Str(snapshot, "id") is { } sid && string.Equals(sid, id, StringComparison.OrdinalIgnoreCase))
-            {
-                context.Shared[SnapshotKey] = snapshot.Clone();
-                return snapshot.Clone();
-            }
-        return null;
+        // The listing carries summaries only (2026-11); the snapshot with its evidence is fetched by id, as the pages do.
+        if (await session.GetJsonAsync($"api/source-analysis/{Uri.EscapeDataString(id)}", ct) is not { ValueKind: JsonValueKind.Object } snapshot) return null;
+        context.Shared[SnapshotKey] = snapshot.Clone();
+        return snapshot.Clone();
+    }
+
+    /// <summary>True when the run's snapshot is listed by Source Analysis (the summary listing the pages read).</summary>
+    protected static async Task<bool> SnapshotListedAsync(RealProjectAcceptanceContext context, PlaywrightAcceptanceSession session, CancellationToken ct) =>
+        context.Workspace.SourceSnapshotId is { } id && await session.GetJsonAsync("api/source-analysis", ct) is { ValueKind: JsonValueKind.Array } list
+        && list.EnumerateArray().Any(s => string.Equals(Str(s, "id"), id, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The import's document roles and their states (e.g. Specification → "Not detected", Plan → "11 candidates").</summary>
+    public const string ImportRolesKey = "import-roles";
+
+    /// <summary>True when the import found at least one document (or candidate set) for the role.</summary>
+    protected static bool RoleImported(RealProjectAcceptanceContext context, string role) =>
+        context.Shared.TryGetValue(ImportRolesKey, out var raw) && raw is IReadOnlyDictionary<string, string> roles
+        && roles.TryGetValue(role, out var state) && !System.Text.RegularExpressions.Regex.IsMatch(state, "not|missing|absent|none", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>An export behind an export menu (toggle, then the HTML option), as ExportMenu renders it.</summary>
+    protected static async Task ExportMenuAsync(PlaywrightAcceptanceSession session, FeatureResultBuilder result, string testId, RealProjectAcceptanceContext context, bool expectIdentity = true)
+    {
+        var toggle = session.Page.Locator($"[data-testid={testId}-toggle]");
+        if (await toggle.CountAsync() > 0 && await toggle.First.IsEnabledAsync()) await toggle.First.ClickAsync();
+        await ExportAsync(session, result, session.Page.Locator($"[data-testid={testId}-html]"), context, expectIdentity);
     }
 
     /// <summary>Records which snapshot/project a feature actually used, for the cross-feature consistency check.</summary>
