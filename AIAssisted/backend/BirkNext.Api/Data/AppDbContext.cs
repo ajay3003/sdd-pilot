@@ -20,6 +20,7 @@ public class AppDbContext : DbContext
     public DbSet<ExecutionManifestRow> ExecutionManifests => Set<ExecutionManifestRow>();
     public DbSet<SystemGuideRevisionRecord> SystemGuideRevisions => Set<SystemGuideRevisionRecord>();
     public DbSet<SystemGuideCandidateRecord> SystemGuideCandidates => Set<SystemGuideCandidateRecord>();
+    public DbSet<SystemGuideGenerationJobRecord> SystemGuideGenerationJobs => Set<SystemGuideGenerationJobRecord>();
     public DbSet<TestPlanDraftRecord> TestPlanDrafts => Set<TestPlanDraftRecord>();
     public DbSet<TestPlanSnapshotRecord> TestPlanSnapshots => Set<TestPlanSnapshotRecord>();
     public DbSet<ManualTestRunRecord> ManualTestRuns => Set<ManualTestRunRecord>();
@@ -1184,6 +1185,19 @@ public class AppDbContext : DbContext
             entity.HasIndex(r => r.GuideKey, "IX_system_guide_revisions_open").IsUnique().HasFilter("\"State\" IN ('Draft', 'InReview')");
             entity.HasIndex(r => r.GuideKey, "IX_system_guide_revisions_published").IsUnique().HasFilter("\"State\" = 'Published'");
         });
+        modelBuilder.Entity<SystemGuideGenerationJobRecord>(entity =>
+        {
+            entity.ToTable("system_guide_generation_jobs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.GuideKey).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.ApplicationKey).HasMaxLength(300);
+            entity.Property(r => r.SnapshotLabel).HasMaxLength(300);
+            entity.Property(r => r.Status).HasMaxLength(20).IsRequired();
+            entity.Property(r => r.LastError).HasMaxLength(2000);
+            entity.Property(r => r.GeneratorVersion).HasMaxLength(50).IsRequired();
+            entity.HasIndex(r => new { r.GuideKey, r.SnapshotId, r.GeneratorVersion }).IsUnique();
+            entity.HasIndex(r => new { r.Status, r.CreatedAt });
+        });
         modelBuilder.Entity<SystemGuideCandidateRecord>(entity =>
         {
             entity.ToTable("system_guide_candidates");
@@ -1199,6 +1213,9 @@ public class AppDbContext : DbContext
             entity.Property(r => r.GeneratorVersion).HasMaxLength(50).IsRequired();
             entity.HasIndex(r => new { r.GuideKey, r.InputFingerprint }).IsUnique();
             entity.HasIndex(r => new { r.GuideKey, r.CreatedAt });
+            entity.Property(r => r.DecisionsJson).HasColumnType("text");
+            entity.Property(r => r.SupportingJson).HasColumnType("text");
+            entity.Property(r => r.SourceLabel).HasMaxLength(300);
         });
         modelBuilder.Entity<TestPlanDraftRecord>(entity =>
         {
@@ -1264,6 +1281,7 @@ public class AppDbContext : DbContext
             entity.Property(c => c.ArchiveSha256).HasMaxLength(64);
             entity.Property(c => c.DocumentsJson).HasColumnType("jsonb").IsRequired();
             entity.Property(c => c.EntriesJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(c => c.EvidenceJson).HasColumnType("jsonb");
             // One row per content revision of a project's specification; the same content captured twice is one revision.
             entity.HasIndex(c => new { c.ProjectKey, c.Revision }).IsUnique().HasDatabaseName("ux_specification_catalogs_revision");
             entity.HasIndex(c => new { c.ProjectKey, c.Fingerprint }).IsUnique().HasDatabaseName("ux_specification_catalogs_content");
@@ -1343,7 +1361,11 @@ public class AppDbContext : DbContext
             entity.Property(r => r.SnapshotKey).HasMaxLength(64).IsRequired();
             entity.Property(r => r.RuleVersion).HasMaxLength(20).IsRequired();
             entity.Property(r => r.ContentJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.ApplicationKey).HasMaxLength(300);
+            entity.Property(r => r.BasisKind).HasMaxLength(20);
+            entity.Property(r => r.BasisFingerprint).HasMaxLength(64);
             entity.HasIndex(r => new { r.ProjectKey, r.DiscoveredAt });
+            entity.HasIndex(r => new { r.ApplicationKey, r.DiscoveredAt });
         });
         modelBuilder.Entity<AdoExportProfileRecord>(entity =>
         {

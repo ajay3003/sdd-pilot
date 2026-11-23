@@ -155,7 +155,34 @@ public sealed record TestCaseContent
     /// null when none was identified. Evidence for preparing the case; requirements are never inherited from it.</summary>
     public BirkNext.TestCoverage.CoverageUserStory? Story { get; init; }
     public int? NumberInStory { get; init; }
+
+    // 2026-11-23 source-driven planning. All nullable: omitted for older cases so their plan fingerprint is unchanged.
+    /// <summary>The candidate's project-independent identity (capability + canonical key): finds the same scenario in a later import.</summary>
+    public string? SourceIdentity { get; init; }
+    /// <summary>The source snapshot the scenario was read from when prepared ("" = workspace documents).</summary>
+    public string? SnapshotKey { get; init; }
+    /// <summary>The fingerprint of the discovery basis the case was prepared from.</summary>
+    public string? BasisFingerprint { get; init; }
+    /// <summary>Expected-result conflicts between sources when prepared (the case is not Ready until a person resolves them).</summary>
+    public List<ScenarioConflict>? Conflicts { get; init; }
 }
+
+/// <summary>What the current source basis says about a saved case, separate from the review state (never rewrites the case).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CaseSourceState
+{
+    /// <summary>The scenario is in the current basis unchanged.</summary>
+    Current,
+    /// <summary>The scenario changed in the current basis (expected result, steps, prerequisites …).</summary>
+    Changed,
+    /// <summary>A complete, successful comparison shows the scenario is no longer in the current source ("Utgått scenario").</summary>
+    Removed,
+    /// <summary>The scenario could not be compared: its source role is missing, unresolved or its analyzer failed ("Kilde mangler"). Never "removed".</summary>
+    SourceUnavailable,
+}
+
+/// <summary>A reviewer's resolution of an expected-result conflict: which claim (or own wording) is the expected result, and why.</summary>
+public sealed record ConflictResolution(string ExpectedResult, string? ChosenCandidateId, string Rationale, string ResolvedBy, DateTimeOffset ResolvedAt);
 
 /// <summary>One change a person made to a case's human-owned fields (the fields named, never the old values).</summary>
 public sealed record TestCaseEditEvent(string Editor, DateTimeOffset At, List<string> Fields);
@@ -290,6 +317,15 @@ public sealed record TestCaseDraft
     /// <summary>Requirement suggestions a tester rejected for this case (never proposed again for it; a rejection is not a decision on the requirement).</summary>
     public List<RejectedRequirementSuggestion>? RejectedSuggestions { get; init; }
 
+    /// <summary>Read-time comparison with the current source basis (null = not compared; older plans). Never stored as a decision.</summary>
+    public CaseSourceState? SourceState { get; init; }
+    /// <summary>Why <see cref="SourceState"/> is what it is, in plain Norwegian (e.g. which source version no longer has the scenario).</summary>
+    public string? SourceStateReason { get; init; }
+    /// <summary>A reviewer's resolution of the case's expected-result conflict (null = unresolved or no conflict).</summary>
+    public ConflictResolution? ConflictResolution { get; init; }
+    /// <summary>True when the case carries a source conflict nobody resolved: never Ready, never approvable.</summary>
+    [JsonIgnore] public bool HasUnresolvedConflict => Generated.Conflicts is { Count: > 0 } && ConflictResolution is null;
+
     /// <summary>The scenario this case belongs to: its own id for a discovered or guide case; the stored scenario for a case written under one;
     /// null for a hand-written case no scenario is established for.</summary>
     [JsonIgnore] public string? ParentScenario => Source.Kind == ScenarioSourceKind.Manual ? ScenarioKey : Source.ScenarioId;
@@ -371,7 +407,64 @@ public sealed record TestPlanDraft
     public List<StoryTranslation>? StoryTranslations { get; init; }
     /// <summary>Requirement wording translated for display (omitted when empty).</summary>
     public List<RequirementTextTranslation>? RequirementTranslations { get; init; }
+    /// <summary>The application the plan belongs to (logical identity of its application source), shared by later imports of the same application:
+    /// a plan follows the application, not one import. Null for plans before 2026-11-23 (their project key is then the application).</summary>
+    public string? ApplicationKey { get; init; }
+    /// <summary>The source basis of the discovery the plan was last prepared or updated from (null for older plans).</summary>
+    public DiscoverySourceBasis? DiscoveryBasis { get; init; }
 }
+
+/// <summary>Source status of a project plan against the application's current basis, in the manual tester's words.</summary>
+public sealed record PlanSourceStatus
+{
+    /// <summary>"Klar" (current), "Ny kildeversjon" (a newer import exists or the basis changed), "Må gjennomgås" (cases changed/removed/conflicting),
+    /// "Kilde mangler" (a source could not be resolved), "Ikke sammenlignet" (no current discovery yet).</summary>
+    public string State { get; init; } = "";
+    public string Message { get; init; } = "";
+    public string? PlanBasisFingerprint { get; init; }
+    public string? CurrentBasisFingerprint { get; init; }
+    public int Changed { get; init; }
+    public int Removed { get; init; }
+    public int Unavailable { get; init; }
+    public int Conflicts { get; init; }
+    public int NewScenarios { get; init; }
+    public List<DiscoverySourceMember> NewerSources { get; init; } = [];
+}
+
+/// <summary>What kind of difference a newer source basis makes to a saved case (impact separate from wording).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CaseImpactKind { ExpectedResultChanged, ScenarioRemoved, PrerequisiteChanged, RequirementChanged, EvidenceChanged, ConflictIntroduced, WordingOnly, SourceUnavailable, NewScenario }
+
+public sealed record CaseImpact
+{
+    public string CaseId { get; init; } = "";
+    public string Title { get; init; } = "";
+    public List<CaseImpactKind> Kinds { get; init; } = [];
+    /// <summary>Before → after for the fields that changed (plain text, never raw evidence).</summary>
+    public List<CaseImpactChange> Changes { get; init; } = [];
+    /// <summary>True when the case was approved or has execution history: the impact needs a person's review.</summary>
+    public bool ReviewedBefore { get; init; }
+    public string Summary { get; init; } = "";
+}
+
+public sealed record CaseImpactChange(string Field, string? Before, string? After);
+
+/// <summary>A reviewable comparison of a plan against the current discovery of its application. Read-only: nothing is rewritten.</summary>
+public sealed record PlanImpactAnalysis
+{
+    public Guid DraftId { get; init; }
+    public int PlanRevision { get; init; }
+    public DiscoverySourceBasis? PlanBasis { get; init; }
+    public DiscoverySourceBasis? CurrentBasis { get; init; }
+    public string? CurrentDiscoveryId { get; init; }
+    public List<CaseImpact> Cases { get; init; } = [];
+    /// <summary>Scenarios of the current basis not in the plan (candidate id, title).</summary>
+    public List<CaseImpact> NewScenarios { get; init; } = [];
+    public string Summary { get; init; } = "";
+}
+
+/// <summary>A reviewer resolves a case's expected-result conflict (chosen claim or own wording, with a rationale).</summary>
+public sealed record ResolveConflictRequest(int BaseRevision, string CaseId, string ExpectedResult, string? ChosenCandidateId, string Rationale);
 
 /// <summary>A requirement confirmed for a user story (<see cref="StoryKey"/> = specification file + story number). Who, when and the catalog check
 /// are in <see cref="Link"/> as for a case link.</summary>
@@ -423,6 +516,10 @@ public sealed record TestPlanWorkspace
     public string RuleVersion { get; init; } = "";
     /// <summary>Guide source changes since the guide revision (the existing change awareness): candidates for regression review.</summary>
     public List<string> SourceChanges { get; init; } = [];
+    /// <summary>The application's current source basis (project workspaces; null when unknown).</summary>
+    public DiscoverySourceBasis? CurrentBasis { get; init; }
+    /// <summary>Per plan: its source status against the current basis (draft id → status).</summary>
+    public Dictionary<Guid, PlanSourceStatus>? PlanStatus { get; init; }
 }
 
 public sealed record TestPlanGuideOption(string GuideKey, string Title, string ReviewState);

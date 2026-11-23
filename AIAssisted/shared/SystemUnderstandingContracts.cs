@@ -165,6 +165,9 @@ public sealed record GuideTestScenario
     public string? FollowUp { get; init; }
     public List<string> StepIds { get; init; } = [];
     public List<GuideEvidence> Evidence { get; init; } = [];
+    /// <summary>The discovered scenario this guide scenario was generated from (its project-independent identity); null for written ones.
+    /// Discovery merges the two, so the same behaviour is never offered twice (2026-11-23).</summary>
+    public string? SourceIdentity { get; init; }
 }
 
 /// <summary>A data transfer between components (the Data &amp; Contracts matrix). Version facts stay per source snapshot.</summary>
@@ -277,10 +280,31 @@ public sealed record SaveGuideDraftRequest(SystemGuideContent Content, string? C
 /// <summary>Unreviewed source-derived output kept separate from editable and published guide revisions.</summary>
 public sealed record SystemGuideCandidateView(Guid Id, string GuideKey, Guid SourceSnapshotId, string SourceFingerprint, string ContentFingerprint,
     DateTimeOffset CreatedAt, string GeneratorVersion, string Status, SystemGuideContent Content, IReadOnlyList<SystemGuideCandidateChange> Changes,
-    IReadOnlyList<GuideEvidence> Evidence);
+    IReadOnlyList<GuideEvidence> Evidence, IReadOnlyList<GuideChangeDecision>? Decisions = null, IReadOnlyList<string>? SupportingEvidence = null,
+    Guid? SupersededBy = null, string? SourceLabel = null);
 
+/// <summary>
+/// One proposed change of a source candidate against the guide readers see (a changeset, never applied automatically). Kind: NewScenario,
+/// ChangedExpectedResult, ConflictsWithReviewed (a reviewed scenario says something else), EvidenceRemoved (a generated scenario is no longer in the
+/// source), AmbiguousMatch (several written scenarios may be this one). <paramref name="ScenarioId"/> is the guide scenario it concerns (the
+/// matched one, or the new id); <paramref name="MatchBasis"/> says how it was matched (source identity, requirement + situation …).
+/// </summary>
 public sealed record SystemGuideCandidateChange(string Kind, string ScenarioId, string Title, string? PreviousExpected, string? ProposedExpected,
-    IReadOnlyList<GuideEvidence> PreviousEvidence, IReadOnlyList<GuideEvidence> ProposedEvidence);
+    IReadOnlyList<GuideEvidence> PreviousEvidence, IReadOnlyList<GuideEvidence> ProposedEvidence, string? ChangeId = null, string? MatchBasis = null,
+    GuideTestScenario? Proposed = null, IReadOnlyList<string>? AlternativeScenarioIds = null);
+
+/// <summary>A reviewer's decision on one proposed change: Accepted, Rejected, Edited (with own expected result), Deferred, NeedsClarification.</summary>
+public sealed record GuideChangeDecision(string ChangeId, string Decision, string? EditedExpected, string? Rationale, string By, DateTimeOffset At);
+
+public sealed record DecideGuideChangeRequest(string ChangeId, string Decision, string? EditedExpected, string? Rationale);
+
+/// <summary>Applies the accepted, edited and needs-clarification decisions of a candidate into the open guide draft (or a new draft from the guide
+/// readers see). <paramref name="BaseFingerprint"/> = the draft fingerprint the reviewer compared against (concurrency).</summary>
+public sealed record ApplyGuideCandidateRequest(string? BaseFingerprint);
+
+/// <summary>A durable guide generation job (one per guide, source version and generator version): its state, attempts and diagnostics.</summary>
+public sealed record SystemGuideGenerationJobView(Guid Id, string GuideKey, Guid SnapshotId, string? SnapshotLabel, string Status, int Attempts, string? LastError,
+    string GeneratorVersion, Guid? CandidateId, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
 /// <summary>The one rule for guide links (backend validation and frontend rendering): a relative BirkNext route — letters, digits and URL
 /// punctuation, no scheme, no leading "//" or "\", no traversal. Anything else is shown as text, never as a link.</summary>

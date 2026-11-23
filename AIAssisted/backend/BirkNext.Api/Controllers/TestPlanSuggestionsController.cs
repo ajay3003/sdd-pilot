@@ -61,6 +61,16 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     public Task<ActionResult> Refresh(Guid id, [FromQuery] int baseRevision, CancellationToken ct) => Run(async () => Ok(await service.RefreshAsync(id, baseRevision, Actor, ct)));
 
+    /// <summary>A reviewable comparison of the plan with its application's current source basis (changed, removed, unavailable, new). Read-only.</summary>
+    [HttpGet("drafts/{id:guid}/impact")]
+    public Task<ActionResult> Impact(Guid id, CancellationToken ct) => Run(async () => Ok(await service.ImpactAsync(id, ct)));
+
+    /// <summary>Records which expected result applies to a case whose sources disagree, with a rationale (the claims stay on the case).</summary>
+    [HttpPost("drafts/{id:guid}/resolve-conflict")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> ResolveConflict(Guid id, [FromBody] ResolveConflictRequest request, CancellationToken ct) =>
+        Run(async () => Ok(await service.ResolveConflictAsync(id, request, Actor, ct)));
+
     [HttpPost("drafts/{id:guid}/snapshots")]
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     public Task<ActionResult> SaveSnapshot(Guid id, [FromBody] SaveTestPlanSnapshotRequest request, CancellationToken ct) => Run(async () => Ok(await service.SaveSnapshotAsync(id, request, Actor, ct)));

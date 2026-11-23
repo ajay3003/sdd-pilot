@@ -256,8 +256,9 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
             {
                 var markers = target.ToLowerInvariant() switch
                 {
-                    "nb" or "no" or "nn" => new[] { ("not", "ikke"), ("when", "når"), ("if", "hvis"), ("without", "uten") },
-                    "sv" => new[] { ("not", "inte"), ("when", "när"), ("if", "om"), ("without", "utan") },
+                    // Every English marker the negation/condition check reads (ScenarioPlanning.PreservesNegationAndConditions), as a real service would.
+                    "nb" or "no" or "nn" => new[] { ("not", "ikke"), ("no", "ingen"), ("never", "aldri"), ("without", "uten"), ("unless", "med mindre"), ("when", "når"), ("if", "hvis") },
+                    "sv" => new[] { ("not", "inte"), ("no", "ingen"), ("never", "aldrig"), ("without", "utan"), ("unless", "såvida inte"), ("when", "när"), ("if", "om") },
                     _ => Array.Empty<(string, string)>(),
                 };
                 foreach (var (from, to) in markers)
@@ -427,11 +428,71 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         nbCases.Should().HaveCount(2).And.OnlyContain(c => c.Language == "nb" && c.AzureDevOpsId == null);
         nb.Rows.Where(r => r.Title.StartsWith("NB: ", StringComparison.Ordinal)).Should().NotBeEmpty().And.OnlyContain(r => r.StepAction.StartsWith("NB: ", StringComparison.Ordinal) && r.StepExpected.StartsWith("NB: ", StringComparison.Ordinal),
             "a Norwegian case is Norwegian in every cell");
-        nb.Rows.Single(r => r.StepAction == "NB: Lock the period without a report").Description.Should().Contain("under the scenario \"Child past compulsory school age\"");
+        nb.Rows.Single(r => r.StepAction == "NB: Lock the period uten a report").Description.Should().Contain("under the scenario \"Child past compulsory school age\"");
         original.Rows.Should().NotContain(r => r.Title.StartsWith("NB: ", StringComparison.Ordinal));
         original.Cases.Should().OnlyContain(c => c.Language == AdoExportCase.OriginalLanguage);
         nb.Cases.Where(c => c.ScenarioKey != s42).Should().OnlyContain(c => c.Language == AdoExportCase.OriginalLanguage && c.Issues.Any(i => i.Message.Contains("original language")), "an untranslated case says so");
         nb.Boundary.Should().Contain("Downloading is not importing");
+        nb.Issues.Should().Contain(i => i.Level == AdoIssueLevel.Warning && i.Message.StartsWith("The file is not fully in Norwegian", StringComparison.Ordinal),
+            "the other scenario's case falls back, so the file says it is not fully Norwegian");
+        original.Issues.Should().NotContain(i => i.Message.StartsWith("The file is not fully in", StringComparison.Ordinal), "no language was chosen");
+    }
+
+    /// <summary>A translator that keeps an English negation untranslated: the validation refuses it, the case keeps no Norwegian text and the export
+    /// says so at case and file level instead of silently mixing languages.</summary>
+    private sealed class NegationLosingTranslator : ITestCaseTranslator
+    {
+        public TranslationAvailability Availability => new(true, "Lossy", "Lossy translator.");
+        public Task<TranslatedTexts> TranslateAsync(IReadOnlyList<string?> texts, string source, string target, CancellationToken ct) =>
+            Task.FromResult(new TranslatedTexts([.. texts.Select(t => t is null ? null : "NB: " + t)], "Lossy"));
+    }
+
+    [Fact]
+    public async Task A_translation_refused_by_validation_is_never_exported_as_Norwegian_and_the_file_says_it_is_not_fully_Norwegian()
+    {
+        await using var db = Context();
+        var (service, plan, s42, _) = await PlanAsync(db);
+        plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "No report submitted", null, null, ScenarioKey: s42), "anna", default);
+        var manual = plan.Cases.Single(c => c.Source.Kind == ScenarioSourceKind.Manual).Source.ScenarioId;
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == manual
+            ? part with { Edits = part.Edits with { Steps = ["Lock the period without a report"], StepExpected = ["The child is not expected"] } } : part), "anna", default);
+
+        var result = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new NegationLosingTranslator(), Settings, "anna", default);
+
+        result.Failed.Should().Contain(f => f.Contains("negation"), "the lost \"not\"/\"No\" is reported, never accepted");
+        var after = await service.DraftAsync(plan.Id, default);
+        after.Cases.Single(c => c.Source.ScenarioId == manual).Translation("nb").Should().BeNull("a refused translation is not stored");
+        var nb = AdoTestPlanExporter.Preview(after, new AdoExportRequest { ProjectKey = after.ProjectKey!, DraftId = after.Id, PlanRevision = after.Revision, IncludeNotApproved = true, Language = ScenarioPlanning.Norwegian });
+        var exported = nb.Cases.Single(c => c.CaseId == manual);
+        exported.Language.Should().Be(AdoExportCase.OriginalLanguage);
+        exported.AzureDevOpsId.Should().BeNull("no id is invented");
+        exported.Issues.Should().ContainSingle(i => i.Level == AdoIssueLevel.Warning && i.Message.Contains("original language"));
+        nb.Rows.Where(r => r.Title == "No report submitted").Should().OnlyContain(r => !r.StepAction.StartsWith("NB: ", StringComparison.Ordinal), "never a mixed-language case");
+        nb.Issues.Should().Contain(i => i.Level == AdoIssueLevel.Warning && i.Message.StartsWith("The file is not fully in Norwegian", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_partial_or_stale_Norwegian_text_is_flagged_in_the_export_and_a_partial_one_is_never_used()
+    {
+        await using var db = Context();
+        var (service, plan, s42, _) = await PlanAsync(db);
+        plan = (await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(), Settings, "anna", default)).Draft!;
+
+        // A step added to the original after translation: the Norwegian text no longer covers every step, so it is not used.
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42
+            ? part with { Edits = part.Edits with { Steps = [.. c.EffectiveSteps, "Open the report"], StepExpected = [.. c.EffectiveStepExpected, "The report is shown"] } } : part), "anna", default);
+        var partial = AdoTestPlanExporter.Preview(plan, new AdoExportRequest { ProjectKey = plan.ProjectKey!, DraftId = plan.Id, PlanRevision = plan.Revision, IncludeNotApproved = true, Language = ScenarioPlanning.Norwegian });
+        var p = partial.Cases.Single(c => c.CaseId == s42);
+        p.Language.Should().Be(AdoExportCase.OriginalLanguage);
+        p.Issues.Should().Contain(i => i.Level == AdoIssueLevel.Warning && i.Message.Contains("does not cover every step"));
+
+        // Only a wording change: the text is complete but made from an older original — used, and flagged as a warning.
+        plan = (await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42, Overwrite: true), new FakeTranslator(), Settings, "anna", default)).Draft!;
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42 ? part with { Edits = part.Edits with { Title = "Child past school age at lock" } } : part), "anna", default);
+        var stale = AdoTestPlanExporter.Preview(plan, new AdoExportRequest { ProjectKey = plan.ProjectKey!, DraftId = plan.Id, PlanRevision = plan.Revision, IncludeNotApproved = true, Language = ScenarioPlanning.Norwegian });
+        var s = stale.Cases.Single(c => c.CaseId == s42);
+        s.Language.Should().Be("nb");
+        s.Issues.Should().Contain(i => i.Level == AdoIssueLevel.Warning && i.Message.Contains("older original"));
     }
 
     // ── User stories ────────────────────────────────────────────────────────────────────────────────────────────

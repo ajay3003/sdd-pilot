@@ -44,6 +44,20 @@ public sealed class SystemUnderstandingPageTests : BunitContext
         { Saved = request; return Task.FromResult<(SystemGuideRevision?, string?)>((view!.Shown! with { Revision = 2, Content = request.Content }, null)); }
         public Task<(SystemGuideRevision? Revision, string? Error)> TransitionAsync(string guideKey, int revision, string action, CancellationToken ct = default)
         { Actions.Add($"{action}:{revision}"); return Task.FromResult<(SystemGuideRevision?, string?)>((view!.Shown! with { State = GuideRevisionState.InReview }, null)); }
+        public IReadOnlyList<SystemGuideGenerationJobView> Jobs { get; set; } = [];
+        public List<DecideGuideChangeRequest> Decided { get; } = [];
+        public List<Guid> Applied { get; } = [];
+        public List<Guid> Retried { get; } = [];
+        public Task<(IReadOnlyList<SystemGuideGenerationJobView>? Jobs, string? Error)> GenerationAsync(string guideKey, CancellationToken ct = default) => Task.FromResult<(IReadOnlyList<SystemGuideGenerationJobView>?, string?)>((Jobs, null));
+        public Task<(SystemGuideGenerationJobView? Job, string? Error)> RetryGenerationAsync(string guideKey, Guid jobId, CancellationToken ct = default) { Retried.Add(jobId); return Task.FromResult<(SystemGuideGenerationJobView?, string?)>((Jobs[0], null)); }
+        public Task<(SystemGuideCandidateView? Candidate, string? Error)> DecideAsync(string guideKey, Guid candidateId, DecideGuideChangeRequest request, CancellationToken ct = default)
+        {
+            Decided.Add(request);
+            Candidates = [.. Candidates.Select(c => c.Id == candidateId ? c with { Decisions = [.. c.Decisions ?? [], new GuideChangeDecision(request.ChangeId, request.Decision, request.EditedExpected, request.Rationale, "lead", DateTimeOffset.UtcNow)] } : c)];
+            return Task.FromResult<(SystemGuideCandidateView?, string?)>((Candidates.First(c => c.Id == candidateId), null));
+        }
+        public Task<(SystemGuideRevision? Revision, string? Error)> ApplyCandidateAsync(string guideKey, Guid candidateId, ApplyGuideCandidateRequest request, CancellationToken ct = default)
+        { Applied.Add(candidateId); return Task.FromResult<(SystemGuideRevision?, string?)>((view!.Shown! with { Revision = 2, State = GuideRevisionState.Draft }, null)); }
     }
 
     private static SystemGuideView View(SystemGuideContent? content = null, GuideRevisionState state = GuideRevisionState.Draft, List<GuideSourceChange>? changes = null)
@@ -100,6 +114,41 @@ public sealed class SystemUnderstandingPageTests : BunitContext
         details.TextContent.Should().Contain("Forventet resultat endret").And.Contain("HTTP 503").And.Contain("HTTP 200")
             .And.Contain("M2LB-v2.zip").And.Contain("specs/requirements.md").And.Contain("linje 42");
         cut.Find($"[data-testid=su-candidate-review-{candidate.Id}]").TextContent.Should().Contain("Åpne som utkast");
+    }
+
+    [Fact]
+    public void Each_proposed_change_is_decided_on_its_own_and_only_decided_changes_are_merged_into_the_open_draft()
+    {
+        var ev = new GuideEvidence { Class = GuideEvidenceClass.Specified, SourceRole = "application", SourceLabel = "m2lb-v2.zip", File = "specs/spec.md" };
+        var candidate = new SystemGuideCandidateView(Guid.NewGuid(), "skolenaervaer", Guid.NewGuid(), new string('b', 64), new string('c', 64), DateTimeOffset.UtcNow, "source-guide-2", "NeedsReview", Seed(),
+            [new("ConflictsWithReviewed", "sc-1", "Rapport for stengt periode", "status 400", "status 422", [ev], [ev], "chg-1", "samme kildeidentitet"),
+             new("EvidenceRemoved", "sc-2", "Duplikat rapport", "ignoreres", null, [ev], [], "chg-2", "finnes ikke lenger i kilden")], [ev],
+            SupportingEvidence: ["API contract: 12 scenarioer (støttende bevis)."], SourceLabel: "m2lb-v2.zip · 2026-11-23 10:00");
+        var api = new Api(View(state: GuideRevisionState.Draft), canEdit: true) { Candidates = [candidate] };
+        var cut = Render(api, "?tab=revisions");
+
+        var block = cut.Find($"[data-testid=su-candidate-{candidate.Id}]");
+        block.TextContent.Should().Contain("Motstrid med godkjent scenario").And.Contain("Finnes ikke lenger i kilden").And.Contain("m2lb-v2.zip").And.Contain("støttende bevis");
+        cut.FindAll($"[data-testid=su-candidate-apply-{candidate.Id}]").Should().BeEmpty("nothing is decided yet, so nothing can be applied");
+        cut.Find("[data-testid=su-change-chg-1] [data-testid=su-change-accept]").Click();
+        api.Decided.Should().ContainSingle(d => d.ChangeId == "chg-1" && d.Decision == "Accepted");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=su-change-chg-1] [data-testid=su-change-decision]").TextContent.Should().Contain("Godtatt"));
+        cut.Find($"[data-testid=su-candidate-apply-{candidate.Id}]").TextContent.Should().Be("Legg inn i utkastet", "a draft is open: the changes are merged into it");
+        cut.Find($"[data-testid=su-candidate-apply-{candidate.Id}]").Click();
+        api.Applied.Should().ContainSingle().Which.Should().Be(candidate.Id);
+        api.Actions.Should().BeEmpty("applying never submits, approves or publishes");
+    }
+
+    [Fact]
+    public void A_failed_generation_shows_its_diagnostics_and_can_be_retried()
+    {
+        var job = new SystemGuideGenerationJobView(Guid.NewGuid(), "skolenaervaer", Guid.NewGuid(), "m2lb-v2.zip · 2026-11-23 10:00", "Failed", 1,
+            "Ufullstendig: Business scenarios from the specification kunne ikke leses.", "source-guide-2", null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var api = new Api(View(state: GuideRevisionState.Draft), canEdit: true) { Jobs = [job] };
+        var cut = Render(api, "?tab=revisions");
+        cut.Find("[data-testid=su-generation]").TextContent.Should().Contain("Generering feilet").And.Contain("Ufullstendig").And.Contain("m2lb-v2.zip");
+        cut.Find($"[data-testid=su-job-retry-{job.Id}]").Click();
+        api.Retried.Should().ContainSingle().Which.Should().Be(job.Id);
     }
 
     [Fact]

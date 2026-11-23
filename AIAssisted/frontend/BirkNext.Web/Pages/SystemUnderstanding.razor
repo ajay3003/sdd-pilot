@@ -118,6 +118,9 @@
     private IReadOnlyList<SystemGuideSummary>? _guides;
     private SystemGuideView? _view;
     private IReadOnlyList<SystemGuideCandidateView> _candidates = [];
+    private IReadOnlyList<SystemGuideGenerationJobView> _jobs = [];
+    private readonly Dictionary<string, string> _edited = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _rationale = new(StringComparer.Ordinal);
     private string? _guideKey;
     private string _tab = "overview";
     private bool _loading = true;
@@ -176,6 +179,8 @@
         _error = error;
         var (candidates, _) = await _api!.CandidatesAsync(_guideKey!);
         _candidates = candidates ?? [];
+        var (jobs, _) = await _api!.GenerationAsync(_guideKey!);
+        _jobs = jobs ?? [];
         _search = P.Search(Content, _query);
     }
 
@@ -275,6 +280,65 @@
         _tab = "revisions";
         Sync();
     }
+
+    private async Task DecideAsync(SystemGuideCandidateView candidate, SystemGuideCandidateChange change, string decision)
+    {
+        if (_busy || change.ChangeId is null) return;
+        var rationale = _rationale.GetValueOrDefault(change.ChangeId);
+        if (decision is "Rejected" or "NeedsClarification" && string.IsNullOrWhiteSpace(rationale)) { _message = "Skriv en begrunnelse først."; _messageTone = "bad"; return; }
+        if (decision == "Edited" && string.IsNullOrWhiteSpace(_edited.GetValueOrDefault(change.ChangeId))) { _message = "Skriv det forventede resultatet du vil bruke."; _messageTone = "bad"; return; }
+        _busy = true;
+        var (_, error) = await _api!.DecideAsync(_guideKey!, candidate.Id, new DecideGuideChangeRequest(change.ChangeId, decision, _edited.GetValueOrDefault(change.ChangeId), rationale));
+        _busy = false;
+        if (error is not null) { _message = error; _messageTone = "bad"; return; }
+        _message = null;
+        await LoadAsync();
+    }
+
+    private async Task ApplyCandidateAsync(SystemGuideCandidateView candidate)
+    {
+        if (_busy) return;
+        _busy = true;
+        var (revision, error) = await _api!.ApplyCandidateAsync(_guideKey!, candidate.Id, new ApplyGuideCandidateRequest(_view?.Draft?.ContentFingerprint));
+        _busy = false;
+        if (error is not null) { _message = error; _messageTone = "bad"; return; }
+        _message = $"De godtatte endringene er lagt inn i utkast {revision!.Revision}. Utkastet sendes til godkjenning som vanlig; ingenting er godkjent eller publisert.";
+        _messageTone = "ok";
+        await LoadAsync();
+    }
+
+    private async Task RetryGenerationAsync(Guid jobId)
+    {
+        if (_busy) return;
+        _busy = true;
+        var (_, error) = await _api!.RetryGenerationAsync(_guideKey!, jobId);
+        _busy = false;
+        if (error is not null) { _message = error; _messageTone = "bad"; return; }
+        _message = "Genereringen er satt i kø på nytt.";
+        _messageTone = "ok";
+        await LoadAsync();
+    }
+
+    private static string ChangeLabel(string kind) => kind switch
+    {
+        "NewScenario" => "Nytt scenario",
+        "ChangedExpectedResult" => "Forventet resultat endret",
+        "ConflictsWithReviewed" => "Motstrid med godkjent scenario",
+        "EvidenceRemoved" => "Finnes ikke lenger i kilden",
+        "AmbiguousMatch" => "Usikker kobling — flere scenarier kan passe",
+        "LinkedToSource" => "Koblet til kilden (uendret innhold)",
+        _ => kind,
+    };
+
+    private static string DecisionLabel(string decision) => decision switch
+    {
+        "Accepted" => "Godtatt", "Rejected" => "Avvist", "Edited" => "Redigert", "Deferred" => "Utsatt", "NeedsClarification" => "Trenger avklaring", _ => decision,
+    };
+
+    private static string JobLabel(string status) => status switch
+    {
+        "Pending" => "Venter", "Running" => "Genererer", "Succeeded" => "Forslag klart", "Failed" => "Generering feilet", "Stale" => "Utdatert (nyere kildeversjon)", _ => status,
+    };
 
     private static string? SafeLink(string? link) => link is not null && SystemGuideLinks.IsSafeRoute(link) ? link : null;
 
@@ -723,28 +787,71 @@
                 <p class="su-note su-note-info" data-testid="su-read-only">Read only. Changing, approving or publishing a guide needs the configuration-write permission.</p>
             }
             <h2 class="su-h2">Revision history</h2>
+            @if (_jobs.Count > 0)
+            {
+                <section class="su-block" data-testid="su-generation">
+                    <h2 class="su-h2">Generering fra kilder</h2>
+                    <ul class="su-bullets">
+                        @foreach (var job in _jobs.Take(5))
+                        {
+                            <li data-testid="su-job-@job.Id" data-status="@job.Status"><strong>@JobLabel(job.Status)</strong> · @(job.SnapshotLabel ?? job.SnapshotId.ToString()) · forsøk @job.Attempts
+                                @if (job.LastError is { } jobError) { <span class="su-warn-text">@jobError</span> }
+                                @if (_view.CanEdit && job.Status is "Failed" or "Stale") { <button type="button" class="su-btn su-btn-small" disabled="@_busy" @onclick="() => RetryGenerationAsync(job.Id)" data-testid="su-job-retry-@job.Id">Prøv igjen</button> }
+                            </li>
+                        }
+                    </ul>
+                </section>
+            }
             @if (_candidates.Count > 0)
             {
                 <section class="su-block" data-testid="su-generated-candidates">
                     <h2 class="su-h2">Kildebaserte forslag – krever gjennomgang</h2>
-                    <p class="su-muted">Forslagene er generert fra importerte spesifikasjonsscenarioer. De endrer ikke gjeldende guide eller testforslag før en person har vurdert og lagret innholdet.</p>
+                    <p class="su-muted">Forslagene er generert fra importerte kilder (spesifikasjon, krav og integrasjonsflyter). Hver endring vurderes for seg; ingenting endrer gjeldende veiledning før du legger de godtatte endringene inn i et utkast, og utkastet godkjennes som vanlig.</p>
                     @foreach (var candidate in _candidates)
                     {
-                        <details data-testid="su-candidate-@candidate.Id">
-                            <summary>@candidate.CreatedAt.ToString("yyyy-MM-dd HH:mm") · @candidate.Changes.Count endringer · Uavklart gjennomgang</summary>
-                            <p>Kildeversjon: @candidate.SourceSnapshotId · Generator @candidate.GeneratorVersion</p>
-                            @if (_view.CanEdit && _view.Draft is null)
+                        var decisions = (candidate.Decisions ?? []).GroupBy(d => d.ChangeId).ToDictionary(g => g.Key, g => g.Last());
+                        var stale = candidate.Status == "Stale";
+                        <details data-testid="su-candidate-@candidate.Id" open="@(candidate.Status == "NeedsReview" && candidate == _candidates[0])">
+                            <summary>@candidate.CreatedAt.ToString("yyyy-MM-dd HH:mm") · @candidate.Changes.Count endringer · @(stale ? "Utdatert — en nyere kildeversjon har eget forslag" : decisions.Count >= candidate.Changes.Count && candidate.Changes.Count > 0 ? "Alle endringer vurdert" : "Uavklart gjennomgang")</summary>
+                            <p class="su-muted">Kildeversjon: @(candidate.SourceLabel ?? candidate.SourceSnapshotId.ToString()) · Generator @candidate.GeneratorVersion</p>
+                            @if (candidate.SupportingEvidence is { Count: > 0 } supporting)
                             {
-                                <button type="button" class="su-btn" disabled="@_busy" @onclick="() => ReviewCandidateAsync(candidate.Id)" data-testid="su-candidate-review-@candidate.Id">Åpne som utkast for gjennomgang</button>
+                                <p class="su-muted su-small" data-testid="su-candidate-supporting">Støttende bevis (ikke kopiert inn): @string.Join(" ", supporting)</p>
+                            }
+                            @if (_view.CanEdit && _view.Draft is null && !stale)
+                            {
+                                <button type="button" class="su-btn" disabled="@_busy" @onclick="() => ReviewCandidateAsync(candidate.Id)" data-testid="su-candidate-review-@candidate.Id">Åpne som utkast for gjennomgang (alle endringer)</button>
+                            }
+                            @if (_view.CanEdit && !stale && decisions.Values.Any(d => d.Decision is "Accepted" or "Edited" or "NeedsClarification"))
+                            {
+                                <button type="button" class="su-btn" disabled="@_busy" @onclick="() => ApplyCandidateAsync(candidate)" data-testid="su-candidate-apply-@candidate.Id">@(_view.Draft is null ? "Legg godtatte endringer i nytt utkast" : "Legg inn i utkastet")</button>
                             }
                             @if (candidate.Changes.Count == 0) { <p>Ingen nye scenarioer eller endrede forventede resultater ble oppdaget.</p> }
-                            <ul class="su-bullets">
+                            <ul class="su-bullets su-changes">
                                 @foreach (var change in candidate.Changes)
                                 {
-                                    <li><strong>@change.Title</strong> — @(change.Kind == "NewScenario" ? "Nytt scenario" : "Forventet resultat endret")
+                                    var decided = change.ChangeId is { } cid && decisions.TryGetValue(cid, out var dd) ? dd : null;
+                                    <li data-testid="su-change-@change.ChangeId" data-kind="@change.Kind"><strong>@change.Title</strong> — @ChangeLabel(change.Kind)
+                                        @if (change.MatchBasis is { } basis) { <small class="su-muted">(@basis)</small> }
                                         @if (change.PreviousExpected is not null) { <span>Før: @change.PreviousExpected</span> }
                                         @if (change.ProposedExpected is not null) { <span>Forslag: @change.ProposedExpected</span> }
                                         @foreach (var ev in change.ProposedEvidence) { <small>@ev.SourceLabel · @ev.File@(ev.Lines is null ? "" : $" · linje {ev.Lines}")</small> }
+                                        @if (decided is not null) { <span class="su-chip" data-testid="su-change-decision">@DecisionLabel(decided.Decision) av @decided.By@(decided.Rationale is { } r ? $": {r}" : "")</span> }
+                                        @if (_view.CanEdit && !stale && change.ChangeId is { } changeId)
+                                        {
+                                            <div class="su-decide">
+                                                <button type="button" class="su-btn su-btn-small" disabled="@_busy" @onclick='() => DecideAsync(candidate, change, "Accepted")' data-testid="su-change-accept">Godta</button>
+                                                <button type="button" class="su-btn su-btn-small su-btn-quiet" disabled="@_busy" @onclick='() => DecideAsync(candidate, change, "Deferred")'>Utsett</button>
+                                                <input class="su-input" placeholder="Begrunnelse" value="@_rationale.GetValueOrDefault(changeId)" @onchange="e => _rationale[changeId] = e.Value?.ToString() ?? string.Empty" aria-label="Begrunnelse" />
+                                                <button type="button" class="su-btn su-btn-small su-btn-quiet" disabled="@_busy" @onclick='() => DecideAsync(candidate, change, "Rejected")'>Avvis</button>
+                                                <button type="button" class="su-btn su-btn-small su-btn-quiet" disabled="@_busy" @onclick='() => DecideAsync(candidate, change, "NeedsClarification")'>Trenger avklaring</button>
+                                                @if (change.Kind is not "EvidenceRemoved" and not "LinkedToSource")
+                                                {
+                                                    <input class="su-input" placeholder="Eget forventet resultat" value="@_edited.GetValueOrDefault(changeId)" @onchange="e => _edited[changeId] = e.Value?.ToString() ?? string.Empty" aria-label="Eget forventet resultat" />
+                                                    <button type="button" class="su-btn su-btn-small su-btn-quiet" disabled="@_busy" @onclick='() => DecideAsync(candidate, change, "Edited")'>Bruk min tekst</button>
+                                                }
+                                            </div>
+                                        }
                                     </li>
                                 }
                             </ul>

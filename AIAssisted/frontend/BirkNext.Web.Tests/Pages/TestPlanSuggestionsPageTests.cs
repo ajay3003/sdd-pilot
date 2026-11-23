@@ -97,6 +97,11 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
             Task.FromResult<(ScenarioDiscoveryResult?, string?)>((Last, null));
         public Task<(TestPlanDraft?, string?)> CreateProjectAsync(CreateProjectTestPlanRequest request, CancellationToken ct = default)
         { CreatedProject = request; return Task.FromResult<(TestPlanDraft?, string?)>((ProjectDraft(request.ProjectKey, request.ManualCaseTitle), null)); }
+        public PlanImpactAnalysis? Impact { get; init; }
+        public ResolveConflictRequest? Resolved { get; private set; }
+        public Task<(PlanImpactAnalysis?, string?)> ImpactAsync(Guid id, CancellationToken ct = default) => Task.FromResult<(PlanImpactAnalysis?, string?)>((Impact, Impact is null ? "n/a" : null));
+        public Task<(TestPlanDraft?, string?)> ResolveConflictAsync(Guid id, ResolveConflictRequest request, CancellationToken ct = default)
+        { Resolved = request; return Task.FromResult<(TestPlanDraft?, string?)>((draft, null)); }
     }
 
     // ── Project mode fixtures: an unrelated project (a library app) with no System Understanding guide ─────────────────────
@@ -776,6 +781,54 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         var cut = Render(api, $"?draft={plan.Id}&area=prepare&case=tsc-borrow");
         cut.WaitForAssertion(() => cut.Find("[data-testid=tps-case-tsc-borrow]").ClassList.Should().Contain("is-open", "the case the link names is opened"));
         cut.Find("[data-testid=tps-case-tsc-borrow]").TextContent.Should().Contain("Borrow a book");
+    }
+
+    [Fact]
+    public void A_newer_source_shows_the_plan_status_a_reviewable_impact_removed_cases_and_a_conflict_that_a_tester_resolves()
+    {
+        SelectProject();
+        var plan = ProjectDraft("library");
+        var borrow = plan.Cases.Single();
+        var conflict = new ScenarioConflict
+        {
+            Kind = ConflictKind.ContradictoryExpectedResult, Explanation = "Ulike kilder beskriver forskjellige forventede resultater for samme situasjon. Dette må avklares før testtilfellet kan godkjennes.",
+            Claims = [new("tsc-borrow", "Specification", "The loan is registered (200)", "spec.md#s1"), new("tsc-guide", "System Understanding guide", "Refused (503)", "guide:g/x")],
+        };
+        var removed = borrow with
+        {
+            Source = borrow.Source with { ScenarioId = "tsc-return" }, Generated = borrow.Generated with { Title = "Return a book" }, SourceChanged = true,
+            SourceState = CaseSourceState.Removed, SourceStateReason = "Utgått scenario: finnes ikke lenger i gjeldende kildeversjon (library-v2.zip).",
+        };
+        plan = plan with { Cases = [borrow with { Generated = borrow.Generated with { Conflicts = [conflict] }, SourceState = CaseSourceState.Changed, SourceChanged = true }, removed] };
+        var status = new PlanSourceStatus { State = "Må gjennomgås", Message = "1 endret, 1 utgått, 1 med kildekonflikt.", Changed = 1, Removed = 1, Conflicts = 1 };
+        var impact = new PlanImpactAnalysis
+        {
+            DraftId = plan.Id, PlanRevision = 1, Summary = "1 endret, 1 utgått, 0 uten tilgjengelig kilde, 0 kun ordlyd, 1 nye scenarier.",
+            Cases = [new CaseImpact { CaseId = "tsc-borrow", Title = "Borrow a book", Kinds = [CaseImpactKind.ExpectedResultChanged], ReviewedBefore = true, Summary = "Må gjennomgås: forventet resultat endret.",
+                Changes = [new("Forventet resultat", "The loan is registered", "The loan is registered and a receipt is sent")] },
+                new CaseImpact { CaseId = "tsc-return", Title = "Return a book", Kinds = [CaseImpactKind.ScenarioRemoved], Summary = "Utgått scenario." }],
+            NewScenarios = [new CaseImpact { CaseId = "tsc-renew", Title = "Renew a loan", Kinds = [CaseImpactKind.NewScenario] }],
+        };
+        var api = new Api(Workspace(), plan) { Project = ProjectWorkspace() with { PlanStatus = new() { [plan.Id] = status } }, Impact = impact };
+        var cut = Render(api, $"?draft={plan.Id}&area=prepare&case=tsc-borrow");
+
+        cut.Find("[data-testid=tps-plan-source-status]").TextContent.Should().Contain("Må gjennomgås").And.Contain("1 utgått");
+        cut.Find("[data-testid=tps-impact-open]").Click();
+        var panel = cut.Find("[data-testid=tps-impact]");
+        panel.TextContent.Should().Contain("Godkjent tidligere: må gjennomgås").And.Contain("Renew a loan").And.Contain("Ingenting er endret i planen");
+        panel.QuerySelectorAll("[data-testid=tps-impact-case]").Select(e => e.GetAttribute("data-kinds")).Should().Equal("ExpectedResultChanged", "ScenarioRemoved");
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-case-tsc-borrow]").ClassList.Should().Contain("is-open"));
+        cut.Find("[data-testid=tps-case-tsc-borrow] [data-testid=tps-case-conflict]").TextContent.Should().Contain("Trenger avklaring");
+        cut.Find("[data-testid=tps-conflict-tsc-borrow]").TextContent.Should().Contain("Refused (503)").And.Contain("The loan is registered (200)").And.Contain("guide:g/x");
+        cut.Find("[data-testid=tps-conflict-resolve-tsc-borrow]").Click();
+        cut.Find("[data-testid=tps-conflict-save]").HasAttribute("disabled").Should().BeTrue("a rationale is required");
+        cut.Find("[data-testid=tps-conflict-claim]").Change("tsc-borrow");
+        cut.Find("[data-testid=tps-conflict-rationale]").Change("Bekreftet av produkteier");
+        cut.Find("[data-testid=tps-conflict-save]").Click();
+        api.Resolved.Should().NotBeNull();
+        api.Resolved!.ExpectedResult.Should().Be("The loan is registered (200)", "the chosen claim's text, unchanged");
+        api.Resolved.ChosenCandidateId.Should().Be("tsc-borrow");
     }
 
     [Fact]

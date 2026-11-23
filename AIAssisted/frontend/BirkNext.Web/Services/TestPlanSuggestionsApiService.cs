@@ -46,6 +46,12 @@ public interface ITestPlanSuggestionsApiService
     /// <summary>The last discovery result of the project (and snapshot) — no analyzer runs; (null, null) when there is none.</summary>
     Task<(ScenarioDiscoveryResult? Result, string? Error)> LastDiscoveryAsync(string projectKey, Guid? snapshotId, CancellationToken ct = default) =>
         Task.FromResult<(ScenarioDiscoveryResult?, string?)>((null, null));
+    /// <summary>The plan compared with its application's current source basis (changed, removed, unavailable, new). Read-only.</summary>
+    Task<(PlanImpactAnalysis? Impact, string? Error)> ImpactAsync(Guid id, CancellationToken ct = default) =>
+        Task.FromResult<(PlanImpactAnalysis?, string?)>((null, "Konsekvensanalyse er ikke tilgjengelig her."));
+    /// <summary>Records which expected result applies to a case whose sources disagree.</summary>
+    Task<(TestPlanDraft? Draft, string? Error)> ResolveConflictAsync(Guid id, ResolveConflictRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanDraft?, string?)>((null, "Avklaring er ikke tilgjengelig her."));
     Task<(TestPlanDraft? Draft, string? Error)> CreateProjectAsync(CreateProjectTestPlanRequest request, CancellationToken ct = default) =>
         Task.FromResult<(TestPlanDraft?, string?)>((null, NotAvailable));
     Task<(TestPlanDraft? Draft, string? Error)> AddManualCaseAsync(Guid id, AddManualTestCaseRequest request, CancellationToken ct = default) =>
@@ -137,6 +143,12 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http) : ITestPlanSu
             return (null, "Test Plan Suggestions is not reachable.");
         }
     }
+
+    public Task<(PlanImpactAnalysis?, string?)> ImpactAsync(Guid id, CancellationToken ct = default) =>
+        Send<PlanImpactAnalysis>(() => http.GetAsync($"{Base}/drafts/{id}/impact", ct), ct);
+
+    public Task<(TestPlanDraft?, string?)> ResolveConflictAsync(Guid id, ResolveConflictRequest request, CancellationToken ct = default) =>
+        Send<TestPlanDraft>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/resolve-conflict", request, Json, ct), ct);
 
     public Task<(TestPlanDraft?, string?)> CreateProjectAsync(CreateProjectTestPlanRequest request, CancellationToken ct = default) =>
         Send<TestPlanDraft>(() => http.PostAsJsonAsync($"{Base}/project-drafts", request, Json, ct), ct);

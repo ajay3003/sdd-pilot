@@ -542,3 +542,20 @@ textarea.tps-step-text { resize: vertical; min-height: 2.2rem; }
 
 /* Variants of one situation (2026-11-23): one row, variants indented below. */
 .tps-variant-rows { margin: .5rem 0 0 1.75rem; padding-left: .75rem; border-left: 2px solid var(--clr-border); }
+
+/* ── Source basis, plan source status, impact and conflicts (2026-11-23) ── */
+.tps-basis { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; padding: 0.5rem 0.75rem; margin: 0.5rem 0;
+    border: 1px solid var(--clr-border, #d0d7de); border-left: 3px solid var(--clr-success, #1a7f37); border-radius: 10px; background: var(--clr-surface-raised, #fff); }
+.tps-basis.is-historical { border-left-color: var(--clr-primary, #0969da); background: color-mix(in srgb, var(--clr-primary, #0969da) 5%, var(--clr-surface-raised, #fff)); }
+.tps-basis.is-warn { border-left-color: var(--clr-warning, #9a6700); }
+.tps-warn-text { color: var(--clr-warning, #9a6700); }
+.tps-impact { margin: 0.5rem 0 0.75rem; padding: 0.6rem 0.85rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 10px; background: var(--clr-surface, #f6f8fa); }
+.tps-impact ul { margin: 0.35rem 0; display: grid; gap: 0.3rem; }
+.tps-impact-changes { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.25rem 0 0; font-size: 0.85rem; }
+.tps-impact-changes dt { font-weight: 600; }
+.tps-impact-changes dd { margin: 0; overflow-wrap: anywhere; }
+.tps-conflict { margin: 0.4rem 0; padding: 0.5rem 0.75rem; border-radius: 10px; border: 1px solid var(--clr-border, #d0d7de); }
+.tps-conflict.is-open { border-left: 3px solid var(--clr-danger, #cf222e); background: color-mix(in srgb, var(--clr-danger, #cf222e) 4%, var(--clr-surface-raised, #fff)); }
+.tps-conflict.is-resolved { border-left: 3px solid var(--clr-success, #1a7f37); }
+.tps-conflict-form { display: grid; gap: 0.4rem; max-width: 46rem; }
+.tps-conflict-form label { display: grid; gap: 0.15rem; }

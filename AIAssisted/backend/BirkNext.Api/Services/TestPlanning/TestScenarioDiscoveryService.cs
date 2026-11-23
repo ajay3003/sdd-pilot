@@ -164,8 +164,10 @@ public sealed class ExistingTestScenarioProvider : ITestScenarioCandidateProvide
 }
 
 /// <summary>
-/// The last discovery result per project (and per project + snapshot), kept in memory so navigating back never re-runs the analyzers. Bounded;
-/// a restart forgets it (the page then asks for an explicit "Discover test scenarios").
+/// Discovery results kept in memory so navigating back never re-runs the analyzers. Bounded; a restart restores from <see cref="ScenarioDiscoveryStore"/>.
+/// Two kinds of pointer (2026-11-23): the <b>current</b> result of a project and of its application (only results whose basis is the analysis
+/// baseline — <see cref="ScenarioDiscoveryResult.IsCurrent"/>), and the result per project + snapshot (any kind, for looking at a version again).
+/// A historical inspection never moves a current pointer, so plans and Refresh never compare against an older version by accident.
 /// </summary>
 public sealed class ScenarioDiscoveryCache
 {
@@ -173,15 +175,24 @@ public sealed class ScenarioDiscoveryCache
     private readonly ConcurrentDictionary<string, ScenarioDiscoveryResult> _byId = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _latest = new(StringComparer.Ordinal);
 
+    private static string App(string applicationKey) => "@app|" + applicationKey;
+
     public void Store(ScenarioDiscoveryResult result)
     {
         _byId[result.DiscoveryId] = result;
-        _latest[result.ProjectKey] = result.DiscoveryId;
         _latest[$"{result.ProjectKey}|{result.SnapshotKey}"] = result.DiscoveryId;
+        if (result.IsCurrent)
+        {
+            _latest[result.ProjectKey] = result.DiscoveryId;
+            if (Newer(App(result.ApplicationKey), result)) _latest[App(result.ApplicationKey)] = result.DiscoveryId;
+        }
         if (_byId.Count <= Capacity) return;
         var keep = _latest.Values.ToHashSet(StringComparer.Ordinal);
         foreach (var old in _byId.Values.Where(r => !keep.Contains(r.DiscoveryId)).OrderBy(r => r.DiscoveredAt).Take(_byId.Count - Capacity)) _byId.TryRemove(old.DiscoveryId, out _);
     }
+
+    private bool Newer(string key, ScenarioDiscoveryResult result) =>
+        !_latest.TryGetValue(key, out var id) || !_byId.TryGetValue(id, out var held) || held.DiscoveredAt <= result.DiscoveredAt;
 
     /// <summary>Holds a result (read back from storage) for lookup by id without making it the project's latest.</summary>
     public void Remember(ScenarioDiscoveryResult result) => _byId.TryAdd(result.DiscoveryId, result);
@@ -190,16 +201,23 @@ public sealed class ScenarioDiscoveryCache
     public ScenarioDiscoveryResult? Find(string projectKey, string discoveryId) =>
         _byId.TryGetValue(discoveryId, out var r) && string.Equals(r.ProjectKey, projectKey, StringComparison.Ordinal) ? r : null;
 
+    /// <summary>The project's current result (no snapshot), or its result for one snapshot (any kind).</summary>
     public ScenarioDiscoveryResult? Latest(string projectKey, string? snapshotKey = null) =>
         _latest.TryGetValue(snapshotKey is null ? projectKey : $"{projectKey}|{snapshotKey}", out var id) && _byId.TryGetValue(id, out var r) && r.ProjectKey == projectKey ? r : null;
+
+    /// <summary>The newest current result of an application (over every import of it).</summary>
+    public ScenarioDiscoveryResult? CurrentForApplication(string applicationKey) =>
+        _latest.TryGetValue(App(applicationKey), out var id) && _byId.TryGetValue(id, out var r) && r.IsCurrent ? r : null;
 }
 
 /// <summary>
-/// Orchestrates the registered discovery capabilities for one project: loads the project's source snapshot, runs every provider (a failing provider
-/// is reported, never hides the others), normalises and deduplicates on canonical identity and remembers the result. Runs only when asked.
+/// Orchestrates the registered discovery capabilities for one project over one consistent source basis (<see cref="ScenarioSourceBasisResolver"/>):
+/// every source of the basis is read in the version the analysis baseline names (each source-based provider runs once per source), the
+/// specification comes from the import of that version, a failing provider is reported and never hides the others, candidates are normalised,
+/// consolidated (exact duplicates only) and checked for conflicting expected results, and the result is remembered. Runs only when asked.
 /// </summary>
 public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources, IEnumerable<ITestScenarioCandidateProvider> providers, ScenarioDiscoveryCache cache,
-    TimeProvider? clock = null, ILogger<TestScenarioDiscoveryService>? logger = null, ScenarioDiscoveryStore? store = null)
+    TimeProvider? clock = null, ILogger<TestScenarioDiscoveryService>? logger = null, ScenarioDiscoveryStore? store = null, ScenarioSourceBasisResolver? basisResolver = null)
 {
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._:\-]{0,199}$")]
     private static partial Regex ValidKey();
@@ -211,41 +229,76 @@ public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources,
     {
         var projectKey = Key(request.ProjectKey);
         var limitations = new List<string>();
-        IqrSourceSnapshot? snapshot = null;
-        if (request.SnapshotId is { } id)
+        IReadOnlyList<IqrSourceSnapshot> snapshots;
+        IReadOnlyList<CoverageWorkspaceEvidence?> specifications;
+        DiscoverySourceBasis? basis = null;
+        if (basisResolver is not null)
         {
-            snapshot = await sources.FindSourceAnalysisAsync(id, ct);
-            if (snapshot is null) limitations.Add("The project's source snapshot was not found (removed or reset); source-based capabilities were skipped.");
+            var resolved = await basisResolver.ResolveAsync(projectKey, request.SnapshotId, request.MemberSnapshotIds, request.Inspect, request.Workspace, request.UseWorkingSpecification, ct);
+            basis = resolved.Basis;
+            snapshots = resolved.Snapshots;
+            specifications = resolved.Specifications.Count > 0 ? [.. resolved.Specifications] : [null];
+            limitations.AddRange(resolved.Limitations);
+            limitations.AddRange(resolved.Basis.Problems);
+            if (resolved.Basis.Members.Count == 0) limitations.Add("No source snapshot is linked to this project: only workspace documents were read.");
         }
-        else limitations.Add("No source snapshot is linked to this project: only workspace documents were read.");
-        var context = new ScenarioDiscoveryContext(projectKey, request.ProjectName?.Trim(), snapshot, request.Workspace, request.EnvironmentId);
+        else
+        {
+            // Without the resolver (focused unit tests): the one requested snapshot and the browser's documents, as before.
+            IqrSourceSnapshot? snapshot = null;
+            if (request.SnapshotId is { } id)
+            {
+                snapshot = await sources.FindSourceAnalysisAsync(id, ct);
+                if (snapshot is null) limitations.Add("The project's source snapshot was not found (removed or reset); source-based capabilities were skipped.");
+            }
+            else limitations.Add("No source snapshot is linked to this project: only workspace documents were read.");
+            snapshots = snapshot is null ? [] : [snapshot];
+            specifications = [request.Workspace];
+        }
+
+        var primary = snapshots.FirstOrDefault();
+        var name = request.ProjectName?.Trim();
         var capabilities = new List<DiscoveryCapability>();
         var candidates = new List<DiscoveredScenario>();
         var links = new List<RequirementTestLink>();
         foreach (var provider in providers)
         {
-            try
+            // The specification provider reads each specification of the basis; every other provider reads each source of the basis (or none).
+            List<ScenarioDiscoveryContext> contexts = provider.CapabilityId == D.Specification
+                ? [.. specifications.Select(spec => new ScenarioDiscoveryContext(projectKey, name, primary, spec, request.EnvironmentId))]
+                : snapshots.Count == 0 ? [new ScenarioDiscoveryContext(projectKey, name, null, specifications[0], request.EnvironmentId)]
+                : [.. snapshots.Select(s => new ScenarioDiscoveryContext(projectKey, name, s, specifications[0], request.EnvironmentId))];
+            var outputs = new List<DiscoveryCapability>();
+            foreach (var context in contexts)
             {
-                var output = await provider.DiscoverAsync(context, ct);
-                capabilities.Add(output.Capability);
-                candidates.AddRange(output.Candidates);
-                if (output.TestLinks is { } l) links.AddRange(l);
+                try
+                {
+                    var output = await provider.DiscoverAsync(context, ct);
+                    outputs.Add(output.Capability);
+                    var origin = provider.CapabilityId == D.Specification ? basis?.SpecificationReference ?? "" : context.Snapshot?.Id.ToString() ?? "";
+                    candidates.AddRange(output.Candidates.Select(c => c.SnapshotKey.Length > 0 ? c : c with { SnapshotKey = origin }));
+                    if (output.TestLinks is { } l) links.AddRange(l);
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    logger?.LogWarning(e, "Test scenario discovery capability {Capability} failed for project {Project}", provider.CapabilityId, projectKey);
+                    outputs.Add(D.Capability(provider.CapabilityId, DiscoveryCapabilityState.Failed, 0, "The analyzer could not read this project's evidence. Other capabilities are unaffected.", provider.CapabilityId));
+                }
             }
-            catch (Exception e) when (e is not OperationCanceledException)
-            {
-                logger?.LogWarning(e, "Test scenario discovery capability {Capability} failed for project {Project}", provider.CapabilityId, projectKey);
-                capabilities.Add(D.Capability(provider.CapabilityId, DiscoveryCapabilityState.Failed, 0, "The analyzer could not read this project's evidence. Other capabilities are unaffected.", provider.CapabilityId));
-            }
+            capabilities.Add(D.MergeCapabilities(outputs));
         }
-        var snapshotKey = snapshot?.Id.ToString() ?? "";
+        var snapshotKey = primary?.Id.ToString() ?? "";
         var final = D.Finalize(projectKey, snapshotKey, candidates, links);
         if (candidates.Count > D.MaxCandidates) limitations.Add($"Only the first {D.MaxCandidates} candidates are kept.");
         var fingerprint = E.Sha(string.Join("\n", final.Select(c => c.CandidateId + ":" + c.Fingerprint)));
         var result = new ScenarioDiscoveryResult
         {
-            DiscoveryId = E.Sha($"{projectKey}|{snapshotKey}|{fingerprint}|{D.RuleVersion}")[..24], ProjectKey = projectKey, ProjectName = context.ProjectName, SnapshotKey = snapshotKey,
-            SnapshotLabel = snapshot is null ? null : $"{snapshot.Archive.FileName} · {snapshot.AnalyzedAt:yyyy-MM-dd HH:mm}",
-            RuleVersion = D.RuleVersion, DiscoveredAt = (clock ?? TimeProvider.System).GetUtcNow(), Capabilities = capabilities, Candidates = final, Limitations = limitations,
+            DiscoveryId = E.Sha($"{projectKey}|{basis?.Fingerprint ?? snapshotKey}|{fingerprint}|{D.RuleVersion}")[..24], ProjectKey = projectKey, ProjectName = name,
+            SnapshotKey = snapshotKey,
+            SnapshotLabel = primary is null ? null : $"{primary.Archive.FileName} · {primary.AnalyzedAt:yyyy-MM-dd HH:mm}",
+            RuleVersion = D.RuleVersion, DiscoveredAt = (clock ?? TimeProvider.System).GetUtcNow(),
+            Capabilities = [.. capabilities.Select(c => c.State == DiscoveryCapabilityState.Available ? c with { Candidates = final.Count(x => x.CapabilityId == c.Id) } : c)],
+            Candidates = final, Limitations = [.. limitations.Distinct(StringComparer.Ordinal)], Basis = basis,
         };
         cache.Store(result);
         if (store is not null)
@@ -264,7 +317,8 @@ public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources,
     /// <summary>The last result for the project (and snapshot, when given); null when discovery has not run since BirkNext started.</summary>
     public ScenarioDiscoveryResult? Last(string projectKey, Guid? snapshotId) => cache.Latest(Key(projectKey), snapshotId?.ToString());
 
-    /// <summary>The last result for the project (and snapshot), restored from storage after a restart; null when the project was never discovered.</summary>
+    /// <summary>The last result for the project (and snapshot), restored from storage after a restart; null when the project was never discovered.
+    /// Without a snapshot: the project's current result — a historical inspection is never returned as current.</summary>
     public async Task<ScenarioDiscoveryResult?> LastAsync(string projectKey, Guid? snapshotId, CancellationToken ct)
     {
         var key = Key(projectKey);

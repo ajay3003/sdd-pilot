@@ -82,6 +82,21 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
         return (null, specification);
     }
 
+    /// <summary>Every source snapshot bound to the project (all roles; the server resolves each to its logical source and analysis baseline, so a
+    /// discovery reads one consistent source basis), plus the resolved project snapshot. Empty when no project evidence is known.</summary>
+    public static IReadOnlyList<Guid> MemberSnapshots(IServiceProvider services)
+    {
+        try
+        {
+            if (services.GetService(typeof(ProjectEvidence.IProjectEvidenceService)) is not ProjectEvidence.IProjectEvidenceService evidence) return [];
+            var view = evidence.Peek();
+            var bound = ProjectEvidence.ProjectEvidenceResolver.BoundSnapshots(view.Project).ToList();
+            if (ResolveSnapshot(services).Id is { } main && !bound.Contains(main)) bound.Insert(0, main);
+            return bound;
+        }
+        catch (InvalidOperationException) { return []; }
+    }
+
     /// <summary>The project's snapshot: the imported package of the current workspace scope, else the project evidence's main package. Never the
     /// newest snapshot of some other repository.</summary>
     public static (Guid? Id, string? Basis) ResolveSnapshot(IServiceProvider services)

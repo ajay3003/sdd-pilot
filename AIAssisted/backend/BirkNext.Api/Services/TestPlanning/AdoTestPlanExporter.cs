@@ -58,7 +58,8 @@ public static partial class AdoTestPlanExporter
 
             var steps = Steps(text.Steps, text.StepExpected, text.Preconditions, profile.Preconditions);
             if (excluded is null && !string.IsNullOrWhiteSpace(request.Language) && text.Note is { } languageNote)
-                caseIssues.Add(new(text.Translated ? AdoIssueLevel.Warning : AdoIssueLevel.Info, languageNote, id));
+                // Both are warnings: a fallback to the original language and a translation made from an older original are never silent.
+                caseIssues.Add(new(AdoIssueLevel.Warning, languageNote, id));
             if (excluded is null)
             {
                 if (title.Length == 0) caseIssues.Add(new(AdoIssueLevel.Blocking, "The test case has no title.", id));
@@ -126,6 +127,9 @@ public static partial class AdoTestPlanExporter
             issues.Add(new(AdoIssueLevel.Info, "Test Data is referenced by name in the mapping report only; no Test Data values are exported."));
         if (profile.Format == AdoExportFormat.Csv && profile.CsvSpreadsheetSafe && rows.Any(r => Cells(r).Any(Risky)))
             issues.Add(new(AdoIssueLevel.Warning, "Some cells start with = + - or @. In the CSV they get a leading apostrophe so a spreadsheet program never runs them; Azure DevOps keeps that apostrophe as text. Choose Excel (.xlsx) to keep them exactly."));
+        if (!string.IsNullOrWhiteSpace(request.Language) && exported.Count(c => c.Language != request.Language) is var untranslated and > 0)
+            issues.Add(new(AdoIssueLevel.Warning, $"The file is not fully in {TranslationLanguages.Name(request.Language)}: {untranslated} of {exported.Count} test case{(exported.Count == 1 ? "" : "s")} "
+                + "have no complete text in that language and are exported in the original language (each case stays in one language)."));
         if (exported.Count == 0) issues.Add(new(AdoIssueLevel.Blocking, "No test case is ready for export. Select cases, or fix the ones that need attention."));
 
         var attention = cases.Count(c => c.Included && c.Issues.Any(i => i.Level == AdoIssueLevel.Blocking));

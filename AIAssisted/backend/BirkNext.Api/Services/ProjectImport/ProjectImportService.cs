@@ -112,20 +112,19 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
             var settled = !source.CanRetry;
             var gapEvaluationId = settled ? await ImplementationGapsAsync(staged, source, ct) : null;
             await SpecificationCatalogAsync(staged, source, ct);
-            if (settled && source.SnapshotId is { } sourceSnapshotId && guides is not null && staged.Workspace.DocumentFiles is { Count: > 0 } guideDocuments)
+            if (settled && source.SnapshotId is { } sourceSnapshotId && guides is not null)
             {
+                // System Understanding generation is a durable job (2026-11-23): the snapshot and the captured specification are saved first; the job
+                // only records what to generate, so the import stays fast and a failed generation is visible and retryable in System Understanding.
                 try
                 {
                     var snapshot = await store.FindSourceAnalysisAsync(sourceSnapshotId, ct);
-                    if (snapshot is not null)
-                        await guides.GenerateSpecificationCandidatesAsync(snapshot, guideDocuments.Select(d => (d.Path, d.Content)), ct);
+                    if (snapshot is not null) await guides.EnqueueGenerationAsync(snapshot, ct);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
-                    // Candidate generation is deliberately isolated from import success. The source snapshot and captured specification remain
-                    // available for an explicit retry; a failed generator never changes a reviewed guide.
-                    logger.LogError("System Understanding candidate generation failed after source import {ImportId}. Exception type {ExceptionType}", staged.ImportId, ex.GetType().Name);
+                    logger.LogError("System Understanding generation could not be scheduled after source import {ImportId}. Exception type {ExceptionType}", staged.ImportId, ex.GetType().Name);
                 }
             }
             var result = new ProjectImportCommitResult

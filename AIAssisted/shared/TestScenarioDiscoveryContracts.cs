@@ -190,6 +190,14 @@ public sealed record DiscoveredScenario
     public List<BirkNext.TestCoverage.CoverageClarification> Clarifications { get; init; } = [];
     /// <summary>The scenario's number within its story.</summary>
     public int? NumberInStory { get; init; }
+    /// <summary>Project-independent identity (capability + canonical key): the same scenario in another import of the same application.</summary>
+    public string SourceIdentity { get; init; } = "";
+    /// <summary>Canonical keys of exact duplicates from other sources merged into this candidate (their evidence is kept above).</summary>
+    public List<string> MergedFrom { get; init; } = [];
+    /// <summary>Equivalent, related, variant or conflicting candidates of other sources (never merged).</summary>
+    public List<ScenarioRelationNote> Relations { get; init; } = [];
+    /// <summary>Expected-result conflicts with other sources for the same situation (each claim kept with its provenance).</summary>
+    public List<ScenarioConflict> Conflicts { get; init; } = [];
     [JsonIgnore] public bool NeedsClarification => ExpectedBehaviour is null;
 }
 
@@ -205,6 +213,8 @@ public sealed record DiscoveryCapability
     public string Detail { get; init; } = "";
     public string Engine { get; init; } = "";
     public List<string> Limitations { get; init; } = [];
+    /// <summary>The analyzer failed for at least one source of the basis (another may still have had evidence): its absence there is not evidence.</summary>
+    public bool PartialFailure { get; init; }
 }
 
 /// <summary>An explicit discovery run for one project. The browser sends the workspace documents it owns (specification requirements and acceptance
@@ -216,6 +226,85 @@ public sealed record ScenarioDiscoveryRequest
     public Guid? SnapshotId { get; init; }
     public string? EnvironmentId { get; init; }
     public BirkNext.TestCoverage.CoverageWorkspaceEvidence? Workspace { get; init; }
+    /// <summary>Every source snapshot bound to the project (any role, any version). The server maps each to its logical source and resolves the
+    /// version through the analysis baseline, so the result has one consistent source basis. Empty = only <see cref="SnapshotId"/>.</summary>
+    public List<Guid> MemberSnapshotIds { get; init; } = [];
+    /// <summary>True = a deliberate look at <see cref="SnapshotId"/> even when it is not the source's current baseline version (historical
+    /// inspection). Such a result never becomes the project's current discovery.</summary>
+    public bool Inspect { get; init; }
+    /// <summary>True = use the browser's working specification text (<see cref="Workspace"/>) instead of the imported specification. The result is
+    /// then marked as draft-based with the working text's fingerprint; it is never presented as the imported source.</summary>
+    public bool UseWorkingSpecification { get; init; }
+}
+
+/// <summary>What a discovery result rests on: Current = the analysis baseline of every source; Historical = a deliberate inspection of another
+/// version; DocumentsOnly = no source snapshot.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DiscoveryBasisKind { Current, Historical, DocumentsOnly }
+
+/// <summary>Where the specification scenarios came from: the imported specification of the basis (server-held), the browser's working text (draft),
+/// the browser text of an older client (no imported specification known), or none.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SpecificationOrigin { None, ImportedSnapshot, WorkingDraft, BrowserUnverified }
+
+/// <summary>One logical source of a basis: its identity, the version used and why (baseline state code).</summary>
+public sealed record DiscoverySourceMember
+{
+    /// <summary>The logical source identity (repository key), shared by every import of the same source.</summary>
+    public string RepositoryKey { get; init; } = "";
+    public string DisplayName { get; init; } = "";
+    public Guid? SnapshotId { get; init; }
+    public string? ArchiveName { get; init; }
+    public DateTimeOffset? AnalyzedAt { get; init; }
+    public string? ContentFingerprint { get; init; }
+    /// <summary>BASELINE_SELECTED, SINGLE_SNAPSHOT, IDENTICAL_CONTENT, BASELINE_NOT_SELECTED, BASELINE_UNAVAILABLE, or INSPECTED (a deliberate other version).</summary>
+    public string StateCode { get; init; } = "";
+    /// <summary>A newer import of this source that is not the version used (shown as "Ny kildeversjon"); null when none.</summary>
+    public Guid? NewerSnapshotId { get; init; }
+    public string? NewerArchiveName { get; init; }
+    [JsonIgnore] public bool Resolved => SnapshotId is not null;
+}
+
+/// <summary>The consistent source basis of a discovery result (and of a plan prepared from it).</summary>
+public sealed record DiscoverySourceBasis
+{
+    /// <summary>The application the sources belong to: the logical identity of its application source (the same for every import of it); the
+    /// project key when no source snapshot is known.</summary>
+    public string ApplicationKey { get; init; } = "";
+    public DiscoveryBasisKind Kind { get; init; }
+    public List<DiscoverySourceMember> Members { get; init; } = [];
+    public SpecificationOrigin SpecificationOrigin { get; init; }
+    /// <summary>The imported specification catalog used (its key and revision), or the working text's fingerprint for a draft.</summary>
+    public string? SpecificationReference { get; init; }
+    public string? SpecificationFingerprint { get; init; }
+    /// <summary>Identity of the basis: changes when any member version or the specification changes.</summary>
+    public string Fingerprint { get; init; } = "";
+    /// <summary>Sources that could not be resolved (no baseline among different versions, unavailable baseline …), in plain words.</summary>
+    public List<string> Problems { get; init; } = [];
+    [JsonIgnore] public bool Complete => Problems.Count == 0 && Members.All(m => m.Resolved);
+}
+
+/// <summary>How two candidates of different sources relate (2026-11-23 consolidation). Exact duplicates are merged (evidence kept); everything else
+/// stays a separate candidate with this note for a reviewer.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ScenarioRelation { ExactDuplicate, Equivalent, Related, Conflicting, Variant }
+
+public sealed record ScenarioRelationNote(ScenarioRelation Relation, string OtherCandidateId, string Reason);
+
+/// <summary>One source's claim about the expected result of the same situation; kept with its exact provenance, never chosen automatically.</summary>
+public sealed record ScenarioClaim(string CandidateId, string SourceCategory, string Expected, string EvidenceReference);
+
+/// <summary>Why two expected results disagree (or apparently disagree).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ConflictKind { ContradictoryExpectedResult, DifferentPreconditions, DifferentSourceVersion, DifferentFailureCondition, TranslationInconsistency, UnsupportedClaim }
+
+/// <summary>An expected-result conflict between sources for the same situation. Generated cases with an unresolved conflict are never Ready.</summary>
+public sealed record ScenarioConflict
+{
+    public ConflictKind Kind { get; init; }
+    public List<ScenarioClaim> Claims { get; init; } = [];
+    /// <summary>Plain Norwegian explanation shown to testers.</summary>
+    public string Explanation { get; init; } = "";
 }
 
 public sealed record ScenarioDiscoveryResult
@@ -231,7 +320,11 @@ public sealed record ScenarioDiscoveryResult
     public List<DiscoveryCapability> Capabilities { get; init; } = [];
     public List<DiscoveredScenario> Candidates { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
+    /// <summary>The consistent source basis this result was discovered against (null for results stored before 2026-11-23).</summary>
+    public DiscoverySourceBasis? Basis { get; init; }
     [JsonIgnore] public bool HasCandidates => Candidates.Count > 0;
+    [JsonIgnore] public string ApplicationKey => Basis?.ApplicationKey is { Length: > 0 } a ? a : ProjectKey;
+    [JsonIgnore] public bool IsCurrent => Basis is null || Basis.Kind != DiscoveryBasisKind.Historical;
 }
 
 /// <summary>Prepare test cases from selected candidates of one project. A plan name is optional here (asked for only at save/export).</summary>

@@ -29,7 +29,7 @@ public sealed class SystemGuideException(int status, string message) : Exception
 /// <c>system_guide_revisions</c>; a seed is inserted once as an unreviewed Draft (never Approved), a published revision is never rewritten,
 /// and newly imported source snapshots for the guide's roles are reported as "may need review" — the content is never rewritten automatically.
 /// </summary>
-public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideCatalogEntry> catalog, IEnumerable<IIntegrationJourneyPack> packs, TimeProvider? clock = null)
+public sealed partial class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideCatalogEntry> catalog, IEnumerable<IIntegrationJourneyPack> packs, TimeProvider? clock = null)
 {
     public const string SeedAuthor = "BirkNext curated seed (not reviewed)";
 
@@ -42,8 +42,10 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
 
     // ── Catalog and seeds ────────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>A registered guide (with its curated legacy seed), or an application guide generated from imported sources (no seed, 2026-11-23).</summary>
     public SystemGuideCatalogEntry Entry(string guideKey) =>
-        catalog.FirstOrDefault(e => string.Equals(e.GuideKey, guideKey, StringComparison.Ordinal)) ?? throw new SystemGuideException(404, $"Unknown guide '{guideKey}'.");
+        catalog.FirstOrDefault(e => string.Equals(e.GuideKey, guideKey, StringComparison.Ordinal))
+        ?? (IsApplicationGuide(guideKey) ? new SystemGuideCatalogEntry(guideKey, "") : throw new SystemGuideException(404, $"Unknown guide '{guideKey}'."));
 
     /// <summary>The embedded curated seed of a guide (validated: every reference inside the guide resolves).</summary>
     public static SystemGuideContent LoadSeed(string resource, Assembly? assembly = null)
@@ -66,6 +68,7 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
     /// </summary>
     private async Task EnsureSeededAsync(SystemGuideCatalogEntry entry, CancellationToken ct)
     {
+        if (string.IsNullOrEmpty(entry.SeedResource)) return; // an application guide has no curated seed: it starts from source candidates
         var rows = await db.SystemGuideRevisions.Where(r => r.GuideKey == entry.GuideKey).OrderBy(r => r.Revision).Take(2).ToListAsync(ct);
         if (rows.Count == 1 && rows[0] is { Revision: 1, State: nameof(GuideRevisionState.Draft), CreatedBy: SeedAuthor } untouched)
         {
@@ -106,10 +109,16 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
     public async Task<IReadOnlyList<SystemGuideSummary>> ListAsync(CancellationToken ct)
     {
         var result = new List<SystemGuideSummary>();
-        foreach (var entry in catalog)
+        foreach (var entry in catalog.Concat((await ApplicationGuideKeysAsync(ct)).Select(k => new SystemGuideCatalogEntry(k, ""))))
         {
             await EnsureSeededAsync(entry, ct);
             var rows = await db.SystemGuideRevisions.AsNoTracking().Where(r => r.GuideKey == entry.GuideKey).ToListAsync(ct);
+            if (rows.Count == 0)
+            {
+                var title = await ApplicationTitleAsync(entry.GuideKey, ct);
+                result.Add(new SystemGuideSummary(entry.GuideKey, title, "Generert fra importerte kilder; ingen revisjon er laget ennå.", "Ingen revisjon ennå — forslag fra kilden venter på gjennomgang", null, null, 1, 1));
+                continue;
+            }
             var published = rows.FirstOrDefault(r => r.State == nameof(GuideRevisionState.Published));
             var open = rows.Where(r => r.State is nameof(GuideRevisionState.Draft) or nameof(GuideRevisionState.InReview) or nameof(GuideRevisionState.Approved))
                 .OrderByDescending(r => r.Revision).FirstOrDefault();
@@ -128,6 +137,7 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
         var entry = Entry(guideKey);
         await EnsureSeededAsync(entry, ct);
         var rows = await db.SystemGuideRevisions.AsNoTracking().Where(r => r.GuideKey == guideKey).OrderBy(r => r.Revision).ToListAsync(ct);
+        if (rows.Count == 0) return (await EmptyRevisionAsync(guideKey, ct), "None");
         var published = rows.FirstOrDefault(r => r.State == nameof(GuideRevisionState.Published));
         var open = rows.Where(r => r.State is nameof(GuideRevisionState.Draft) or nameof(GuideRevisionState.InReview) or nameof(GuideRevisionState.Approved))
             .OrderByDescending(r => r.Revision).FirstOrDefault();
@@ -163,6 +173,13 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
             if (recognised.Count > 0)
                 result.Add((shown, recognised, roles.GroupBy(r => r.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().Label, StringComparer.Ordinal)));
         }
+        // Application guides (generated from sources, no seed): the guide of each snapshot's own application, once a person made a revision of it.
+        foreach (var key in snapshots.Select(s => ApplicationGuideKey(SourceAnalysis.SourceBaselineService.KeyOf(s))).Distinct(StringComparer.Ordinal))
+        {
+            if (result.Any(r => r.Item1.GuideKey == key) || !await db.SystemGuideRevisions.AnyAsync(r => r.GuideKey == key, ct)) continue;
+            var (shown, _) = await ShownAsync(key, ct);
+            result.Add((shown, new HashSet<string>(StringComparer.Ordinal) { ApplicationRole }, new Dictionary<string, string>(StringComparer.Ordinal) { [ApplicationRole] = shown.Content.Title }));
+        }
         return result;
     }
 
@@ -179,8 +196,8 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
         var published = rows.FirstOrDefault(r => r.State == nameof(GuideRevisionState.Published));
         var open = rows.Where(r => r.State is nameof(GuideRevisionState.Draft) or nameof(GuideRevisionState.InReview) or nameof(GuideRevisionState.Approved))
             .OrderByDescending(r => r.Revision).FirstOrDefault();
-        var shownRow = published ?? open ?? rows.Last();
-        var shown = ToRevision(shownRow);
+        var shownRow = published ?? open ?? rows.LastOrDefault();
+        var shown = shownRow is null ? await EmptyRevisionAsync(guideKey, ct) : ToRevision(shownRow);
         snapshots ??= await new Integrations.SourceEvidence.IqrSourceStore(db).ListSourceAnalysisIdentitiesAsync(500, ct);
         var current = await CurrentSourcesAsync(entry, shown.Content, ct, snapshots);
         return new SystemGuideView
@@ -202,74 +219,6 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
         return ToRevision(row);
     }
 
-    /// <summary>Generates a deterministic, unreviewed candidate from explicitly parsed specification documents in this import. Existing guide
-    /// revisions and open human drafts are never modified. Other evidence domains remain outside this deterministic generator and are not inferred.</summary>
-    public async Task<IReadOnlyList<SystemGuideCandidateView>> GenerateSpecificationCandidatesAsync(IqrSourceSnapshot snapshot,
-        IEnumerable<(string Path, string Content)> documents, CancellationToken ct)
-    {
-        var specs = documents.Where(d => d.Path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)).ToList();
-        var classified = ArtifactDocumentDiscovery.Classify(specs.Select(d => new ArtifactDocumentDiscovery.Candidate(d.Path, System.IO.Path.GetFileName(d.Path), d.Content)));
-        var selected = classified.Where(d => d.Role == WorkspaceArtifactType.Specification).Select(d => d.RelativePath).ToHashSet(StringComparer.Ordinal);
-        if (selected.Count == 0) return [];
-        var inputFingerprint = SpecificationCatalogService.Sha(snapshot.Archive.Sha256 + "\n" + string.Join("\n", specs.Where(d => selected.Contains(d.Path)).OrderBy(d => d.Path, StringComparer.Ordinal)
-            .Select(d => $"{d.Path}\u001f{SpecificationCatalogService.Sha(d.Content)}")));
-        var sourceFingerprint = SourceAnalysis.SourceBaselineService.ContentOf(snapshot);
-        var created = new List<SystemGuideCandidateView>();
-        foreach (var entry in catalog)
-        {
-            var pack = entry.PackId is null ? null : packs.FirstOrDefault(p => p.PackId == entry.PackId);
-            var guide = LoadSeed(entry.SeedResource);
-            var roles = Roles(entry, guide);
-            var matchingRoles = roles.Where(r => TestPackSources.Recognizes(r, snapshot)).Select(r => r.Key).ToHashSet(StringComparer.Ordinal);
-            if (matchingRoles.Count == 0) continue;
-
-            var generated = new List<GuideTestScenario>();
-            var evidence = new List<GuideEvidence>();
-            foreach (var doc in specs.Where(d => selected.Contains(d.Path)).OrderBy(d => d.Path, StringComparer.Ordinal))
-            {
-                var model = SpecExplorerService.BuildSemanticModel(SpecExplorerService.Parse(doc.Content), doc.Content);
-                foreach (var (item, ordinal) in model.AcceptanceScenarios.Select((scenario, index) => (scenario, index + 1)))
-                {
-                    // The shared semantic parser leaves Id null when a document did not author one. Use its structural identity (story + ordinal,
-                    // else source line + ordinal) rather than its translated/display title.
-                    var sourceIdentity = item.Id ?? $"scenario:{item.ParentStoryKey ?? "feature"}:{item.NumberInStory?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? item.LineStart?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
-                    var scenarioId = "spec-" + SpecificationCatalogService.Sha(doc.Path + "|" + sourceIdentity)[..20];
-                    var ev = new GuideEvidence { Class = GuideEvidenceClass.Specified, SourceRole = matchingRoles.Order(StringComparer.Ordinal).First(),
-                        SourceLabel = snapshot.Archive.FileName, File = doc.Path, Lines = item.LineStart is { } line ? line.ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
-                        RequirementId = item.LinkedRequirements.FirstOrDefault()?.Id, Note = $"Scenario {item.Id} parsed from the imported specification." };
-                    evidence.Add(ev);
-                    generated.Add(new GuideTestScenario { Id = scenarioId, Title = string.IsNullOrWhiteSpace(item.Title) ? item.Id : item.Title,
-                        Objective = item.Then ?? "", Preconditions = item.Given, ExpectedOutcome = item.Then, State = string.IsNullOrWhiteSpace(item.Then) ? GuideScenarioState.NeedsClarification : GuideScenarioState.Suggested,
-                        FollowUp = string.IsNullOrWhiteSpace(item.When) ? "Avklar teststeget (When) i spesifikasjonen." : null, Evidence = [ev] });
-                }
-            }
-            if (generated.Count == 0) continue;
-            var previous = await db.SystemGuideRevisions.AsNoTracking().Where(r => r.GuideKey == entry.GuideKey)
-                .OrderByDescending(r => r.Revision).Select(r => r.ContentJson).FirstOrDefaultAsync(ct);
-            var current = previous is null ? guide : JsonSerializer.Deserialize<SystemGuideContent>(previous, Json) ?? guide;
-            var previousScenarios = current.Scenarios.ToDictionary(s => s.Id, StringComparer.Ordinal);
-            var changes = generated.Select(s => previousScenarios.TryGetValue(s.Id, out var old)
-                ? old.ExpectedOutcome == s.ExpectedOutcome ? null : new SystemGuideCandidateChange("ChangedExpectedResult", s.Id, s.Title, old.ExpectedOutcome, s.ExpectedOutcome, old.Evidence, s.Evidence)
-                : new SystemGuideCandidateChange("NewScenario", s.Id, s.Title, null, s.ExpectedOutcome, [], s.Evidence)).Where(c => c is not null).Cast<SystemGuideCandidateChange>().ToList();
-            // Candidate is an additive projection. Source absence does not delete any reviewed scenario.
-            var content = current with { Scenarios = [.. current.Scenarios.Where(s => !generated.Any(g => g.Id == s.Id)), .. generated] };
-            var contentFingerprint = Fingerprint(content);
-            var prior = await db.SystemGuideCandidates.AsNoTracking().FirstOrDefaultAsync(c => c.GuideKey == entry.GuideKey && c.InputFingerprint == inputFingerprint, ct);
-            if (prior is null)
-            {
-                var row = new SystemGuideCandidateRecord { Id = Guid.NewGuid(), GuideKey = entry.GuideKey, SourceSnapshotId = snapshot.Id,
-                    SourceFingerprint = sourceFingerprint, InputFingerprint = inputFingerprint, ContentFingerprint = contentFingerprint, ContentJson = JsonSerializer.Serialize(content, Json),
-                    ChangesJson = JsonSerializer.Serialize(changes, Json), EvidenceJson = JsonSerializer.Serialize(evidence, Json), Status = "NeedsReview", CreatedAt = Now,
-                    GeneratorVersion = "spec-guide-1" };
-                db.SystemGuideCandidates.Add(row);
-                try { await db.SaveChangesAsync(ct); prior = row; }
-                catch (DbUpdateException) { db.ChangeTracker.Clear(); prior = await db.SystemGuideCandidates.AsNoTracking().FirstOrDefaultAsync(c => c.GuideKey == entry.GuideKey && c.InputFingerprint == inputFingerprint, ct); }
-            }
-            if (prior is not null) created.Add(ToCandidate(prior));
-        }
-        return created;
-    }
-
     public async Task<IReadOnlyList<SystemGuideCandidateView>> CandidatesAsync(string guideKey, CancellationToken ct)
     {
         Entry(guideKey);
@@ -283,7 +232,7 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
         var entry = Entry(guideKey);
         await EnsureSeededAsync(entry, ct);
         var open = await db.SystemGuideRevisions.AnyAsync(r => r.GuideKey == guideKey && (r.State == nameof(GuideRevisionState.Draft) || r.State == nameof(GuideRevisionState.InReview)), ct);
-        if (open) throw new SystemGuideException(409, "A guide draft or review is already open. Reconcile the source proposal with that revision first.");
+        if (open) throw new SystemGuideException(409, "Et utkast eller en gjennomgang er allerede åpen. Vurder endringene i forslaget og velg «Legg inn i utkastet» — det fletter dem inn uten å overskrive utkastet.");
         var candidate = await db.SystemGuideCandidates.SingleOrDefaultAsync(c => c.GuideKey == guideKey && c.Id == candidateId, ct)
             ?? throw new SystemGuideException(404, "The source candidate was not found.");
         var content = JsonSerializer.Deserialize<SystemGuideContent>(candidate.ContentJson, Json) ?? throw new SystemGuideException(409, "The source candidate is unreadable.");
@@ -307,7 +256,10 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
         row.ContentFingerprint, row.CreatedAt, row.GeneratorVersion, row.Status,
         JsonSerializer.Deserialize<SystemGuideContent>(row.ContentJson, Json) ?? new(),
         JsonSerializer.Deserialize<List<SystemGuideCandidateChange>>(row.ChangesJson, Json) ?? [],
-        JsonSerializer.Deserialize<List<GuideEvidence>>(row.EvidenceJson, Json) ?? []);
+        JsonSerializer.Deserialize<List<GuideEvidence>>(row.EvidenceJson, Json) ?? [],
+        row.DecisionsJson is null ? null : JsonSerializer.Deserialize<List<GuideChangeDecision>>(row.DecisionsJson, Json),
+        row.SupportingJson is null ? null : JsonSerializer.Deserialize<List<string>>(row.SupportingJson, Json),
+        row.SupersededBy, row.SourceLabel);
 
     private static string ReviewState(SystemGuideRevisionRecord? published, SystemGuideRevisionRecord? open) => (published, open) switch
     {

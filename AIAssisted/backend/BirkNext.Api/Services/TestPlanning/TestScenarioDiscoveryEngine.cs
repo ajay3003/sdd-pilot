@@ -47,9 +47,31 @@ public static class TestScenarioDiscoveryEngine
     private static DiscoveredScenario Finish(DiscoveredScenario c, string projectKey) => c with
     {
         CandidateId = CandidateId(projectKey, c.CapabilityId, c.CanonicalKey), ProjectKey = projectKey, RuleVersion = RuleVersion,
+        SourceIdentity = c.SourceIdentity.Length > 0 ? c.SourceIdentity : SourceIdentityOf(c.CapabilityId, c.CanonicalKey),
         Title = Clip(c.Title, 300), Purpose = Clip(c.Purpose, 1000),
         Fingerprint = E.Sha(JsonSerializer.Serialize(new { c.Title, c.Purpose, c.Type, c.ExpectedBehaviour, c.Preconditions, c.Steps, c.Template, c.TestDataNeeds, c.RequirementIds }, E.Json)),
     };
+
+    /// <summary>Project-independent identity of a candidate (capability + canonical key): the same scenario in another import of the application.</summary>
+    public static string SourceIdentityOf(string capability, string canonicalKey) => "tss-" + E.Sha($"{capability}|{canonicalKey}")[..16];
+
+    /// <summary>One capability's state over every source of a basis: Available if any source had evidence, else Failed if one failed (so a failure
+    /// is never read as "no evidence"), else NoEvidence, else NotApplicable. Details are kept per source.</summary>
+    public static DiscoveryCapability MergeCapabilities(IReadOnlyList<DiscoveryCapability> outputs)
+    {
+        if (outputs.Count == 1) return outputs[0];
+        var state = outputs.Any(o => o.State == DiscoveryCapabilityState.Available) ? DiscoveryCapabilityState.Available
+            : outputs.Any(o => o.State == DiscoveryCapabilityState.Failed) ? DiscoveryCapabilityState.Failed
+            : outputs.Any(o => o.State == DiscoveryCapabilityState.NoEvidence) ? DiscoveryCapabilityState.NoEvidence : DiscoveryCapabilityState.NotApplicable;
+        var first = outputs[0];
+        return first with
+        {
+            State = state, Candidates = outputs.Sum(o => o.Candidates), Detail = string.Join(" | ", outputs.Select(o => o.Detail).Where(d => d.Length > 0).Distinct(StringComparer.Ordinal)),
+            Limitations = [.. outputs.SelectMany(o => o.Limitations).Distinct(StringComparer.Ordinal).Take(5)],
+            // A failure in one source stays visible even when another source had evidence.
+            PartialFailure = outputs.Any(o => o.State == DiscoveryCapabilityState.Failed),
+        };
+    }
 
     public static DiscoveryCapability Capability(string id, DiscoveryCapabilityState state, int candidates, string detail, string engine, IEnumerable<string>? limitations = null) => new()
     {
@@ -114,6 +136,9 @@ public static class TestScenarioDiscoveryEngine
                     .. story is null ? Array.Empty<CandidateEvidenceRef>() : [new CandidateEvidenceRef("story", story.Key, Clip(story.Title, 200))],
                     .. s.RequirementIds.Select(r => new CandidateEvidenceRef("requirement", r))],
                 CanonicalKey = $"scenario:{module}|{s.Id}", Engine = "Specification parser (acceptance scenarios)",
+                // Positional ids ("scenario-3") change when a scenario is inserted or removed; across imports a scenario is the same scenario when its
+                // file, starting situation and action are the same (a changed expected result keeps it; a removed one is gone, never "renamed").
+                SourceIdentity = SourceIdentityOf(Specification, $"situation:{SpecFile(file)}|{Situation(s.Given)}|{Situation(s.When)}"),
                 OpenQuestions = [.. when is null ? new[] { "The scenario states no action (When): add the steps." } : [], .. then is null ? new[] { "The scenario states no outcome (Then): clarify the expected result." } : []],
             }, projectKey) with { Story = story, NumberInStory = story is null ? null : s.NumberInStory });
             list[^1] = WithClarifications(list[^1], workspace.Clarifications, [.. s.RequirementIds, s.Id, .. story?.StoryId is { } sid ? new[] { sid } : []],
@@ -141,6 +166,14 @@ public static class TestScenarioDiscoveryEngine
                   + (general == 0 ? "" : $" {general} clarification{(general == 1 ? "" : "s")} of the specification name{(general == 1 ? "s" : "")} no requirement: read {(general == 1 ? "it" : "them")} in Specification Review before testing."),
             "Specification parser"), list);
     }
+
+    /// <summary>A specification file path as an identity part: the same file whatever module scope or path spelling the reader used.</summary>
+    private static string SpecFile(string? path) => (path ?? "").Replace('\\', '/').Trim().TrimStart('/').ToLowerInvariant();
+
+    /// <summary>The suffix that tells two scenarios with the same situation apart: their expected result.</summary>
+    public static string TwinSuffix(string? expected) => E.Sha(Situation(expected))[..12];
+
+    private static string Situation(string? text) => string.Join(' ', (Plain(text) ?? "").ToLowerInvariant().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     private static readonly System.Text.RegularExpressions.Regex ClarificationMarker =
         new(@"\[\s*NEEDS CLARIFICATION\s*:?\s*([^\]]*)\]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -250,8 +283,10 @@ public static class TestScenarioDiscoveryEngine
                     .Distinct()
                     .Select(e => new CandidateEvidenceRef("source-evidence",
                         string.Join(":", new[] { e.SourceLabel, e.File, e.Lines is null ? null : $"lines {e.Lines}" }.Where(x => !string.IsNullOrWhiteSpace(x))),
-                        string.Join(" · ", new[] { e.SourceLabel, e.Class.ToString(), e.Symbol, e.TestId, e.Note }.Where(x => !string.IsNullOrWhiteSpace(x)))))],
+                        string.Join(" · ", new[] { e.SourceLabel, e.Class.ToString(), e.Symbol, e.TestId, e.Note }.Where(x => !string.IsNullOrWhiteSpace(x))))),
+                    .. s.SourceIdentity is { Length: > 0 } derived ? new[] { new CandidateEvidenceRef(ScenarioConsolidation.DerivedFrom, derived) } : []],
                 CanonicalKey = $"guide:{revision.GuideKey}/{s.Id}",
+                // A scenario generated from a discovered one names it: consolidation merges the two (the guide adds its review), never offering both.
                 ScopeKeys = ["Scenario:" + BirkNext.Interpretation.CanonicalKeys.EntityKey(BirkNext.Interpretation.CanonicalEntityType.Scenario,
                     BirkNext.Interpretation.CorrelationRules.GuideScenarioIdentity(revision.GuideKey, s.Id))],
                 Engine = $"System Understanding guide r{revision.Revision}",
@@ -570,7 +605,14 @@ public static class TestScenarioDiscoveryEngine
             Evidence = [.. a.Evidence.Concat(b.Evidence).DistinctBy(e => (e.Kind, e.Reference))],
             RequirementIds = [.. a.RequirementIds.Concat(b.RequirementIds).Distinct(StringComparer.OrdinalIgnoreCase)],
             ScopeKeys = [.. a.ScopeKeys.Concat(b.ScopeKeys).Distinct(StringComparer.Ordinal)],
-        })).Take(MaxCandidates).Select(c => c with { SnapshotKey = snapshotKey }).ToList();
+        })).Take(MaxCandidates).Select(c => c with { SnapshotKey = c.SnapshotKey.Length > 0 ? c.SnapshotKey : snapshotKey }).ToList();
+        // Two scenarios of one file with the same situation (different outcomes) keep distinct identities, in their order.
+        // They are told apart by their expected result (never by position, which shifts when one is removed); only identical twins get an ordinal.
+        merged = [.. merged.GroupBy(c => c.SourceIdentity, StringComparer.Ordinal).SelectMany(g => g.Count() == 1 || g.Key.Length == 0 ? g
+            : g.Select(c => c with { SourceIdentity = $"{c.SourceIdentity}|{TwinSuffix(c.ExpectedBehaviour)}" })
+               .GroupBy(c => c.SourceIdentity, StringComparer.Ordinal).SelectMany(t => t.Select((c, i) => i == 0 ? c : c with { SourceIdentity = $"{c.SourceIdentity}#{i + 1}" })))];
+        // Cross-source consolidation: exact duplicates merged (evidence kept), equivalent/related/variant noted, conflicting expected results recorded.
+        merged = ScenarioConsolidation.Apply(merged);
         var byRequirement = links.GroupBy(l => Norm(l.RequirementId)).ToDictionary(g => g.Key, g => g.Select(l => l.Test).ToList(), StringComparer.Ordinal);
         var sharing = merged.SelectMany(c => c.RequirementIds.Select(r => (Req: Norm(r), c.CandidateId, c.CapabilityId))).GroupBy(x => x.Req).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
         return [.. merged.Select(c =>
@@ -606,6 +648,8 @@ public static class TestScenarioDiscoveryEngine
             Template = [.. c.Template], Evidence = [.. c.Evidence], ExistingTests = [.. c.ExistingTests], OpenQuestions = [.. c.OpenQuestions],
             TestDataNeed = c.TestDataNeeds.Count > 0 ? TestDataNeed.Required : TestDataNeed.Unknown, Capability = c.CapabilityId,
             Story = c.Story, NumberInStory = c.NumberInStory, Clarifications = [.. c.Clarifications],
+            SourceIdentity = c.SourceIdentity.Length > 0 ? c.SourceIdentity : null, SnapshotKey = string.IsNullOrEmpty(c.SnapshotKey) ? null : c.SnapshotKey,
+            Conflicts = c.Conflicts.Count > 0 ? [.. c.Conflicts] : null,
         };
     }
 

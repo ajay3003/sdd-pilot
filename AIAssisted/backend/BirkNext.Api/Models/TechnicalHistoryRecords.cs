@@ -46,6 +46,9 @@ public sealed class SpecificationCatalogRecord
     public DateTimeOffset CapturedAt { get; set; }
     public string DocumentsJson { get; set; } = "[]";
     public string EntriesJson { get; set; } = "[]";
+    /// <summary>The parsed specification evidence per file (<see cref="Services.Specifications.StoredSpecificationEvidence"/>); null for revisions
+    /// captured before 2026-11-23.</summary>
+    public string? EvidenceJson { get; set; }
 }
 
 /// <summary>A finished specialist technical review stored on the server (Frontend Quality Review, safe fuzzing, authorization checks).

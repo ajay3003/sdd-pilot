@@ -6,9 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace BirkNext.Api.Data.Migrations;
 
-[DbContext(typeof(AppDbContext))]
-[Migration("20261123090000_AddSystemGuideCandidates")]
-public sealed class AddSystemGuideCandidates : Migration
+public partial class AddSystemGuideCandidates : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {

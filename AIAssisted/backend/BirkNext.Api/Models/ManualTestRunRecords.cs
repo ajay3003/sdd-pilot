@@ -37,6 +37,11 @@ public sealed class ScenarioDiscoveryRecord
     public string RuleVersion { get; set; } = "";
     public string ContentJson { get; set; } = "";
     public DateTimeOffset DiscoveredAt { get; set; }
+    /// <summary>The application (logical source identity) the result belongs to; null for results stored before 2026-11-23.</summary>
+    public string? ApplicationKey { get; set; }
+    /// <summary>Current, Historical or DocumentsOnly (<see cref="BirkNext.TestPlanning.DiscoveryBasisKind"/>); null = stored before 2026-11-23 (treated as current).</summary>
+    public string? BasisKind { get; set; }
+    public string? BasisFingerprint { get; set; }
 }
 
 /// <summary>

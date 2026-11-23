@@ -816,6 +816,8 @@ builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegratio
 // System Understanding: curated, versioned guides of a system under test (one generic service; each guide is a catalog entry with its seed).
 builder.Services.AddSingleton(new BirkNext.Api.Services.SystemUnderstanding.SystemGuideCatalogEntry("skolenaervaer", "SystemGuide.skolenaervaer.guide.json", BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerJourneyPack.Id));
 builder.Services.AddScoped<BirkNext.Api.Services.SystemUnderstanding.SystemGuideService>();
+builder.Services.AddScoped<BirkNext.Api.Services.SystemUnderstanding.SystemGuideGenerationService>();
+builder.Services.AddHostedService<BirkNext.Api.Services.SystemUnderstanding.SystemGuideGenerationWorker>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>();
 // Translation of test-case text (System Settings → Translation; default the embedded offline translator packaged with BirkNext, English →
 // Norwegian bokmål, CPU only, no internet). The translator is resolved from the current settings on every request: a change applies without a
@@ -846,6 +848,7 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandi
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.IntegrationJourneyScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.ExistingTestScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.DeveloperIntegrationTestScenarioProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ScenarioSourceBasisResolver>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestScenarioDiscoveryService>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyPackRegistry>();
 // Project-declared Integration Journeys (name + ordered component chain; design metadata only): Test Coverage association candidates, Scope Registry Journey members.

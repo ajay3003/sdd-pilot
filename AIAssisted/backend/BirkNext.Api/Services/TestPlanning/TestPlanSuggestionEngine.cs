@@ -135,6 +135,9 @@ public static partial class TestPlanSuggestionEngine
     public static TestCaseDraft Assess(TestCaseDraft draft) =>
         draft.Source.Kind is ScenarioSourceKind.ProjectDiscovery or ScenarioSourceKind.Manual ? AssessProjectCase(draft) : AssessGuideCase(draft);
 
+    /// <summary>Every case assessed again (after read-time source flags changed what blocks readiness).</summary>
+    public static TestPlanDraft AssessAll(TestPlanDraft plan) => plan with { Cases = [.. plan.Cases.Select(Assess)] };
+
     /// <summary>Whether a case needs Test Data: a person's decision, else what the evidence states. Absence of a description stays Unknown.</summary>
     public static TestDataNeed DataNeed(TestCaseDraft draft) => draft.Edits.TestDataNeed is { } n && n != TestDataNeed.Unknown ? n
         : draft.Generated.TestDataNeed != TestDataNeed.Unknown ? draft.Generated.TestDataNeed
@@ -148,6 +151,9 @@ public static partial class TestPlanSuggestionEngine
     {
         if (draft.Edits.BlockedBy is { Length: > 0 } blocked) return (CaseReadiness.BlockedByPrerequisite, $"Blocked by a prerequisite: {blocked}");
         if (draft.Review == TestCaseReviewState.NeedsClarification) return (CaseReadiness.NeedsClarification, "A reviewer asked for clarification.");
+        // Sources disagree about the expected result: never Ready until a person records which result applies (2026-11-23).
+        if (draft.HasUnresolvedConflict) return (CaseReadiness.NeedsClarification, ConflictReason);
+        if (draft.SourceState == CaseSourceState.Removed) return (CaseReadiness.NeedsClarification, "Utgått scenario: scenarioet finnes ikke lenger i gjeldende kildeversjon.");
         if (!expectedClear) return (CaseReadiness.NeedsClarification, "The expected result is missing or needs clarification.");
         var links = draft.TestData;
         var suitable = links.Count > 0 && links.All(d => d.Resolved && d.Approval == "Approved");
@@ -204,6 +210,8 @@ public static partial class TestPlanSuggestionEngine
         });
         if (steps.Count == 0) blockers.Add("No test steps");
         else if (!observed) blockers.Add("Verification method not identified");
+        if (draft.HasUnresolvedConflict) { blockers.Add(ConflictReason); missing.Insert(0, "Expected result: " + ConflictReason); }
+        if (draft.SourceState == CaseSourceState.Removed) blockers.Add("Utgått scenario: finnes ikke lenger i gjeldende kildeversjon");
         return draft with
         {
             Missing = missing,
@@ -217,6 +225,8 @@ public static partial class TestPlanSuggestionEngine
             },
         };
     }
+
+    public const string ConflictReason = "Ulike kilder beskriver forskjellige forventede resultater. Dette må avklares før testtilfellet kan godkjennes.";
 
     private static IEnumerable<string> PerformanceGaps(TestCaseDraft draft)
     {

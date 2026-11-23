@@ -14,6 +14,17 @@ public interface ISystemUnderstandingApiService
     Task<(IReadOnlyList<SystemGuideCandidateView>? Candidates, string? Error)> CandidatesAsync(string guideKey, CancellationToken ct = default) => Task.FromResult<(IReadOnlyList<SystemGuideCandidateView>?, string?)>(([], null));
     Task<(SystemGuideRevision? Revision, string? Error)> CandidateDraftAsync(string guideKey, Guid candidateId, CancellationToken ct = default) => Task.FromResult<(SystemGuideRevision?, string?)>((null, "Source candidate review is unavailable."));
     Task<(SystemGuideRevision? Revision, string? Error)> SaveDraftAsync(string guideKey, SaveGuideDraftRequest request, CancellationToken ct = default);
+    /// <summary>A reviewer's decision on one proposed change of a source candidate.</summary>
+    Task<(SystemGuideCandidateView? Candidate, string? Error)> DecideAsync(string guideKey, Guid candidateId, DecideGuideChangeRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(SystemGuideCandidateView?, string?)>((null, "Gjennomgang av forslag er ikke tilgjengelig her."));
+    /// <summary>Merges the decided changes into the open draft (or a new draft). Never approves or publishes.</summary>
+    Task<(SystemGuideRevision? Revision, string? Error)> ApplyCandidateAsync(string guideKey, Guid candidateId, ApplyGuideCandidateRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(SystemGuideRevision?, string?)>((null, "Gjennomgang av forslag er ikke tilgjengelig her."));
+    /// <summary>The guide's generation jobs (pending, running, succeeded, failed, stale).</summary>
+    Task<(IReadOnlyList<SystemGuideGenerationJobView>? Jobs, string? Error)> GenerationAsync(string guideKey, CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<SystemGuideGenerationJobView>?, string?)>(([], null));
+    Task<(SystemGuideGenerationJobView? Job, string? Error)> RetryGenerationAsync(string guideKey, Guid jobId, CancellationToken ct = default) =>
+        Task.FromResult<(SystemGuideGenerationJobView?, string?)>((null, "Ny generering er ikke tilgjengelig her."));
     /// <summary>action: submit, return-to-draft, approve, publish.</summary>
     Task<(SystemGuideRevision? Revision, string? Error)> TransitionAsync(string guideKey, int revision, string action, CancellationToken ct = default);
 }
@@ -39,6 +50,18 @@ public sealed class SystemUnderstandingApiService(HttpClient http) : ISystemUnde
 
     public Task<(SystemGuideRevision? Revision, string? Error)> SaveDraftAsync(string guideKey, SaveGuideDraftRequest request, CancellationToken ct = default) =>
         Send<SystemGuideRevision>(() => http.PutAsJsonAsync($"api/system-understanding/guides/{Uri.EscapeDataString(guideKey)}/draft", request, Json, ct), ct);
+
+    public Task<(SystemGuideCandidateView? Candidate, string? Error)> DecideAsync(string guideKey, Guid candidateId, DecideGuideChangeRequest request, CancellationToken ct = default) =>
+        Send<SystemGuideCandidateView>(() => http.PostAsJsonAsync($"api/system-understanding/guides/{Uri.EscapeDataString(guideKey)}/candidates/{candidateId}/decisions", request, Json, ct), ct);
+
+    public Task<(SystemGuideRevision? Revision, string? Error)> ApplyCandidateAsync(string guideKey, Guid candidateId, ApplyGuideCandidateRequest request, CancellationToken ct = default) =>
+        Send<SystemGuideRevision>(() => http.PostAsJsonAsync($"api/system-understanding/guides/{Uri.EscapeDataString(guideKey)}/candidates/{candidateId}/apply", request, Json, ct), ct);
+
+    public Task<(IReadOnlyList<SystemGuideGenerationJobView>? Jobs, string? Error)> GenerationAsync(string guideKey, CancellationToken ct = default) =>
+        Send<IReadOnlyList<SystemGuideGenerationJobView>>(() => http.GetAsync($"api/system-understanding/guides/{Uri.EscapeDataString(guideKey)}/generation", ct), ct);
+
+    public Task<(SystemGuideGenerationJobView? Job, string? Error)> RetryGenerationAsync(string guideKey, Guid jobId, CancellationToken ct = default) =>
+        Send<SystemGuideGenerationJobView>(() => http.PostAsync($"api/system-understanding/guides/{Uri.EscapeDataString(guideKey)}/generation/{jobId}/retry", null, ct), ct);
 
     public Task<(SystemGuideRevision? Revision, string? Error)> TransitionAsync(string guideKey, int revision, string action, CancellationToken ct = default) =>
         action is "submit" or "return-to-draft" or "approve" or "publish"

@@ -147,6 +147,13 @@
     private string? _projectName;
     private string? _environmentId;
     private Guid? _snapshotId;
+    /// <summary>True when the tester deliberately chose another source version than the project's (historical inspection: never the current basis).</summary>
+    private bool _inspect;
+    private PlanImpactAnalysis? _impact;
+    private string? _resolveCase;
+    private string _resolveExpected = "";
+    private string _resolveRationale = "";
+    private string? _resolveClaim;
     private string? _snapshotBasis;
     private List<BirkNext.SourceEvidence.ReviewSourceSnapshot> _snapshotOptions = [];
     // Historical System Understanding guide plans (?guide=…): their own candidates and workflow, unchanged.
@@ -629,6 +636,15 @@
                 <div class="tps-summary-item tps-summary-primary" data-testid="tps-stat-saved"><dt>Cases in the plan</dt><dd>@saved</dd></div>
                 <div class="tps-summary-item tps-summary-primary @(_inventory.Attention > 0 ? "is-warn" : null)" data-testid="tps-stat-attention"><dt>Need attention</dt><dd>@_inventory.Attention</dd></div>
             </dl>
+            @if (discovery.Basis is { } basis)
+            {
+                <div class="tps-basis @(basis.Kind == DiscoveryBasisKind.Historical ? "is-historical" : null) @(basis.Complete ? null : "is-warn")" data-testid="tps-basis" role="status">
+                    <strong>@PlanSourcePresentation.BasisTitle(basis)</strong>
+                    <span class="tps-muted tps-small" data-testid="tps-basis-sources">@PlanSourcePresentation.BasisSources(basis)</span>
+                    <span class="tps-muted tps-small" data-testid="tps-basis-spec">@PlanSourcePresentation.SpecificationOrigin(basis)</span>
+                    @foreach (var problem in basis.Problems) { <span class="tps-small tps-warn-text" data-testid="tps-basis-problem">@problem</span> }
+                </div>
+            }
             <details class="tps-block tps-evidence" data-testid="tps-capabilities" aria-label="Evidence sources">
                 <summary class="tps-evidence-summary"><span class="tps-h3">Evidence sources</span>
                     <span class="tps-muted tps-small" data-testid="tps-capabilities-summary">@found.Sum(x => x.Candidates) candidate@(found.Sum(x => x.Candidates) == 1 ? "" : "s") from @found.Count of @discovery.Capabilities.Count source@(discovery.Capabilities.Count == 1 ? "" : "s") · discovered @discovery.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span></summary>
@@ -651,9 +667,42 @@
     {
         _snapshotId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
         _snapshotBasis = "Chosen here";
+        _inspect = _snapshotId is { } chosen && ResolveSnapshot().Id is { } own && chosen != own;
         var (last, _) = await _api!.LastDiscoveryAsync(_projectKey!, _snapshotId);
         UseDiscovery(last);
         if (last is null) Info("Discover test scenarios again to read the chosen snapshot.");
+    }
+
+    // ── Source status, impact and conflicts ──────────────────────────────────────────────────────────────────
+
+    private async Task ImpactAsync()
+    {
+        if (_draft is null) return;
+        _busy = true;
+        var (impact, error) = await _api!.ImpactAsync(_draft.Id);
+        _busy = false;
+        if (impact is null) { Fail(error ?? "Konsekvensanalysen kunne ikke lages."); return; }
+        _impact = impact;
+    }
+
+    private void StartResolve(TestCaseDraft c) { _resolveCase = c.Source.ScenarioId; _resolveExpected = c.EffectiveExpected ?? ""; _resolveRationale = ""; _resolveClaim = null; }
+
+    private void PickClaim(List<ScenarioConflict> conflicts, string? candidateId)
+    {
+        _resolveClaim = string.IsNullOrWhiteSpace(candidateId) ? null : candidateId;
+        if (conflicts.SelectMany(k => k.Claims).FirstOrDefault(x => x.CandidateId == _resolveClaim) is { } claim) _resolveExpected = claim.Expected;
+    }
+
+    private async Task ResolveConflictAsync(TestCaseDraft c)
+    {
+        if (_draft is null) return;
+        _busy = true;
+        var (draft, error) = await _api!.ResolveConflictAsync(_draft.Id, new ResolveConflictRequest(_draft.Revision, c.Source.ScenarioId, _resolveExpected, _resolveClaim, _resolveRationale));
+        _busy = false;
+        if (draft is null) { Fail(error ?? "Avklaringen kunne ikke lagres."); return; }
+        _resolveCase = null;
+        await OpenDraftAsync(draft.Id);
+        Info("Avklaringen er lagret. Testtilfellet kan nå godkjennes.");
     }
 
     // ── Step 1: Choose scenarios ─────────────────────────────────────────────────────────────────────────────
@@ -712,7 +761,11 @@
         _specChanged = false;
         Info("Discovering test scenarios… only the analyzers registered for this project's evidence run.");
         var evidence = await WorkspaceEvidenceAsync();
-        var (result, error) = await _api!.DiscoverAsync(new ScenarioDiscoveryRequest { ProjectKey = _projectKey, ProjectName = _projectName, SnapshotId = _snapshotId, EnvironmentId = _environmentId, Workspace = evidence });
+        var (result, error) = await _api!.DiscoverAsync(new ScenarioDiscoveryRequest
+        {
+            ProjectKey = _projectKey, ProjectName = _projectName, SnapshotId = _snapshotId, EnvironmentId = _environmentId, Workspace = evidence,
+            MemberSnapshotIds = [.. ManualTestingWorkspace.MemberSnapshots(ServiceProvider)], Inspect = _inspect,
+        });
         _busy = false;
         if (result is null) { Fail(error ?? "Discovery failed."); return; }
         UseDiscovery(result);
@@ -1178,6 +1231,38 @@
                 <p class="tps-prepare-status" data-testid="tps-prepare-count"><strong>@d.Cases.Count(c => c.Review == TestCaseReviewState.Accepted) of @d.Cases.Count accepted</strong>
                     <span class="tps-muted tps-small">Your edits are kept apart from the evidence and never overwritten by a new discovery. A missing expected result stays <strong>Needs clarification</strong> until someone states it.</span></p>
             </div>
+            @if (d.ProjectKey is not null && _ws?.PlanStatus is { } statuses && statuses.TryGetValue(d.Id, out var planStatus) && planStatus.State != "Klar")
+            {
+                <div class="tps-note @(planStatus.State is "Må gjennomgås" or "Kilde mangler" ? "tps-note-warn" : null)" data-testid="tps-plan-source-status" data-state="@planStatus.State" role="status">
+                    <strong>@planStatus.State</strong> @planStatus.Message
+                    <button type="button" class="tps-btn tps-btn-quiet" disabled="@_busy" @onclick="ImpactAsync" data-testid="tps-impact-open">Se konsekvenser</button>
+                </div>
+            }
+            @if (_impact is { } impact && impact.DraftId == d.Id)
+            {
+                <section class="tps-impact" data-testid="tps-impact" aria-label="Konsekvensanalyse">
+                    <p><strong>Konsekvensanalyse:</strong> @impact.Summary</p>
+                    @if (impact.Cases.Count > 0)
+                    {
+                        <ul class="tps-plain">
+                            @foreach (var i in impact.Cases)
+                            {
+                                <li data-testid="tps-impact-case" data-kinds="@string.Join(",", i.Kinds)"><strong>@i.Title</strong> — @i.Summary
+                                    @if (i.ReviewedBefore) { <span class="tps-tone tps-tone-warn">Godkjent tidligere: må gjennomgås</span> }
+                                    @if (i.Changes.Count > 0)
+                                    {
+                                        <details><summary class="tps-small">Hva er endret</summary>
+                                            <dl class="tps-impact-changes">@foreach (var ch in i.Changes) { <dt>@ch.Field</dt><dd><span class="tps-muted">Før:</span> @(ch.Before ?? "—") <br /><span class="tps-muted">Nå:</span> @(ch.After ?? "—")</dd> }</dl>
+                                        </details>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                    @if (impact.NewScenarios.Count > 0) { <p class="tps-small" data-testid="tps-impact-new">Nye scenarier: @string.Join(" · ", impact.NewScenarios.Take(8).Select(n => n.Title))@(impact.NewScenarios.Count > 8 ? $" (+{impact.NewScenarios.Count - 8})" : "")</p> }
+                    <p class="tps-muted tps-small">Ingenting er endret i planen. Oppdater planen for å ta inn endringene — dine redigeringer, manuelle testtilfeller og historikk beholdes.</p>
+                </section>
+            }
             @if (d.Cases.Any(c => c.SourceChanged))
             {
                 <p class="tps-note tps-note-warn" data-testid="tps-source-changed" role="status"><strong>@d.Cases.Count(c => c.SourceChanged) scenario(s) changed in the evidence</strong> since these cases were prepared. Nothing was changed here.
@@ -1243,12 +1328,46 @@
                 @* The generated chip already says "Generated — not reviewed": the review badge is shown only when it says something else. *@
                 @if (C.GeneratedNotReviewed(c) != review.Text) { <span class="tps-tone tps-tone-@review.Tone" data-testid="tps-case-review">@review.Text</span> }
                 <span class="tps-tone tps-tone-@expected.Tone">Expected: @expected.Text</span>
-                @if (c.SourceChanged) { <span class="tps-tone tps-tone-warn">Changed in the evidence</span> }
+                @if (PlanSourcePresentation.CaseState(c) is { } srcState) { <span class="tps-tone tps-tone-@srcState.Tone" data-testid="tps-case-source-state" title="@c.SourceStateReason">@srcState.Text</span> }
+                else if (c.SourceChanged) { <span class="tps-tone tps-tone-warn">Changed in the evidence</span> }
+                @if (c.HasUnresolvedConflict) { <span class="tps-tone tps-tone-bad" data-testid="tps-case-conflict">Trenger avklaring: kildekonflikt</span> }
             </button>
             @if (open)
             {
                 <div class="tps-case-body" id="@($"tps-case-body-{sid}")">
                     @CaseStatus(d, c, sid)
+                    @if (c.SourceStateReason is { Length: > 0 } sourceWhy) { <p class="tps-small tps-muted" data-testid="tps-case-source-reason-@sid">@sourceWhy</p> }
+                    @if (c.Generated.Conflicts is { Count: > 0 } conflicts)
+                    {
+                        <div class="tps-conflict @(c.ConflictResolution is null ? "is-open" : "is-resolved")" data-testid="tps-conflict-@sid">
+                            <p><strong>@(c.ConflictResolution is null ? "Kildekonflikt" : "Kildekonflikt avklart")</strong> — @conflicts[0].Explanation</p>
+                            <ul class="tps-plain">
+                                @foreach (var claim in conflicts.SelectMany(k => k.Claims).DistinctBy(x => x.CandidateId)) { <li class="tps-small"><strong>@claim.SourceCategory:</strong> @claim.Expected <span class="tps-muted">(@claim.EvidenceReference)</span></li> }
+                            </ul>
+                            @if (c.ConflictResolution is { } resolution)
+                            {
+                                <p class="tps-small">Avklart av @resolution.ResolvedBy @resolution.ResolvedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"): «@resolution.ExpectedResult» — @resolution.Rationale</p>
+                            }
+                            else if (CanWrite && _resolveCase != c.Source.ScenarioId)
+                            {
+                                <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => StartResolve(c)" data-testid="tps-conflict-resolve-@sid">Registrer avklaring</button>
+                            }
+                            else if (CanWrite)
+                            {
+                                <div class="tps-conflict-form" data-testid="tps-conflict-form-@sid">
+                                    <label class="tps-small">Kilde som gjelder
+                                        <select class="tps-input tps-input-sm" @onchange="e => PickClaim(conflicts, e.Value?.ToString())" data-testid="tps-conflict-claim">
+                                            <option value="">Eget forventet resultat</option>
+                                            @foreach (var claim in conflicts.SelectMany(k => k.Claims).DistinctBy(x => x.CandidateId)) { <option value="@claim.CandidateId" selected="@(_resolveClaim == claim.CandidateId)">@claim.SourceCategory: @claim.Expected</option> }
+                                        </select></label>
+                                    <label class="tps-small">Forventet resultat <textarea class="tps-input" rows="2" @bind="_resolveExpected" data-testid="tps-conflict-expected"></textarea></label>
+                                    <label class="tps-small">Begrunnelse (hvem bekreftet, og hvor) <input class="tps-input" @bind="_resolveRationale" data-testid="tps-conflict-rationale" /></label>
+                                    <button type="button" class="tps-btn" disabled="@(_busy || string.IsNullOrWhiteSpace(_resolveExpected) || string.IsNullOrWhiteSpace(_resolveRationale))" @onclick="() => ResolveConflictAsync(c)" data-testid="tps-conflict-save">Lagre avklaring</button>
+                                    <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => _resolveCase = null">Avbryt</button>
+                                </div>
+                            }
+                        </div>
+                    }
                     <p data-testid="tps-expected-result-@sid"><strong>Expected result:</strong> @(c.EffectiveExpected ?? "Needs clarification — no supported expected result is stated.") <span class="tps-muted">(@c.Generated.ExpectedBasis)</span></p>
                     @if (shown is { } editLanguage) { @TranslationEditor(d, c, sid, editLanguage) }
                     <details class="tps-source-facts" open="@(!CanWrite)" data-testid="@($"tps-source-facts-{sid}")">
