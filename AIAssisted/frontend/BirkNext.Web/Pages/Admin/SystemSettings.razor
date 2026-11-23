@@ -1580,7 +1580,7 @@ else if (_settings is not null)
             MarkdownEngineDiagnosticRows.Select(row => DiagnosticItem(row.Name, row.Value, ToSystemSettingsStatus(row.Status), row.Reason, ""))),
         DiagnosticSection("Runtime Services", "Runtime service state",
             RuntimeServiceRows.Select(row => DiagnosticItem(row.Name, row.Reason, ToSystemSettingsStatus(row.Status), row.Reason, ""))),
-        DiagnosticSection("Recommended Workflow", "Recommended workflow diagnostics",
+        DiagnosticSection("Next step and review decisions", "Next-step and review-decision diagnostics (Project Dashboard)",
             WorkflowDiagnosticRows.Select(row => DiagnosticItem(row.Name, row.Value, ToSystemSettingsStatus(row.Status), row.Reason, ""))),
         DiagnosticSection("Analysis Sessions", "Analysis session state",
             AnalysisSessionRows.Select(row => DiagnosticItem(row.Name, row.Reason, ToSystemSettingsStatus(row.Status), row.Prerequisites, ""))),
@@ -1721,7 +1721,7 @@ else if (_settings is not null)
     {
         get
         {
-            yield return new("WorkflowReadinessService available", StatusPass, "Registered", "Recommended Workflow and Dashboard use WorkflowReadinessService for readiness state.");
+            yield return new("WorkflowReadinessService available", StatusPass, "Registered", "Project Dashboard and the workspace homes use WorkflowReadinessService for readiness state.");
             yield return new("Renderer connected", StatusPass, "RecommendedWorkflow.razor", "Renderer consumes workflow readiness instead of direct session lookups.");
             yield return new("Empty workspace reset works", WorkspaceArtifacts.Count == 0 ? StatusPass : StatusNotAvailable, WorkspaceArtifacts.Count == 0 ? "Verified by current empty state" : "Workspace loaded", WorkspaceArtifacts.Count == 0 ? "No workspace is loaded and no release state is available." : "Load-state reset cannot be observed while a workspace is active.");
             yield return new("Release state derived from readiness", StatusPass, "Derived", "Release is not persisted in runtime diagnostics.");
@@ -2248,7 +2248,7 @@ else if (_settings is not null)
         foreach (var row in MarkdownEngineDiagnosticRows)
             sb.AppendLine($"- {row.Name}: {row.Value} [{row.Status}] {row.Reason}");
         sb.AppendLine();
-        sb.AppendLine("Recommended Workflow");
+        sb.AppendLine("Next step and review decisions");
         foreach (var row in WorkflowDiagnosticRows)
             sb.AppendLine($"- {row.Name}: {row.Value} [{row.Status}] {row.Reason}");
         sb.AppendLine();

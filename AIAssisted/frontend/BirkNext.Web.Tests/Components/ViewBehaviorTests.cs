@@ -605,7 +605,9 @@ public class ViewBehaviorTests : BunitContext
         var cut = Render<UserGuide>();
 
         var text = cut.Markup;
-        text.Should().Contain("href=\"/getting-started\"", "the current workspace-aware Recommended Workflow is prominent");
+        // Recommended Workflow was retired (2026-11-19): the guide points at the next step and review decisions on Project Dashboard.
+        text.Should().Contain("href=\"/dashboard#review-decisions\"", "the next step and review decisions live on Project Dashboard");
+        text.Should().NotContain("href=\"/getting-started\"", "the retired route only redirected back to the Dashboard");
         text.Should().Contain("href=\"/source-analysis\"");
         text.Should().Contain("analyze source once");
     }

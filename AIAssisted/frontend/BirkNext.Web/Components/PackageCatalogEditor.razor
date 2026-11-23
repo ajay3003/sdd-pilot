@@ -6,7 +6,7 @@
    Recommended Workflow; it never imports, binds or changes readiness. *@
 <section class="pce" data-testid="pce" aria-labelledby="pce-title">
     <h4 id="pce-title" class="pce-title">Package catalog <span class="pce-muted">· @Project</span></h4>
-    <p class="pce-muted">Which packages this project expects to import. Recommended Workflow shows the same list. Recommendations never bind evidence: bind imported sources below.</p>
+    <p class="pce-muted">Which packages this project expects to import. Project Dashboard shows the same list. Recommendations never bind evidence: bind imported sources below.</p>
     @if (_error is { } error) { <p class="pce-error" role="alert" data-testid="pce-error">@error</p> }
 
     @{ var matches = Catalog.Matches(Project); }

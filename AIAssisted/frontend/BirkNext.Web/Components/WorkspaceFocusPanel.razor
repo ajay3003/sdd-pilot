@@ -81,7 +81,8 @@
                 </ol>
             </div>
         }
-        @if (Compact) { <a href="getting-started" class="wfp-link wfp-more" data-testid="wfp-more">All next steps in Recommended Workflow</a> }
+        @* The compact panel is on Project Dashboard itself: its "All next steps in Recommended Workflow" link led to the retired route, which
+           redirected back to the same page (removed 2026-11-23). *@
     </section>
 }
 

@@ -115,7 +115,8 @@ public sealed record ExecutionEvidenceFacts(bool Readable, string? EnvironmentNa
 /// </summary>
 public static class DashboardPresentation
 {
-    public const string WorkflowRoute = "getting-started";
+    /// <summary>Review decisions on Project Dashboard (the retired Recommended Workflow route only redirected back to the Dashboard).</summary>
+    public const string WorkflowRoute = "dashboard#review-decisions";
     public const string DocumentReviewRoute = "quality/document";
     public const string TraceabilityRoute = "artifact-traceability";
     public const string PerformanceRoute = "performance-test-review";
@@ -331,7 +332,7 @@ public static class DashboardPresentation
         var gates = workflow?.DocumentReviewGates.Select(ArtifactReviewPresentation.Of).ToList() ?? [];
         var changes = gates.Count(g => g.State == ArtifactReviewState.NeedsChanges);
         if (changes > 0)
-            items.Add(new("needs-changes", $"{changes} document review{S(changes)} marked as needing changes", null, "Open Recommended Workflow", WorkflowRoute));
+            items.Add(new("needs-changes", $"{changes} document review{S(changes)} marked as needing changes", null, "Open review decisions", WorkflowRoute));
         var stale = gates.Count(g => g.State == ArtifactReviewState.Stale);
         if (stale > 0)
             items.Add(new("stale", $"{stale} document review{S(stale)} out of date", "The document changed after it was reviewed.", "Review again", WorkflowRoute));
@@ -412,7 +413,7 @@ public static class DashboardPresentation
         {
             if (!workspace.WorkspaceLoaded) return null;
             return new("none", "Required review decisions complete", "Every applicable review step has a recorded review decision or does not apply to this project.",
-                "Optional reviews and testing can still add evidence.", "Open Recommended Workflow", WorkflowRoute, then);
+                "Optional reviews and testing can still add evidence.", "Open review decisions", WorkflowRoute, then);
         }
 
         var o = workspace.Overview;
@@ -555,7 +556,7 @@ public static class DashboardPresentation
         ("qa", "Document quality", "Document Quality Review of the authored documentation", false),
         ("delivery", "Delivery readiness", "Owned by the readiness review; not calculated here", true),
         ("performance", "Performance (runtime)", "Performance test evidence; needs a Target Environment to execute", true),
-        ("workflow", "Workflow guidance", "Recommended Workflow: current recommendation and recorded manual reviews", false),
+        ("workflow", "Workflow guidance", "Next step and recorded review decisions", false),
     ];
 
     private static DashboardHealthArea Area(string key, DashboardStatus status, string explanation, string? action, string? href, string? result = null)
@@ -573,16 +574,16 @@ public static class DashboardPresentation
         var gates = workflow.DocumentReviewGates.Select(ArtifactReviewPresentation.Of).ToList();
         if (gates.Count == 0)
             return HasDocuments(workspace)
-                ? Area("governance", DashboardStatus.NotAssessed, "No document review step applies yet.", "Open Recommended Workflow", WorkflowRoute)
+                ? Area("governance", DashboardStatus.NotAssessed, "No document review step applies yet.", "Open review decisions", WorkflowRoute)
                 : Area("governance", DashboardStatus.NeedsSetup, "No project documents were found.", "Import project", ProjectInputPresentation.ProjectImportRoute);
         var approved = gates.Count(g => g.State == ArtifactReviewState.Approved);
         var changes = gates.Count(g => g.State == ArtifactReviewState.NeedsChanges);
         var stale = gates.Count(g => g.State == ArtifactReviewState.Stale);
         var decided = gates.Any(g => g.IsDecided || g.State == ArtifactReviewState.Stale);
         var result = decided ? $"{approved} of {gates.Count} document reviews approved" : null;
-        if (changes > 0) return Area("governance", DashboardStatus.AttentionNeeded, $"{changes} document review{S(changes)} need{(changes == 1 ? "s" : "")} changes.", "Open Recommended Workflow", WorkflowRoute, result);
+        if (changes > 0) return Area("governance", DashboardStatus.AttentionNeeded, $"{changes} document review{S(changes)} need{(changes == 1 ? "s" : "")} changes.", "Open review decisions", WorkflowRoute, result);
         if (stale > 0) return Area("governance", DashboardStatus.AttentionNeeded, $"{stale} review{S(stale)} out of date — the document changed since.", "Review again", WorkflowRoute, result);
-        if (approved == gates.Count) return Area("governance", DashboardStatus.Passed, $"All {gates.Count} document reviews approved on the current documents.", "Open Recommended Workflow", WorkflowRoute, result);
+        if (approved == gates.Count) return Area("governance", DashboardStatus.Passed, $"All {gates.Count} document reviews approved on the current documents.", "Open review decisions", WorkflowRoute, result);
         if (decided) return Area("governance", DashboardStatus.InProgress, $"{approved} of {gates.Count} document reviews approved so far.", "Continue reviewing", WorkflowRoute, result);
         return Area("governance", DashboardStatus.NotAssessed, $"Evidence: Available · {gates.Count} document{S(gates.Count)} can be reviewed · Assessment: Not reviewed.", "Review documents", WorkflowRoute);
     }
@@ -680,14 +681,14 @@ public static class DashboardPresentation
         var recorded = core.Count(c => c.Decision == ReviewDecisionState.Reviewed);
         if (workflow.ReleaseReadinessPercent is not { } percent)
             return Area("workflow", DashboardStatus.Available, workflow.Recommendation is { } rec ? $"Current recommendation available: {rec.Title}." : "Workflow guidance available.",
-                "Open Recommended Workflow", WorkflowRoute, $"Core manual reviews: {recorded} / {core.Count} recorded");
+                "Open review decisions", WorkflowRoute, $"Core manual reviews: {recorded} / {core.Count} recorded");
         var result = $"{workflow.DecidedReviewCount} of {workflow.RequiredReviewCount} required review decisions recorded ({percent}%)";
         var withGaps = workflow.DocumentReviewGates.Select(ArtifactReviewPresentation.Of).Count(g => g.State == ArtifactReviewState.NeedsChanges);
         if (percent == 100 && withGaps > 0)
-            return Area("workflow", DashboardStatus.AttentionNeeded, $"Every required decision is recorded, but {withGaps} {(withGaps == 1 ? "was" : "were")} reviewed with gaps.", "Open Recommended Workflow", WorkflowRoute, result);
+            return Area("workflow", DashboardStatus.AttentionNeeded, $"Every required decision is recorded, but {withGaps} {(withGaps == 1 ? "was" : "were")} reviewed with gaps.", "Open review decisions", WorkflowRoute, result);
         return percent == 100
-            ? Area("workflow", DashboardStatus.Passed, "Every required review decision is recorded on the current documents.", "Open Recommended Workflow", WorkflowRoute, result)
-            : Area("workflow", DashboardStatus.InProgress, workflow.Recommendation is { } next ? $"Current recommendation: {next.Title}." : "Review decisions in progress.", "Open Recommended Workflow", WorkflowRoute, result);
+            ? Area("workflow", DashboardStatus.Passed, "Every required review decision is recorded on the current documents.", "Open review decisions", WorkflowRoute, result)
+            : Area("workflow", DashboardStatus.InProgress, workflow.Recommendation is { } next ? $"Current recommendation: {next.Title}." : "Review decisions in progress.", "Open review decisions", WorkflowRoute, result);
     }
 
     /// <summary>Source evidence as a first-class area: analysis state and Artifact Pack binding, never a quality score.</summary>
