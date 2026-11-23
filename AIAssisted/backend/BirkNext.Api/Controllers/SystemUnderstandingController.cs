@@ -29,6 +29,14 @@ public sealed class SystemUnderstandingController(SystemGuideService guides, IAu
     [HttpGet("guides/{guideKey}/revisions/{revision:int}")]
     public Task<ActionResult> Revision(string guideKey, int revision, CancellationToken ct) => Run(async () => Ok(await guides.RevisionAsync(guideKey, revision, ct)));
 
+    [HttpGet("guides/{guideKey}/candidates")]
+    public Task<ActionResult> Candidates(string guideKey, CancellationToken ct) => Run(async () => Ok(await guides.CandidatesAsync(guideKey, ct)));
+
+    [HttpPost("guides/{guideKey}/candidates/{candidateId:guid}/draft")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> CandidateDraft(string guideKey, Guid candidateId, CancellationToken ct) =>
+        Run(async () => Ok(await guides.StartDraftFromCandidateAsync(guideKey, candidateId, Actor, ct)));
+
     [HttpPut("guides/{guideKey}/draft")]
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     public Task<ActionResult> SaveDraft(string guideKey, [FromBody] SaveGuideDraftRequest request, CancellationToken ct) =>

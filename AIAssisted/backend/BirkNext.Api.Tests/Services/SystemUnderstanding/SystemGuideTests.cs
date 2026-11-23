@@ -7,9 +7,13 @@ using BirkNext.Api.Services.SystemUnderstanding;
 using BirkNext.Api.Tests.TestInfrastructure;
 using BirkNext.Integrations;
 using BirkNext.SystemUnderstanding;
+using BirkNext.Web.Models;
+using BirkNext.Web.Services;
+using BirkNext.Web.Services.SampleProjects;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Moq;
 using Xunit;
 
 namespace BirkNext.Api.Tests.Services.SystemUnderstanding;
@@ -95,6 +99,36 @@ public sealed class SystemGuideTests : IAsyncLifetime
         var published = await guides.PublishAsync("skolenaervaer", 1, default);
         published.State.Should().Be(GuideRevisionState.Published);
         (await guides.GetAsync("skolenaervaer", true, default)).ReviewState.Should().Be("Published (revision 1)");
+    }
+
+    [Fact]
+    public async Task Source_import_creates_idempotent_candidate_with_provenance_without_changing_guide_revision()
+    {
+        await using var db = Context();
+        var pack = new Mock<IIntegrationJourneyPack>();
+        pack.SetupGet(p => p.PackId).Returns("skole-test");
+        pack.SetupGet(p => p.SourceRoles).Returns([new TestPackSourceRole("m2lb", "M2LB", "M2LB") { ComponentTokens = ["SkoleService"] }]);
+        var guide = new SystemGuideService(db, [Skole with { PackId = "skole-test" }], [pack.Object]);
+        var revision = (await guide.GetAsync("skolenaervaer", true, default)).Shown!;
+        var snapshot = new IqrSourceSnapshot { Id = Guid.NewGuid(), Archive = new SourceArchive("M2LB.zip", new string('a', 64), 10),
+            Projects = [new SourceProject("SkoleService", "SkoleService", false, "application", SourceConfidence.Confirmed)] };
+        const string spec = "# Feature Specification: Intake\n\n## User Scenarios & Testing\n\n### User Story 1 - Report intake (Priority: P1)\n\n**Acceptance Scenarios**:\n\n1. **Given** no matching child exists, **When** a report arrives, **Then** the report is held encrypted.\n\n## Requirements\n\n### Functional Requirements\n\n- **FR-001**: System MUST retain an unidentifiable report.\n";
+        var documents = new[] { ("specs/requirements.md", spec) };
+        ArtifactDocumentDiscovery.Classify([new("specs/requirements.md", "requirements.md", spec)]).Should().ContainSingle(d => d.Role == WorkspaceArtifactType.Specification && d.RelativePath == "specs/requirements.md");
+        SpecExplorerService.BuildSemanticModel(SpecExplorerService.Parse(spec), spec).AcceptanceScenarios.Should().NotBeEmpty();
+        TestPackSources.Recognizes(pack.Object.SourceRoles[0], snapshot).Should().BeTrue();
+
+        var first = await guide.GenerateSpecificationCandidatesAsync(snapshot, documents, default);
+        var second = await guide.GenerateSpecificationCandidatesAsync(snapshot, documents, default);
+
+        first.Should().ContainSingle();
+        second.Should().ContainSingle().Which.Id.Should().Be(first[0].Id, "retrying identical snapshot content is idempotent");
+        first[0].Status.Should().Be("NeedsReview");
+        first[0].SourceSnapshotId.Should().Be(snapshot.Id);
+        first[0].Content.Scenarios.Should().Contain(s => s.Id.StartsWith("spec-", StringComparison.Ordinal) && s.Evidence.Any(e => e.File == "specs/requirements.md"));
+        first[0].Evidence.Should().Contain(e => e.File == "specs/requirements.md" && e.SourceLabel == "M2LB.zip" && e.SourceRole == "m2lb");
+        db.SystemGuideRevisions.Should().ContainSingle(r => r.ContentFingerprint == revision.ContentFingerprint, "generation must not edit the human guide revision");
+        db.SystemGuideCandidates.Should().ContainSingle();
     }
 
     [Fact]

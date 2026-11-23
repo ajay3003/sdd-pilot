@@ -117,6 +117,7 @@
     private ISystemUnderstandingApiService? _api;
     private IReadOnlyList<SystemGuideSummary>? _guides;
     private SystemGuideView? _view;
+    private IReadOnlyList<SystemGuideCandidateView> _candidates = [];
     private string? _guideKey;
     private string _tab = "overview";
     private bool _loading = true;
@@ -173,6 +174,8 @@
         var (view, error) = await _api!.GetAsync(_guideKey!);
         _view = view;
         _error = error;
+        var (candidates, _) = await _api!.CandidatesAsync(_guideKey!);
+        _candidates = candidates ?? [];
         _search = P.Search(Content, _query);
     }
 
@@ -257,6 +260,20 @@
         _message = $"Revision {result!.Revision} is now {result.State}.";
         _messageTone = "ok";
         await LoadAsync();
+    }
+
+    private async Task ReviewCandidateAsync(Guid candidateId)
+    {
+        if (_busy) return;
+        _busy = true;
+        var (revision, error) = await _api!.CandidateDraftAsync(_guideKey!, candidateId);
+        _busy = false;
+        if (error is not null) { _message = error; _messageTone = "bad"; return; }
+        _message = $"Kandidatens forslag er åpnet som utkast {revision!.Revision}. Gjennomgå og lagre endringer før innsending til godkjenning.";
+        _messageTone = "ok";
+        await LoadAsync();
+        _tab = "revisions";
+        Sync();
     }
 
     private static string? SafeLink(string? link) => link is not null && SystemGuideLinks.IsSafeRoute(link) ? link : null;
@@ -706,6 +723,35 @@
                 <p class="su-note su-note-info" data-testid="su-read-only">Read only. Changing, approving or publishing a guide needs the configuration-write permission.</p>
             }
             <h2 class="su-h2">Revision history</h2>
+            @if (_candidates.Count > 0)
+            {
+                <section class="su-block" data-testid="su-generated-candidates">
+                    <h2 class="su-h2">Kildebaserte forslag – krever gjennomgang</h2>
+                    <p class="su-muted">Forslagene er generert fra importerte spesifikasjonsscenarioer. De endrer ikke gjeldende guide eller testforslag før en person har vurdert og lagret innholdet.</p>
+                    @foreach (var candidate in _candidates)
+                    {
+                        <details data-testid="su-candidate-@candidate.Id">
+                            <summary>@candidate.CreatedAt.ToString("yyyy-MM-dd HH:mm") · @candidate.Changes.Count endringer · Uavklart gjennomgang</summary>
+                            <p>Kildeversjon: @candidate.SourceSnapshotId · Generator @candidate.GeneratorVersion</p>
+                            @if (_view.CanEdit && _view.Draft is null)
+                            {
+                                <button type="button" class="su-btn" disabled="@_busy" @onclick="() => ReviewCandidateAsync(candidate.Id)" data-testid="su-candidate-review-@candidate.Id">Åpne som utkast for gjennomgang</button>
+                            }
+                            @if (candidate.Changes.Count == 0) { <p>Ingen nye scenarioer eller endrede forventede resultater ble oppdaget.</p> }
+                            <ul class="su-bullets">
+                                @foreach (var change in candidate.Changes)
+                                {
+                                    <li><strong>@change.Title</strong> — @(change.Kind == "NewScenario" ? "Nytt scenario" : "Forventet resultat endret")
+                                        @if (change.PreviousExpected is not null) { <span>Før: @change.PreviousExpected</span> }
+                                        @if (change.ProposedExpected is not null) { <span>Forslag: @change.ProposedExpected</span> }
+                                        @foreach (var ev in change.ProposedEvidence) { <small>@ev.SourceLabel · @ev.File@(ev.Lines is null ? "" : $" · linje {ev.Lines}")</small> }
+                                    </li>
+                                }
+                            </ul>
+                        </details>
+                    }
+                </section>
+            }
             <ol class="su-history">
                 @foreach (var r in _view.Revisions)
                 {

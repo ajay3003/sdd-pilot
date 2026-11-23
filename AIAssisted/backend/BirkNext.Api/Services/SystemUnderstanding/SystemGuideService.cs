@@ -6,9 +6,12 @@ using System.Text.Json.Serialization;
 using BirkNext.Api.Data;
 using BirkNext.Api.Models;
 using BirkNext.Api.Services.IntegrationJourneys;
+using BirkNext.Api.Services.Specifications;
 using BirkNext.Integrations;
 using BirkNext.SystemUnderstanding;
 using Microsoft.EntityFrameworkCore;
+using BirkNext.Web.Services;
+using BirkNext.Web.Services.SampleProjects;
 
 namespace BirkNext.Api.Services.SystemUnderstanding;
 
@@ -198,6 +201,113 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
             ?? throw new SystemGuideException(404, $"Guide '{guideKey}' has no revision {revision}.");
         return ToRevision(row);
     }
+
+    /// <summary>Generates a deterministic, unreviewed candidate from explicitly parsed specification documents in this import. Existing guide
+    /// revisions and open human drafts are never modified. Other evidence domains remain outside this deterministic generator and are not inferred.</summary>
+    public async Task<IReadOnlyList<SystemGuideCandidateView>> GenerateSpecificationCandidatesAsync(IqrSourceSnapshot snapshot,
+        IEnumerable<(string Path, string Content)> documents, CancellationToken ct)
+    {
+        var specs = documents.Where(d => d.Path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)).ToList();
+        var classified = ArtifactDocumentDiscovery.Classify(specs.Select(d => new ArtifactDocumentDiscovery.Candidate(d.Path, System.IO.Path.GetFileName(d.Path), d.Content)));
+        var selected = classified.Where(d => d.Role == WorkspaceArtifactType.Specification).Select(d => d.RelativePath).ToHashSet(StringComparer.Ordinal);
+        if (selected.Count == 0) return [];
+        var inputFingerprint = SpecificationCatalogService.Sha(snapshot.Archive.Sha256 + "\n" + string.Join("\n", specs.Where(d => selected.Contains(d.Path)).OrderBy(d => d.Path, StringComparer.Ordinal)
+            .Select(d => $"{d.Path}\u001f{SpecificationCatalogService.Sha(d.Content)}")));
+        var sourceFingerprint = SourceAnalysis.SourceBaselineService.ContentOf(snapshot);
+        var created = new List<SystemGuideCandidateView>();
+        foreach (var entry in catalog)
+        {
+            var pack = entry.PackId is null ? null : packs.FirstOrDefault(p => p.PackId == entry.PackId);
+            var guide = LoadSeed(entry.SeedResource);
+            var roles = Roles(entry, guide);
+            var matchingRoles = roles.Where(r => TestPackSources.Recognizes(r, snapshot)).Select(r => r.Key).ToHashSet(StringComparer.Ordinal);
+            if (matchingRoles.Count == 0) continue;
+
+            var generated = new List<GuideTestScenario>();
+            var evidence = new List<GuideEvidence>();
+            foreach (var doc in specs.Where(d => selected.Contains(d.Path)).OrderBy(d => d.Path, StringComparer.Ordinal))
+            {
+                var model = SpecExplorerService.BuildSemanticModel(SpecExplorerService.Parse(doc.Content), doc.Content);
+                foreach (var (item, ordinal) in model.AcceptanceScenarios.Select((scenario, index) => (scenario, index + 1)))
+                {
+                    // The shared semantic parser leaves Id null when a document did not author one. Use its structural identity (story + ordinal,
+                    // else source line + ordinal) rather than its translated/display title.
+                    var sourceIdentity = item.Id ?? $"scenario:{item.ParentStoryKey ?? "feature"}:{item.NumberInStory?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? item.LineStart?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+                    var scenarioId = "spec-" + SpecificationCatalogService.Sha(doc.Path + "|" + sourceIdentity)[..20];
+                    var ev = new GuideEvidence { Class = GuideEvidenceClass.Specified, SourceRole = matchingRoles.Order(StringComparer.Ordinal).First(),
+                        SourceLabel = snapshot.Archive.FileName, File = doc.Path, Lines = item.LineStart is { } line ? line.ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
+                        RequirementId = item.LinkedRequirements.FirstOrDefault()?.Id, Note = $"Scenario {item.Id} parsed from the imported specification." };
+                    evidence.Add(ev);
+                    generated.Add(new GuideTestScenario { Id = scenarioId, Title = string.IsNullOrWhiteSpace(item.Title) ? item.Id : item.Title,
+                        Objective = item.Then ?? "", Preconditions = item.Given, ExpectedOutcome = item.Then, State = string.IsNullOrWhiteSpace(item.Then) ? GuideScenarioState.NeedsClarification : GuideScenarioState.Suggested,
+                        FollowUp = string.IsNullOrWhiteSpace(item.When) ? "Avklar teststeget (When) i spesifikasjonen." : null, Evidence = [ev] });
+                }
+            }
+            if (generated.Count == 0) continue;
+            var previous = await db.SystemGuideRevisions.AsNoTracking().Where(r => r.GuideKey == entry.GuideKey)
+                .OrderByDescending(r => r.Revision).Select(r => r.ContentJson).FirstOrDefaultAsync(ct);
+            var current = previous is null ? guide : JsonSerializer.Deserialize<SystemGuideContent>(previous, Json) ?? guide;
+            var previousScenarios = current.Scenarios.ToDictionary(s => s.Id, StringComparer.Ordinal);
+            var changes = generated.Select(s => previousScenarios.TryGetValue(s.Id, out var old)
+                ? old.ExpectedOutcome == s.ExpectedOutcome ? null : new SystemGuideCandidateChange("ChangedExpectedResult", s.Id, s.Title, old.ExpectedOutcome, s.ExpectedOutcome, old.Evidence, s.Evidence)
+                : new SystemGuideCandidateChange("NewScenario", s.Id, s.Title, null, s.ExpectedOutcome, [], s.Evidence)).Where(c => c is not null).Cast<SystemGuideCandidateChange>().ToList();
+            // Candidate is an additive projection. Source absence does not delete any reviewed scenario.
+            var content = current with { Scenarios = [.. current.Scenarios.Where(s => !generated.Any(g => g.Id == s.Id)), .. generated] };
+            var contentFingerprint = Fingerprint(content);
+            var prior = await db.SystemGuideCandidates.AsNoTracking().FirstOrDefaultAsync(c => c.GuideKey == entry.GuideKey && c.InputFingerprint == inputFingerprint, ct);
+            if (prior is null)
+            {
+                var row = new SystemGuideCandidateRecord { Id = Guid.NewGuid(), GuideKey = entry.GuideKey, SourceSnapshotId = snapshot.Id,
+                    SourceFingerprint = sourceFingerprint, InputFingerprint = inputFingerprint, ContentFingerprint = contentFingerprint, ContentJson = JsonSerializer.Serialize(content, Json),
+                    ChangesJson = JsonSerializer.Serialize(changes, Json), EvidenceJson = JsonSerializer.Serialize(evidence, Json), Status = "NeedsReview", CreatedAt = Now,
+                    GeneratorVersion = "spec-guide-1" };
+                db.SystemGuideCandidates.Add(row);
+                try { await db.SaveChangesAsync(ct); prior = row; }
+                catch (DbUpdateException) { db.ChangeTracker.Clear(); prior = await db.SystemGuideCandidates.AsNoTracking().FirstOrDefaultAsync(c => c.GuideKey == entry.GuideKey && c.InputFingerprint == inputFingerprint, ct); }
+            }
+            if (prior is not null) created.Add(ToCandidate(prior));
+        }
+        return created;
+    }
+
+    public async Task<IReadOnlyList<SystemGuideCandidateView>> CandidatesAsync(string guideKey, CancellationToken ct)
+    {
+        Entry(guideKey);
+        var rows = await db.SystemGuideCandidates.AsNoTracking().Where(c => c.GuideKey == guideKey).OrderByDescending(c => c.CreatedAt).Take(50).ToListAsync(ct);
+        return rows.Select(ToCandidate).ToList();
+    }
+
+    /// <summary>Starts a human-owned Draft from a candidate only when no open draft exists. The candidate itself remains immutable evidence.</summary>
+    public async Task<SystemGuideRevision> StartDraftFromCandidateAsync(string guideKey, Guid candidateId, string actor, CancellationToken ct)
+    {
+        var entry = Entry(guideKey);
+        await EnsureSeededAsync(entry, ct);
+        var open = await db.SystemGuideRevisions.AnyAsync(r => r.GuideKey == guideKey && (r.State == nameof(GuideRevisionState.Draft) || r.State == nameof(GuideRevisionState.InReview)), ct);
+        if (open) throw new SystemGuideException(409, "A guide draft or review is already open. Reconcile the source proposal with that revision first.");
+        var candidate = await db.SystemGuideCandidates.SingleOrDefaultAsync(c => c.GuideKey == guideKey && c.Id == candidateId, ct)
+            ?? throw new SystemGuideException(404, "The source candidate was not found.");
+        var content = JsonSerializer.Deserialize<SystemGuideContent>(candidate.ContentJson, Json) ?? throw new SystemGuideException(409, "The source candidate is unreadable.");
+        var problems = SystemGuideValidation.Problems(content);
+        if (problems.Count > 0) throw new SystemGuideException(409, $"The source candidate needs reconciliation before it can become a draft: {string.Join("; ", problems)}");
+        var latest = await db.SystemGuideRevisions.Where(r => r.GuideKey == guideKey).MaxAsync(r => (int?)r.Revision, ct) ?? 0;
+        var evidence = JsonSerializer.Deserialize<List<GuideEvidence>>(candidate.EvidenceJson, Json) ?? [];
+        var sourceBasis = evidence.Where(e => e.SourceRole is not null).Select(e => e.SourceRole!).Distinct(StringComparer.Ordinal)
+            .Select(role => new GuideSourceBasis(role, candidate.SourceSnapshotId, candidate.SourceFingerprint, $"Source Analysis snapshot {candidate.SourceSnapshotId}")).ToList();
+        var row = new SystemGuideRevisionRecord { Id = Guid.NewGuid(), GuideKey = guideKey, Revision = latest + 1, State = nameof(GuideRevisionState.Draft),
+            ContentJson = JsonSerializer.Serialize(content, Json), ContentFingerprint = Fingerprint(content), SourceBasisJson = JsonSerializer.Serialize(sourceBasis, Json),
+            CreatedBy = actor, CreatedAt = Now, ChangeSummary = $"Human review started from source candidate {candidate.Id} ({candidate.GeneratorVersion})." };
+        db.SystemGuideRevisions.Add(row);
+        candidate.Status = "DraftCreated";
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException) { db.ChangeTracker.Clear(); throw new SystemGuideException(409, "The guide changed while this candidate was being opened. Reload and compare again."); }
+        return ToRevision(row);
+    }
+
+    private static SystemGuideCandidateView ToCandidate(SystemGuideCandidateRecord row) => new(row.Id, row.GuideKey, row.SourceSnapshotId, row.SourceFingerprint,
+        row.ContentFingerprint, row.CreatedAt, row.GeneratorVersion, row.Status,
+        JsonSerializer.Deserialize<SystemGuideContent>(row.ContentJson, Json) ?? new(),
+        JsonSerializer.Deserialize<List<SystemGuideCandidateChange>>(row.ChangesJson, Json) ?? [],
+        JsonSerializer.Deserialize<List<GuideEvidence>>(row.EvidenceJson, Json) ?? []);
 
     private static string ReviewState(SystemGuideRevisionRecord? published, SystemGuideRevisionRecord? open) => (published, open) switch
     {

@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<ExecutionCallRow> ExecutionCalls => Set<ExecutionCallRow>();
     public DbSet<ExecutionManifestRow> ExecutionManifests => Set<ExecutionManifestRow>();
     public DbSet<SystemGuideRevisionRecord> SystemGuideRevisions => Set<SystemGuideRevisionRecord>();
+    public DbSet<SystemGuideCandidateRecord> SystemGuideCandidates => Set<SystemGuideCandidateRecord>();
     public DbSet<TestPlanDraftRecord> TestPlanDrafts => Set<TestPlanDraftRecord>();
     public DbSet<TestPlanSnapshotRecord> TestPlanSnapshots => Set<TestPlanSnapshotRecord>();
     public DbSet<ManualTestRunRecord> ManualTestRuns => Set<ManualTestRunRecord>();
@@ -1182,6 +1183,22 @@ public class AppDbContext : DbContext
             // At most one open revision (Draft/InReview) and one Published revision per guide: concurrent saves or publishes cannot fork it.
             entity.HasIndex(r => r.GuideKey, "IX_system_guide_revisions_open").IsUnique().HasFilter("\"State\" IN ('Draft', 'InReview')");
             entity.HasIndex(r => r.GuideKey, "IX_system_guide_revisions_published").IsUnique().HasFilter("\"State\" = 'Published'");
+        });
+        modelBuilder.Entity<SystemGuideCandidateRecord>(entity =>
+        {
+            entity.ToTable("system_guide_candidates");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.GuideKey).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.SourceFingerprint).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.InputFingerprint).HasMaxLength(64).IsRequired();
+            entity.Property(r => r.ContentFingerprint).HasMaxLength(64).IsRequired();
+            entity.Property(r => r.ContentJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.ChangesJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.EvidenceJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.Status).HasMaxLength(30).IsRequired();
+            entity.Property(r => r.GeneratorVersion).HasMaxLength(50).IsRequired();
+            entity.HasIndex(r => new { r.GuideKey, r.InputFingerprint }).IsUnique();
+            entity.HasIndex(r => new { r.GuideKey, r.CreatedAt });
         });
         modelBuilder.Entity<TestPlanDraftRecord>(entity =>
         {

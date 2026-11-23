@@ -30,6 +30,7 @@ public sealed class SystemUnderstandingPageTests : BunitContext
 
     private sealed class Api(SystemGuideView? view, bool canEdit = false) : ISystemUnderstandingApiService
     {
+        public IReadOnlyList<SystemGuideCandidateView> Candidates { get; set; } = [];
         public List<string> Actions { get; } = [];
         public SaveGuideDraftRequest? Saved { get; private set; }
         public Task<(IReadOnlyList<SystemGuideSummary>? Guides, string? Error)> ListAsync(CancellationToken ct = default) => Task.FromResult<(IReadOnlyList<SystemGuideSummary>?, string?)>(
@@ -37,6 +38,8 @@ public sealed class SystemUnderstandingPageTests : BunitContext
         public Task<(SystemGuideView? Guide, string? Error)> GetAsync(string guideKey, CancellationToken ct = default) =>
             Task.FromResult<(SystemGuideView?, string?)>((view! with { CanEdit = canEdit, CanApprove = canEdit }, null));
         public Task<(SystemGuideRevision? Revision, string? Error)> RevisionAsync(string guideKey, int revision, CancellationToken ct = default) => Task.FromResult<(SystemGuideRevision?, string?)>((view!.Shown, null));
+        public Task<(IReadOnlyList<SystemGuideCandidateView>? Candidates, string? Error)> CandidatesAsync(string guideKey, CancellationToken ct = default) => Task.FromResult<(IReadOnlyList<SystemGuideCandidateView>?, string?)>((Candidates, null));
+        public Task<(SystemGuideRevision? Revision, string? Error)> CandidateDraftAsync(string guideKey, Guid candidateId, CancellationToken ct = default) => Task.FromResult<(SystemGuideRevision?, string?)>((view!.Shown, null));
         public Task<(SystemGuideRevision? Revision, string? Error)> SaveDraftAsync(string guideKey, SaveGuideDraftRequest request, CancellationToken ct = default)
         { Saved = request; return Task.FromResult<(SystemGuideRevision?, string?)>((view!.Shown! with { Revision = 2, Content = request.Content }, null)); }
         public Task<(SystemGuideRevision? Revision, string? Error)> TransitionAsync(string guideKey, int revision, string action, CancellationToken ct = default)
@@ -80,6 +83,23 @@ public sealed class SystemUnderstandingPageTests : BunitContext
         cut.Find("[data-testid=su-edge-e-mm-skole]").ClassList.Should().Contain("k-main");
         cut.Find("[data-testid=su-edge-e-skole-person]").ClassList.Should().Contain("k-identity");
         cut.Markup.Should().NotContain("Healthy").And.NotContain("Verified ✓");
+    }
+
+    [Fact]
+    public void Generated_candidate_shows_change_and_exact_source_provenance_in_Norwegian()
+    {
+        var ev = new GuideEvidence { Class = GuideEvidenceClass.Specified, SourceRole = "m2lb", SourceLabel = "M2LB-v2.zip", File = "specs/requirements.md", Lines = "42" };
+        var candidate = new SystemGuideCandidateView(Guid.NewGuid(), "skolenaervaer", Guid.NewGuid(), new string('b', 64), new string('c', 64),
+            DateTimeOffset.UtcNow, "spec-guide-1", "NeedsReview", Seed(),
+            [new("ChangedExpectedResult", "scenario-x", "Barnet finnes ikke", "HTTP 503", "HTTP 200", [ev], [ev])], [ev]);
+        var api = new Api(View(state: GuideRevisionState.Published), canEdit: true) { Candidates = [candidate] };
+        var cut = Render(api, "?tab=revisions");
+
+        cut.Find("[data-testid=su-generated-candidates]").TextContent.Should().Contain("Kildebaserte forslag").And.Contain("krever gjennomgang");
+        var details = cut.Find($"[data-testid=su-candidate-{candidate.Id}]");
+        details.TextContent.Should().Contain("Forventet resultat endret").And.Contain("HTTP 503").And.Contain("HTTP 200")
+            .And.Contain("M2LB-v2.zip").And.Contain("specs/requirements.md").And.Contain("linje 42");
+        cut.Find($"[data-testid=su-candidate-review-{candidate.Id}]").TextContent.Should().Contain("Åpne som utkast");
     }
 
     [Fact]

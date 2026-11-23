@@ -274,6 +274,14 @@ public sealed record SystemGuideSummary(string GuideKey, string Title, string Pu
 
 public sealed record SaveGuideDraftRequest(SystemGuideContent Content, string? ChangeSummary, string? BaseFingerprint);
 
+/// <summary>Unreviewed source-derived output kept separate from editable and published guide revisions.</summary>
+public sealed record SystemGuideCandidateView(Guid Id, string GuideKey, Guid SourceSnapshotId, string SourceFingerprint, string ContentFingerprint,
+    DateTimeOffset CreatedAt, string GeneratorVersion, string Status, SystemGuideContent Content, IReadOnlyList<SystemGuideCandidateChange> Changes,
+    IReadOnlyList<GuideEvidence> Evidence);
+
+public sealed record SystemGuideCandidateChange(string Kind, string ScenarioId, string Title, string? PreviousExpected, string? ProposedExpected,
+    IReadOnlyList<GuideEvidence> PreviousEvidence, IReadOnlyList<GuideEvidence> ProposedEvidence);
+
 /// <summary>The one rule for guide links (backend validation and frontend rendering): a relative BirkNext route — letters, digits and URL
 /// punctuation, no scheme, no leading "//" or "\", no traversal. Anything else is shown as text, never as a link.</summary>
 public static class SystemGuideLinks

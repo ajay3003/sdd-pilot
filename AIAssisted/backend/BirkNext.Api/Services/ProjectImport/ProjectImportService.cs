@@ -24,7 +24,8 @@ public sealed record ProjectImportPreviewResult(ProjectImportPreview? Preview, S
 /// </summary>
 public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStagingStore staging, IReviewSourceEvidenceProvider sources, ILogger<ProjectImportService> logger,
     BirkNext.Api.Services.GitSources.IGitImportRecorder? gitImports = null, BirkNext.Api.Services.ImplementationGaps.ImplementationGapService? gaps = null,
-    BirkNext.Api.Services.Specifications.SpecificationCatalogService? catalogs = null)
+    BirkNext.Api.Services.Specifications.SpecificationCatalogService? catalogs = null,
+    BirkNext.Api.Services.SystemUnderstanding.SystemGuideService? guides = null)
 {
     /// <summary>The import identity: derived from the exact archive bytes, so the same archive always has the same identity.</summary>
     public static string ImportIdFor(string sha256) => "import-" + sha256[..Math.Min(16, sha256.Length)];
@@ -111,6 +112,22 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
             var settled = !source.CanRetry;
             var gapEvaluationId = settled ? await ImplementationGapsAsync(staged, source, ct) : null;
             await SpecificationCatalogAsync(staged, source, ct);
+            if (settled && source.SnapshotId is { } sourceSnapshotId && guides is not null && staged.Workspace.DocumentFiles is { Count: > 0 } guideDocuments)
+            {
+                try
+                {
+                    var snapshot = await store.FindSourceAnalysisAsync(sourceSnapshotId, ct);
+                    if (snapshot is not null)
+                        await guides.GenerateSpecificationCandidatesAsync(snapshot, guideDocuments.Select(d => (d.Path, d.Content)), ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception ex)
+                {
+                    // Candidate generation is deliberately isolated from import success. The source snapshot and captured specification remain
+                    // available for an explicit retry; a failed generator never changes a reviewed guide.
+                    logger.LogError("System Understanding candidate generation failed after source import {ImportId}. Exception type {ExceptionType}", staged.ImportId, ex.GetType().Name);
+                }
+            }
             var result = new ProjectImportCommitResult
             {
                 StagingId = stagingId, Provenance = provenance, Source = source, StagedUntil = settled ? null : staged.ExpiresAt, ImplementationGapEvaluationId = gapEvaluationId,

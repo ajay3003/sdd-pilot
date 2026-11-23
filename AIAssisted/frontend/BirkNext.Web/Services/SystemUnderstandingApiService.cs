@@ -11,6 +11,8 @@ public interface ISystemUnderstandingApiService
     Task<(IReadOnlyList<SystemGuideSummary>? Guides, string? Error)> ListAsync(CancellationToken ct = default);
     Task<(SystemGuideView? Guide, string? Error)> GetAsync(string guideKey, CancellationToken ct = default);
     Task<(SystemGuideRevision? Revision, string? Error)> RevisionAsync(string guideKey, int revision, CancellationToken ct = default);
+    Task<(IReadOnlyList<SystemGuideCandidateView>? Candidates, string? Error)> CandidatesAsync(string guideKey, CancellationToken ct = default) => Task.FromResult<(IReadOnlyList<SystemGuideCandidateView>?, string?)>(([], null));
+    Task<(SystemGuideRevision? Revision, string? Error)> CandidateDraftAsync(string guideKey, Guid candidateId, CancellationToken ct = default) => Task.FromResult<(SystemGuideRevision?, string?)>((null, "Source candidate review is unavailable."));
     Task<(SystemGuideRevision? Revision, string? Error)> SaveDraftAsync(string guideKey, SaveGuideDraftRequest request, CancellationToken ct = default);
     /// <summary>action: submit, return-to-draft, approve, publish.</summary>
     Task<(SystemGuideRevision? Revision, string? Error)> TransitionAsync(string guideKey, int revision, string action, CancellationToken ct = default);
@@ -28,6 +30,12 @@ public sealed class SystemUnderstandingApiService(HttpClient http) : ISystemUnde
 
     public Task<(SystemGuideRevision? Revision, string? Error)> RevisionAsync(string guideKey, int revision, CancellationToken ct = default) =>
         Send<SystemGuideRevision>(() => http.GetAsync($"api/system-understanding/guides/{Uri.EscapeDataString(guideKey)}/revisions/{revision}", ct), ct);
+
+    public Task<(IReadOnlyList<SystemGuideCandidateView>? Candidates, string? Error)> CandidatesAsync(string guideKey, CancellationToken ct = default) =>
+        Send<IReadOnlyList<SystemGuideCandidateView>>(() => http.GetAsync($"api/system-understanding/guides/{Uri.EscapeDataString(guideKey)}/candidates", ct), ct);
+
+    public Task<(SystemGuideRevision? Revision, string? Error)> CandidateDraftAsync(string guideKey, Guid candidateId, CancellationToken ct = default) =>
+        Send<SystemGuideRevision>(() => http.PostAsync($"api/system-understanding/guides/{Uri.EscapeDataString(guideKey)}/candidates/{candidateId}/draft", null, ct), ct);
 
     public Task<(SystemGuideRevision? Revision, string? Error)> SaveDraftAsync(string guideKey, SaveGuideDraftRequest request, CancellationToken ct = default) =>
         Send<SystemGuideRevision>(() => http.PutAsJsonAsync($"api/system-understanding/guides/{Uri.EscapeDataString(guideKey)}/draft", request, Json, ct), ct);
