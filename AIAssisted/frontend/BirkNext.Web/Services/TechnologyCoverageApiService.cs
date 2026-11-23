@@ -120,7 +120,8 @@ public static class TechnologyCoveragePresentation
 {
     public static ProjectApplicabilityInput Input(ProjectTechnologyCoverage? coverage, FrontendAnalysisProfile? profile, bool hasRequirements, bool hasDocumentation)
     {
-        var target = !string.IsNullOrWhiteSpace(profile?.TargetUrl);
+        // The seeded example URL is not a target (fresh installation): runtime reviews then wait for a configured one instead of showing ready.
+        var target = FrontendAnalysisSettingsService.IsConfiguredTarget(profile?.TargetUrl);
         return new ProjectApplicabilityInput
         {
             HasSourceSnapshot = coverage?.SourceSnapshotId is not null,

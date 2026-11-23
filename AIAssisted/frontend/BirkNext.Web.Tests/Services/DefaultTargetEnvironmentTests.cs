@@ -49,6 +49,30 @@ public sealed class DefaultTargetEnvironmentTests
     }
 
     [Fact]
+    public async Task The_seeded_example_url_is_not_a_target_so_runtime_reviews_do_not_look_ready()
+    {
+        // Fresh installation: Development is active with its example URL. Nothing can be tested there, so the run gates and the applicability
+        // of browser/API reviews must treat it as "no target" (2026-11-23: FQR/AQR/Performance/Critical E2E showed Ready to run on an empty DB).
+        var (settings, _) = await FreshAsync();
+        var dev = settings.ActiveProfile!;
+        dev.TargetUrl.Should().Be("https://example-dev.local");
+        FrontendAnalysisSettingsService.IsConfiguredTarget(dev.TargetUrl).Should().BeFalse();
+        FrontendAnalysisSettingsService.IsConfiguredTarget("").Should().BeFalse();
+        FrontendAnalysisSettingsService.IsConfiguredTarget("https://m2lbdev.bufetat.no").Should().BeTrue();
+
+        var context = new FrontendAnalysisContext { TargetUrl = dev.TargetUrl };
+        context.HasTargetUrl.Should().BeFalse();
+        context.HasExampleTargetUrl.Should().BeTrue();
+        new FrontendAnalysisContext { TargetUrl = "https://app.example.org" }.HasTargetUrl.Should().BeTrue("only the seed's example-*.local hosts are examples");
+
+        var input = TechnologyCoveragePresentation.Input(null, dev, hasRequirements: false, hasDocumentation: false);
+        (input.HasBrowserTarget, input.HasApiTarget).Should().Be((false, false));
+        dev.TargetUrl = "https://m2lbdev.bufetat.no";
+        input = TechnologyCoveragePresentation.Input(null, dev, hasRequirements: false, hasDocumentation: false);
+        (input.HasBrowserTarget, input.HasApiTarget).Should().Be((true, true));
+    }
+
+    [Fact]
     public async Task SwitchingToQaOrProduction_PersistsAcrossReload_AndStartupNeverResetsIt()
     {
         var (settings, js) = await FreshAsync();

@@ -648,8 +648,15 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
         (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
-    /// <summary>Seed placeholder URLs ("https://example-dev.local", "https://localhost:5001"): not a configured target.</summary>
-    internal static bool IsSeedPlaceholder(string? url) =>
+    /// <summary>
+    /// A Frontend URL someone actually configured: present, absolute, and not one of the seed examples a fresh installation starts with
+    /// ("https://example-dev.local", "https://example-qa.local", "https://example.local"). The seeded Development environment is active on a fresh
+    /// installation, so without this check its example URL would count as a target and runtime reviews would look ready to run (2026-11-23).
+    /// </summary>
+    public static bool IsConfiguredTarget(string? url) => !IsSeedPlaceholder(url);
+
+    /// <summary>Seed placeholder URLs (the example-*.local hosts of the seed): not a configured target.</summary>
+    public static bool IsSeedPlaceholder(string? url) =>
         string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Host.StartsWith("example", StringComparison.OrdinalIgnoreCase) && uri.Host.EndsWith(".local", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The frontend URL configured on the existing Development environment, when it is a real target (not a seed placeholder).</summary>

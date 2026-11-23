@@ -151,7 +151,7 @@ public sealed class ActiveTargetEnvironmentUITests : BunitContext
         await running;
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-result-meta]").TextContent.Should().Contain("M2LB DEV").And.Contain("https://m2lbdev.bufetat.no/"));
         var stored = Services.GetRequiredService<RuntimeReviewSessionService>().QualityReview.Report!;
-        new ReportExportService().ExportFrontendQualityReview(stored, "test").Should().Contain("M2LB DEV").And.NotContain("example-qa.local");
+        new ReportExportService().ExportFrontendQualityReview(stored, "test").Should().Contain("M2LB DEV").And.NotContain("qa.example.org");
         page.FindAll("button").Single(b => b.TextContent.Trim() == "Back to Frontend Quality Review").Click();
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-access-target]").TextContent.Should().Contain("QA"));
         page.FindAll("button").Single(b => b.TextContent.Contains("Run Frontend Quality Review")).Click();

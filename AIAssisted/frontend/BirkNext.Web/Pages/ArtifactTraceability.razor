@@ -139,7 +139,7 @@
                     </div>
 
                     <div class="at-analyze-bar">
-                        <span class="at-loaded-summary">
+                        <span class="at-loaded-summary" data-testid="at-input-status" data-status="@_inputs.Status" data-loaded="@_inputs.LoadedCount">
                             @_inputs.LoadedCount artifact@(_inputs.LoadedCount != 1 ? "s" : "") selected
                             @if (_inputs.Status == BirkNext.Web.Services.Explorers.TraceabilityInputStatus.Insufficient)
                             { <span> — at least 2 are needed to assess links</span> }

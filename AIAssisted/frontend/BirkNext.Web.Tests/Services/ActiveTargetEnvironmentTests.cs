@@ -11,7 +11,7 @@ public sealed class ActiveTargetEnvironmentTests
 {
     internal const string ProfilesJson = """
         {"activeProfileId":"dev","profiles":[
-          {"id":"qa","name":"QA","environmentType":"QA","targetUrl":"https://example-qa.local"},
+          {"id":"qa","name":"QA","environmentType":"QA","targetUrl":"https://qa.example.org"},
           {"id":"dev","name":"M2LB DEV","environmentType":"Development","targetUrl":"https://m2lbdev.bufetat.no/"}
         ]}
         """;
@@ -38,7 +38,7 @@ public sealed class ActiveTargetEnvironmentTests
 
     [Theory]
     [InlineData("dev", "M2LB DEV", "https://m2lbdev.bufetat.no/")]
-    [InlineData("qa", "QA", "https://example-qa.local")]
+    [InlineData("qa", "QA", "https://qa.example.org")]
     public async Task ExactActiveIdWinsRegardlessOfOrder(string id, string name, string url)
     {
         var js = new Storage();
@@ -214,6 +214,6 @@ public sealed class ActiveTargetEnvironmentTests
         var html = new ReportExportService().ExportFrontendQualityReview(restored, "Test");
         restored.TargetEnvironment.Should().Be(report.TargetEnvironment);
         html.Should().Contain("M2LB DEV").And.Contain("https://m2lbdev.bufetat.no/").And.Contain("Development");
-        html.Should().NotContain("example-qa.local");
+        html.Should().NotContain("qa.example.org");
     }
 }

@@ -83,7 +83,10 @@ public sealed class FrontendAnalysisContext
 
     public IReadOnlyList<IntegrationConfig> Integrations { get; set; } = Array.Empty<IntegrationConfig>();
 
-    public bool HasTargetUrl           => !string.IsNullOrWhiteSpace(TargetUrl);
+    /// <summary>A configured Frontend URL: the seed's example URL (a fresh installation's Development environment) is not a target.</summary>
+    public bool HasTargetUrl           => BirkNext.Web.Services.FrontendAnalysisSettingsService.IsConfiguredTarget(TargetUrl);
+    /// <summary>The Frontend URL is still the seed's example (e.g. https://example-dev.local), so nothing can be tested yet.</summary>
+    public bool HasExampleTargetUrl    => !string.IsNullOrWhiteSpace(TargetUrl) && !HasTargetUrl;
     public bool HasRestBaseUrl         => !string.IsNullOrWhiteSpace(RestBaseUrl);
     public bool HasGraphQlEndpoint     => !string.IsNullOrWhiteSpace(GraphQlEndpoint);
     public bool HasValidationErrors    => ValidationErrors.Count > 0;

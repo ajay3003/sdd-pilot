@@ -1065,6 +1065,7 @@
         _running ? null
         : _context is null ? "Loading the active Target Environment…"
         : _context.ActiveTargetError is { } error ? $"{error} Select a Target Environment and choose Set as Active."
+        : _context.HasExampleTargetUrl ? $"The active Target Environment ({_context.ActiveProfile.Name}) still has the example Frontend URL {_context.TargetUrl}. Enter your application's Frontend URL in Target Environments before running the review."
         : !_context.HasTargetUrl ? "The active Target Environment has no Frontend URL. Save a valid Frontend URL before running the review."
         : _activeEngines is not { HasActiveEngines: true } ? $"{FrontendQualityActiveEngines.NoActiveEnginesMessage} {FrontendQualityActiveEngines.NoActiveEnginesAction}"
         : !_evidenceLoaded ? "Assessing frontend review readiness — loading browser evidence…"

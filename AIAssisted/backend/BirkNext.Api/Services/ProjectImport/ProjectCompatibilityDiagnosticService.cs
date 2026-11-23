@@ -261,26 +261,42 @@ public sealed class ProjectCompatibilityDiagnosticService(IConfiguration configu
             change.Original.Length == change.Mutated.Length && change.Original.Length > 0
             && change.Original.All(d => d.ExactCanonicalFilenameSignal && d.Role is not null)
             && change.Mutated.All(d => !d.ExactCanonicalFilenameSignal && (d.Role is null || d.Role == change.Original[0].Role)));
+        // Folder and filename conventions are documented classifier evidence (a plans/ folder supports Plan; a dated design note in a documentation
+        // tree's specs/ or plans/ folder is a supporting design document). Moving such a file to relocated/area-N/renamed-document-N.md removes that
+        // evidence by construction, so the role may be lost or the content-only role may differ. That is path-dependent discovery (Partial), not
+        // a discovery failure — the same judgement as the exact canonical filename above (2026-11-23, Terraform-iac-m2lb design notes).
+        var pathConventionOnly = !canonicalRoleLossOnly && !canonicalConfidenceOnly && sourceSame && changed.Count > 0
+            && changed.Concat(confidenceChanges).All(change => change.Original.Length > 0 && change.Original.All(PathConventionSignal)
+                && change.Mutated.All(d => !PathConventionSignal(d)));
         var details = changed.Select(change =>
             $"fingerprint {change.Fingerprint[..Math.Min(12, change.Fingerprint.Length)]}: original [{string.Join(" | ", change.Original.Select(Describe))}], mutated [{string.Join(" | ", change.Mutated.Select(Describe))}]")
             .Concat(confidenceChanges.Take(8).Select(change =>
                 $"confidence-only fingerprint {change.Fingerprint[..Math.Min(12, change.Fingerprint.Length)]}: original [{string.Join(" | ", change.Original.Select(Describe))}], mutated [{string.Join(" | ", change.Mutated.Select(Describe))}]"))
             .Concat(sourceSame ? [] : [$"source: original detected={left.SourceDetected}, unsupported={left.UnsupportedFiles}, technologies={string.Join(",", left.TechnologyIds)}; mutated detected={right.SourceDetected}, unsupported={right.UnsupportedFiles}, technologies={string.Join(",", right.TechnologyIds)}"])
             .ToArray();
-        var summary = canonicalRoleLossOnly
+        var summary = pathConventionOnly
+            ? $"{changed.Count} content fingerprint(s) were classified with folder or filename convention evidence (plans/, specs/, a design-note folder or a role filename); once moved and renamed they lost that evidence, so their role was dropped or decided from content alone. Source semantics are unchanged. This remains Partial because discovery is path-dependent for those documents."
+            : canonicalRoleLossOnly
             ? $"{changed.Count} content fingerprint(s) lost an assigned role after renaming because the original exact canonical filename was required to cross the role threshold; mutated content still has no conflicting role assignment. Other classification changes: {confidenceChanges.Count}. Source semantics are unchanged. This remains Partial because discovery is filename-dependent for those documents."
             : canonicalConfidenceOnly
             ? $"Final detected/unassigned state, role, and ambiguity candidate-role set are unchanged for all documents. {confidenceChanges.Count} content fingerprint(s) have a lower/changed confidence label after the exact canonical filename signal was removed; source semantics are unchanged. This is an expected filename-evidence strength difference, not a discovery loss."
             : changed.Count == 0
                 ? $"Final role/ambiguity outcomes are unchanged, but confidence evidence changed for {confidenceChanges.Count} content fingerprint(s); source semantics {(sourceSame ? "were unchanged" : "also changed")}. See per-fingerprint evidence details."
                 : $"Semantic discovery changed for {changed.Count} content fingerprint(s); source semantics {(sourceSame ? "were unchanged" : "also changed")}. See the per-fingerprint comparison details.";
-        return new(false, canonicalRoleLossOnly || canonicalConfidenceOnly || (changed.Count == 0 && confidenceChanges.Count > 0), summary, string.Join(Environment.NewLine, details));
+        return new(false, canonicalRoleLossOnly || canonicalConfidenceOnly || pathConventionOnly || (changed.Count == 0 && confidenceChanges.Count > 0), summary, string.Join(Environment.NewLine, details));
     }
+
+    /// <summary>The document's classification could use path evidence: the exact canonical filename, the supporting-design-document folder rule,
+    /// or a folder the classifier reads as a role hint (its own <see cref="BirkNext.Web.Services.SampleProjects.SampleArtifactClassifier.PathKey"/>
+    /// keeps exactly those folders; a relocated file has none).</summary>
+    private static bool PathConventionSignal(DocumentSemantic d) => d.ExactCanonicalFilenameSignal
+        || d.Signals.Contains("Supporting design document", StringComparison.Ordinal)
+        || BirkNext.Web.Services.SampleProjects.SampleArtifactClassifier.PathKey(d.RelativePath).Contains('/');
 
     private static string OutcomeKey(DocumentSemantic d) => $"{d.Status}|{d.Role}|{string.Join(",", d.CandidateRoles.Split(',', StringSplitOptions.RemoveEmptyEntries).Order(StringComparer.Ordinal))}";
     private static string ClassificationKey(DocumentSemantic d) => $"{OutcomeKey(d)}|{d.Confidence}|{d.CandidateConfidence}";
     private static string Describe(DocumentSemantic d) =>
-        $"{SafeLabel(d.RelativePath)} => {d.Status}/{d.Role ?? "unassigned"}/{d.Confidence}, candidate roles=[{d.CandidateRoles}], candidate confidence=[{d.CandidateConfidence}], exact canonical filename signal={d.ExactCanonicalFilenameSignal}";
+        $"{SafeLabel(d.RelativePath)} => {d.Status}/{d.Role ?? "unassigned"}/{d.Confidence}, candidate roles=[{d.CandidateRoles}], candidate confidence=[{d.CandidateConfidence}], exact canonical filename signal={d.ExactCanonicalFilenameSignal}, signals=[{(d.Signals.Length > 300 ? d.Signals[..300] + "…" : d.Signals)}]";
     private static string SafeLabel(string path) => path.Replace('\\', '/').TrimStart('/');
 
     private static Inspection Inspect(byte[] bytes, CancellationToken ct)
