@@ -1,0 +1,533 @@
+@page "/manual-testing/plan"
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using M = BirkNext.Web.Services.ManualTestingPresentation
+@using P = BirkNext.Web.Services.PlanPreparePresentation
+@implements IDisposable
+@inject IServiceProvider ServiceProvider
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@* Planlegg og klargjør (2026-11-23): one plan at a time as a master-detail editor. Left: the plan's scenarios with their test cases (several per
+   scenario). Right: the selected case — title, purpose, preconditions, test data, steps with an action and an expected result each (add, edit,
+   remove, reorder) and the overall expected result — with its user story, requirements and evidence as context. Saving sends only human-owned
+   edits against the plan's revision (a stale save is refused, never merged silently). Unsaved edits are never lost by switching case or leaving
+   the page. Translation and export are the existing ones (Oversett; Eksporter opens the export of the plan). *@
+<PageTitle>Planlegg og klargjør</PageTitle>
+<NavigationLock ConfirmExternalNavigation="@Dirty" OnBeforeInternalNavigation="OnBeforeNavigation" />
+
+<div class="mt msb-page mtp" data-testid="mtp" aria-busy="@(_loading ? "true" : "false")">
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="plan" Title="Planlegg og klargjør"
+        ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
+        Lead="Skriv og gjennomgå testtilfellene for scenarioene du valgte. Hvert testtilfelle har teststeg med forventet resultat; godkjente testtilfeller eksporteres til Azure DevOps Test Plans.">
+        <Help><BirkNext.Web.Components.HelpLink Topic="manual-testing" Text="Slik fungerer det" /></Help>
+    </BirkNext.Web.Components.TestingWorkspaceHeader>
+
+    @if (_loading)
+    {
+        <div class="msb-skeleton" role="status" data-testid="mtp-loading"><span>Laster …</span></div>
+    }
+    else if (_ws?.ProjectKey is null)
+    {
+        <p class="msb-empty" data-testid="mtp-no-project">Velg en applikasjon i prosjektlisten først.</p>
+    }
+    else
+    {
+        @if (_error is { } error)
+        {
+            <p class="mt-alert" role="alert" data-testid="mtp-error">@error</p>
+        }
+        @if (_notice is { } notice)
+        {
+            <p class="mtp-notice" role="status" data-testid="mtp-notice">@notice</p>
+        }
+
+        @if (_selection.Count > 0 && _ws.Discovery is { } discovery)
+        {
+            var notInPlan = _plan is null ? _selection : _selection.Where(id => _plan.Cases.All(c => c.Source.ScenarioId != id)).ToList();
+            @if (notInPlan.Count > 0)
+            {
+                <section class="mtp-selection" aria-label="Valgte scenarioer" data-testid="mtp-selection">
+                    <span><strong>@notInPlan.Count</strong> scenario@(notInPlan.Count == 1 ? "" : "er") valgt i Finn og forstå.</span>
+                    @if (_plan is not null && CanWrite)
+                    {
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => FromSelectionAsync(notInPlan, true)" data-testid="mtp-selection-add">Legg til i «@_plan.PlanName»</button>
+                    }
+                    @if (CanWrite)
+                    {
+                        <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => FromSelectionAsync(notInPlan, false)" data-testid="mtp-selection-new">Lag ny plan</button>
+                    }
+                    <a class="msb-link" href="@M.DiscoverRoute">Endre utvalget</a>
+                </section>
+            }
+        }
+
+        @if (_plans.Count == 0 && _plan is null)
+        {
+            <section class="msb-empty mtp-empty" data-testid="mtp-no-plan">
+                <p>Ingen plan ennå. Velg scenarioer i <a href="@M.DiscoverRoute">Finn og forstå</a>, så lager du testtilfeller for dem her.</p>
+            </section>
+        }
+        else if (_plan is { } plan)
+        {
+            var status = _ws.Plans?.PlanStatus is { } st && st.TryGetValue(plan.Id, out var s) ? s : null;
+            <div class="mtp-planbar" data-testid="mtp-planbar">
+                @if (_plans.Count > 1)
+                {
+                    <label class="mtp-field mtp-inline">
+                        <span>Plan</span>
+                        <select value="@plan.Id" @onchange="ChoosePlanAsync" data-testid="mtp-plan-select">
+                            @foreach (var p in _plans)
+                            {
+                                <option value="@p.Id">@p.PlanName</option>
+                            }
+                        </select>
+                    </label>
+                }
+                else
+                {
+                    <h2 class="msb-h mtp-plan-name" data-testid="mtp-plan-name">@plan.PlanName</h2>
+                }
+                <span class="mt-muted msb-small" data-testid="mtp-plan-counts">@ActiveCases(plan) testtilfelle@(ActiveCases(plan) == 1 ? "" : "r") · @plan.Cases.Count(c => c.Review == TestCaseReviewState.Accepted) godkjent · revisjon @plan.Revision</span>
+                <span class="mtp-spacer"></span>
+                <a class="btn btn-secondary btn-sm" href="@($"{M.LegacyPlanRoute}?draft={plan.Id}&area=export")" data-testid="mtp-export">Eksporter</a>
+                <a class="msb-link" href="@($"{M.LegacyPlanRoute}?draft={plan.Id}&area=prepare")" data-testid="mtp-advanced">Avansert visning</a>
+            </div>
+
+            @if (status is not null && status.State is not ("Klar" or "Ikke sammenlignet"))
+            {
+                <p class="mtp-source-banner" role="status" data-testid="mtp-source-changed">
+                    <strong>Kildegrunnlaget er endret.</strong> @status.Message
+                    <a class="msb-link" href="@($"{M.LegacyPlanRoute}?draft={plan.Id}&area=prepare")">Se hva som er endret</a>
+                </p>
+            }
+
+            var (rows, hidden) = P.Rows(plan, _showTechnical, _query);
+            <div class="mtp-layout">
+                <nav class="mtp-master" aria-label="Scenarioer og testtilfeller" data-testid="mtp-master">
+                    <div class="mtp-master-tools">
+                        <input type="search" class="mtp-search" placeholder="Søk i scenarioer, krav …" aria-label="Søk" value="@_query" @oninput="e => _query = e.Value?.ToString() ?? string.Empty" data-testid="mtp-search" />
+                        <label class="mtp-toggle"><input type="checkbox" checked="@_showTechnical" @onchange="e => _showTechnical = e.Value is true" data-testid="mtp-technical" /> Vis teknisk innhold</label>
+                        @if (!_showTechnical && hidden > 0)
+                        {
+                            <span class="mt-muted msb-small" data-testid="mtp-hidden">@hidden teknisk@(hidden == 1 ? "" : "e") testtilfelle@(hidden == 1 ? "" : "r") skjult</span>
+                        }
+                    </div>
+                    @if (rows.Count == 0)
+                    {
+                        <p class="msb-empty" data-testid="mtp-rows-none">@(hidden > 0 && !_showTechnical ? "Alle testtilfellene i planen er tekniske. Slå på «Vis teknisk innhold» for å se dem." : "Ingen treff.")</p>
+                    }
+                    <ul class="mtp-scenarios">
+                        @foreach (var row in rows)
+                        {
+                            <li class="mtp-scenario" data-testid="mtp-scenario" data-key="@row.Key">
+                                <div class="mtp-scenario-head">
+                                    @if (row.StoryId is { } sid) { <span class="mtp-story" title="@row.StoryTitle">@sid</span> }
+                                    <span class="mtp-scenario-title">@row.Title</span>
+                                </div>
+                                <ul class="mtp-cases">
+                                    @foreach (var c in row.Cases)
+                                    {
+                                        var id = P.IdOf(c);
+                                        var source = P.SourceLabel(c);
+                                        <li>
+                                            <button type="button" class="mtp-case @(id == _selectedId ? "is-selected" : null)" aria-current="@(id == _selectedId ? "true" : null)"
+                                                    @onclick="() => SelectAsync(id)" data-testid="mtp-case" data-case="@id">
+                                                <span class="mtp-case-title">@(Dirty && id == _selectedId ? "● " : "")@c.EffectiveTitle</span>
+                                                <span class="msb-status msb-tone-@P.ReviewTone(c.Review)" data-testid="mtp-case-state">@P.ReviewLabel(c.Review)</span>
+                                                @if (source is not null) { <span class="msb-status msb-tone-warn" data-testid="mtp-case-source">@source</span> }
+                                            </button>
+                                        </li>
+                                    }
+                                </ul>
+                                @if (CanWrite && row.Key.Length > 0)
+                                {
+                                    <button type="button" class="msb-link mtp-add-case" disabled="@_busy" @onclick="() => AddCaseAsync(row.Key, row.Title)" data-testid="mtp-add-case">+ Testtilfelle</button>
+                                }
+                            </li>
+                        }
+                    </ul>
+                </nav>
+
+                <section class="mtp-detail" aria-label="Testtilfelle" data-testid="mtp-detail">
+                    @if (_pending is not null)
+                    {
+                        <div class="mtp-unsaved" role="alertdialog" aria-label="Ulagrede endringer" data-testid="mtp-unsaved">
+                            <span>Du har ulagrede endringer i «@_form?.Title».</span>
+                            <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveAndContinueAsync" data-testid="mtp-unsaved-save">Lagre og fortsett</button>
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick="DiscardAndContinue" data-testid="mtp-unsaved-discard">Forkast endringene</button>
+                            <button type="button" class="msb-link" @onclick="() => _pending = null" data-testid="mtp-unsaved-cancel">Avbryt</button>
+                        </div>
+                    }
+                    @if (Selected is not { } current || _form is null)
+                    {
+                        <p class="msb-empty" data-testid="mtp-detail-none">Velg et testtilfelle i listen.</p>
+                    }
+                    else
+                    {
+                        var readonlyCase = !CanWrite || current.Review is TestCaseReviewState.Excluded or TestCaseReviewState.Superseded;
+                        <div class="mtp-detail-head">
+                            <span class="msb-status msb-tone-@P.ReviewTone(current.Review)" data-testid="mtp-detail-state">@P.ReviewLabel(current.Review)</span>
+                            @if (P.SourceLabel(current) is { } src)
+                            {
+                                <span class="msb-status msb-tone-warn" title="@current.SourceStateReason" data-testid="mtp-detail-source">@src</span>
+                            }
+                            @if (P.TechnicalReason(current) is { } why) { <span class="msb-status msb-tone-muted" data-testid="mtp-detail-technical">@why</span> }
+                            @if (current.Source.Kind == ScenarioSourceKind.Manual) { <span class="msb-status msb-tone-muted">Skrevet av en person</span> }
+                        </div>
+                        @if (current.SourceStateReason is { Length: > 0 } reason && current.SourceState is not null and not CaseSourceState.Current)
+                        {
+                            <p class="mtp-source-banner" data-testid="mtp-case-source-reason">@reason</p>
+                        }
+                        @if (current.HasUnresolvedConflict)
+                        {
+                            <p class="mt-alert" data-testid="mtp-conflict">Kildene er uenige om forventet resultat. Avklar konflikten i <a href="@($"{M.LegacyPlanRoute}?draft={_plan!.Id}&area=prepare")">avansert visning</a> før testtilfellet kan godkjennes.</p>
+                        }
+
+                        <div class="mtp-editor" data-testid="mtp-editor">
+                            <label class="mtp-field">
+                                <span>Tittel</span>
+                                <input type="text" value="@_form.Title" @oninput="e => _form.Title = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" data-testid="mtp-title" />
+                            </label>
+                            <label class="mtp-field">
+                                <span>Formål</span>
+                                <textarea rows="2" value="@_form.Purpose" @oninput="e => _form.Purpose = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" data-testid="mtp-purpose"></textarea>
+                            </label>
+                            <label class="mtp-field">
+                                <span>Forutsetninger</span>
+                                <textarea rows="2" value="@_form.Preconditions" @oninput="e => _form.Preconditions = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" data-testid="mtp-preconditions"></textarea>
+                            </label>
+                            <div class="mtp-field">
+                                <span>Testdata</span>
+                                <div class="mtp-testdata">
+                                    <select value="@_form.TestDataNeed" @onchange="e => _form.TestDataNeed = Enum.TryParse<TestDataNeed>(e.Value?.ToString(), out var n) ? n : TestDataNeed.Unknown" disabled="@readonlyCase" aria-label="Testdatabehov" data-testid="mtp-testdata-need">
+                                        @foreach (var need in Enum.GetValues<TestDataNeed>())
+                                        {
+                                            <option value="@need">@P.TestDataNeedLabel(need)</option>
+                                        }
+                                    </select>
+                                    @if (current.Generated.RequiredTestData is { Length: > 0 } required) { <span class="mt-muted msb-small">Kilden sier: @required</span> }
+                                    @foreach (var link in current.TestData)
+                                    {
+                                        <span class="msb-status msb-tone-@(link.Resolved ? "info" : "warn")" data-testid="mtp-testdata-link">@link.Alias@(link.Resolved ? "" : " (finnes ikke)")</span>
+                                    }
+                                </div>
+                            </div>
+
+                            <fieldset class="mtp-steps" data-testid="mtp-steps">
+                                <legend>Teststeg</legend>
+                                @if (_form.Steps.Count == 0) { <p class="mt-muted msb-small" data-testid="mtp-steps-none">Ingen teststeg ennå.</p> }
+                                <ol>
+                                    @foreach (var (step, i) in _form.Steps.Select((st, i) => (st, i)))
+                                    {
+                                        var index = i;
+                                        <li class="mtp-step" @key="step.Key" data-testid="mtp-step">
+                                            <span class="mtp-step-no" aria-hidden="true">@(index + 1)</span>
+                                            <label class="mtp-field"><span>Handling</span>
+                                                <textarea rows="2" value="@step.Action" @oninput="e => step.Action = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="@($"Handling, steg {index + 1}")" data-testid="mtp-step-action"></textarea>
+                                            </label>
+                                            <label class="mtp-field"><span>Forventet resultat</span>
+                                                <textarea rows="2" value="@step.Expected" @oninput="e => step.Expected = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="@($"Forventet resultat, steg {index + 1}")" data-testid="mtp-step-expected"></textarea>
+                                            </label>
+                                            @if (!readonlyCase)
+                                            {
+                                                <span class="mtp-step-tools">
+                                                    <button type="button" class="mtp-icon" disabled="@(index == 0)" @onclick="() => _form.MoveStep(index, -1)" aria-label="@($"Flytt steg {index + 1} opp")" data-testid="mtp-step-up">↑</button>
+                                                    <button type="button" class="mtp-icon" disabled="@(index == _form.Steps.Count - 1)" @onclick="() => _form.MoveStep(index, 1)" aria-label="@($"Flytt steg {index + 1} ned")" data-testid="mtp-step-down">↓</button>
+                                                    <button type="button" class="mtp-icon" @onclick="() => _form.RemoveStep(index)" aria-label="@($"Fjern steg {index + 1}")" data-testid="mtp-step-remove">✕</button>
+                                                </span>
+                                            }
+                                        </li>
+                                    }
+                                </ol>
+                                @if (!readonlyCase)
+                                {
+                                    <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _form.AddStep()" data-testid="mtp-step-add">+ Teststeg</button>
+                                }
+                            </fieldset>
+
+                            <label class="mtp-field">
+                                <span>Forventet resultat</span>
+                                <textarea rows="3" value="@_form.ExpectedResult" @oninput="e => _form.ExpectedResult = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" data-testid="mtp-expected"></textarea>
+                            </label>
+                        </div>
+
+                        @if (!readonlyCase)
+                        {
+                            var problems = P.ReadyProblems(current);
+                            <div class="mtp-actions" data-testid="mtp-actions">
+                                <button type="button" class="btn btn-primary" disabled="@(!Dirty || _busy)" @onclick="SaveAsync" data-testid="mtp-save">Lagre</button>
+                                <button type="button" class="btn btn-secondary" disabled="@(!Dirty || _busy)" @onclick="Discard" data-testid="mtp-discard">Forkast endringer</button>
+                                <span class="mtp-spacer"></span>
+                                @if (current.Review is TestCaseReviewState.Generated or TestCaseReviewState.NeedsClarification)
+                                {
+                                    <button type="button" class="btn btn-secondary" disabled="@(Dirty || _busy || problems.Count > 0)" title="@(Dirty ? "Lagre først." : string.Join(" ", problems))"
+                                            @onclick="() => ReviewAsync(TestCaseReviewState.UnderReview)" data-testid="mtp-ready">Klar for gjennomgang</button>
+                                }
+                                @if (current.Review != TestCaseReviewState.NeedsClarification)
+                                {
+                                    <button type="button" class="btn btn-secondary" disabled="@(Dirty || _busy)" @onclick="() => ReviewAsync(TestCaseReviewState.NeedsClarification)" data-testid="mtp-clarify">Trenger avklaring</button>
+                                }
+                                @if (current.Review != TestCaseReviewState.Accepted)
+                                {
+                                    <button type="button" class="btn btn-primary" disabled="@(Dirty || _busy || problems.Count > 0)" title="@(Dirty ? "Lagre først." : string.Join(" ", problems))"
+                                            @onclick="() => ReviewAsync(TestCaseReviewState.Accepted)" data-testid="mtp-approve">Godkjenn</button>
+                                }
+                            </div>
+                            @if (problems.Count > 0 && !Dirty)
+                            {
+                                <ul class="mtp-problems" data-testid="mtp-problems">@foreach (var pr in problems) { <li>@pr</li> }</ul>
+                            }
+                        }
+
+                        <aside class="mtp-context" aria-label="Kildegrunnlag" data-testid="mtp-context">
+                            <h3 class="msb-h">Kildegrunnlag</h3>
+                            @if (current.Generated.Story is { } story)
+                            {
+                                <div class="mtp-ctx" data-testid="mtp-ctx-story">
+                                    <span class="mtp-ctx-label">Brukerhistorie</span>
+                                    <span>@(story.StoryId is { Length: > 0 } sid ? $"{sid} — " : "")@story.Title</span>
+                                    @if (P.IsTechnicalStory(story)) { <span class="msb-status msb-tone-muted">teknisk</span> }
+                                </div>
+                            }
+                            @if (P.RequirementIds(current) is { Count: > 0 } reqs)
+                            {
+                                <div class="mtp-ctx" data-testid="mtp-ctx-requirements"><span class="mtp-ctx-label">Krav</span><span>@string.Join(", ", reqs)</span></div>
+                            }
+                            @if (current.Generated.Evidence.Count > 0)
+                            {
+                                <div class="mtp-ctx" data-testid="mtp-ctx-evidence">
+                                    <span class="mtp-ctx-label">Bevis</span>
+                                    <ul>@foreach (var ev in current.Generated.Evidence.Take(6)) { <li><span class="mt-muted">@P.EvidenceLabel(ev.Kind):</span> @ev.Reference</li> }</ul>
+                                </div>
+                            }
+                            @if (current.Generated.OpenQuestions.Count > 0)
+                            {
+                                <div class="mtp-ctx" data-testid="mtp-ctx-questions"><span class="mtp-ctx-label">Åpne spørsmål</span><ul>@foreach (var q in current.Generated.OpenQuestions) { <li>@q</li> }</ul></div>
+                            }
+                            @if (current.Source.Kind != ScenarioSourceKind.Manual && current.Generated.ExpectedResult is { Length: > 0 } fromSource && fromSource != _form.ExpectedResult)
+                            {
+                                <div class="mtp-ctx" data-testid="mtp-ctx-source-expected"><span class="mtp-ctx-label">Kildens forventede resultat</span><span>@fromSource</span></div>
+                            }
+                            <div class="mtp-ctx mtp-translate" data-testid="mtp-translation">
+                                <span class="mtp-ctx-label">Oversettelse</span>
+                                @if (current.Translation(ScenarioPlanning.Norwegian) is { } nb)
+                                {
+                                    <span data-testid="mtp-translation-nb">Norsk: @(nb.Title ?? "—")</span>
+                                }
+                                else
+                                {
+                                    <span class="mt-muted">Ingen norsk oversettelse ennå.</span>
+                                }
+                                @if (CanWrite && current.ParentScenario is { } scenarioKey)
+                                {
+                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@(Dirty || _busy)" title="@(Dirty ? "Lagre først." : null)" @onclick="() => TranslateAsync(scenarioKey)" data-testid="mtp-translate">Oversett</button>
+                                }
+                            </div>
+                        </aside>
+                    }
+                </section>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "draft")] public Guid? DraftParameter { get; set; }
+
+    private bool _loading = true, _busy, _showTechnical;
+    private string _query = string.Empty;
+    private string? _error, _notice, _selectedId;
+    private ManualTestingWorkspace.Snapshot? _ws;
+    private List<TestPlanDraftSummary> _plans = [];
+    private TestPlanDraft? _plan;
+    private P.CaseForm? _form;
+    private List<string> _selection = [];
+    /// <summary>What to do once unsaved edits are saved or discarded: open another case, or navigate.</summary>
+    private Func<Task>? _pending;
+    private ICurrentWorkspaceProjection? _projection;
+
+    private ITestPlanSuggestionsApiService? Api => ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
+    private bool CanWrite => _ws?.Plans?.CanWrite ?? false;
+    private TestCaseDraft? Selected => _plan?.Cases.FirstOrDefault(c => P.IdOf(c) == _selectedId);
+    private bool Dirty => _form is not null && Selected is { } s && _form.IsDirty(s);
+    private static int ActiveCases(TestPlanDraft p) => p.Cases.Count(c => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded));
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
+        if (_projection is not null) _projection.Changed += OnProjectChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(requirements: false);
+            _error = _ws.Error;
+            _plans = [.. (_ws.Plans?.Drafts ?? []).OrderByDescending(p => p.UpdatedAt)];
+            if (_ws.ProjectKey is { } key)
+                _selection = [.. await TabDraftStore.ReadAsync<string[]>(JS, TabDraftStore.SelectionKey(key)) ?? []];
+            var id = DraftParameter is { } wanted && _plans.Any(p => p.Id == wanted) ? wanted : _plans.FirstOrDefault()?.Id;
+            if (id is { } draftId) await OpenPlanAsync(draftId);
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task OpenPlanAsync(Guid id)
+    {
+        if (Api is not { } api) return;
+        var (draft, error) = await api.DraftAsync(id);
+        if (draft is null) { _error = error ?? "Planen kunne ikke lastes."; return; }
+        _plan = draft;
+        var first = P.Rows(draft, _showTechnical).Rows.SelectMany(r => r.Cases).FirstOrDefault() ?? draft.Cases.FirstOrDefault();
+        Open(_selectedId is { } keep && draft.Cases.Any(c => P.IdOf(c) == keep) ? keep : first is null ? null : P.IdOf(first));
+    }
+
+    private void Open(string? caseId)
+    {
+        _selectedId = caseId;
+        _form = Selected is { } c ? P.CaseForm.From(c) : null;
+    }
+
+    /// <summary>Another case: never loses unsaved edits (asks first).</summary>
+    private Task SelectAsync(string caseId)
+    {
+        if (caseId == _selectedId) return Task.CompletedTask;
+        if (Dirty) { _pending = () => { Open(caseId); return Task.CompletedTask; }; return Task.CompletedTask; }
+        Open(caseId);
+        _notice = null;
+        return Task.CompletedTask;
+    }
+
+    private Task ChoosePlanAsync(ChangeEventArgs e)
+    {
+        if (!Guid.TryParse(e.Value?.ToString(), out var id) || id == _plan?.Id) return Task.CompletedTask;
+        Task Go() { _selectedId = null; return OpenPlanAsync(id); }
+        if (Dirty) { _pending = Go; return Task.CompletedTask; }
+        return Go();
+    }
+
+    private void OnBeforeNavigation(LocationChangingContext context)
+    {
+        if (!Dirty) return;
+        var target = context.TargetLocation;
+        context.PreventNavigation();
+        _pending = () => { _form = null; _selectedId = null; Nav.NavigateTo(target); return Task.CompletedTask; };
+    }
+
+    private async Task SaveAndContinueAsync()
+    {
+        if (await SaveAsync() && _pending is { } next) { _pending = null; await next(); }
+    }
+
+    private async Task DiscardAndContinue()
+    {
+        Discard();
+        if (_pending is { } next) { _pending = null; await next(); }
+    }
+
+    private void Discard() { if (Selected is { } c) _form = P.CaseForm.From(c); _notice = null; }
+
+    private async Task<bool> SaveAsync()
+    {
+        if (_plan is null || _form is null || Api is not { } api) return false;
+        _busy = true; _error = null;
+        try
+        {
+            var (draft, error) = await api.SaveAsync(_plan.Id, P.SaveWith(_plan, _form));
+            if (draft is null)
+            {
+                _error = error?.Contains("draft-changed", StringComparison.OrdinalIgnoreCase) == true || error?.Contains("409") == true
+                    ? "Planen er endret et annet sted siden du åpnet den. Endringene dine er ikke lagret; kopier dem og last siden på nytt."
+                    : error ?? "Testtilfellet kunne ikke lagres.";
+                return false;
+            }
+            _plan = draft;
+            Open(_form.CaseId);
+            _notice = "Lagret.";
+            return true;
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ReviewAsync(TestCaseReviewState state)
+    {
+        if (_plan is null || Selected is not { } c || Api is not { } api) return;
+        _busy = true; _error = null;
+        try
+        {
+            var (draft, error) = await api.ReviewAsync(_plan.Id, new ReviewTestCaseRequest(_plan.Revision, P.IdOf(c), state, null));
+            if (draft is null) { _error = error ?? "Statusen kunne ikke endres."; return; }
+            _plan = draft;
+            Open(P.IdOf(c));
+            _notice = $"Status: {P.ReviewLabel(state)}.";
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task AddCaseAsync(string scenarioKey, string scenarioTitle)
+    {
+        if (_plan is null || Api is not { } api) return;
+        if (Dirty) { _pending = () => AddCaseAsync(scenarioKey, scenarioTitle); return; }
+        _busy = true; _error = null;
+        try
+        {
+            var before = _plan.Cases.Select(P.IdOf).ToHashSet(StringComparer.Ordinal);
+            var (draft, error) = await api.AddManualCaseAsync(_plan.Id, new AddManualTestCaseRequest(_plan.Revision, $"Nytt testtilfelle: {scenarioTitle}", null, null, ScenarioKey: scenarioKey));
+            if (draft is null) { _error = error ?? "Testtilfellet kunne ikke legges til."; return; }
+            _plan = draft;
+            Open(draft.Cases.Select(P.IdOf).FirstOrDefault(id => !before.Contains(id)) ?? _selectedId);
+            _notice = "Nytt testtilfelle lagt til. Skriv teststegene og lagre.";
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task TranslateAsync(string scenarioKey)
+    {
+        if (_plan is null || Api is not { } api) return;
+        _busy = true; _error = null;
+        try
+        {
+            var (result, error) = await api.TranslateAsync(_plan.Id, new TranslateScenarioRequest(_plan.Revision, scenarioKey, Target: ScenarioPlanning.Norwegian));
+            if (result is null) { _error = error ?? "Oversettelsen feilet."; return; }
+            if (result.Draft is { } draft) { _plan = draft; Open(_selectedId); }
+            _notice = result.Message;
+        }
+        finally { _busy = false; }
+    }
+
+    /// <summary>The scenarios chosen in Finn og forstå become test cases: in this plan, or in a new one. The selection is then cleared.</summary>
+    private async Task FromSelectionAsync(List<string> candidateIds, bool intoCurrent)
+    {
+        if (_ws?.ProjectKey is not { } key || _ws.Discovery is not { } discovery || Api is not { } api) return;
+        if (Dirty) { _pending = () => FromSelectionAsync(candidateIds, intoCurrent); return; }
+        _busy = true; _error = null;
+        try
+        {
+            var (draft, error) = await api.CreateProjectAsync(new CreateProjectTestPlanRequest
+            {
+                ProjectKey = key, ProjectName = _ws.ProjectName, DiscoveryId = discovery.DiscoveryId, CandidateIds = candidateIds,
+                PlanName = intoCurrent ? null : $"Testplan {DateTime.Now:yyyy-MM-dd}",
+                DraftId = intoCurrent ? _plan?.Id : null, BaseRevision = intoCurrent ? _plan?.Revision : null,
+            });
+            if (draft is null) { _error = error ?? "Planen kunne ikke lages."; return; }
+            await TabDraftStore.RemoveAsync(JS, TabDraftStore.SelectionKey(key));
+            _selection = [];
+            _plan = draft;
+            if (_plans.All(p => p.Id != draft.Id))
+                _plans.Insert(0, new TestPlanDraftSummary(draft.Id, draft.GuideKey, draft.PlanName, draft.DeliveryLabel, draft.Revision, draft.Cases.Count, 0, 0, 0, 0, 0, draft.UpdatedBy, draft.UpdatedAt));
+            _selectedId = null;
+            var first = P.Rows(draft, _showTechnical).Rows.SelectMany(r => r.Cases).FirstOrDefault();
+            Open(first is null ? null : P.IdOf(first));
+            _notice = $"{candidateIds.Count} scenario{(candidateIds.Count == 1 ? "" : "er")} lagt til i «{draft.PlanName}».";
+        }
+        finally { _busy = false; }
+    }
+
+    private void OnProjectChanged() => _ = InvokeAsync(async () => { _ws = null; _plan = null; _form = null; _selectedId = null; _pending = null; await LoadAsync(); StateHasChanged(); });
+
+    public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; }
+}

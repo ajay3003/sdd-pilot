@@ -3589,6 +3589,30 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("source_schema_artifacts", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.SpecificationCatalogEvidenceRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CapturedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CatalogId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CatalogId")
+                        .IsUnique();
+
+                    b.ToTable("specification_catalog_evidence", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.SpecificationCatalogRecord", b =>
                 {
                     b.Property<Guid>("Id")

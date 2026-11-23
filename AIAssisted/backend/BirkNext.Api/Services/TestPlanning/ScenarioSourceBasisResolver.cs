@@ -102,8 +102,8 @@ public sealed class ScenarioSourceBasisResolver(SourceBaselineService baselines,
         (BirkNext.Specifications.SpecificationCatalogView Catalog, List<StoredSpecificationEvidence> Evidence)? imported = null;
         if (catalogs is not null && !useWorkingSpecification)
         {
-            foreach (var id in resolvedIds)
-                if ((imported = await catalogs.EvidenceAsync(id, null, ct)) is not null) break;
+            foreach (var snapshot in full)
+                if ((imported = await catalogs.EvidenceAsync(snapshot.Id, null, ct, snapshot.ProjectImport?.ImportId)) is not null) break;
             if (imported is null && resolvedIds.Count == 0) imported = await catalogs.EvidenceAsync(null, projectKey, ct);
         }
         if (useWorkingSpecification && browser is not null)

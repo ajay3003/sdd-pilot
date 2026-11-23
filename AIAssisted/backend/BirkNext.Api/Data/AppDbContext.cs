@@ -28,6 +28,7 @@ public class AppDbContext : DbContext
     public DbSet<ApiReviewRunRecord> ApiReviewRuns => Set<ApiReviewRunRecord>();
     public DbSet<TechnicalFindingRecord> TechnicalFindings => Set<TechnicalFindingRecord>();
     public DbSet<SpecificationCatalogRecord> SpecificationCatalogs => Set<SpecificationCatalogRecord>();
+    public DbSet<SpecificationCatalogEvidenceRecord> SpecificationCatalogEvidence => Set<SpecificationCatalogEvidenceRecord>();
     public DbSet<TechnicalReviewRunRecord> TechnicalReviewRuns => Set<TechnicalReviewRunRecord>();
     public DbSet<TestPlanDraftRevisionRecord> TestPlanDraftRevisions => Set<TestPlanDraftRevisionRecord>();
     public DbSet<ScenarioDiscoveryRecord> ScenarioDiscoveryResults => Set<ScenarioDiscoveryRecord>();
@@ -1272,6 +1273,13 @@ public class AppDbContext : DbContext
             entity.HasIndex(f => new { f.ProjectKey, f.Source, f.FindingKey }).IsUnique().HasDatabaseName("ux_technical_findings_identity");
         });
 
+        modelBuilder.Entity<SpecificationCatalogEvidenceRecord>(entity =>
+        {
+            entity.ToTable("specification_catalog_evidence");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.EvidenceJson).HasColumnType("jsonb").IsRequired();
+            entity.HasIndex(e => e.CatalogId).IsUnique();
+        });
         modelBuilder.Entity<SpecificationCatalogRecord>(entity =>
         {
             entity.ToTable("specification_catalogs");

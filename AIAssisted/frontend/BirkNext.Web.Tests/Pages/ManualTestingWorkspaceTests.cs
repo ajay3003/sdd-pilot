@@ -126,7 +126,7 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
 
         cut.Find("[data-testid=twh-project]").TextContent.Should().Contain("Library");
         cut.Find("[data-testid=twh-stage][data-stage=home]").GetAttribute("aria-current").Should().Be("page");
-        cut.FindAll("[data-testid=twh-stage]").Select(a => a.GetAttribute("href")).Should().Equal("manual-testing", "manual-testing/discover", "test-plan-suggestions");
+        cut.FindAll("[data-testid=twh-stage]").Select(a => a.GetAttribute("href")).Should().Equal("manual-testing", "manual-testing/discover", "manual-testing/plan");
         cut.Find("[data-testid=mt-next-action]").Should().Match<AngleSharp.Dom.IElement>(a => a.TextContent == "Eksporter til Azure DevOps"
             && a.GetAttribute("href") == $"test-plan-suggestions?draft={PlanId}&area=export");
         cut.FindAll("[data-testid=mt-stage]").Should().BeEmpty("the stages are navigated once, in the header (no duplicate workflow navigation)");

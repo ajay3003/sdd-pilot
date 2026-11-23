@@ -62,10 +62,17 @@ public sealed class SpecificationCatalogService(AppDbContext db, TimeProvider? c
         var evidenceJson = JsonSerializer.Serialize(SpecificationEvidenceBuilder.BuildAll(list), Json);
         var key = ProjectKeyOf(importId);
         var fingerprint = Sha(string.Join("\n", refs.Select(r => $"{r.Path}\u001f{r.Sha256}")) + "\n#\n" + string.Join("\n", entries.Select(e => $"{e.Path}\u001f{e.RequirementId}\u001f{e.TextSha256}")));
-        if (await db.SpecificationCatalogs.FirstOrDefaultAsync(c => c.ProjectKey == key && c.Fingerprint == fingerprint, ct) is { } same)
+        if (await db.SpecificationCatalogs.AsNoTracking().FirstOrDefaultAsync(c => c.ProjectKey == key && c.Fingerprint == fingerprint, ct) is { } same)
         {
-            // A revision captured before the evidence was kept gets it now (same content, so the same evidence); nothing else changes.
-            if (same.EvidenceJson is null) { same.EvidenceJson = evidenceJson; same.SnapshotId ??= snapshotId; await db.SaveChangesAsync(ct); }
+            // A revision captured before the evidence was kept: catalog rows are append-only (a database rule), so its evidence is added beside it
+            // once (specification_catalog_evidence), never by rewriting the row. A failure leaves the shared context clean for the rest of the import.
+            if (same.EvidenceJson is null && !await db.SpecificationCatalogEvidence.AnyAsync(e => e.CatalogId == same.Id, ct))
+            {
+                var added = new SpecificationCatalogEvidenceRecord { Id = Guid.NewGuid(), CatalogId = same.Id, EvidenceJson = evidenceJson, CapturedAt = Now };
+                db.SpecificationCatalogEvidence.Add(added);
+                try { await db.SaveChangesAsync(ct); }
+                catch (DbUpdateException) { db.Entry(added).State = EntityState.Detached; } // a concurrent capture added it first
+            }
             return View(same);
         }
         for (var attempt = 0; attempt < 3; attempt++)
@@ -96,16 +103,29 @@ public sealed class SpecificationCatalogService(AppDbContext db, TimeProvider? c
     /// project whose specification came in an import without source — the project's newest revision. Null when no specification evidence is held
     /// (older imports: their catalog has requirements only). Never another import's specification.
     /// </summary>
-    public async Task<(SpecificationCatalogView Catalog, List<StoredSpecificationEvidence> Evidence)?> EvidenceAsync(Guid? snapshotId, string? projectKey, CancellationToken ct)
+    /// <param name="importId">The import the snapshot came from (<c>IqrSourceSnapshot.ProjectImport</c>): a re-import of the same archive keeps the
+    /// catalog of its first import (same content), so the snapshot id alone does not find it.</param>
+    public async Task<(SpecificationCatalogView Catalog, List<StoredSpecificationEvidence> Evidence)?> EvidenceAsync(Guid? snapshotId, string? projectKey, CancellationToken ct,
+        string? importId = null)
     {
-        SpecificationCatalogRecord? row = null;
+        var candidates = new List<SpecificationCatalogRecord>();
         if (snapshotId is { } id)
-            row = await db.SpecificationCatalogs.AsNoTracking().Where(c => c.SnapshotId == id && c.EvidenceJson != null).OrderByDescending(c => c.Revision).FirstOrDefaultAsync(ct);
-        if (row is null && !string.IsNullOrWhiteSpace(projectKey) && snapshotId is null)
-            row = await db.SpecificationCatalogs.AsNoTracking().Where(c => c.ProjectKey == projectKey && c.EvidenceJson != null).OrderByDescending(c => c.Revision).FirstOrDefaultAsync(ct);
-        if (row?.EvidenceJson is not { } json) return null;
-        var evidence = JsonSerializer.Deserialize<List<StoredSpecificationEvidence>>(json, Json) ?? [];
-        return evidence.Count == 0 ? null : (View(row), evidence);
+            candidates.AddRange(await db.SpecificationCatalogs.AsNoTracking().Where(c => c.SnapshotId == id).OrderByDescending(c => c.Revision).ToListAsync(ct));
+        if (!string.IsNullOrWhiteSpace(importId))
+        {
+            var key = ProjectKeyOf(importId);
+            candidates.AddRange(await db.SpecificationCatalogs.AsNoTracking().Where(c => c.ProjectKey == key).OrderByDescending(c => c.Revision).ToListAsync(ct));
+        }
+        if (snapshotId is null && !string.IsNullOrWhiteSpace(projectKey))
+            candidates.AddRange(await db.SpecificationCatalogs.AsNoTracking().Where(c => c.ProjectKey == projectKey).OrderByDescending(c => c.Revision).ToListAsync(ct));
+        foreach (var row in candidates.DistinctBy(c => c.Id))
+        {
+            var json = row.EvidenceJson ?? await db.SpecificationCatalogEvidence.AsNoTracking().Where(e => e.CatalogId == row.Id).Select(e => e.EvidenceJson).FirstOrDefaultAsync(ct);
+            if (json is null) continue;
+            var evidence = JsonSerializer.Deserialize<List<StoredSpecificationEvidence>>(json, Json) ?? [];
+            if (evidence.Count > 0) return (View(row), evidence);
+        }
+        return null;
     }
 
     public async Task<List<SpecificationCatalogView>> RevisionsAsync(string projectKey, CancellationToken ct) =>

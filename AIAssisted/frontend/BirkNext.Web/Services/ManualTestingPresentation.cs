@@ -12,14 +12,17 @@ public static class ManualTestingPresentation
 {
     public const string HomeRoute = "manual-testing";
     public const string DiscoverRoute = "manual-testing/discover";
-    public const string PlanRoute = "test-plan-suggestions";
+    /// <summary>Planlegg og klargjør: the master-detail case editor (2026-11-23).</summary>
+    public const string PlanRoute = "manual-testing/plan";
+    /// <summary>The full Test Plan Suggestions page: scenario choice with discovery, history, impact, conflict resolution and the export (kept as is).</summary>
+    public const string LegacyPlanRoute = "test-plan-suggestions";
 
     /// <summary>The two stages as the shared workspace header lists them (title, the question it answers, route). Plan &amp; prepare ends with the
     /// export to Azure DevOps Test Plans, where the cases are executed.</summary>
     public static readonly IReadOnlyList<WorkspaceStage> Stages =
     [
-        new("discover", "Oppdag og forstå", "Hva må testes?", DiscoverRoute),
-        new("plan", "Planlegg og forbered", "Hvordan tester vi det?", PlanRoute),
+        new("discover", "Finn og forstå", "Hva må testes?", DiscoverRoute),
+        new("plan", "Planlegg og klargjør", "Hvordan tester vi det?", PlanRoute),
     ];
 
     /// <summary>What the home and the stages are derived from.</summary>
@@ -101,14 +104,14 @@ public static class ManualTestingPresentation
             return new("Velg spesifikasjon", SpecificationRoute, choose);
         if (f.Plans.Count == 0 || Cases(f) == 0)
             return f.Discovery is null
-                ? new("Oppdag scenarioer", $"{PlanRoute}?area=choose&discover=now", "Ingenting er forberedt ennå. Finn scenarioer i applikasjonens kilder, eller skriv et testtilfelle selv.")
+                ? new("Oppdag scenarioer", $"{LegacyPlanRoute}?area=choose&discover=now", "Ingenting er forberedt ennå. Finn scenarioer i applikasjonens kilder, eller skriv et testtilfelle selv.")
                 : new("Velg scenarioer", DiscoverRoute, $"{f.Discovery.Candidates.Count} forslag venter; ingenting er forberedt ennå.");
         if (NeedClarification(f) > 0 && f.Plans.FirstOrDefault(p => p.NeedsClarification > 0) is { } unclear)
-            return new("Avklar testtilfeller", $"{PlanRoute}?draft={unclear.Id}&area=prepare", $"{NeedClarification(f)} testtilfelle(r) venter på svar før de kan godkjennes.");
+            return new("Avklar testtilfeller", $"{PlanRoute}?draft={unclear.Id}", $"{NeedClarification(f)} testtilfelle(r) venter på svar før de kan godkjennes.");
         if (Approved(f) > 0 && f.Plans.OrderByDescending(p => p.UpdatedAt).FirstOrDefault(p => p.Accepted > 0) is { } ready)
-            return new("Eksporter til Azure DevOps", $"{PlanRoute}?draft={ready.Id}&area=export",
+            return new("Eksporter til Azure DevOps", $"{LegacyPlanRoute}?draft={ready.Id}&area=export",
                 $"{Approved(f)} godkjente testtilfelle(r) er klare for Azure DevOps Test Plans, der manuelle tester kjøres og resultatene registreres.");
-        return new("Fortsett forberedelsen", $"{PlanRoute}?area=prepare", "Gå gjennom og godkjenn testtilfellene, og eksporter dem til Azure DevOps.");
+        return new("Fortsett forberedelsen", PlanRoute, "Gå gjennom og godkjenn testtilfellene, og eksporter dem til Azure DevOps.");
     }
 
     /// <summary>Discovery suggestions per source (capability) and per type, for the Discover stage.</summary>

@@ -492,6 +492,64 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
         candidates.Single(c => c.SourceSnapshotId == s1).Should().Match<SystemGuideCandidateView>(c => c.Status == "Stale" && c.SupersededBy == newer.Id);
     }
 
+    [Fact]
+    public async Task A_re_imported_archive_whose_catalog_predates_the_evidence_gets_it_beside_the_append_only_row_and_discovery_finds_it()
+    {
+        // Real data (2026-11-23): M2LB-language was first imported by an older build (catalog without evidence), then again. The catalog row is
+        // append-only (a database trigger), and the re-import keeps the first import's catalog and snapshot id.
+        var spec = Spec(A, B);
+        await using (var db = Context())
+        {
+            // The same content always has the same fingerprint; the older build stored the row without evidence.
+            var probe = await new SpecificationCatalogService(db).CaptureAsync("probe", null, null, [new SpecificationCatalogService.Document(SpecPath, spec)], default);
+            db.SpecificationCatalogs.Add(new SpecificationCatalogRecord
+            {
+                Id = Guid.NewGuid(), ProjectKey = SpecificationCatalogService.ProjectKeyOf("reimport"), Revision = 1, SnapshotId = Guid.NewGuid(),
+                CapturedAt = DateTimeOffset.UtcNow.AddHours(-5), Fingerprint = probe!.Fingerprint, DocumentsJson = "[]", EntriesJson = "[]",
+            });
+            await db.SaveChangesAsync();
+        }
+        var second = await ImportAsync("reimport", "m2lb-language.zip", "content-l", spec, DateTimeOffset.UtcNow);
+
+        await using (var db = Context())
+        {
+            var catalogs = new SpecificationCatalogService(db);
+            (await db.SpecificationCatalogs.AsNoTracking().SingleAsync(c => c.ProjectKey == "import:reimport")).EvidenceJson.Should().BeNull("the append-only row is never rewritten");
+            db.SpecificationCatalogEvidence.Should().ContainSingle("its evidence is stored beside it");
+            (await catalogs.EvidenceAsync(second, null, default)).Should().BeNull("the new snapshot alone does not name the first import's catalog");
+            var found = await catalogs.EvidenceAsync(second, null, default, "reimport");
+            found!.Value.Evidence.Single().Evidence.AcceptanceScenarios.Should().HaveCount(2, "found through the snapshot's own import");
+        }
+    }
+
+    [Fact]
+    public async Task After_a_restart_an_older_result_restored_first_never_hides_the_applications_newest_discovery()
+    {
+        // Real data (2026-11-23): after the launcher restarted the API, the import's own project restored its older result (captured before the
+        // specification evidence existed) first; the application pointer then stayed on it and a plan of another project of the same application
+        // showed "Kilde mangler" for every specification case until that project happened to be opened through the API.
+        var s1 = await ImportAsync("imp1", "m2lb-v1.zip", "content-v1", Spec(A, B), DateTimeOffset.UtcNow.AddHours(-1));
+        ScenarioDiscoveryResult older, newer;
+        await using (var db = Context())
+            older = await Services(db).Discovery.DiscoverAsync(new ScenarioDiscoveryRequest { ProjectKey = "import:imp1", SnapshotId = s1, MemberSnapshotIds = [s1] }, default);
+        await using (var db = Context())
+            newer = await Services(db).Discovery.DiscoverAsync(new ScenarioDiscoveryRequest { ProjectKey = "m2lb", ProjectName = "M2LB", SnapshotId = s1, MemberSnapshotIds = [s1] }, default);
+        var application = newer.Basis!.ApplicationKey;
+        older.Basis!.ApplicationKey.Should().Be(application);
+
+        var restarted = new ScenarioDiscoveryCache();
+        await using (var db = Context())
+        {
+            var store = new ScenarioDiscoveryStore(db, restarted);
+            await store.RestoreAsync("import:imp1", null, default);
+            restarted.CurrentForApplication(application)!.DiscoveryId.Should().Be(older.DiscoveryId, "precondition: the older result set the pointer first");
+            await store.RestoreApplicationAsync(application, default);
+            restarted.CurrentForApplication(application)!.DiscoveryId.Should().Be(newer.DiscoveryId, "the application's newest stored discovery is current");
+            await store.RestoreAsync("import:imp1", null, default);
+            restarted.CurrentForApplication(application)!.DiscoveryId.Should().Be(newer.DiscoveryId, "and an older one never moves it back");
+        }
+    }
+
     // ── Fakes ───────────────────────────────────────────────────────────────────────────────────────────────────
 
     private sealed class FailingSpecificationProvider : ITestScenarioCandidateProvider

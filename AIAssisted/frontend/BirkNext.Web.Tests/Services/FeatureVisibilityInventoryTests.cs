@@ -66,13 +66,13 @@ public sealed class FeatureVisibilityInventoryTests
         inv.SwitchCount.Should().Be(25, "19 core + 6 advanced configurable switches (platform keys excluded; 5 no-effect switches retired)");
         inv.Switches.Where(s => !s.Platform).Should().OnlyContain(s => s.HasEffect, "every configurable switch gates a sidebar entry");
         inv.PlatformCount.Should().Be(4);
-        inv.Entries.Should().HaveCount(62, "sidebar rows (−3 retired 2026-11-19: Recommended Workflow, Execute & document, Release Readiness; −1 Project Test Setup, removed 2026-11-19), including deep links and shared entries (+3 Manual Testing workspace rows, +1 All modules, +1 Integration Journeys, +4 Technical Testing workspace rows, +1 Integration Testing)");
+        inv.Entries.Should().HaveCount(63, "sidebar rows (+1 Plan & prepare editor 2026-11-23; −3 retired 2026-11-19: Recommended Workflow, Execute & document, Release Readiness; −1 Project Test Setup, removed 2026-11-19), including deep links and shared entries (+3 Manual Testing workspace rows, +1 All modules, +1 Integration Journeys, +4 Technical Testing workspace rows, +1 Integration Testing)");
         inv.Entries.Select(e => e.Route).Should().Contain(["manual-testing", "manual-testing/discover", "all-modules", "integration-journeys",
             "technical-testing", "technical-testing/assess", "technical-testing/configure", "technical-testing/verify", "technical-testing/integrations"]);
         inv.HiddenEntries.Should().Be(6);
         inv.Entries.Where(e => !e.Shown).Select(e => e.Route).Should().BeEquivalentTo(
             "implementation-traceability", "impact-analysis", "traceability", "traceability/suggestions", "code-traceability", "ai-change-auditor");
-        inv.AlwaysShownEntries.Should().Be(30); // +3 Manual Testing workspace rows, +1 All modules, +1 Integration Journeys, +4 Technical Testing rows, +1 Integration Testing (always shown)
+        inv.AlwaysShownEntries.Should().Be(31); // +1 Plan & prepare editor (2026-11-23), +3 Manual Testing workspace rows, +1 All modules, +1 Integration Journeys, +4 Technical Testing rows, +1 Integration Testing (always shown)
     }
 
     [Theory] // A: a switch maps to exactly the entry it gates

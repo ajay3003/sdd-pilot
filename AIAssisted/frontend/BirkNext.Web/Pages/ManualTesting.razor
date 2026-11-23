@@ -60,7 +60,7 @@
                 <h2 id="mt-plans-title" class="msb-h">Lagrede planer</h2>
                 @if (plans.Count == 0)
                 {
-                    <p class="msb-empty" data-testid="mt-plans-none">Ingen plan ennå. <a href="@M.DiscoverRoute">Velg scenarioer</a> eller skriv et testtilfelle selv i Planlegg og forbered.</p>
+                    <p class="msb-empty" data-testid="mt-plans-none">Ingen plan ennå. <a href="@M.DiscoverRoute">Velg scenarioer</a> eller skriv et testtilfelle selv i Planlegg og klargjør.</p>
                 }
                 else
                 {
@@ -70,15 +70,15 @@
                             var status = statuses is not null && statuses.TryGetValue(p.Id, out var s) ? s : null;
                             <li class="msb-plan" data-testid="mt-plan">
                                 <div class="msb-plan-main">
-                                    <a href="@($"{M.PlanRoute}?draft={p.Id}&area=prepare")" class="msb-plan-name"><strong>@p.PlanName</strong></a>
+                                    <a href="@($"{M.PlanRoute}?draft={p.Id}")" class="msb-plan-name"><strong>@p.PlanName</strong></a>
                                     <span class="mt-muted msb-small">@p.Cases testtilfelle@(p.Cases == 1 ? "" : "r") · @p.Accepted godkjent@(p.NeedsClarification > 0 ? $" · {p.NeedsClarification} trenger avklaring" : "") · lagret @p.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
                                 </div>
                                 @if (status is not null)
                                 {
                                     <span class="msb-status msb-tone-@(status.State switch { "Klar" => "ok", "Må gjennomgås" or "Kilde mangler" => "warn", "Ny kildeversjon" => "info", _ => "muted" })" title="@status.Message" data-testid="mt-plan-source">@status.State</span>
                                 }
-                                <a class="btn btn-secondary btn-sm" href="@($"{M.PlanRoute}?draft={p.Id}&area=prepare")" data-testid="mt-plan-open">Åpne</a>
-                                <a class="msb-link" href="@($"{M.PlanRoute}?draft={p.Id}&area=export")" data-testid="mt-plan-export">Eksporter</a>
+                                <a class="btn btn-secondary btn-sm" href="@($"{M.PlanRoute}?draft={p.Id}")" data-testid="mt-plan-open">Åpne</a>
+                                <a class="msb-link" href="@($"{M.LegacyPlanRoute}?draft={p.Id}&area=export")" data-testid="mt-plan-export">Eksporter</a>
                             </li>
                         }
                     </ul>

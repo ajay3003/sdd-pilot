@@ -183,6 +183,6 @@ public sealed class ScenarioBrowserTests : BunitContext
         cut.Find("[data-testid=mtd-prepare]").Click();
         JSInterop.Invocations.Should().Contain(i => i.Identifier == "sessionStorage.setItem" && i.Arguments[0]!.ToString() == TabDraftStore.SelectionKey("library")
             && i.Arguments[1]!.ToString()!.Contains("c-spec"), "Plan & prepare restores this selection");
-        Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("test-plan-suggestions?area=choose");
+        Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("manual-testing/plan");
     }
 }

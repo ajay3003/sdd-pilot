@@ -378,6 +378,8 @@ public sealed partial class TestPlanSuggestionService
     /// <summary>The source status of one plan against its application's current discovery and the sources imported since (live, no rediscovery).</summary>
     internal async Task<PlanSourceStatus> StatusAsync(TestPlanDraft plan, CancellationToken ct)
     {
+        // The plan's own project and application, as stored (after a restart the cache may hold only another project's older result).
+        await RestoreCurrentAsync(plan, ct);
         var latest = CurrentFor(plan);
         var newer = new List<DiscoverySourceMember>();
         var basisForFreshness = latest?.Basis ?? plan.DiscoveryBasis;

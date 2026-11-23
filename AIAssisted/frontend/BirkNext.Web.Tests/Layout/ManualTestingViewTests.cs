@@ -29,7 +29,7 @@ public sealed class ManualTestingViewTests : BunitContext
     private static readonly (string Group, string[] Routes)[] Expected =
     [
         // The Manual Testing workspace comes first: home, then its three stages; Plan & prepare is Test Plan Suggestions (one planning page).
-        ("Manual Testing", ["manual-testing", "manual-testing/discover", "test-plan-suggestions"]),
+        ("Manual Testing", ["manual-testing", "manual-testing/discover", "manual-testing/plan", "test-plan-suggestions"]),
         ("Project setup", ["project-import", "sources", "demo-projects"]),
         ("Understand the system", ["system-understanding"]),
         ("Requirements", ["specification-explorer", "quality/document", "documentation-drift"]),
@@ -82,7 +82,7 @@ public sealed class ManualTestingViewTests : BunitContext
         State.View.Should().Be(WorkspaceView.ManualTesting);
         cut.FindAll("[data-testid^=nav-section-]").Take(Expected.Length).Select(b => b.TextContent.Trim()).Should().Equal(Expected.Select(e => e.Group));
         cut.Find("[data-testid=nav-section-manual-workspace] + .nav-group").QuerySelectorAll("a").Select(a => (a.GetAttribute("href"), a.TextContent.Trim()))
-            .Should().Equal(("manual-testing", "Manual Testing"), ("manual-testing/discover", "Discover & understand"), ("test-plan-suggestions", "Plan & prepare"));
+            .Should().Equal(("manual-testing", "Manual Testing"), ("manual-testing/discover", "Discover & understand"), ("manual-testing/plan", "Plan & prepare"), ("test-plan-suggestions", "Plans & export"));
         cut.Find("[data-testid=nav-section-manual-prepare] + .nav-group").QuerySelectorAll("a").Select(a => a.GetAttribute("href"))
             .Should().Equal("test-data");
         cut.Find("[data-testid=nav-workspace-view-help]").TextContent.Should().Contain("prepare functional tests and test data");
@@ -114,7 +114,7 @@ public sealed class ManualTestingViewTests : BunitContext
         var features = Services.GetRequiredService<FeatureVisibilityService>();
         var catalogue = NavigationCatalog.Sections.SelectMany(s => s.Items).ToList();
         var rendered = cut.FindAll("#nav-groups a").Select(a => a.GetAttribute("href")).ToList();
-        rendered.Should().BeEquivalentTo(new[] { "manual-testing", "manual-testing/discover", "all-modules",
+        rendered.Should().BeEquivalentTo(new[] { "manual-testing", "manual-testing/discover", "manual-testing/plan", "all-modules",
             "project-import", "sources", "demo-projects", "system-understanding", "specification-explorer", "quality/document", "documentation-drift",
             "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review", "dashboard", "user-guide", "admin/system-settings" }
             .Where(r => catalogue.Single(i => i.Route == r).Visible(features)),

@@ -191,9 +191,12 @@ public static class NavigationCatalog
                 Aliases: ["Manual tester", "Testing workspace"]),
             new("manual-testing/discover", "Discover & understand", "nav-icon-system-understanding", Always, WrapLabel: true,
                 Hint: "what needs testing: requirements, scenario suggestions, existing tests and what needs clarification", Aliases: ["Requirements to test", "What to test"]),
-            new("test-plan-suggestions", "Plan & prepare", "nav-icon-workflow", Always, WrapLabel: true,
-                Hint: "choose scenarios, prepare and edit manual test cases, link requirements and Test Data, check testability, save plans and snapshots — proposals, not Azure DevOps records",
-                Aliases: ["Test Plan Suggestions", "Test Plan", "Test Cases", "Manual test cases"]),
+            new("manual-testing/plan", "Plan & prepare", "nav-icon-workflow", Always, WrapLabel: true,
+                Hint: "write and review the test cases of the chosen scenarios: steps with expected results, preconditions, test data; ready for review, approve, translate",
+                Aliases: ["Planlegg og klargjør", "Test case editor", "Test Cases", "Manual test cases", "Testtilfelle"]),
+            new("test-plan-suggestions", "Plans & export", "nav-icon-workflow", Always, WrapLabel: true,
+                Hint: "the full plan page: choose scenarios with discovery, history and snapshots, source impact and conflicts, translate all, export to Azure DevOps Test Plans — proposals, not Azure DevOps records",
+                Aliases: ["Test Plan Suggestions", "Test Plan", "Export", "Eksporter"]),
         ], "nav-icon-workflow"),
         // Technical Testing: one workspace over the existing technical engines (assess → configure → verify). The stages summarise and link to the
         // specialist modules (Frontend/API/Integration Quality Review, Performance Test Review, Critical E2E); they configure and run nothing.
@@ -480,7 +483,7 @@ public static class WorkspaceViews
         [
             new("tl-overview", "Readiness & follow-up", "nav-icon-dashboard", ["dashboard"]),
             new("tl-understand", "System & requirements", "nav-icon-system-understanding", ["system-understanding", "specification-explorer", "quality/document"]),
-            new("tl-prepare", "Functional test preparation", "nav-icon-workflow", ["manual-testing", "test-plan-suggestions", "test-data"]),
+            new("tl-prepare", "Functional test preparation", "nav-icon-workflow", ["manual-testing", "manual-testing/plan", "test-plan-suggestions", "test-data"]),
             new("tl-coverage", "Coverage & traceability", "nav-icon-artifact-traceability", ["artifact-traceability", "test-coverage-review", "correlation-review"]),
             new("tl-execution", "Execution & regression", "nav-icon-task-alignment", ["critical-e2e-regression", "execution-results", "integration-suites"]),
             new("tl-technical", "Technical quality", "nav-icon-constitution-compliance",
@@ -530,7 +533,7 @@ public static class WorkspaceViews
     private static WorkspaceViewDefinition CreateManualTesting() => Groups(WorkspaceView.ManualTesting, "Manual Testing",
         "Review requirements, prepare functional tests and test data, run them and record results.", "manual-testing",
         [
-            new("manual-workspace", "Manual Testing", "nav-icon-workflow", ["manual-testing", "manual-testing/discover", "test-plan-suggestions"]),
+            new("manual-workspace", "Manual Testing", "nav-icon-workflow", ["manual-testing", "manual-testing/discover", "manual-testing/plan", "test-plan-suggestions"]),
             new("manual-setup", "Project setup", "nav-icon-import", ["project-import", "sources", "demo-projects"]),
             new("manual-understand", "Understand the system", "nav-icon-system-understanding", ["system-understanding"]),
             new("manual-requirements", "Requirements", "nav-icon-task-alignment", ["specification-explorer", "quality/document", "documentation-drift"]),

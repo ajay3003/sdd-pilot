@@ -45,7 +45,7 @@ public sealed class SystemGuideGenerationService(SystemGuideService guides, IEnu
         var snapshot = await store.FindSourceAnalysisAsync(snapshotId, ct) ?? throw new InvalidOperationException("Kildeversjonen finnes ikke lenger (fjernet eller nullstilt); genereringen kan ikke kjøres.");
         var role = guides.GuidesFor(snapshot).FirstOrDefault(g => g.GuideKey == guideKey).Role
             ?? throw new InvalidOperationException("Kildeversjonen hører ikke til denne veiledningen.");
-        var specification = catalogs is null ? null : await catalogs.EvidenceAsync(snapshot.Id, null, ct);
+        var specification = catalogs is null ? null : await catalogs.EvidenceAsync(snapshot.Id, null, ct, snapshot.ProjectImport?.ImportId);
         var specs = specification?.Evidence ?? [];
         List<CoverageWorkspaceEvidence?> workspaces = specs.Count == 0 ? [null] : [.. specs.Select(e => (CoverageWorkspaceEvidence?)(e.Evidence with { ArtifactScope = specs.Count > 1 ? e.Path : null }))];
         var candidates = new List<DiscoveredScenario>();

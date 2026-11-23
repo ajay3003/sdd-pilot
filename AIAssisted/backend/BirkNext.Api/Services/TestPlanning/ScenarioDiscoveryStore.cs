@@ -51,10 +51,12 @@ public sealed class ScenarioDiscoveryStore(AppDbContext db, ScenarioDiscoveryCac
             if (Read(row!) is { } result && result.ProjectKey == projectKey) cache.Store(result);
     }
 
-    /// <summary>Puts the newest current result of an application (over all its imports) back into the cache when it holds none.</summary>
+    /// <summary>Puts the newest current result of an application (over all its imports) back into the cache, once per process. A pointer the cache
+    /// already holds is no proof it is the newest: after a restart, restoring one import's own (older) result sets it first. The cache only ever
+    /// moves the pointer forward, so this never replaces a newer result.</summary>
     public async Task RestoreApplicationAsync(string applicationKey, CancellationToken ct)
     {
-        if (cache.CurrentForApplication(applicationKey) is not null) return;
+        if (!cache.FirstApplicationRestore(applicationKey)) return;
         var row = await db.ScenarioDiscoveryResults.AsNoTracking().Where(r => r.ApplicationKey == applicationKey && r.BasisKind != Historical)
             .OrderByDescending(r => r.DiscoveredAt).FirstOrDefaultAsync(ct);
         if (row is not null && Read(row) is { } result) cache.Store(result);

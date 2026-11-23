@@ -194,6 +194,11 @@ public sealed class ScenarioDiscoveryCache
     private bool Newer(string key, ScenarioDiscoveryResult result) =>
         !_latest.TryGetValue(key, out var id) || !_byId.TryGetValue(id, out var held) || held.DiscoveredAt <= result.DiscoveredAt;
 
+    private readonly ConcurrentDictionary<string, bool> _applicationsRestored = new(StringComparer.Ordinal);
+
+    /// <summary>True the first time an application's stored results are restored in this process (later calls skip the read).</summary>
+    public bool FirstApplicationRestore(string applicationKey) => _applicationsRestored.TryAdd(applicationKey, true);
+
     /// <summary>Holds a result (read back from storage) for lookup by id without making it the project's latest.</summary>
     public void Remember(ScenarioDiscoveryResult result) => _byId.TryAdd(result.DiscoveryId, result);
 

@@ -120,7 +120,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
     [Theory]
     [InlineData(WorkspaceView.TestLead, new[] { "artifact-traceability", "test-data", "test-plan-suggestions", "system-understanding", "specification-explorer", "test-coverage-review", "api-quality-review", "api-quality-review/contracts", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "execution-results" })]
     [InlineData(WorkspaceView.TechnicalTester, new[] { "api-quality-review/contracts", "api-quality-review", "integration-suites", "execution-results", "critical-e2e-regression", "integration-quality-review", "test-data", "test-coverage-review", "performance-test-review", "integration-topology" })]
-    [InlineData(WorkspaceView.ManualTesting, new[] { "manual-testing", "manual-testing/discover", "system-understanding", "specification-explorer", "quality/document", "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review" })]
+    [InlineData(WorkspaceView.ManualTesting, new[] { "manual-testing", "manual-testing/discover", "manual-testing/plan", "system-understanding", "specification-explorer", "quality/document", "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review" })]
     [InlineData(WorkspaceView.ScrumMaster, new[] { "delivery-reporting", "delivery-overview", "task-alignment" })]
     [InlineData(WorkspaceView.ProjectLeader, new[] { "dashboard", "delivery-overview", "delivery-reporting", "critical-e2e-regression", "snapshots", "correlation-review" })]
     [InlineData(WorkspaceView.Developer, new[] { "source-analysis", "specification-explorer", "schema-studio", "api-quality-review", "technology-coverage", "dependency-review", "pipeline-review" })]

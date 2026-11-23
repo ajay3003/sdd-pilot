@@ -8,13 +8,13 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 
-@* Oppdag og forstå (2026-11-23): scenarios first. The stored discovery result of the project, browsed as test scenarios (search, filters, a
+@* Finn og forstå (2026-11-23): scenarios first. The stored discovery result of the project, browsed as test scenarios (search, filters, a
    compact list and a detail panel); user stories, requirements and evidence are context of a scenario, not the way in. Selecting scenarios
    hands them to Plan & prepare (the same per-tab selection that page restores). Read only: nothing is prepared, approved or changed here. *@
-<PageTitle>Oppdag og forstå — Manuell testing</PageTitle>
+<PageTitle>Finn og forstå — Manuell testing</PageTitle>
 
 <div class="mt msb-page" data-testid="mtd" aria-busy="@(_loading ? "true" : "false")">
-    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="discover" Title="Oppdag og forstå"
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="discover" Title="Finn og forstå"
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
         Lead="Hvilke scenarioer må testes? Søk, filtrer og velg scenarioer, og gå videre til å forberede testtilfeller." />
 
@@ -60,13 +60,13 @@
                 <div><dt>Testtilfeller</dt><dd data-testid="mtd-count-prepared">@preparedCases</dd></div>
                 <div class="@(clarify > 0 ? "is-warn" : null)"><dt>Trenger avklaring</dt><dd data-testid="mtd-count-clarify">@clarify</dd></div>
             </dl>
-            <a class="btn btn-secondary btn-sm" href="@($"{M.PlanRoute}?area=choose&discover=now")" data-testid="mtd-discover">@(discovery is null ? "Oppdag scenarioer" : "Oppdag på nytt")</a>
+            <a class="btn btn-secondary btn-sm" href="@($"{M.LegacyPlanRoute}?area=choose&discover=now")" data-testid="mtd-discover">@(discovery is null ? "Oppdag scenarioer" : "Oppdag på nytt")</a>
         </section>
 
         @if (discovery is null)
         {
             <p class="msb-empty" data-testid="mtd-sug-none">Ingen scenarioer er oppdaget ennå. Oppdagelsen leser bare denne applikasjonens egne kilder (spesifikasjon, kildekode, kontrakter, flyter og tester), og kjører bare når du ber om det.
-                <a href="@($"{M.PlanRoute}?area=choose&discover=now")">Oppdag scenarioer</a></p>
+                <a href="@($"{M.LegacyPlanRoute}?area=choose&discover=now")">Oppdag scenarioer</a></p>
         }
         else
         {
@@ -374,7 +374,7 @@
         else await TabDraftStore.WriteAsync(JS, TabDraftStore.SelectionKey(key), _selected.Order(StringComparer.Ordinal).ToArray());
     }
 
-    private async Task PrepareAsync() { await KeepAsync(); Nav.NavigateTo($"{M.PlanRoute}?area=choose"); }
+    private async Task PrepareAsync() { await KeepAsync(); Nav.NavigateTo(M.PlanRoute); }
 
     private async Task PrepareOnlyAsync(string id) { _selected.Add(id); await PrepareAsync(); }
 

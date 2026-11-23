@@ -51,6 +51,18 @@ public sealed class SpecificationCatalogRecord
     public string? EvidenceJson { get; set; }
 }
 
+/// <summary>
+/// The parsed specification evidence of a catalog revision captured before the evidence was kept with the revision itself (table
+/// <c>specification_catalog_evidence</c>, one row per catalog, insert-only): catalog rows are append-only, so the evidence is added beside them.
+/// </summary>
+public sealed class SpecificationCatalogEvidenceRecord
+{
+    public Guid Id { get; set; }
+    public Guid CatalogId { get; set; }
+    public string EvidenceJson { get; set; } = "[]";
+    public DateTimeOffset CapturedAt { get; set; }
+}
+
 /// <summary>A finished specialist technical review stored on the server (Frontend Quality Review, safe fuzzing, authorization checks).
 /// Append-only: the report JSON is never changed after insert.</summary>
 public sealed class TechnicalReviewRunRecord

@@ -100,7 +100,13 @@ public sealed partial class SystemGuideService
                 };
                 db.SystemGuideGenerationJobs.Add(job);
                 try { await db.SaveChangesAsync(ct); }
-                catch (DbUpdateException) { db.ChangeTracker.Clear(); job = await db.SystemGuideGenerationJobs.AsNoTracking().FirstAsync(j => j.GuideKey == key && j.SnapshotId == snapshot.Id && j.GeneratorVersion == GeneratorVersion, ct); }
+                catch (DbUpdateException)
+                {
+                    db.ChangeTracker.Clear();
+                    // Another request recorded the same job first; anything else is a real failure and is reported as such.
+                    job = await db.SystemGuideGenerationJobs.AsNoTracking().FirstOrDefaultAsync(j => j.GuideKey == key && j.SnapshotId == snapshot.Id && j.GeneratorVersion == GeneratorVersion, ct);
+                    if (job is null) throw;
+                }
             }
             views.Add(JobView(job));
         }
