@@ -1,53 +1,74 @@
-/* Git Sources (Git-only): Git status, connected repositories, add repository. Design tokens only. */
-.gsx { display: grid; gap: .875rem; max-width: 64rem; padding: 1.25rem; background: var(--clr-surface-white); border: 1px solid var(--clr-border); border-radius: var(--radius-lg); min-width: 0; }
-.gsx-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem; }
-.gsx-title { margin: 0; font-size: 1.25rem; color: var(--clr-text-heading); }
-.gsx-subtitle, .gsx-muted { margin: .125rem 0 0; color: var(--clr-text-muted); font-size: .9rem; }
-.gsx-link { background: none; border: 0; padding: 0; color: var(--clr-primary); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+/* Git Sources (Git-only), redesigned 2026-11-23 in the Translation settings' language: one card, light section headings, a rounded repository
+   list, details as a tile, status as a dot + words. Design tokens only, so light and dark themes follow the app. */
+.gsx { display: grid; gap: 1.5rem; max-width: 64rem; padding: 1.5rem; background: var(--clr-surface-white); border: 1px solid var(--clr-border); border-radius: var(--radius-lg); min-width: 0; }
+.gsx-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem 1.25rem; }
+.gsx-title { margin: 0; font-size: 1.375rem; font-weight: 650; letter-spacing: -.01em; color: var(--clr-text-heading); }
+.gsx-subtitle, .gsx-muted { margin: .25rem 0 0; color: var(--clr-text-muted); font-size: .9rem; line-height: 1.45; }
+.gsx-link { background: none; border: 0; padding: 0; color: var(--clr-text-heading); font: inherit; font-weight: 650; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.gsx-link:hover { color: var(--clr-primary); text-decoration: underline; }
+.gsx-link:focus-visible { outline: 2px solid var(--clr-focus, var(--clr-primary)); outline-offset: 2px; border-radius: var(--radius-sm); }
 .gsx-wrap { overflow-wrap: anywhere; }
 
-/* Status pills */
-.gsx-pill { display: inline-flex; align-items: center; padding: .125rem .625rem; border-radius: var(--radius-pill); font-size: .8rem; font-weight: 600; white-space: nowrap; border: 1px solid transparent; }
-.gsx-pill-ok { background: var(--clr-success-bg-light); color: var(--clr-success); border-color: var(--clr-success-border); }
-.gsx-pill-pending { background: var(--clr-warning-bg-light); color: var(--clr-text-heading); border-color: var(--clr-warning-border); }
-.gsx-pill-neutral { background: var(--clr-surface); color: var(--clr-text-muted); border-color: var(--clr-border); }
+/* Status: a dot and words. */
+.gsx-pill { display: inline-flex; align-items: center; gap: .45rem; padding: .3rem .75rem; border-radius: var(--radius-pill); font-size: .825rem; font-weight: 600; white-space: nowrap;
+    background: var(--clr-surface-alt, var(--clr-surface)); color: var(--clr-text-heading); border: 1px solid var(--clr-border); }
+.gsx-pill::before { content: ""; width: .55rem; height: .55rem; border-radius: 50%; background: var(--clr-text-muted); }
+.gsx-pill-ok { background: var(--clr-success-bg-light); border-color: var(--clr-success-border); }
+.gsx-pill-ok::before { background: var(--clr-success); }
+.gsx-pill-pending { background: var(--clr-warning-bg-light); border-color: var(--clr-warning-border); }
+.gsx-pill-pending::before { background: var(--clr-warning, var(--clr-warning-border)); }
+.gsx-pill-neutral { padding: .1rem .55rem; font-size: .75rem; color: var(--clr-text-muted); }
+.gsx-pill-neutral::before { display: none; }
 
-/* Panels */
-.gsx-panel { display: grid; gap: .75rem; padding: 1rem 1.125rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
+/* Sections: a light heading instead of boxed panels. */
+.gsx-panel { display: grid; gap: .875rem; min-width: 0; }
+.gsx-panel + .gsx-panel { padding-top: 1.5rem; border-top: 1px solid var(--clr-border); }
 .gsx-panel-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
-.gsx-panel-title { margin: 0; font-size: 1.05rem; color: var(--clr-text-heading); }
-.gsx-notice { margin: 0; padding: .5rem .75rem; background: var(--clr-info-bg-light); border-left: 3px solid var(--clr-info); border-radius: var(--radius-sm); font-size: .875rem; overflow-wrap: anywhere; }
-.gsx-error { margin: 0; padding: .5rem .75rem; background: var(--clr-danger-bg-light); border-left: 3px solid var(--clr-danger); border-radius: var(--radius-sm); font-size: .875rem; overflow-wrap: anywhere; }
-.gsx-state { display: grid; gap: .5rem; justify-items: start; padding: .875rem 1rem; background: var(--clr-surface); border: 1px dashed var(--clr-border); border-radius: var(--radius-md); }
+.gsx-panel-title { margin: 0; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--clr-text-muted); }
+.gsx-notice, .gsx-error { margin: 0; padding: .625rem .875rem; border-radius: var(--radius-md); font-size: .875rem; overflow-wrap: anywhere; border: 1px solid transparent; }
+.gsx-notice { background: var(--clr-info-bg-light); border-color: var(--clr-info-border, var(--clr-info)); }
+.gsx-error { background: var(--clr-danger-bg-light); border-color: var(--clr-danger); }
+.gsx-state { display: grid; gap: .5rem; justify-items: start; padding: 1rem 1.125rem; background: var(--clr-surface); border: 1px dashed var(--clr-border); border-radius: var(--radius-md); }
 .gsx-state p { margin: 0; }
-.gsx-facts { display: grid; grid-template-columns: max-content 1fr; gap: .375rem 1.25rem; margin: 0; font-size: .9rem; }
+.gsx-facts { display: grid; grid-template-columns: max-content 1fr; gap: .5rem 1.5rem; margin: 0; font-size: .9rem; align-items: baseline; }
 .gsx-facts > div { display: contents; }
-.gsx-facts dt { color: var(--clr-text-muted); font-weight: 500; }
+.gsx-facts dt { color: var(--clr-text-muted); font-weight: 500; font-size: .85rem; }
 .gsx-facts dd { margin: 0; min-width: 0; color: var(--clr-text-body); }
 
-/* Connected repositories */
-.gss-search { max-width: 28rem; }
-.gss-table-wrap { min-width: 0; }
+/* Connected repositories: a rounded list. */
+.gss-search { max-width: 28rem; border-radius: var(--radius-md); }
+.gss-table-wrap { min-width: 0; border: 1px solid var(--clr-border); border-radius: var(--radius-md); overflow: hidden; }
 .gss-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
-.gss-table th { text-align: left; font-weight: 600; color: var(--clr-text-muted); font-size: .8rem; padding: .375rem .5rem; border-bottom: 1px solid var(--clr-border); }
-.gss-table td { padding: .5rem; border-bottom: 1px solid var(--clr-border); vertical-align: top; overflow-wrap: anywhere; }
-.gss-table tr.is-selected td { background: var(--clr-surface); }
-.gss-sub { display: block; font-size: .75rem; color: var(--clr-text-muted); }
-.gss-dot { display: inline-block; width: .5rem; height: .5rem; margin-right: .375rem; border-radius: 50%; vertical-align: middle; background: var(--clr-border); }
+.gss-table th { text-align: left; font-weight: 600; color: var(--clr-text-muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; padding: .6rem .875rem;
+    background: var(--clr-surface, var(--clr-surface-alt)); border-bottom: 1px solid var(--clr-border); }
+.gss-table td { padding: .75rem .875rem; border-bottom: 1px solid var(--clr-border); vertical-align: top; overflow-wrap: anywhere; }
+.gss-table tbody tr:last-child td { border-bottom: 0; }
+.gss-table tbody tr { transition: background-color .12s; }
+.gss-table tbody tr:hover td { background: var(--clr-surface, var(--clr-surface-alt)); }
+.gss-table tr.is-selected td { background: var(--clr-primary-subtle, var(--clr-surface-selected)); }
+.gss-table tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--clr-primary); }
+.gss-sub { display: block; margin-top: .15rem; font-size: .75rem; color: var(--clr-text-muted); }
+.gss-dot { display: inline-block; width: .5rem; height: .5rem; margin-right: .4rem; border-radius: 50%; vertical-align: middle; background: var(--clr-border); }
 .gss-dot-ok { background: var(--clr-success); }
 .gss-dot-bad { background: var(--clr-danger); }
-.gss-details { display: grid; gap: .625rem; padding: .875rem 1rem; background: var(--clr-surface); border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
-.gss-branch { max-width: 100%; }
-.gss-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+
+/* Repository details: a tile under the list. */
+.gss-details { display: grid; gap: .875rem; padding: 1rem 1.125rem; background: var(--clr-surface, transparent); border: 1px solid var(--clr-border); border-left: 4px solid var(--clr-primary);
+    border-radius: var(--radius-md); min-width: 0; }
+.gss-branch { max-width: 34rem; border-radius: var(--radius-md); }
+.gss-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding-top: .75rem; border-top: 1px solid var(--clr-border); }
 .gss-remove { margin-left: auto; }
 .gss-other { font-size: .85rem; }
+.gss-fetch-why { border-color: var(--clr-warning-border); background: var(--clr-warning-bg-light); }
+
+@media (prefers-reduced-motion: reduce) { .gss-table tbody tr { transition: none; } }
 
 /* Narrow screens: each repository becomes a stacked card (no horizontal page scroll). */
 @media (max-width: 48rem) {
     .gsx { padding: 1rem; }
     .gss-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     .gss-table, .gss-table tbody, .gss-table tr, .gss-table td { display: block; width: 100%; }
-    .gss-table tr { padding: .5rem 0; border-bottom: 1px solid var(--clr-border); }
+    .gss-table tr { padding: .625rem .875rem; border-bottom: 1px solid var(--clr-border); }
     .gss-table td { border: 0; padding: .125rem 0; }
     .gss-table td::before { content: attr(data-label) ": "; color: var(--clr-text-muted); font-size: .75rem; }
     .gss-table td:first-child::before { content: none; }

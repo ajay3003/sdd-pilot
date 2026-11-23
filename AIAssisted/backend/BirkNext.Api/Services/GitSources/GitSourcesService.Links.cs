@@ -13,22 +13,33 @@ public interface IGitImportRecorder
 public sealed partial class GitSourcesService : IGitImportRecorder
 {
     /// <summary>Changes the branch, pinned commit and roles of a link (the repository identity and its history stay).</summary>
-    public GitSourceLink UpdateLink(string linkId, string environmentId, string? branch, string? pinnedCommit, IReadOnlyList<string>? roles)
+    /// <param name="selectedBranches">The branches offered for this repository (null = unchanged, empty = every branch). When the current branch is
+    /// not among them, the current branch becomes the first chosen one, so pages never default to a branch nobody can pick.</param>
+    public GitSourceLink UpdateLink(string linkId, string environmentId, string? branch, string? pinnedCommit, IReadOnlyList<string>? roles, IReadOnlyList<string>? selectedBranches = null)
     {
         if (branch is { Length: > 0 } b && !GitUrlPolicy.IsBranchName(GitSourcePolicy.BranchName(b))) throw new GitProviderException(GitFailureKind.BranchNotFound, "not a valid branch name");
+        List<string>? selected = selectedBranches is null ? null
+            : [.. selectedBranches.Select(s => GitSourcePolicy.BranchName(s ?? "")).Where(s => s.Length > 0).Distinct(StringComparer.Ordinal)];
+        if (selected is { Count: > 500 }) throw new GitProviderException(GitFailureKind.BranchNotFound, "at most 500 branches can be selected");
+        if (selected?.FirstOrDefault(s => !GitUrlPolicy.IsBranchName(s)) is { } bad) throw new GitProviderException(GitFailureKind.BranchNotFound, $"\"{bad}\" is not a valid branch name");
         if (pinnedCommit is { Length: > 0 } pin && !GitSourcePolicy.IsCommitSha(pin.Trim().ToLowerInvariant())) throw new GitProviderException(GitFailureKind.RevisionNotFound);
         GitSourceLink? updated = null;
         store.Update(s => s with
         {
             Links = [.. s.Links.Select(l => l.Id != linkId || l.EnvironmentId != environmentId ? l : updated = l with
             {
-                Branch = branch is { Length: > 0 } nb ? GitSourcePolicy.BranchName(nb) : l.Branch,
+                Branch = CurrentBranch(branch is { Length: > 0 } nb ? GitSourcePolicy.BranchName(nb) : l.Branch, selected ?? l.SelectedBranches),
+                SelectedBranches = selected ?? l.SelectedBranches,
                 PinnedCommit = pinnedCommit is null ? l.PinnedCommit : pinnedCommit.Length == 0 ? null : pinnedCommit.Trim().ToLowerInvariant(),
                 Roles = roles is null ? l.Roles : [.. roles.Select(r => r.Trim()).Where(r => r.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)],
             })],
         });
         return updated ?? throw new GitProviderException(GitFailureKind.RepositoryNotFound, "no such link");
     }
+
+    /// <summary>The current branch, unless a selection leaves it out: then the first selected branch.</summary>
+    private static string CurrentBranch(string current, IReadOnlyList<string> selected) =>
+        selected.Count == 0 || selected.Contains(current, StringComparer.Ordinal) ? current : selected[0];
 
     /// <summary>Removes the link only: the BirkNext-owned cache may stay, imported snapshots, reports and Project Evidence bindings stay.</summary>
     public bool Unlink(string linkId, string environmentId)

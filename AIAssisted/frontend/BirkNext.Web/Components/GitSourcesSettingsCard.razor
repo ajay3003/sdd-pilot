@@ -170,6 +170,29 @@
         if (updated.LastFetchFailure is null) _notice = $"Fetched: {_branches.Count} branch{(_branches.Count == 1 ? "" : "es")}.";
     });
 
+    /// <summary>Why Fetch latest cannot run, or null: it downloads only the selected branches.</summary>
+    internal static string? FetchBlocked(GitSourceLink link) => link.SelectedBranches.Count == 0
+        ? "Fetch latest is disabled: no branch is selected. Choose the branches to fetch under “Branches to fetch” — only those are downloaded and offered on other pages."
+        : null;
+
+    /// <summary>Why Import cannot run, or null: it imports the current branch as last fetched, so that branch must have been downloaded.</summary>
+    private string? ImportBlocked(GitSourceLink link) =>
+        link.Branch.Length == 0 ? "Import is disabled: no current branch is chosen."
+        : link.LastFetchedAt is null || _branches.All(b => b.Name != link.Branch)
+            ? $"Import is disabled: {link.Branch} has not been fetched yet. Select Fetch latest to download it."
+            : null;
+
+    private async Task BranchesSavedAsync(GitSourceLink updated)
+    {
+        Replace(updated);
+        (_branches, var error) = await Git.BranchesAsync(updated.Id, updated.EnvironmentId);
+        _error = error;
+        var n = updated.SelectedBranches.Count;
+        _notice = updated.LastFetchFailure is null && updated.LastFetchProblem is null
+            ? $"{n} branch{(n == 1 ? "" : "es")} selected and fetched."
+            : $"{n} branch{(n == 1 ? "" : "es")} selected, but the fetch failed: {updated.LastFetchProblem ?? "see the hint below"}. Select Fetch latest to try again.";
+    }
+
     private Task BranchChangedAsync(GitSourceLink link, string? branch) => branch is not { Length: > 0 } b || b == link.Branch ? Task.CompletedTask : Act("Saving the branch…", async () =>
     {
         var (updated, error) = await Git.UpdateLinkAsync(link.Id, link.EnvironmentId, b, null, null);
@@ -209,11 +232,14 @@
         <div class="gss-details" data-testid="gss-details" data-link="@link.Id">
             <dl class="gsx-facts">
                 <div><dt>Source</dt><dd class="gsx-wrap" data-testid="gss-location">@GitSourcesPresentation.KindLabel(link): @GitSourcesPresentation.Location(link)</dd></div>
-                <div><dt>Branch</dt><dd>
+                <div><dt>Branches to fetch</dt><dd>
+                    <GitBranchPicker Link="link" Disabled="_busy" OnSaved="BranchesSavedAsync" />
+                </dd></div>
+                <div><dt>Current branch</dt><dd>
                     <select class="form-select gss-branch" value="@link.Branch" disabled="@(_busy || _branches.Count == 0)" aria-label="Branch of @link.Repository"
                             @onchange="e => BranchChangedAsync(link, e.Value?.ToString())" data-testid="gss-branch">
                         @if (_branches.All(b => b.Name != link.Branch)) { <option value="@link.Branch">@(link.Branch.Length > 0 ? link.Branch : "—")</option> }
-                        @foreach (var b in _branches)
+                        @foreach (var b in GitBranchSelection.Visible(link, _branches))
                         {
                             <option value="@b.Name">@b.Name@(b.IsDefault ? " (default)" : "") · @b.CommitSha[..8]@(b.CommittedAt is { } d ? $" · {d.UtcDateTime:yyyy-MM-dd}" : "")</option>
                         }
@@ -222,14 +248,22 @@
                 <div><dt>Last fetch</dt><dd data-testid="gss-fetch">@GitSourcesPresentation.FetchText(link, Now)</dd></div>
                 <div><dt>Imports</dt><dd data-testid="gss-imports">@(link.Imports.Count == 0 ? "none yet" : string.Join(" · ", link.Imports.TakeLast(3).Reverse().Select(i => $"{i.CommitSha[..8]} ({i.Branch}, {i.ImportedAt.UtcDateTime:yyyy-MM-dd})")))</dd></div>
             </dl>
+            @if (link.EnvironmentId == _environmentId && FetchBlocked(link) is null && ImportBlocked(link) is { } importWhy)
+            {
+                <p class="gsx-notice gss-fetch-why" id="@($"gss-import-why-{link.Id}")" role="status" data-testid="gss-import-disabled-reason">@importWhy</p>
+            }
+            @if (FetchBlocked(link) is { } why) { <p class="gsx-notice gss-fetch-why" id="@($"gss-fetch-why-{link.Id}")" role="status" data-testid="gss-fetch-disabled-reason">@why</p> }
             @if (GitSourcesPresentation.FetchHint(link.LastFetchFailure) is { } hint) { <p class="gsx-notice" data-testid="gss-hint">@hint</p> }
             @if (_busyText is { } busy) { <p class="gsx-muted" role="status" data-testid="gss-busy">@busy</p> }
             @if (_notice is { } notice) { <p class="gsx-notice" role="status" data-testid="gss-notice">@notice</p> }
             <div class="gss-actions">
-                <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => FetchAsync(link)" data-testid="gss-fetch-latest">Fetch latest</button>
+                @* Fetch latest downloads only the chosen branches, so it needs a choice first (repositories added before 2026-11-23 have none). *@
+                <button type="button" class="btn-secondary btn-sm" disabled="@(_busy || FetchBlocked(link) is not null)" aria-describedby="@(FetchBlocked(link) is null ? null : $"gss-fetch-why-{link.Id}")"
+                        @onclick="() => FetchAsync(link)" data-testid="gss-fetch-latest">Fetch latest</button>
                 @if (active)
                 {
-                    <button type="button" class="btn-primary btn-sm" disabled="@(_busy || link.LastFetchedAt is null || link.Branch.Length == 0)" @onclick="() => Import(link)" data-testid="gss-import">Import @link.Branch</button>
+                    <button type="button" class="btn-primary btn-sm" disabled="@(_busy || ImportBlocked(link) is not null)" aria-describedby="@(ImportBlocked(link) is null ? null : $"gss-import-why-{link.Id}")"
+                            @onclick="() => Import(link)" data-testid="gss-import">Import @link.Branch</button>
                 }
                 else
                 {

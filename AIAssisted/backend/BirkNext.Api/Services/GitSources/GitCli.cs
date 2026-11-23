@@ -53,6 +53,8 @@ public sealed class GitCli(ILogger<GitCli>? logger = null, string? stateDirector
     {
         "version", "config", "init", "fetch", "ls-remote", "rev-parse", "for-each-ref", "symbolic-ref", "archive", "cat-file", "log", "status",
         "remote", "check-ref-format",
+        // Only in the BirkNext-owned bare repository (Isolated configuration): removes a branch that is no longer selected (2026-11-23).
+        "update-ref",
     };
 
     private readonly string _state = stateDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BirkNext", "git");

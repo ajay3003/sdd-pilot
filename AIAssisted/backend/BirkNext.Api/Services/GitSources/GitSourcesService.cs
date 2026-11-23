@@ -241,7 +241,9 @@ public sealed partial class GitSourcesService(IGitCli git, GitSourceSettingsStor
     // ── Fetch, branches, import ──────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Fetch latest: the repository's branches into the BirkNext-owned bare repository (created on first use). From a URL with the person's Git
+    /// Fetch latest: the SELECTED branches (and the current one) into the BirkNext-owned bare repository (created on first use); branches no
+    /// longer selected are removed from it. A remote can have hundreds of branches, and fetching them all downloaded every one's history
+    /// (2026-11-23). A link with no selection yet selects its current branch (else the default branch) first. From a URL with the person's Git
     /// configuration (credential helper; a sign-in window may appear); from a local repository by its path (its working tree, index and refs are
     /// not changed). Never pull, merge, rebase or push. The outcome (or the classified failure) is recorded on the link.
     /// </summary>
@@ -251,6 +253,7 @@ public sealed partial class GitSourcesService(IGitCli git, GitSourceSettingsStor
         var cache = CacheOf(link);
         GitFailureKind? failure = null;
         string? defaultBranch = link.DefaultBranch;
+        List<string> selected = [.. link.SelectedBranches];
         try
         {
             if (!Directory.Exists(Path.Combine(cache, "objects")))
@@ -263,24 +266,39 @@ public sealed partial class GitSourcesService(IGitCli git, GitSourceSettingsStor
             {
                 var source = link.LocalPath ?? throw new GitProviderException(GitFailureKind.NotARepository);
                 if (!Directory.Exists(source)) throw new GitProviderException(GitFailureKind.NotARepository);
-                var fetch = await git.RunAsync("fetch", ["--quiet", "--prune", "--no-tags", "--end-of-options", source, "+refs/heads/*:refs/heads/*"], cache, GitConfigMode.User,
-                    LocalTimeout, ct, configOverrides: ["protocol.file.allow=always"]);
-                if (!fetch.Ok) throw new GitProviderException(GitCli.Classify(fetch));
                 var current = await git.RunAsync("symbolic-ref", ["--short", "-q", "HEAD"], source, GitConfigMode.User, LocalTimeout, ct);
                 if (current.Ok && current.StdOut.Trim().Length > 0) defaultBranch = current.StdOut.Trim();
+                var heads = await git.RunAsync("for-each-ref", ["--format=%(refname:short)", "refs/heads"], source, GitConfigMode.User, LocalTimeout, ct);
+                if (!heads.Ok) throw new GitProviderException(GitCli.Classify(heads));
+                var wanted = Wanted(link, selected, defaultBranch, heads.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(h => h.Trim()));
+                selected = wanted.Selected;
+                if (wanted.Fetch.Count > 0)
+                {
+                    var fetch = await git.RunAsync("fetch", ["--quiet", "--no-tags", "--end-of-options", source, .. wanted.Fetch.Select(Refspec)], cache, GitConfigMode.User,
+                        LocalTimeout, ct, configOverrides: ["protocol.file.allow=always"]);
+                    if (!fetch.Ok) throw new GitProviderException(GitCli.Classify(fetch));
+                }
+                await RemoveUnwantedAsync(cache, wanted.Fetch, ct);
             }
             else
             {
                 var url = link.EffectiveRemoteUrl is { } raw && GitUrlPolicy.Normalize(raw).Url is { } normalized ? normalized
                     : throw new GitProviderException(GitFailureKind.UnsupportedUrl);
-                var head = await git.RunAsync("ls-remote", ["--symref", "--end-of-options", url, "HEAD"], cache, GitConfigMode.User, NetworkTimeout, ct,
+                // One listing (names and commit ids only, no code): the default branch and which selected branches still exist.
+                var head = await git.RunAsync("ls-remote", ["--symref", "--end-of-options", url, "HEAD", "refs/heads/*"], cache, GitConfigMode.User, NetworkTimeout, ct,
                     configOverrides: ["protocol.file.allow=never"]);
                 if (!head.Ok) throw new GitProviderException(GitCli.Classify(head));
                 var symref = head.StdOut.Split('\n').FirstOrDefault(l => l.StartsWith("ref: refs/heads/", StringComparison.Ordinal));
                 if (symref is not null) defaultBranch = symref["ref: refs/heads/".Length..].Split('\t')[0].Trim();
-                var fetch = await git.RunAsync("fetch", ["--quiet", "--prune", "--no-tags", "--end-of-options", url, "+refs/heads/*:refs/heads/*"], cache, GitConfigMode.User,
-                    NetworkTimeout, ct, configOverrides: ["protocol.file.allow=never"]);
-                if (!fetch.Ok) throw new GitProviderException(GitCli.Classify(fetch));
+                var wanted = Wanted(link, selected, defaultBranch, RemoteHeads(head.StdOut).Select(h => h.Name));
+                selected = wanted.Selected;
+                if (wanted.Fetch.Count > 0)
+                {
+                    var fetch = await git.RunAsync("fetch", ["--quiet", "--no-tags", "--end-of-options", url, .. wanted.Fetch.Select(Refspec)], cache, GitConfigMode.User,
+                        NetworkTimeout, ct, configOverrides: ["protocol.file.allow=never"]);
+                    if (!fetch.Ok) throw new GitProviderException(GitCli.Classify(fetch));
+                }
+                await RemoveUnwantedAsync(cache, wanted.Fetch, ct);
             }
         }
         catch (GitProviderException e) { failure = e.Kind; }
@@ -292,10 +310,66 @@ public sealed partial class GitSourcesService(IGitCli git, GitSourceSettingsStor
             {
                 LastFetchedAt = failure is null ? at : l.LastFetchedAt, LastFetchFailure = failure, LastFetchProblem = failure is { } f ? GitSourcePolicy.Describe(f) : null,
                 DefaultBranch = defaultBranch, Branch = l.Branch.Length > 0 ? l.Branch : defaultBranch ?? "",
+                SelectedBranches = failure is null ? selected : l.SelectedBranches,
             } : l)],
         });
         logger.LogInformation("Git Sources fetch for repository {Repository}: {Outcome}", link.Repository, failure?.ToString() ?? "fetched");
         return updated ?? link;
+    }
+
+    /// <summary>What a fetch downloads: the selected branches that exist (a link with no selection selects its current branch, else the default
+    /// branch), plus the current branch when it exists.</summary>
+    internal static (List<string> Selected, List<string> Fetch) Wanted(GitSourceLink link, IReadOnlyList<string> selected, string? defaultBranch, IEnumerable<string> existing)
+    {
+        var heads = existing.Where(GitUrlPolicy.IsBranchName).ToHashSet(StringComparer.Ordinal);
+        var chosen = selected.Count > 0 ? [.. selected]
+            : new[] { link.Branch, defaultBranch ?? "" }.Where(b => b.Length > 0 && heads.Contains(b)).Take(1).ToList();
+        var fetch = chosen.Append(link.Branch).Where(heads.Contains).Distinct(StringComparer.Ordinal).ToList();
+        return (chosen, fetch);
+    }
+
+    /// <summary>"sha<TAB>refs/heads/name" lines of git ls-remote (the "ref: ..." symref line and other refs are skipped).</summary>
+    internal static IEnumerable<(string Name, string Sha)> RemoteHeads(string lsRemote) =>
+        lsRemote.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim().Split('\t'))
+            .Where(p => p.Length == 2 && GitSourcePolicy.IsCommitSha(p[0]) && p[1].StartsWith("refs/heads/", StringComparison.Ordinal))
+            .Select(p => (p[1]["refs/heads/".Length..], p[0]));
+
+    private static string Refspec(string branch) => $"+refs/heads/{branch}:refs/heads/{branch}";
+
+    /// <summary>Removes branches from the BirkNext-owned repository that are no longer fetched (deselected, or deleted on the remote).</summary>
+    private async Task RemoveUnwantedAsync(string cache, IReadOnlyCollection<string> keep, CancellationToken ct)
+    {
+        var refs = await git.RunAsync("for-each-ref", ["--format=%(refname:short)", "refs/heads"], cache, GitConfigMode.Isolated, LocalTimeout, ct);
+        if (!refs.Ok) return;
+        foreach (var name in refs.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(n => n.Trim()).Where(n => n.Length > 0 && !keep.Contains(n)))
+            await git.RunAsync("update-ref", ["-d", "--end-of-options", $"refs/heads/{name}"], cache, GitConfigMode.Isolated, LocalTimeout, ct);
+    }
+
+    /// <summary>
+    /// Every branch of the repository by name and commit id, to choose which ones to fetch: from a URL with git ls-remote (names only, no code is
+    /// downloaded; the credential helper may ask to sign in), from a local repository by reading its branch list.
+    /// </summary>
+    public async Task<IReadOnlyList<GitBranch>> AvailableBranchesAsync(string linkId, string environmentId, CancellationToken ct)
+    {
+        var link = Find(linkId, environmentId);
+        if (link.EffectiveKind == "Local")
+        {
+            var source = link.LocalPath is { } path && Directory.Exists(path) ? path : throw new GitProviderException(GitFailureKind.NotARepository);
+            var r = await git.RunAsync("for-each-ref", ["--format=%(refname:short)%09%(objectname)%09%(committerdate:iso-strict)", "refs/heads"], source, GitConfigMode.User, LocalTimeout, ct);
+            if (!r.Ok) throw new GitProviderException(GitCli.Classify(r));
+            return GitBranchSelection.Ordered(r.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Split('\t')).Where(x => x.Length >= 2).Select(x =>
+                new GitBranch(x[0].Trim(), x[1].Trim(), x.ElementAtOrDefault(2) is { } d && DateTimeOffset.TryParse(d, CultureInfo.InvariantCulture, DateTimeStyles.None, out var at) ? at : null,
+                    null, null, x[0].Trim() == link.DefaultBranch)));
+        }
+        var url = link.EffectiveRemoteUrl is { } raw && GitUrlPolicy.Normalize(raw).Url is { } normalized ? normalized : throw new GitProviderException(GitFailureKind.UnsupportedUrl);
+        var cache = CacheOf(link);
+        Directory.CreateDirectory(cache);
+        var list = await git.RunAsync("ls-remote", ["--symref", "--end-of-options", url, "HEAD", "refs/heads/*"], cache, GitConfigMode.User, NetworkTimeout, ct,
+            configOverrides: ["protocol.file.allow=never"]);
+        if (!list.Ok) throw new GitProviderException(GitCli.Classify(list));
+        var symref = list.StdOut.Split('\n').FirstOrDefault(l => l.StartsWith("ref: refs/heads/", StringComparison.Ordinal));
+        var defaultBranch = symref is null ? link.DefaultBranch : symref["ref: refs/heads/".Length..].Split('\t')[0].Trim();
+        return GitBranchSelection.Ordered(RemoteHeads(list.StdOut).Select(h => new GitBranch(h.Name, h.Sha, null, null, null, h.Name == defaultBranch)));
     }
 
     /// <summary>The branches Git fetched (from the BirkNext-owned repository; no remote call), newest commit first.</summary>

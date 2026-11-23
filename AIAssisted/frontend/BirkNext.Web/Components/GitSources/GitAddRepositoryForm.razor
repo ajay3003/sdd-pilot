@@ -68,7 +68,9 @@
 
         <div class="gar-field gar-narrow">
             <label for="gar-branch">Branch <span class="gar-muted">(optional)</span></label>
-            <input id="gar-branch" class="form-control" @bind="_branch" @bind:event="oninput" placeholder="@(_mode == Mode.Local ? _local?.Branch ?? "current branch" : "default branch")" spellcheck="false" data-testid="gar-branch" />
+            <input id="gar-branch" class="form-control" @bind="_branch" @bind:event="oninput" placeholder="@(_mode == Mode.Local ? _local?.Branch ?? "current branch" : "default branch")" spellcheck="false"
+                   aria-describedby="gar-branch-help" data-testid="gar-branch" />
+            <span id="gar-branch-help" class="gar-help" data-testid="gar-branch-help">Only this branch is downloaded now. Choose more under “Branches to fetch” after adding.</span>
         </div>
 
         @if (_error is { } error) { <p class="gar-error" role="alert" data-testid="gar-error">@error</p> }

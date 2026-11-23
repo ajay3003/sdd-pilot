@@ -165,7 +165,8 @@
             if (Enum.TryParse<PackageEvidenceRole>(saved, out var role) && ImportRoleChoice.Choices.Contains(role)) Session.ChosenRoles.Add(role);
         _rolesHint = false;
         var (branches, error) = await Git.BranchesAsync(link.Id, link.EnvironmentId);
-        (choice.Branches, _error) = (branches, error);
+        // Only the branches chosen in System Settings → Git Sources (a remote can have hundreds), always with the current one.
+        (choice.Branches, _error) = (GitBranchSelection.Visible(link, branches), error);
         if (choice.Branch.Length == 0 && branches.FirstOrDefault(b => b.IsDefault) is { } fallback) choice.Branch = fallback.Name;
     }
 

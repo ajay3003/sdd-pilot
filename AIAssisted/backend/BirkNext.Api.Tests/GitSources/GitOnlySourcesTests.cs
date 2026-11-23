@@ -197,10 +197,34 @@ public sealed class GitOnlySourcesTests : IDisposable
 
         var link = await service.AddRepositoryAsync(new(hub, null, "dev", "Hub"), default);
         link.Should().Match<GitSourceLink>(l => l.Kind == "Local" && l.Organization == "local" && l.Branch == "feature/report" && l.LastFetchFailure == null && l.LastFetchedAt != null);
-        (await service.BranchesAsync(link.Id, "dev", default)).Select(b => b.Name).Should().BeEquivalentTo(["main", "feature/report"]);
+        link.SelectedBranches.Should().Equal(["feature/report"], "adding selects the current branch, and only it is downloaded");
+        (await service.BranchesAsync(link.Id, "dev", default)).Select(b => b.Name).Should().BeEquivalentTo(["feature/report"]);
         service.CacheOf(link).Should().StartWith(Path.Combine(_dir, "state"), "the fetch goes into BirkNext-owned storage");
         State().Should().Be(before, "the working tree, index, branch, refs and configuration are untouched");
         service.Links("qa").Should().BeEmpty("links belong to one BirkNext project");
+    }
+
+    [Fact]
+    public async Task Fetch_latest_downloads_only_the_selected_branches_and_drops_deselected_ones_while_the_full_list_needs_no_download()
+    {
+        // 2026-11-23: a remote with hundreds of branches downloaded every branch's history on each Fetch latest.
+        var hub = NewRepository("Hub");
+        Git(hub, "branch", "release/1.0", "main");
+        var (service, _, _) = Create();
+        var link = await service.AddRepositoryAsync(new(hub, null, "dev", "Hub", Branch: "main"), default);
+        link.SelectedBranches.Should().Equal(["main"]);
+        (await service.AvailableBranchesAsync(link.Id, "dev", default)).Select(b => b.Name).Should().BeEquivalentTo(["main", "feature/report", "release/1.0"],
+            "the full list is read from the repository's branch list, nothing is fetched for it");
+        (await service.BranchesAsync(link.Id, "dev", default)).Select(b => b.Name).Should().Equal(["main"]);
+
+        service.UpdateLink(link.Id, "dev", null, null, null, ["release/1.0", "feature/report"]).Should().Match<GitSourceLink>(l => l.Branch == "release/1.0",
+            "the current branch left the selection, so the first selected branch became current");
+        await service.FetchAsync(link.Id, "dev", default);
+        (await service.BranchesAsync(link.Id, "dev", default)).Select(b => b.Name).Should().BeEquivalentTo(["release/1.0", "feature/report"], "main was deselected and removed from BirkNext's copy");
+
+        var bad = () => Task.FromResult(service.UpdateLink(link.Id, "dev", null, null, null, ["-bad"]));
+        await bad.Should().ThrowAsync<GitProviderException>();
+        GitSourcesService.Wanted(new GitSourceLink { Branch = "" }, [], "main", ["main", "dev"]).Fetch.Should().Equal(["main"], "no selection: the default branch");
     }
 
     [Fact]
@@ -242,6 +266,9 @@ public sealed class GitOnlySourcesTests : IDisposable
         service.Record(first.Revision, Guid.NewGuid(), "import-1");
 
         var featureHead = Git(hub, "rev-parse", "feature/report");
+        // Only selected branches are fetched (2026-11-23): select feature/report too, then a commit of its history can be imported.
+        service.UpdateLink(link.Id, "dev", null, null, null, ["main", "feature/report"]);
+        await service.FetchAsync(link.Id, "dev", default);
         (await service.ImportAsync(new GitImportRequest(link.RepositoryId, "main") { OrganizationUrl = link.OrganizationUrl, Commit = featureHead }, default))
             .Revision.CommitSha.Should().Be(featureHead, "an exact commit of the fetched history can be imported");
         var unknown = () => service.ImportAsync(new GitImportRequest(link.RepositoryId, "main") { OrganizationUrl = link.OrganizationUrl, Commit = new string('b', 40) }, default);

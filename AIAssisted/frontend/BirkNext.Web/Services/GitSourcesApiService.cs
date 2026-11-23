@@ -21,6 +21,12 @@ public interface IGitSourcesApiService
     Task<(IReadOnlyList<GitSourceLink> Items, string? Error)> LinksAsync(string? environmentId, CancellationToken ct = default);
     Task<(GitSourceLink? Link, string? Error)> UpdateLinkAsync(string linkId, string environmentId, string? branch, string? pinnedCommit, IReadOnlyList<string>? roles, CancellationToken ct = default);
     Task<string?> UnlinkAsync(string linkId, string environmentId, CancellationToken ct = default);
+    /// <summary>Every branch of the repository by name (git ls-remote / the local branch list; no code is downloaded).</summary>
+    Task<(IReadOnlyList<GitBranch> Items, string? Error)> AvailableBranchesAsync(string linkId, string environmentId, CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<GitBranch>, string?)>(([], "Listing branches is not available in this host."));
+    /// <summary>The branches fetched and offered for this repository (empty = only the current branch is fetched).</summary>
+    Task<(GitSourceLink? Link, string? Error)> SelectBranchesAsync(string linkId, string environmentId, IReadOnlyList<string> branches, CancellationToken ct = default) =>
+        Task.FromResult<(GitSourceLink?, string?)>((null, "Choosing branches is not available in this host."));
     /// <summary>Fetch latest into BirkNext-owned storage (never pull, merge or push).</summary>
     Task<(GitSourceLink? Link, string? Error)> FetchAsync(string linkId, string environmentId, CancellationToken ct = default);
     Task<(IReadOnlyList<GitBranch> Items, string? Error)> BranchesAsync(string linkId, string environmentId, CancellationToken ct = default);
@@ -59,6 +65,9 @@ public sealed class GitSourcesApiService(HttpClient http) : IGitSourcesApiServic
     public Task<(GitSourceLink?, string?)> UpdateLinkAsync(string linkId, string environmentId, string? branch, string? pinnedCommit, IReadOnlyList<string>? roles, CancellationToken ct = default) =>
         SendAsync<GitSourceLink>(HttpMethod.Put, Link(linkId, environmentId), new { branch, pinnedCommit, roles }, ct);
 
+    public Task<(GitSourceLink?, string?)> SelectBranchesAsync(string linkId, string environmentId, IReadOnlyList<string> branches, CancellationToken ct = default) =>
+        SendAsync<GitSourceLink>(HttpMethod.Put, Link(linkId, environmentId), new { branch = (string?)null, pinnedCommit = (string?)null, roles = (List<string>?)null, selectedBranches = branches }, ct);
+
     public async Task<string?> UnlinkAsync(string linkId, string environmentId, CancellationToken ct = default)
     {
         try
@@ -75,6 +84,12 @@ public sealed class GitSourcesApiService(HttpClient http) : IGitSourcesApiServic
     public async Task<(IReadOnlyList<GitBranch>, string?)> BranchesAsync(string linkId, string environmentId, CancellationToken ct = default)
     {
         var (items, error) = await SendAsync<List<GitBranch>>(HttpMethod.Get, Link(linkId, environmentId, "branches"), null, ct);
+        return (items ?? [], error);
+    }
+
+    public async Task<(IReadOnlyList<GitBranch>, string?)> AvailableBranchesAsync(string linkId, string environmentId, CancellationToken ct = default)
+    {
+        var (items, error) = await SendAsync<List<GitBranch>>(HttpMethod.Get, Link(linkId, environmentId, "available-branches"), null, ct);
         return (items ?? [], error);
     }
 

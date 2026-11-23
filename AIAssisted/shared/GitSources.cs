@@ -134,6 +134,9 @@ public sealed record GitSourceLink
     public string Repository { get; init; } = "";
     public string? WebUrl { get; init; }
     public string Branch { get; init; } = "";
+    /// <summary>The branches people may choose for this repository (System Settings → Git Sources). Empty = every branch. Pages that offer a branch
+    /// of this repository show only these (and the current <see cref="Branch"/>); see <see cref="GitBranchSelection"/>.</summary>
+    public List<string> SelectedBranches { get; init; } = [];
     public string? PinnedCommit { get; init; }
     public List<string> Roles { get; init; } = [];
     /// <summary>The BirkNext project: the Target Environment profile id it is evidence for, and the project's name as shown.</summary>
@@ -194,6 +197,39 @@ public sealed record GitRepository(string Id, string Name, string Project, strin
 }
 
 public sealed record GitBranch(string Name, string CommitSha, DateTimeOffset? CommittedAt, string? Author, string? Message, bool IsDefault);
+
+/// <summary>
+/// Which branches of a repository a page offers: those chosen in System Settings → Git Sources (a remote can have hundreds), always with the link's
+/// current branch so a saved choice is never hidden. No selection = every branch.
+/// </summary>
+public static class GitBranchSelection
+{
+    public static bool Restricted(GitSourceLink link) => link.SelectedBranches.Count > 0;
+
+    /// <summary>Branch names listed first, in this order: the main line, then the development line (2026-11-23).</summary>
+    private static readonly string[] Leading = ["main", "master", "dev", "develop", "development"];
+
+    /// <summary>Where a branch name sorts: main, master, dev, develop, development (exact names, any case), then the rest.</summary>
+    public static int Rank(string name)
+    {
+        var i = Array.FindIndex(Leading, l => string.Equals(l, name, StringComparison.OrdinalIgnoreCase));
+        return i < 0 ? Leading.Length : i;
+    }
+
+    /// <summary>Every branch list's order: main/master first, then dev/develop/development, then all other branches alphabetically.</summary>
+    public static IReadOnlyList<GitBranch> Ordered(IEnumerable<GitBranch> branches) =>
+        [.. branches.OrderBy(b => Rank(b.Name)).ThenBy(b => b.Name, StringComparer.OrdinalIgnoreCase).ThenBy(b => b.Name, StringComparer.Ordinal)];
+
+    public static IReadOnlyList<string> Ordered(IEnumerable<string> names) =>
+        [.. names.OrderBy(Rank).ThenBy(n => n, StringComparer.OrdinalIgnoreCase).ThenBy(n => n, StringComparer.Ordinal)];
+
+    public static IReadOnlyList<GitBranch> Visible(GitSourceLink link, IReadOnlyList<GitBranch> all)
+    {
+        if (!Restricted(link)) return Ordered(all);
+        var chosen = link.SelectedBranches.ToHashSet(StringComparer.Ordinal);
+        return Ordered(all.Where(b => chosen.Contains(b.Name) || b.Name == link.Branch));
+    }
+}
 
 public sealed record GitImportRequest(string RepositoryId, string Branch)
 {

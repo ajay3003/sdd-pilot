@@ -32,6 +32,7 @@ public sealed class GitSourcesUiTests : BunitContext
     {
         Id = id, EnvironmentId = environment, BirkNextProject = project, Kind = "Local", LocalPath = @"C:\source\" + repository, OrganizationUrl = "local:c:/source/" + repository,
         Organization = "local", RepositoryId = "git-" + id, Repository = repository, Branch = "main", DefaultBranch = "main", LastFetchedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+        SelectedBranches = ["main"],
     };
 
     public GitSourcesUiTests()
@@ -56,6 +57,81 @@ public sealed class GitSourcesUiTests : BunitContext
         Services.AddScoped<ProjectApplicabilityState>();
         Services.AddScoped<ProjectImportSession>();
         JSInterop.Mode = JSRuntimeMode.Loose;
+    }
+
+    [Fact]
+    public void Fetch_latest_is_disabled_with_its_reason_until_branches_are_chosen_and_the_picker_saves_the_choice()
+    {
+        // 2026-11-23: Fetch latest downloads only the selected branches; a repository added earlier has none, so it says why it cannot fetch.
+        var link = Link("a", "dev", "LendoPlus") with { SelectedBranches = [] };
+        _git.Setup(g => g.LinksAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[link], (string?)null));
+        _git.Setup(g => g.AvailableBranchesAsync("a", "dev", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitBranch>)[
+            new GitBranch("main", Sha, null, null, null, true), new GitBranch("release/1.0", Sha, null, null, null, false), new GitBranch("feature/x", Sha, null, null, null, false)], (string?)null));
+        IReadOnlyList<string>? saved = null;
+        _git.Setup(g => g.SelectBranchesAsync("a", "dev", It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, IReadOnlyList<string>, CancellationToken>((_, _, b, _) => saved = b)
+            .ReturnsAsync((string _, string _, IReadOnlyList<string> b, CancellationToken _) => (link with { SelectedBranches = [.. b] }, (string?)null));
+        var cut = Render<GitSourcesSettingsCard>();
+        cut.WaitForElement("[data-testid=gss-open]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-fetch-latest]").HasAttribute("disabled").Should().BeTrue());
+        cut.Find("[data-testid=gss-fetch-disabled-reason]").TextContent.Should().Contain("no branch is selected").And.Contain("Branches to fetch");
+        cut.Find("[data-testid=gss-fetch-latest]").GetAttribute("aria-describedby").Should().Be("gss-fetch-why-a");
+
+        cut.Find("[data-testid=gbp-toggle]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=gbp-branch]").Should().HaveCount(3));
+        cut.Find("[data-testid=gbp-search]").Input("rel");
+        cut.FindAll("[data-testid=gbp-branch]").Should().ContainSingle().Which.GetAttribute("data-branch").Should().Be("release/1.0");
+        cut.Find("[data-testid=gbp-select-shown]").Click();
+        cut.Find("[data-testid=gbp-search]").Input("");
+        cut.Find("[data-testid=gbp-branch][data-branch=main]").Change(true);
+        cut.Find("[data-testid=gbp-save]").Click();
+
+        cut.WaitForAssertion(() => saved.Should().Equal(["main", "release/1.0"], "the default branch first"));
+        _git.Verify(g => g.FetchAsync("a", "dev", It.IsAny<CancellationToken>()), Times.Once(), "saving fetches the selection at once");
+        cut.Find("[data-testid=gss-notice]").TextContent.Should().Contain("selected and fetched");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-fetch-latest]").HasAttribute("disabled").Should().BeFalse());
+        cut.FindAll("[data-testid=gss-fetch-disabled-reason]").Should().BeEmpty();
+        cut.Find("[data-testid=gbp-toggle]").TextContent.Should().Contain("2 branches");
+    }
+
+    [Theory]
+    [InlineData("zeta,develop,Alpha,master,feature/x,main,dev,development", "main,master,dev,develop,development,Alpha,feature/x,zeta")]
+    [InlineData("release/1.0,develop,beta", "develop,beta,release/1.0")]
+    [InlineData("release/1.0,Beta,alpha", "alpha,Beta,release/1.0")]
+    [InlineData("feature/main-menu,MASTER,development", "MASTER,development,feature/main-menu")]
+    public void Branches_list_main_or_master_first_then_the_development_line_then_the_rest_alphabetically(string input, string expected)
+    {
+        // 2026-11-23: main/master at the top, then dev/develop/development, then every other branch alphabetically (exact names only).
+        GitBranchSelection.Ordered(input.Split(',')).Should().Equal(expected.Split(','));
+        GitBranchSelection.Ordered(input.Split(',').Select(n => new GitBranch(n, Sha, null, null, null, false))).Select(b => b.Name).Should().Equal(expected.Split(','));
+    }
+
+    [Fact]
+    public void Import_waits_until_the_current_branch_has_been_fetched_and_says_why()
+    {
+        // The current branch is selected but not in BirkNext's copy yet (repository added before 2026-11-23, or a failed fetch).
+        var link = Link("a", "dev", "LendoPlus") with { Branch = "release/2.0", SelectedBranches = ["release/2.0"] };
+        _git.Setup(g => g.LinksAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[link], (string?)null));
+        var cut = Render<GitSourcesSettingsCard>();
+        cut.WaitForElement("[data-testid=gss-open]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-import]").HasAttribute("disabled").Should().BeTrue());
+        cut.Find("[data-testid=gss-import-disabled-reason]").TextContent.Should().Contain("release/2.0 has not been fetched yet").And.Contain("Fetch latest");
+        cut.Find("[data-testid=gss-import]").GetAttribute("aria-describedby").Should().Be("gss-import-why-a");
+        cut.Find("[data-testid=gss-fetch-latest]").HasAttribute("disabled").Should().BeFalse("fetching is the way forward");
+    }
+
+    [Fact]
+    public void The_branch_list_on_other_choices_shows_only_the_selected_branches_and_the_current_one()
+    {
+        var link = Link("a", "dev", "LendoPlus") with { SelectedBranches = ["main"] };
+        GitBranchSelection.Visible(link, [new GitBranch("main", Sha, null, null, null, true), new GitBranch("release/1.0", Sha, null, null, null, false)])
+            .Select(b => b.Name).Should().Equal(["main"]);
+        GitBranchSelection.Visible(link with { SelectedBranches = [] }, [new GitBranch("main", Sha, null, null, null, true), new GitBranch("release/1.0", Sha, null, null, null, false)])
+            .Should().HaveCount(2, "no selection = every branch");
+        GitBranchSelection.Visible(link with { SelectedBranches = ["release/1.0"], Branch = "main" }, [new GitBranch("main", Sha, null, null, null, true), new GitBranch("release/1.0", Sha, null, null, null, false)])
+            .Select(b => b.Name).Should().BeEquivalentTo(["main", "release/1.0"], "the current branch is never hidden");
     }
 
     [Fact]
@@ -108,7 +184,7 @@ public sealed class GitSourcesUiTests : BunitContext
         cut.Find("[data-testid=gss-row][data-link=a] [data-testid=gss-open]").Click();
         cut.WaitForElement("[data-testid=gss-details][data-link=a]");
         cut.Find("[data-testid=gss-import]").TextContent.Should().Contain("Import main");
-        cut.FindAll("[data-testid=gss-branch] option").Select(o => o.GetAttribute("value")).Should().Equal("main", "release/1.0");
+        cut.FindAll("[data-testid=gss-branch] option").Select(o => o.GetAttribute("value")).Should().Equal(["main"], "only the selected branches are offered (release/1.0 is not selected)");
 
         cut.Find("[data-testid=gss-search]").Input("billing");
         cut.FindAll("[data-testid=gss-row]").Should().ContainSingle().Which.GetAttribute("data-link").Should().Be("b");

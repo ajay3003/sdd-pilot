@@ -1,0 +1,128 @@
+@using BirkNext.GitSources
+@inject IGitSourcesApiService Git
+
+@* Choose the branches BirkNext fetches and offers for one repository (System Settings → Git Sources). A remote can have hundreds of branches:
+   the list comes from git ls-remote (names only, nothing downloaded) and is searchable; only the ticked branches are fetched by "Fetch latest"
+   and offered by the pages that choose a branch of this repository. *@
+<div class="gbp" data-testid="gbp">
+    <button type="button" class="gbp-toggle" aria-expanded="@(_open ? "true" : "false")" aria-controls="@PanelId" disabled="@Disabled" @onclick="ToggleAsync" data-testid="gbp-toggle">
+        <span class="gbp-toggle-text">@Summary</span>
+        <span class="gbp-caret" aria-hidden="true">▾</span>
+    </button>
+    @if (_open)
+    {
+        <div class="gbp-panel" id="@PanelId" role="group" aria-label="Branches of @Link.Repository" data-testid="gbp-panel">
+            @if (_loading)
+            {
+                <InlineLoading TestId="gbp-loading" Text="Reading the repository's branches (names only, nothing is downloaded)…" />
+            }
+            else if (_error is { } error)
+            {
+                <p class="gbp-error" role="alert" data-testid="gbp-error">@error</p>
+                <button type="button" class="btn-secondary btn-sm" @onclick="LoadAsync" data-testid="gbp-retry">Try again</button>
+            }
+            else
+            {
+                <div class="gbp-tools">
+                    <input type="search" class="form-control gbp-search" placeholder="Search @_all.Count branches" aria-label="Search branches" @bind="_search" @bind:event="oninput" data-testid="gbp-search" />
+                    <button type="button" class="gbp-link" @onclick="SelectShown" disabled="@(Shown.Count == 0)" data-testid="gbp-select-shown">Select @(_search.Trim().Length > 0 ? "shown" : "all")</button>
+                    <button type="button" class="gbp-link" @onclick="() => _chosen.Clear()" disabled="@(_chosen.Count == 0)" data-testid="gbp-clear">Clear</button>
+                </div>
+                <ul class="gbp-list" data-testid="gbp-list">
+                    @foreach (var b in Shown.Take(MaxShown))
+                    {
+                        var name = b.Name;
+                        <li>
+                            <label class="gbp-item">
+                                <input type="checkbox" checked="@_chosen.Contains(name)" @onchange="e => Toggle(name, e.Value is true)" data-testid="gbp-branch" data-branch="@name" />
+                                <span class="gbp-name">@name</span>
+                                @if (b.IsDefault) { <span class="gbp-tag">default</span> }
+                                @if (name == Link.Branch) { <span class="gbp-tag gbp-tag-current">current</span> }
+                                @if (b.CommittedAt is { } at) { <span class="gbp-meta">@at.UtcDateTime.ToString("yyyy-MM-dd")</span> }
+                            </label>
+                        </li>
+                    }
+                </ul>
+                @if (Shown.Count > MaxShown) { <p class="gbp-muted" data-testid="gbp-more">Showing @MaxShown of @Shown.Count matching branches; search to narrow the list.</p> }
+                @if (Shown.Count == 0) { <p class="gbp-muted" data-testid="gbp-none">No branch matches “@_search”.</p> }
+                @foreach (var gone in _chosen.Where(c => _all.All(b => b.Name != c)).Order())
+                {
+                    <p class="gbp-muted" data-testid="gbp-gone">“@gone” is selected but no longer exists in the repository; it is skipped.</p>
+                }
+                @if (_saving) { <InlineLoading TestId="gbp-fetching" Text="Fetching the selected branches. If Git Credential Manager opens a sign-in window, complete it there…" /> }
+                @if (_chosen.Count == 0 && Link.SelectedBranches.Count > 0) { <p class="gbp-muted" data-testid="gbp-none-selected">Select at least one branch: only selected branches are fetched.</p> }
+                <div class="gbp-footer">
+                    <span class="gbp-muted" data-testid="gbp-count">@_chosen.Count selected</span>
+                    <button type="button" class="btn-secondary btn-sm" @onclick="Cancel" data-testid="gbp-cancel">Cancel</button>
+                    @* Saving fetches at once (2026-11-23): a selection is never left un-downloaded waiting for someone to click Fetch latest. *@
+                    <button type="button" class="btn-primary btn-sm" disabled="@(_saving || !Changed || _chosen.Count == 0)" @onclick="SaveAsync" data-testid="gbp-save">@(_saving ? "Saving and fetching…" : "Save and fetch")</button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>The repository whose branches are chosen.</summary>
+    [Parameter, EditorRequired] public GitSourceLink Link { get; set; } = default!;
+    [Parameter] public bool Disabled { get; set; }
+    /// <summary>Called with the saved link (its SelectedBranches and, if it was deselected, its new current branch).</summary>
+    [Parameter] public EventCallback<GitSourceLink> OnSaved { get; set; }
+
+    /// <summary>Checkboxes rendered at once; the rest is reached by search (a remote with thousands of branches stays responsive).</summary>
+    public const int MaxShown = 300;
+
+    private bool _open, _loading, _saving;
+    private string? _error;
+    private string _search = "";
+    private IReadOnlyList<GitBranch> _all = [];
+    private readonly HashSet<string> _chosen = new(StringComparer.Ordinal);
+    private string PanelId => $"gbp-{Link.Id}";
+
+    private string Summary => Link.SelectedBranches.Count switch
+    {
+        0 => "Choose branches to fetch…",
+        1 => $"1 branch: {Link.SelectedBranches[0]}",
+        var n => $"{n} branches: {string.Join(", ", GitBranchSelection.Ordered(Link.SelectedBranches).Take(3))}{(n > 3 ? $" +{n - 3}" : "")}",
+    };
+
+    /// <summary>main/master first, then dev/develop/development, then the rest alphabetically (GitBranchSelection.Ordered).</summary>
+    private List<GitBranch> Shown => [.. GitBranchSelection.Ordered(_all.Where(b => _search.Trim().Length == 0 || b.Name.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase)))];
+    private bool Changed => !_chosen.SetEquals(Link.SelectedBranches);
+
+    private async Task ToggleAsync()
+    {
+        _open = !_open;
+        if (!_open) return;
+        _chosen.Clear();
+        _chosen.UnionWith(Link.SelectedBranches);
+        _search = "";
+        if (_all.Count == 0) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        (_loading, _error) = (true, null);
+        var (items, error) = await Git.AvailableBranchesAsync(Link.Id, Link.EnvironmentId);
+        (_all, _error, _loading) = (items, error, false);
+    }
+
+    private void Toggle(string name, bool on) { if (on) _chosen.Add(name); else _chosen.Remove(name); }
+    private void SelectShown() => _chosen.UnionWith(Shown.Select(b => b.Name));
+    private void Cancel() => _open = false;
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        // The list order (main/master, then dev/develop/development, then alphabetical): the backend makes the first one current when the
+        // current branch is deselected, so main or the development line is preferred.
+        var ordered = GitBranchSelection.Ordered(_chosen).ToList();
+        var (link, error) = await Git.SelectBranchesAsync(Link.Id, Link.EnvironmentId, ordered);
+        if (link is null) { _saving = false; _error = error ?? "The selection could not be saved."; return; }
+        // Fetch the new selection right away; a failed fetch is recorded on the link (LastFetchFailure) and shown by Git Sources.
+        var (fetched, fetchError) = await Git.FetchAsync(link.Id, link.EnvironmentId);
+        _saving = false;
+        _open = false;
+        await OnSaved.InvokeAsync(fetched ?? link with { LastFetchProblem = fetchError ?? link.LastFetchProblem });
+    }
+}

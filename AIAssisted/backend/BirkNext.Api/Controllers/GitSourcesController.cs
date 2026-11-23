@@ -31,11 +31,12 @@ public sealed class GitSourcesController(GitSourcesService service) : Controller
     [HttpGet("links")]
     public IReadOnlyList<GitSourceLink> Links([FromQuery] string? environmentId) => service.Links(environmentId);
 
-    public sealed record LinkUpdate(string? Branch, string? PinnedCommit, List<string>? Roles);
+    /// <param name="SelectedBranches">The branches offered for this repository; null = unchanged, empty = every branch.</param>
+    public sealed record LinkUpdate(string? Branch, string? PinnedCommit, List<string>? Roles, List<string>? SelectedBranches = null);
 
     [HttpPut("links/{linkId}")]
     public Task<ActionResult<GitSourceLink>> Update(string linkId, [FromQuery] string environmentId, [FromBody] LinkUpdate update) =>
-        Run(() => Task.FromResult(service.UpdateLink(linkId, environmentId, update.Branch, update.PinnedCommit, update.Roles)));
+        Run(() => Task.FromResult(service.UpdateLink(linkId, environmentId, update.Branch, update.PinnedCommit, update.Roles, update.SelectedBranches)));
 
     /// <summary>Removes the link only; snapshots, reports and Project Evidence stay.</summary>
     [HttpDelete("links/{linkId}")]
@@ -44,6 +45,11 @@ public sealed class GitSourcesController(GitSourcesService service) : Controller
     /// <summary>Fetch latest into BirkNext-owned storage (never pull, merge, rebase or push).</summary>
     [HttpPost("links/{linkId}/fetch")]
     public Task<ActionResult<GitSourceLink>> Fetch(string linkId, [FromQuery] string environmentId, CancellationToken ct) => Run(() => service.FetchAsync(linkId, environmentId, ct));
+
+    /// <summary>Every branch of the repository by name (git ls-remote; nothing is downloaded), to choose which ones are fetched.</summary>
+    [HttpGet("links/{linkId}/available-branches")]
+    public Task<ActionResult<IReadOnlyList<GitBranch>>> AvailableBranches(string linkId, [FromQuery] string environmentId, CancellationToken ct) =>
+        Run(() => service.AvailableBranchesAsync(linkId, environmentId, ct));
 
     [HttpGet("links/{linkId}/branches")]
     public Task<ActionResult<IReadOnlyList<GitBranch>>> Branches(string linkId, [FromQuery] string environmentId, CancellationToken ct) =>
