@@ -286,6 +286,71 @@ public sealed class UpdaterTests : IDisposable
         DataSnapshot().Should().Be(before, "the updater never writes to the tester's data folder");
     }
 
+    // ── The Azure DevOps artifact download (a ZIP around the package ZIP) ──────────────────────────────────────────────────
+
+    /// <summary>What the browser saves when a tester downloads the BirkNext-Tester-Windows-x64 artifact: BirkNext-Tester-Windows-x64.zip holding a
+    /// folder named after the artifact with the package ZIP and its .sha256 (as package-archive.ps1 writes it).</summary>
+    private string ArtifactDownload(string package, string? sha256 = null, bool withChecksum = true, string folder = "BirkNext-Tester-Windows-x64/", string? origin = AzureDevOps)
+    {
+        var name = Path.GetFileName(package);
+        var outer = Path.Combine(_dir, $"download-{Guid.NewGuid():N}", "BirkNext-Tester-Windows-x64.zip");
+        Directory.CreateDirectory(Path.GetDirectoryName(outer)!);
+        using (var archive = ZipFile.Open(outer, ZipArchiveMode.Create))
+        {
+            archive.CreateEntryFromFile(package, folder + name);
+            if (withChecksum)
+            {
+                var hash = sha256 ?? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(package))).ToLowerInvariant();
+                using var s = archive.CreateEntry(folder + name + ".sha256").Open();
+                s.Write(Encoding.UTF8.GetBytes($"{hash}  {name}\n"));
+            }
+        }
+        if (origin is not null) File.WriteAllText(outer + ":Zone.Identifier", origin);
+        return outer;
+    }
+
+    [Theory]
+    [InlineData("BirkNext-Tester-Windows-x64/", true)]
+    [InlineData("", true)]
+    [InlineData("BirkNext-Tester-Windows-x64/", false)]
+    public async Task The_artifact_download_from_Azure_DevOps_is_unwrapped_checked_and_installed(string folder, bool withChecksum)
+    {
+        var (store, _, engine) = Updater();
+        // The inner package carries no download mark of its own: trust comes from the file the tester selected.
+        var download = ArtifactDownload(Build(new Pkg(), origin: null), withChecksum: withChecksum, folder: folder);
+
+        var plan = engine.Plan(download);
+        plan.Blocker.Should().BeNull();
+        plan.Trust.Should().Be(TrustVerdict.PipelineOrigin);
+        plan.Package.Version.BuildVersion.Should().Be("1.0.0-ci.1002");
+        plan.Package.ZipPath.Should().StartWith(store.DownloadsFolder).And.EndWith(".zip");
+        Path.GetFileName(plan.Package.ZipPath).Should().StartWith(PackageInspector.PackageNamePrefix);
+
+        var result = await engine.ApplyAsync(plan, new Progress(), true, false, true, default);
+        result.Ok.Should().BeTrue(result.Message);
+        File.Exists(Path.Combine(store.FolderOf("1.0.0-ci.1002"), "Start-BirkNext.exe")).Should().BeTrue();
+        store.Read().Current!.BuildVersion.Should().Be("1.0.0-ci.1002");
+    }
+
+    [Fact]
+    public void An_artifact_download_is_refused_when_its_package_does_not_match_the_checksum_or_is_the_developer_package()
+    {
+        var (_, _, engine) = Updater();
+        var damaged = ArtifactDownload(Build(new Pkg(), origin: null), sha256: new string('0', 64));
+        engine.Invoking(e => e.Plan(damaged)).Should().Throw<PackageRejectedException>().Which.Message.Should().Contain("checksum does not match");
+
+        var developer = Path.Combine(_dir, "BirkNext-1.0.0-ci.1002.zip");
+        File.WriteAllText(developer, "developer package");
+        var wrongArtifact = ArtifactDownload(developer, folder: "birknext-developer-package-archive/");
+        engine.Invoking(e => e.Plan(wrongArtifact)).Should().Throw<PackageRejectedException>().Which.Message.Should().Contain("developer package");
+
+        // An unrelated ZIP is still refused with the plain reason, and a package ZIP selected directly still works.
+        var unrelated = Path.Combine(_dir, "photos.zip");
+        using (var a = ZipFile.Open(unrelated, ZipArchiveMode.Create)) { using var s = a.CreateEntry("photo.jpg").Open(); s.Write("x"u8); }
+        engine.Invoking(e => e.Plan(unrelated)).Should().Throw<PackageRejectedException>().Which.Message.Should().Contain("Start-BirkNext.exe is missing");
+        engine.Plan(Build(new Pkg())).Package.Version.BuildVersion.Should().Be("1.0.0-ci.1002");
+    }
+
     [Fact]
     public async Task Same_older_unordered_untrusted_and_schema_losing_packages_are_refused()
     {

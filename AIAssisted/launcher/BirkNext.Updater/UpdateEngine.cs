@@ -41,7 +41,9 @@ public sealed class UpdateEngine(InstallationStore store, InstanceControl instan
 
     public UpdatePlan Plan(string zipPath)
     {
-        var package = PackageInspector.Inspect(zipPath);
+        // The artifact download from Azure DevOps is a ZIP around the package ZIP; the package inside is what gets checked and installed.
+        PackageInspector.CleanUnwrapped(store.DownloadsFolder);
+        var package = PackageInspector.Inspect(PackageInspector.Unwrap(zipPath, store.DownloadsFolder));
         var state = store.Read();
         var installed = state.Current;
         var lastUsed = instance.LastUsedBuild();

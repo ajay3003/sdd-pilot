@@ -62,7 +62,7 @@ public static class UpdaterProgram
         var zip = options.Zip;
         if (zip is null)
         {
-            Console.WriteLine("  Select the BirkNext package you downloaded from the Azure DevOps pipeline (BirkNext-Tester-Windows-x64-….zip).");
+            Console.WriteLine("  Select the BirkNext package you downloaded from the Azure DevOps pipeline (BirkNext-Tester-Windows-x64.zip, or the BirkNext-Tester-Windows-x64-….zip inside it).");
             zip = FileDialog.PickZip();
             if (zip is null) { Console.WriteLine("  No package selected. Nothing was changed."); return Done(3, options); }
         }
@@ -77,6 +77,8 @@ public static class UpdaterProgram
             store.Log($"Rejected {zip}: {e.Message} {e.Detail}");
             return Done(1, options);
         }
+        if (!string.Equals(Path.GetFullPath(plan.Package.ZipPath), Path.GetFullPath(zip), StringComparison.OrdinalIgnoreCase))
+            Line("Inside", Path.GetFileName(plan.Package.ZipPath));
         Phase(2, "Checking compatibility");
         Line("New version", plan.Package.Version.Display);
         Line("Source", plan.TrustDetail);

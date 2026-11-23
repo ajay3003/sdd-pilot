@@ -4,7 +4,7 @@ Your data lives in `%LOCALAPPDATA%\BirkNext\TesterNative`. The package folder ho
 
 ## Upgrade BirkNext with the updater
 
-1. Download the new BirkNext artifact (`BirkNext-Tester-Windows-x64-….zip`) from the approved Azure DevOps pipeline **in your browser**. Keep the ZIP; do not extract it.
+1. Download the new BirkNext artifact **BirkNext-Tester-Windows-x64** from the approved Azure DevOps pipeline **in your browser**. Keep the ZIP; do not extract it. The browser saves it as `BirkNext-Tester-Windows-x64.zip`, which contains the package `BirkNext-Tester-Windows-x64-<version>.zip` and its `.sha256`: the updater accepts either ZIP and checks the package against the checksum. (Updaters older than 2026-11-23 accept only the inner `BirkNext-Tester-Windows-x64-<version>.zip`.)
 2. Open the updater:
    - **first time:** `Update-BirkNext.exe` in the new package (extract that package once, anywhere) or in your current package folder;
    - **after the first update:** Start menu → BirkNext → **BirkNext Updater**.

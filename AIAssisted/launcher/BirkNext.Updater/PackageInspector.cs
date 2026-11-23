@@ -64,6 +64,94 @@ public static class PackageInspector
 
     private static bool IsSymlink(ZipArchiveEntry e) => ((e.ExternalAttributes >> 16) & 0xF000) == 0xA000;
 
+    /// <summary>The name of the package ZIP the pipeline publishes in the BirkNext-Tester-Windows-x64 artifact.</summary>
+    public const string PackageNamePrefix = "BirkNext-Tester-Windows-x64-";
+    private const int MaxWrapperEntries = 16;
+
+    /// <summary>
+    /// The package ZIP to inspect. Downloading the BirkNext-Tester-Windows-x64 artifact from Azure DevOps gives "BirkNext-Tester-Windows-x64.zip": a
+    /// ZIP that holds the real package (BirkNext-Tester-Windows-x64-&lt;version&gt;.zip) and its .sha256, usually in a folder named after the artifact.
+    /// When <paramref name="zipPath"/> is that download, the package inside is copied (bounded, checked against its .sha256 when present) into a new
+    /// folder under <paramref name="workRoot"/> and that copy's path is returned; any other archive is returned unchanged for <see cref="Inspect"/>.
+    /// Trust is still decided from the file the person selected (its download origin), never from the copy.
+    /// </summary>
+    public static string Unwrap(string zipPath, string workRoot)
+    {
+        if (!File.Exists(zipPath)) return zipPath;
+        ZipArchive zip;
+        try { zip = ZipFile.OpenRead(zipPath); }
+        catch (Exception e) when (e is InvalidDataException or IOException) { return zipPath; } // Inspect reports it in the tester's words
+        using (zip)
+        {
+            if (zip.Entries.Count > MaxWrapperEntries) return zipPath;
+            var files = zip.Entries.Where(e => !e.FullName.EndsWith('/') && !e.FullName.EndsWith('\\')).ToList();
+            static int Depth(ZipArchiveEntry e) => e.FullName.Replace('\\', '/').Count(c => c == '/');
+            static string Name(ZipArchiveEntry e) => e.FullName.Replace('\\', '/').Split('/')[^1];
+            if (files.Any(e => Name(e).Equals("Start-BirkNext.exe", StringComparison.OrdinalIgnoreCase))) return zipPath;
+            var packages = files.Where(e => Depth(e) <= 1 && Name(e).StartsWith(PackageNamePrefix, StringComparison.OrdinalIgnoreCase)
+                && Name(e).EndsWith(".zip", StringComparison.OrdinalIgnoreCase)).ToList();
+            if (packages.Count == 0)
+            {
+                // The developer package's download looks the same but holds BirkNext-<version>.zip: name the mix-up instead of a generic refusal.
+                if (files.Any(e => Depth(e) <= 1 && Name(e).StartsWith("BirkNext-", StringComparison.OrdinalIgnoreCase) && Name(e).EndsWith(".zip", StringComparison.OrdinalIgnoreCase)))
+                    throw new PackageRejectedException("This is the developer package (it needs .NET and Podman), not the Windows tester package. In the pipeline run, download the artifact named BirkNext-Tester-Windows-x64.",
+                        string.Join(", ", files.Select(e => e.FullName)));
+                return zipPath;
+            }
+            if (packages.Count > 1)
+                throw new PackageRejectedException("The download contains more than one BirkNext package. Extract it and select the package you want (BirkNext-Tester-Windows-x64-....zip).",
+                    string.Join(", ", packages.Select(e => e.FullName)));
+            var inner = packages[0];
+            if (Problem(inner.FullName) is { } problem) throw new PackageRejectedException($"The download contains {problem}. It is not a BirkNext package.", inner.FullName);
+            if (IsSymlink(inner)) throw new PackageRejectedException("The download contains a link to another location. It is not a BirkNext package.", inner.FullName);
+            if (inner.Length > MaxUncompressedBytes) throw new PackageRejectedException("The download would unpack to far more than a BirkNext package.", $"{inner.Length} bytes");
+
+            // The artifact's checksum file, when it came along: "<sha256>  <name>" (sha256sum format, written after the archive was final).
+            string? expected = null;
+            var sumName = Name(inner) + ".sha256";
+            if (files.FirstOrDefault(e => Depth(e) == Depth(inner) && Name(e).Equals(sumName, StringComparison.OrdinalIgnoreCase)) is { } sumEntry && sumEntry.Length < 4096)
+            {
+                using var reader = new StreamReader(sumEntry.Open());
+                var token = reader.ReadToEnd().Trim().Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+                if (token.Length != 64 || !token.All(Uri.IsHexDigit)) throw new PackageRejectedException("The package's checksum file cannot be read. Download the package again.", sumName);
+                expected = token.ToLowerInvariant();
+            }
+
+            var folder = Path.Combine(workRoot, Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(folder);
+            var target = Path.Combine(folder, Name(inner));
+            using (var source = inner.Open())
+            using (var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
+            {
+                var buffer = new byte[1 << 16];
+                long written = 0;
+                int read;
+                while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    written += read;
+                    if (written > inner.Length || written > MaxUncompressedBytes) throw new PackageRejectedException("The package in the download is larger than it claims.", inner.FullName);
+                    sha.AppendData(buffer, 0, read);
+                    output.Write(buffer, 0, read);
+                }
+                if (expected is not null && Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant() != expected)
+                    throw new PackageRejectedException("The package in the download is damaged (its checksum does not match). Download the package again.", inner.FullName);
+            }
+            return target;
+        }
+    }
+
+    /// <summary>Removes package copies an earlier <see cref="Unwrap"/> left behind (older than an hour, so a running update keeps its own).</summary>
+    public static void CleanUnwrapped(string workRoot)
+    {
+        if (!Directory.Exists(workRoot)) return;
+        foreach (var dir in Directory.EnumerateDirectories(workRoot))
+        {
+            try { if (Directory.GetCreationTimeUtc(dir) < DateTime.UtcNow.AddHours(-1)) Directory.Delete(dir, true); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+    }
+
     public static PackageInfo Inspect(string zipPath)
     {
         if (!File.Exists(zipPath)) throw new PackageRejectedException("The selected file does not exist.");

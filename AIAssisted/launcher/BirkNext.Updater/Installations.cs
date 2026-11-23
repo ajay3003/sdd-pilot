@@ -45,6 +45,8 @@ public sealed class InstallationStore(string root)
 
     public string FolderOf(string name) => Path.Combine(Root, name);
     public string NewStagingFolder() => Path.Combine(Root, $".staging-{Guid.NewGuid():N}");
+    /// <summary>Where a package found inside an Azure DevOps artifact download is copied before it is checked (ignored as an installation: starts with a dot).</summary>
+    public string DownloadsFolder => Path.Combine(Root, ".downloads");
 
     public InstallationState Read() => ReadJson<InstallationState>(StateFile) ?? new(null, null);
     public UpdateJournal? Journal() => ReadJson<UpdateJournal>(JournalFile);
