@@ -96,7 +96,10 @@ public sealed class MarkdownDiagnosticsService(IConfiguration configuration)
             {
                 ct.ThrowIfCancellationRequested();
                 var raw = rawDocument.Bytes;
-                var decoded = new UTF8Encoding(false, false).GetString(raw).TrimStart('\uFEFF');
+                // Decoded exactly as the import decodes it (UTF-8, else Windows-1252): a Windows-1252 document stored as UTF-8 has the same text
+                // and more bytes, which read as UTF-8 here looked like a mismatch and a truncation (M2LB Autorisasjon tasks.md, 2026-11-23).
+                var (decodedText, archiveEncoding, _) = BirkNext.Api.Services.Integrations.SourceEvidence.SourceTextDecoder.Decode(raw);
+                var decoded = decodedText.TrimStart('\uFEFF');
                 var relative = NormalizePath(rawDocument.Path);
                 if (!extracted.TryGetValue(relative, out var stored))
                 {
@@ -111,16 +114,18 @@ public sealed class MarkdownDiagnosticsService(IConfiguration configuration)
                 var tokens = MarkdownTokenizer.Tokenize(stored);
                 var lines = stored.Split('\n');
                 var warnings = ParserWarnings(stored).ToList();
+                if (archiveEncoding != BirkNext.Api.Services.Integrations.SourceEvidence.SourceTextDecoder.Utf8)
+                    warnings.Add($"The archive document is {archiveEncoding}, not UTF-8; the import stored the same text as UTF-8.");
                 var role = roles.GetValueOrDefault(relative, "Unclassified");
                 var extractorCompleted = TryRunRoleExtractor(role, stored, warnings);
                 var exact = raw.AsSpan().SequenceEqual(storedBytes);
-                var canonical = CanonicalHash(raw) == CanonicalHash(storedBytes);
+                var canonical = CanonicalFingerprint(decoded) == CanonicalHash(storedBytes);
                 var eof = tokens.Count == lines.Length && tokens.LastOrDefault()?.LineIndex == lines.Length - 1 &&
                     (role is not ("Specification" or "Constitution" or "Plan" or "Tasks" or "Data Model") || extractorCompleted);
                 var truncated = !canonical || !eof;
                 var docStatus = truncated ? DiagnosticStatus.Fail : warnings.Count > 0 ? DiagnosticStatus.Partial : exact ? DiagnosticStatus.Pass : DiagnosticStatus.Partial;
                 docs.Add(new(System.IO.Path.GetFileName(relative), roles.GetValueOrDefault(relative, "Unclassified"), relative,
-                    raw.Length, decoded.Length, decoded.Split('\n').Length, Hash(raw), CanonicalHash(raw), storedBytes.Length,
+                    raw.Length, decoded.Length, decoded.Split('\n').Length, Hash(raw), CanonicalFingerprint(decoded), storedBytes.Length,
                     stored.Length, lines.Length, Hash(storedBytes), CanonicalHash(storedBytes), exact, canonical,
                     exact ? "Exact" : canonical ? "NormalizedEquivalent" : "Mismatch", eof, eof ? stored.Length : tokens.Sum(t => t.RawLine.Length),
                     tokens.Count, eof ? lines.Length : (tokens.LastOrDefault()?.LineIndex ?? -1) + 1,

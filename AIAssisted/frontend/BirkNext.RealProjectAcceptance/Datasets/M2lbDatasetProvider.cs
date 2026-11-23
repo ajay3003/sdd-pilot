@@ -59,15 +59,16 @@ public sealed class M2lbDatasetProvider : IRealProjectDatasetProvider
         // Explorer Text Coverage of archive-owned documents in this exact archive (2026-10-09).
         // Re-recorded after making the diagnostic exclude built-in fixtures and reusable .specify/templates
         // documents from the imported-project comparison. The former 185 / 39,225 baseline mixed those
-        // reusable templates into the project artifact set; current archive-owned coverage is 149 / 35,850.
+        // reusable templates into the project artifact set; coverage of the former archive (c850a1b2…) was 149 / 35,850.
+        // 2026-11-23: re-recorded for the current archive (22339207…) from a hash-matched run: 141 / 27,630, nothing missing or unsupported.
         // Only applied when the archive hash matches.
         HashBoundBaselines = new Dictionary<string, long>(StringComparer.Ordinal)
         {
-            ["explorer-coverage.documents"] = 149,
-            ["explorer-coverage.blocks"] = 35_850,
-            ["explorer-coverage.direct"] = 24_635,
-            ["explorer-coverage.structured"] = 9_921,
-            ["explorer-coverage.ignored"] = 1_294,
+            ["explorer-coverage.documents"] = 141,
+            ["explorer-coverage.blocks"] = 27_630,
+            ["explorer-coverage.direct"] = 13_441,
+            ["explorer-coverage.structured"] = 12_775,
+            ["explorer-coverage.ignored"] = 1_414,
             ["explorer-coverage.unsupported"] = 0,
             ["explorer-coverage.missing"] = 0,
         },

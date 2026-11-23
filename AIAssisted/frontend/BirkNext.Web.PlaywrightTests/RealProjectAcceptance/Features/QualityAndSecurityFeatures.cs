@@ -68,7 +68,9 @@ public sealed class TargetGatedFeature(
             s => (Arr(s, "evidenceDomains", "contracts", "contracts").Count(c => Str(c, "type") == "OpenApi"), "OpenAPI contract(s) AQR can review once a target is set"),
             note: "Contract evidence exists in source; requests (and safe fuzzing) need a target and were not sent."),
         new("iqr-source", "Integration Quality Review", "Quality & Testing", "/integration-quality-review",
-            ["[data-testid=iqr-error]", "[data-testid=iqr-readiness]", "[data-testid=iqr-no-systems]"], ["[data-testid=iqr-run]"],
+            // iqr-run is not forbidden: the review is read-only over the catalog and source. Integrations discovered from source carry no
+            // health/worker URL and Azure runtime is off in acceptance, so a run contacts nothing (like Security Configuration's static run).
+            ["[data-testid=iqr-error]", "[data-testid=iqr-readiness]", "[data-testid=iqr-no-systems]"], [],
             s => (Count(s, "integrationSignals") + (Has(s, "integrationPath") ? 1 : 0) + (Has(s, "applicationMessagingEvidence") ? 1 : 0), "integration signal(s)/path/messaging evidence on the snapshot"),
             type: AcceptanceType.Source, note: "IQR scopes source evidence by Target Environment; the snapshot's integration evidence is verified, the review itself was not run."),
         new("active-event-testing", "Active Event Testing", "Quality & Testing", "/integration-quality-review",

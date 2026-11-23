@@ -60,7 +60,8 @@ public sealed class ProjectImportFeature : AcceptanceFeature
             .ToDictionary(r => r[0], r => r[1], StringComparer.OrdinalIgnoreCase) as IReadOnlyDictionary<string, string>;
         var sourceState = await session.AttrAsync("[data-testid=pi-source]", "data-state");
         var snapshotId = await session.AttrAsync("[data-testid=pi-snapshot-id]", "title");
-        var importId = await session.TextAsync("[data-testid=pi-import-id]");
+        // Inside the collapsed "Technical details": innerText of a hidden element is empty, so read its text content.
+        var importId = (await session.Page.Locator("[data-testid=pi-import-id]").First.TextContentAsync() ?? "").Trim();
         var technologies = await session.Page.Locator("[data-testid=pi-technology]").AllInnerTextsAsync();
         result.Observe("outcome", await session.AttrAsync("[data-testid=pi-result]", "data-outcome"))
             .Observe("document roles", string.Join(", ", ambiguous))

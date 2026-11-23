@@ -237,6 +237,7 @@ public sealed class RealProjectAcceptanceFrameworkTests : IDisposable
         AcceptanceReportWriter.Redact("Specification Explorer: 22 requirements").Should().Be("Specification Explorer: 22 requirements");
         AcceptanceReportWriter.Redact("Test appears to check \"bearer token missing\"").Should().Be("Test appears to check \"bearer token missing\"", "plain words after bearer are not a credential");
         AcceptanceReportWriter.Redact("Bearer 0a1b2c3d4e5f6a7b8c9d").Should().NotContain("0a1b2c3d4e5f6a7b8c9d");
+        AcceptanceReportWriter.Redact("detail: Invalid or missing Bearer token.").Should().Be("detail: Invalid or missing Bearer token.", "a sentence ending after \"token\" is not a credential (M2LB OpenAPI error example)");
     }
 
     [Fact]

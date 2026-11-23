@@ -558,7 +558,8 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
     public async Task<BirkNext.ContractSchemaEvidence.ContractRelationshipReview?> ContractRelationshipAsync(string environmentId, string integrationId, CancellationToken ct = default)
     {
         using var response = await http.GetAsync($"api/integration-review/contract-relationship?{Env(environmentId)}&integrationId={Uri.EscapeDataString(integrationId)}", ct);
-        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        // 204: not a configured integration (nothing to show); 404 from an older backend means the same.
+        if (response.StatusCode is System.Net.HttpStatusCode.NoContent or System.Net.HttpStatusCode.NotFound) return null;
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<BirkNext.ContractSchemaEvidence.ContractRelationshipReview>(Json, ct);
     }

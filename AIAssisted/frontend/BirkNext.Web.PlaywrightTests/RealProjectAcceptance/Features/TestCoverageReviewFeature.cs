@@ -78,7 +78,8 @@ public sealed class TestCoverageReviewFeature : AcceptanceFeature
                     await Responsive(session, result, "journey view");
                     break;
                 case "components":
-                    var components = await session.Page.Locator("[data-testid=tco-component] h3").AllInnerTextsAsync();
+                    // A matrix since 2026-11: one tbody per component, its name in the row header (it was a card heading).
+                    var components = await session.Page.Locator("[data-testid=tco-component] th[scope=row]").AllInnerTextsAsync();
                     result.Observe("components", string.Join(", ", components.Select(c => c.Split(" (")[0])));
                     result.Fact([.. components]);
                     break;

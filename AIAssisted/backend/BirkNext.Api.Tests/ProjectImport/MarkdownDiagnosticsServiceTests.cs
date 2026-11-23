@@ -102,6 +102,39 @@ public sealed class MarkdownDiagnosticsServiceTests
     }
 
     [Fact]
+    public void ContentIntegrity_AWindows1252ArchiveDocumentStoredAsUtf8IsTheSameText_NotATruncation()
+    {
+        // M2LB Autorisasjon tasks.md (2026-11-23): Windows-1252 em dashes and æ ø å. The import decodes it as Windows-1252 and stores UTF-8 (more
+        // bytes, same text); comparing against the archive read as UTF-8 reported a mismatch and a potential truncation.
+        var archivePath = Path.Combine(Path.GetTempPath(), $"integrity-cp1252-{Guid.NewGuid():N}.zip");
+        try
+        {
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            var text = "# Oppgaver — Autorisasjon\n\n## Fase 1\n\n- [ ] T001 Nødtilgang og løsningsstruktur (æ ø å)\n";
+            using (var stream = File.Create(archivePath))
+            using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
+            {
+                using var entry = archive.CreateEntry("specs/001-fixture/tasks.md").Open();
+                entry.Write(System.Text.Encoding.GetEncoding(1252).GetBytes(text));
+            }
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["ProjectCompatibility:AcceptanceArchivePath"] = archivePath }).Build();
+
+            var run = new MarkdownDiagnosticsService(config).RunContentIntegrity();
+
+            var document = run.Documents.Should().ContainSingle(d => d.SafeRelativePath.EndsWith("specs/001-fixture/tasks.md")).Subject;
+            document.ExactMatch.Should().BeFalse("the stored bytes are UTF-8");
+            document.CanonicalMatch.Should().BeTrue();
+            document.PotentialTruncation.Should().BeFalse();
+            document.ArchiveChars.Should().Be(document.StoredChars);
+            document.ParserWarnings.Should().Contain(w => w.Contains("Windows-1252"));
+        }
+        finally
+        {
+            if (File.Exists(archivePath)) File.Delete(archivePath);
+        }
+    }
+
+    [Fact]
     public void ExplorerCoverage_DistinguishesArchiveDocumentsFromBuiltInFixtures()
     {
         var archivePath = Path.Combine(Path.GetTempPath(), $"coverage-origin-{Guid.NewGuid():N}.zip");

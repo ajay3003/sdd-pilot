@@ -22,6 +22,21 @@ public sealed class DocumentQualityReviewFeature : AcceptanceFeature
         }
         var contextText = await session.TextAsync("[data-testid=qr-context]");
         result.Observe("context", contextText.Replace('\n', ' '));
+        if (await session.ExistsAsync("[data-testid=qr-no-workspace]"))
+        {
+            // The project context strip is shown with the "no document artifacts" state when the imported project has no documents
+            // (a source-only or Terraform archive). That is the correct state then; with imported documents it is a defect.
+            result.Evidence = EvidenceState.NotVerified;
+            if (new[] { "Constitution", "Specification", "Plan", "Tasks", "DataModel" }.Any(r => RoleImported(context, r)))
+            {
+                result.Execution = ExecutionStatus.Blocked;
+                result.Defect("quality-review-no-documents", "Document Quality Review says no document artifacts are available although the import found documents.");
+                return;
+            }
+            result.Data = DataState.NoApplicableData;
+            result.Note("The archive has no Constitution, Specification, Plan, Tasks or Data Model document: no review is the correct state.");
+            return;
+        }
         var run = session.Page.GetByRole(AriaRole.Button, new() { Name = "Run Document Quality Review" });
         if (await run.CountAsync() == 0 && await session.CountAsync(".qr-input-panel-toggle") > 0)
             await session.Page.Locator(".qr-input-panel-toggle").First.ClickAsync();
@@ -67,10 +82,11 @@ public sealed class RequirementsTraceabilityFeature : AcceptanceFeature
     {
         await OpenAsync(session, result);
         var state = await session.WaitAnyAsync(120_000, ".at-health-bar", "[data-testid=at-no-documents]", "[data-testid=at-selection-required]",
-            "[data-testid=at-input-status][data-status=Insufficient]");
+            "[data-testid=at-input-status][data-status=Insufficient]", "[data-testid=at-input-status][data-status=SelectionRequired]");
         var workspace = await session.TextAsync("[data-testid=at-workspace-context]");
         result.Observe("workspace context", workspace.Replace('\n', ' ')).Observe("state", state);
-        if (state == "[data-testid=at-selection-required]")
+        // A module or feature pack still to choose (at-pack-required) is the same by-design wait as several candidates per role.
+        if (state is "[data-testid=at-selection-required]" or "[data-testid=at-input-status][data-status=SelectionRequired]")
         {
             result.Execution = ExecutionStatus.Partial;
             result.Evidence = EvidenceState.PartiallyVerified;

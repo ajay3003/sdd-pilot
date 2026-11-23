@@ -243,7 +243,11 @@ public sealed class ContractEvidenceFeature(string featureId, string displayName
             await session.Page.Locator("[data-testid=area-overview]").ClickAsync();
             state = await session.WaitAnyAsync(30_000, "[data-testid=sa-current]", "[data-testid=sa-empty]");
         }
-        return state == "[data-testid=sa-current]";
+        if (state != "[data-testid=sa-current]") return false;
+        // The snapshot bar renders from the summary list; the analysis itself (areas) arrives after its detail is fetched, which for a large
+        // snapshot (M2LB: 1,680 files) takes several seconds. Reading earlier saw an overview with no areas.
+        await session.WaitAnyAsync(120_000, "[data-testid=sa-areas]", "[data-testid=sa-detail-error]");
+        return true;
     }
 
     internal static async Task OpenSourceAreaAsync(PlaywrightAcceptanceSession session, FeatureResultBuilder result, string area)

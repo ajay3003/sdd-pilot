@@ -28,6 +28,9 @@ public sealed class ExplorerFeature(string featureId, string displayName, string
         new("data-model-explorer", "Data Model Explorer", "/data-model-explorer", "DataModel", ".dme-stat .dme-stat-value", "data model statistics", hasExport: true),
     ];
 
+    /// <summary>The badge the pack chooser shows for a role (data-role uses the enum name).</summary>
+    private static string RoleBadge(string role) => role switch { "DataModel" => "Data Model", _ => role };
+
     protected override async Task RunAsync(RealProjectAcceptanceContext context, PlaywrightAcceptanceSession session, FeatureResultBuilder result, CancellationToken ct)
     {
         await OpenAsync(session, result);
@@ -49,6 +52,26 @@ public sealed class ExplorerFeature(string featureId, string displayName, string
             await session.Page.WaitForFunctionAsync("() => { const h = document.querySelector('[data-testid=artifact-explorer]'); return h && h.getAttribute('data-status') !== 'Loading' && !document.querySelector('[data-testid=artifact-explorer-choose-module]'); }", null, new() { Timeout = 120_000 });
             status = await session.AttrAsync("[data-testid=artifact-explorer]", "data-status");
             result.Observe("status after module choice", status);
+        }
+
+        if (status == "SelectionRequired" && await session.ExistsAsync("[data-testid=artifact-explorer-choose-pack]"))
+        {
+            // A module organised in feature packs (Spec Kit specs/NNN-*): choose, through the production pack chooser, a pack that has this role,
+            // preferring the pack with the most traceable roles. Every explorer ranks the same way, so they share one pack, and Document Quality
+            // Review and Requirements Traceability (which read the explorers' selection) see a complete pack.
+            var packs = await session.Page.Locator("[data-testid=artifact-explorer-pack-choice]").EvaluateAllAsync<string[]>(
+                "els => els.map(e => [...e.querySelectorAll('.axh-badge')].map(b => b.textContent.trim()).join('|'))");
+            var roleBadge = RoleBadge(role);
+            var best = packs.Select((badges, index) => (index, score: (badges.Split('|').Contains(roleBadge) ? 100 : 0)
+                    + badges.Split('|').Count(b => b is "Specification" or "Plan" or "Tasks" or "Data Model")))
+                .OrderByDescending(p => p.score).ThenBy(p => p.index).First();
+            var pack = session.Page.Locator("[data-testid=artifact-explorer-pack-choice]").Nth(best.index);
+            var packName = (await pack.GetAttributeAsync("data-pack")) ?? "";
+            result.Observe("feature packs", packs.Length).Note($"{packs.Length} feature packs: pack {packName} was chosen through the production pack chooser.");
+            await pack.ClickAsync();
+            await session.Page.WaitForFunctionAsync("() => { const h = document.querySelector('[data-testid=artifact-explorer]'); return h && h.getAttribute('data-status') !== 'Loading' && !document.querySelector('[data-testid=artifact-explorer-choose-pack]'); }", null, new() { Timeout = 120_000 });
+            status = await session.AttrAsync("[data-testid=artifact-explorer]", "data-status");
+            result.Observe("status after pack choice", status);
         }
 
         if (status == "SelectionRequired")

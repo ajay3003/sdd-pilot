@@ -179,7 +179,9 @@ public sealed class IntegrationReviewController(IIntegrationReviewService review
     public async Task<ActionResult<BirkNext.ContractSchemaEvidence.ContractRelationshipReview>> ContractRelationship([FromQuery] string environmentId, [FromQuery] string integrationId,
         [FromServices] ContractRelationshipReviewService relationships, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(environmentId) || string.IsNullOrWhiteSpace(integrationId) ? BadRequest("environmentId and integrationId are required.")
-        : await relationships.ReviewAsync(environmentId, integrationId, ct) is { } review ? Ok(review) : NotFound();
+        // Not a configured integration (e.g. one discovered from source and not yet added): nothing to show, which is not an error. 404 here
+        // put a console error on Integration Quality Review for every discovered integration (real-project acceptance, M2LB, 2026-11-23).
+        : await relationships.ReviewAsync(environmentId, integrationId, ct) is { } review ? Ok(review) : NoContent();
 
     [HttpGet("readiness")]
     public async Task<ActionResult<IntegrationReviewReadiness>> Readiness([FromQuery] string environmentId, [FromQuery] string? environmentType, [FromQuery] string? targetUrl,
