@@ -692,6 +692,18 @@ public class CompositeSuiteTests : IAsyncLifetime
         public ConcurrentBag<Tx> Transactions { get; } = [];
         private const int HopMs = 600;
 
+        /// <summary>
+        /// A random id that never contains a run of exactly 11 digits. BirkNext treats such a run as a possible national identity number
+        /// (fødselsnummer) and never carries it to a later step — by design — so a random hex id with 11 digits in a row (about 1 in 125)
+        /// made this synthetic flow fail at random: "the value looks like a credential and is never extracted" (2026-11-23).
+        /// </summary>
+        private static string Id(Func<string> make)
+        {
+            string value;
+            do value = make(); while (System.Text.RegularExpressions.Regex.IsMatch(value, @"(?<!\d)\d{11}(?!\d)"));
+            return value;
+        }
+
         public async Task HandleAsync(System.Net.HttpListenerContext c)
         {
             var path = c.Request.Url!.AbsolutePath;
@@ -705,7 +717,8 @@ public class CompositeSuiteTests : IAsyncLifetime
             if (c.Request.HttpMethod == "POST" && path == "/altinn/submissions")
             {
                 if (Mode == "submit-hangs") { await Task.Delay(16000); c.Response.Abort(); return; }
-                var tx = new Tx { SubmissionId = Guid.NewGuid().ToString(), MessageId = "msg-" + Guid.NewGuid().ToString("N")[..12], ReportId = "rep-" + Guid.NewGuid().ToString("N")[..12], Period = "2026-10", Submitted = now };
+                var tx = new Tx { SubmissionId = Id(() => Guid.NewGuid().ToString()), MessageId = Id(() => "msg-" + Guid.NewGuid().ToString("N")[..12]),
+                    ReportId = Id(() => "rep-" + Guid.NewGuid().ToString("N")[..12]), Period = "2026-10", Submitted = now };
                 Transactions.Add(tx); Mark(tx, "submitted");
                 status = 201; body = new { submissionId = tx.SubmissionId, instanceId = "inst-" + tx.SubmissionId[..8] };
             }
