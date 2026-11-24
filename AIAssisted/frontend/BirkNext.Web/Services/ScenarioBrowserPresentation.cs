@@ -115,10 +115,46 @@ public static partial class ScenarioBrowserPresentation
 
     // ── Collection ──────────────────────────────────────────────────────────────────────────────────────────
 
-    public sealed record Item(DiscoveredScenario Candidate, ScenarioOwnershipInfo Owner, Relevance Relevance, string Title, string Area, Status Status, Prepared? Prepared)
+    public sealed record Item(DiscoveredScenario Candidate, ScenarioOwnershipInfo Owner, Relevance Relevance, string Title, string Area, Status Status, Prepared? Prepared,
+        ScenarioWorkItem? Work = null)
     {
         public string Id => Candidate.CandidateId;
         public string TypeLabel => ScenarioCandidateTypes.Label(Candidate.Type);
+        public bool In(ScenarioWorkQueue queue) => Work?.Queues.Contains(queue) == true;
+    }
+
+    /// <summary>
+    /// The collection from the server's work queues (<see cref="ScenarioWorkQueueView"/>): one dictionary lookup per scenario, no client-side join
+    /// over plans and cases. Saved-case counts come from the queue view's coverage (every plan of the application, cases matched by identity).
+    /// </summary>
+    public static List<Item> Items(IReadOnlyList<DiscoveredScenario> candidates, IReadOnlyDictionary<string, ScenarioWorkItem> work)
+    {
+        var prepared = new Dictionary<string, Prepared>(StringComparer.Ordinal);
+        foreach (var (id, w) in work)
+            if (w.Coverage is { } k && (k.Current > 0 || k.SourceChanged > 0 || k.Conflicts > 0))
+                prepared[id] = new Prepared(k.Current, k.Approved, k.SourceChanged > 0, false, k.Conflicts > 0);
+        return [.. Items(candidates, prepared).Select(i => work.TryGetValue(i.Id, out var w) ? i with { Work = w } : i)];
+    }
+
+    // ── Work queues ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    public static readonly IReadOnlyList<(ScenarioWorkQueue? Queue, string Label)> Queues =
+    [
+        (ScenarioWorkQueue.Recommended, "Anbefalt å forberede"), (ScenarioWorkQueue.NeedsClarification, "Trenger avklaring"),
+        (ScenarioWorkQueue.Prepared, "Allerede forberedt"), (ScenarioWorkQueue.SourceChanged, "Kildegrunnlag endret"), (null, "Alle scenarioer"),
+    ];
+
+    public static string QueueLabel(ScenarioWorkQueue? queue) => Queues.First(q => q.Queue == queue).Label;
+
+    /// <summary>How many scenarios each queue holds under the other filters (search, area, type, status, story, requirement, technical content).</summary>
+    public static Dictionary<ScenarioWorkQueue, int> QueueCounts(IReadOnlyList<Item> items, Filter f)
+    {
+        var others = f with { Queue = null };
+        var counts = Enum.GetValues<ScenarioWorkQueue>().ToDictionary(q => q, _ => 0);
+        foreach (var i in Apply(items, others).Shown)
+            foreach (var q in i.Work?.Queues ?? [])
+                counts[q]++;
+        return counts;
     }
 
     public static List<Item> Items(IReadOnlyList<DiscoveredScenario> candidates, IReadOnlyDictionary<string, Prepared> prepared) =>
@@ -130,7 +166,12 @@ public static partial class ScenarioBrowserPresentation
         }).OrderBy(i => i.Candidate.Story?.Ordinal ?? int.MaxValue).ThenBy(i => i.Candidate.NumberInStory ?? int.MaxValue).ThenBy(i => i.Area, StringComparer.CurrentCultureIgnoreCase)
           .ThenBy(i => i.Title, StringComparer.CurrentCultureIgnoreCase)];
 
-    public sealed record Filter(string Query = "", string? Area = null, string? Type = null, string? Status = null, string? Story = null, string? Requirement = null, bool Technical = false, bool All = false);
+    /// <summary>All filters compose. <see cref="Queue"/> null = every scenario (Finn og forstå starts on <see cref="DefaultView"/>).</summary>
+    public sealed record Filter(string Query = "", string? Area = null, string? Type = null, string? Status = null, string? Story = null, string? Requirement = null, bool Technical = false, bool All = false,
+        ScenarioWorkQueue? Queue = null);
+
+    /// <summary>Finn og forstå's default view: the work queue «Anbefalt å forberede» (technical content hidden).</summary>
+    public static readonly Filter DefaultView = new(Queue: ScenarioWorkQueue.Recommended);
 
     /// <summary>The items the filter shows, and how many of the total the relevance filter alone hides (so "visible of total" is always honest).</summary>
     public static (List<Item> Shown, int HiddenTechnical) Apply(IReadOnlyList<Item> items, Filter f)
@@ -144,8 +185,11 @@ public static partial class ScenarioBrowserPresentation
             && (f.Story is null || i.Candidate.Story?.Key == f.Story)
             && (f.Requirement is null || i.Candidate.RequirementIds.Contains(f.Requirement, StringComparer.OrdinalIgnoreCase))
             && words.All(w => $"{i.Title} {i.Candidate.Title} {i.Candidate.Purpose} {i.Area} {string.Join(' ', i.Candidate.RequirementIds)}".Contains(w, StringComparison.CurrentCultureIgnoreCase));
-        var shown = items.Where(Match).ToList();
-        var hidden = f.All || f.Technical ? 0 : items.Count(i => i.Relevance == Relevance.Technical && Match(i with { Relevance = Relevance.Manual }));
+        bool InQueue(Item i) => f.Queue is not { } q || i.In(q);
+        var shown = items.Where(i => InQueue(i) && Match(i)).ToList();
+        // The recommended queue is a work order: the server's rank (declared priority, then support, then the specification's order).
+        if (f.Queue == ScenarioWorkQueue.Recommended) shown = [.. shown.OrderBy(i => i.Work?.Rank ?? int.MaxValue)];
+        var hidden = f.All || f.Technical ? 0 : items.Count(i => i.Relevance == Relevance.Technical && InQueue(i) && Match(i with { Relevance = Relevance.Manual }));
         return (shown, hidden);
     }
 

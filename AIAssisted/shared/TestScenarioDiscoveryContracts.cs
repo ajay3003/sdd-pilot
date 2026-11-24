@@ -380,3 +380,80 @@ public sealed record ScenarioChangeSummary
     /// <summary>Scenarios of the new version whose sources disagree about the expected result.</summary>
     public int Conflicts { get; init; }
 }
+
+// ── Work queues of Finn og forstå (2026-11-24) ──────────────────────────────────────────────────────────────────────────────────────────────
+// What a manual tester should prepare next, computed once on the server from the discovery and every saved plan of the application (the same
+// scenario resolution plan status and impact use). Queues are filtered views of the one candidate list, never copies; a scenario may be in several.
+// "Recommended" means ready to PREPARE a test case — never that the test is ready to execute (test data, access and observation are separate).
+
+/// <summary>A work queue of Finn og forstå. Membership is independent per queue (a scenario can be in several).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ScenarioWorkQueue
+{
+    /// <summary>Relevant, clear, supported expected result, current source, no current test case: ready for test-case preparation.</summary>
+    Recommended,
+    /// <summary>Something must be clarified before a test case can be prepared (expected result, conflict, open question, source association).</summary>
+    NeedsClarification,
+    /// <summary>Has at least one current test case (draft, in progress or approved) in an active plan.</summary>
+    Prepared,
+    /// <summary>A saved test case of the scenario was prepared from source that has changed since, or the discovery is not on the current source.</summary>
+    SourceChanged,
+}
+
+/// <summary>Saved test cases of one scenario, by state. Current coverage = active plans, not superseded, not excluded.</summary>
+public sealed record ScenarioCaseCoverage
+{
+    /// <summary>Generated and not yet reviewed (utkast).</summary>
+    public int Draft { get; init; }
+    /// <summary>Under review or waiting for clarification (under arbeid).</summary>
+    public int InProgress { get; init; }
+    /// <summary>Accepted by a reviewer in BirkNext (never an Azure DevOps approval or an execution).</summary>
+    public int Approved { get; init; }
+    /// <summary>Deliberately excluded by a reviewer: a decision, not coverage.</summary>
+    public int Excluded { get; init; }
+    /// <summary>Superseded (the scenario left the source at the time): history, not current coverage.</summary>
+    public int Historical { get; init; }
+    /// <summary>Cases in archived plans: kept and readable, not current coverage.</summary>
+    public int Archived { get; init; }
+    /// <summary>Current cases whose scenario changed in the current source since they were prepared.</summary>
+    public int SourceChanged { get; init; }
+    /// <summary>Current cases with an unresolved expected-result conflict.</summary>
+    public int Conflicts { get; init; }
+    /// <summary>The active plans holding current cases of the scenario.</summary>
+    public List<Guid> Plans { get; init; } = [];
+    [JsonIgnore] public int Current => Draft + InProgress + Approved;
+}
+
+/// <summary>One scenario's place in the work queues, with plain-Norwegian reasons (no score) and what stands between it and execution.</summary>
+public sealed record ScenarioWorkItem
+{
+    public string CandidateId { get; init; } = "";
+    public List<ScenarioWorkQueue> Queues { get; init; } = [];
+    /// <summary>Position in <see cref="ScenarioWorkQueue.Recommended"/> (1 = prepare first); null when not recommended. Deterministic ordering, not a score.</summary>
+    public int? Rank { get; init; }
+    /// <summary>The user story's declared priority (e.g. "P1"); null when the source states none — never inferred.</summary>
+    public string? Priority { get; init; }
+    /// <summary>Saved test cases; null when the scenario has none (coverage known, nothing saved).</summary>
+    public ScenarioCaseCoverage? Coverage { get; init; }
+    /// <summary>Why the scenario is in its queues, short and in Norwegian (for example «Mangler testtilfelle», «Forventet resultat dokumentert»).</summary>
+    public List<string> Reasons { get; init; } = [];
+    /// <summary>What must be clarified before a test case can be prepared (empty when nothing).</summary>
+    public List<string> Clarifications { get; init; } = [];
+    /// <summary>Ready to prepare is not ready to execute: test data, access or a way to observe the result that the execution still needs.</summary>
+    public List<string> ExecutionNeeds { get; init; } = [];
+}
+
+/// <summary>The work queues of one discovery result.</summary>
+public sealed record ScenarioWorkQueueView
+{
+    public string DiscoveryId { get; init; } = "";
+    /// <summary>False when the discovery is not on the application's current source (a historical import): nothing is recommended then.</summary>
+    public bool DiscoveryCurrent { get; init; }
+    /// <summary>False when a saved plan could not be read: a scenario without known cases is then "unknown", never "no test case".</summary>
+    public bool CoverageComplete { get; init; }
+    public int PlansRead { get; init; }
+    public int PlansUnreadable { get; init; }
+    /// <summary>Current test cases whose scenario is not in this discovery (removed from the source, or source unavailable): shown, never dropped.</summary>
+    public int UnmatchedCases { get; init; }
+    public List<ScenarioWorkItem> Items { get; init; } = [];
+}

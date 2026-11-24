@@ -71,6 +71,11 @@ public interface ITestPlanSuggestionsApiService
         Task.FromResult<(TranslateScenarioResult?, string?)>((null, NotAvailable));
     Task<(TranslateScenarioResult? Result, string? Error)> TranslateAsync(Guid id, TranslateScenarioRequest request, CancellationToken ct = default) =>
         Task.FromResult<(TranslateScenarioResult?, string?)>((null, NotAvailable));
+    /// <summary>Finn og forstå's work queues for a discovery result (GET project/work-queues): queue membership, rank, reasons and saved test cases
+    /// per scenario, computed on the server. Read-only.</summary>
+    Task<(ScenarioWorkQueueView? View, string? Error)> WorkQueuesAsync(string projectKey, string? discoveryId, CancellationToken ct = default) =>
+        Task.FromResult<(ScenarioWorkQueueView?, string?)>((null, NotAvailable));
+
     /// <summary>The project's saved test cases traced to a specification's requirements (POST project/traceability). Read-only.</summary>
     Task<(PreparedCaseTraceView? Trace, string? Error)> PreparedCaseTraceAsync(string projectKey, PreparedCaseTraceRequest request, CancellationToken ct = default) =>
         Task.FromResult<(PreparedCaseTraceView?, string?)>((null, NotAvailable));
@@ -227,6 +232,9 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
 
     public Task<(TranslateScenarioResult?, string?)> TranslateAsync(Guid id, TranslateScenarioRequest request, CancellationToken ct = default) =>
         Send<TranslateScenarioResult>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/translate", request, Json, ct), ct);
+
+    public Task<(ScenarioWorkQueueView?, string?)> WorkQueuesAsync(string projectKey, string? discoveryId, CancellationToken ct = default) =>
+        Send<ScenarioWorkQueueView>(() => http.GetAsync($"{Base}/project/work-queues?projectKey={Uri.EscapeDataString(projectKey)}{(discoveryId is { Length: > 0 } d ? $"&discoveryId={Uri.EscapeDataString(d)}" : "")}", ct), ct);
 
     public Task<(PreparedCaseTraceView?, string?)> PreparedCaseTraceAsync(string projectKey, PreparedCaseTraceRequest request, CancellationToken ct = default) =>
         Send<PreparedCaseTraceView>(() => http.PostAsJsonAsync($"{Base}/project/traceability?projectKey={Uri.EscapeDataString(projectKey)}", request, Json, ct), ct);

@@ -58,7 +58,7 @@
             <dl class="msb-counts" data-testid="mtd-kpis">
                 <div><dt>Forslag</dt><dd data-testid="mtd-count-suggestions">@_items.Count</dd></div>
                 <div><dt>Valgt</dt><dd data-testid="mtd-count-selected">@_selected.Count</dd></div>
-                <div><dt>Testtilfeller</dt><dd data-testid="mtd-count-prepared">@preparedCases</dd></div>
+                <div><dt>Testtilfeller</dt><dd data-testid="mtd-count-prepared" title="@(CoverageKnown ? null : "Lagrede planer kunne ikke leses helt — antallet er ukjent")">@(CoverageKnown ? preparedCases.ToString() : "ukjent")</dd></div>
                 <div class="@(clarify > 0 ? "is-warn" : null)"><dt>Trenger avklaring</dt><dd data-testid="mtd-count-clarify">@clarify</dd></div>
             </dl>
             <button type="button" class="btn btn-secondary btn-sm" disabled="@_discovering" @onclick="DiscoverAsync" data-testid="mtd-discover">@(_discovering ? "Finner scenarioer …" : discovery is null ? "Oppdag scenarioer" : "Oppdag på nytt")</button>
@@ -71,7 +71,33 @@
         }
         else
         {
-            @* B. Search and filters (sticky). *@
+            @* B. Work queues: filtered views of the one scenario list (a scenario can be in several), counted under the other filters. *@
+            @if (_workView is not null)
+            {
+                <nav class="msb-queues" aria-label="Arbeidskøer" data-testid="mtd-queues">
+                    @foreach (var (queue, label) in S.Queues)
+                    {
+                        var count = queue is { } q ? _queueCounts.GetValueOrDefault(q) : S.Apply(_items, _filter with { Queue = null }).Shown.Count;
+                        <button type="button" class="msb-queue @(_filter.Queue == queue ? "is-current" : null)" aria-pressed="@(_filter.Queue == queue ? "true" : "false")"
+                                @onclick="() => Set(_filter with { Queue = queue })" data-testid="mtd-queue" data-queue="@(queue?.ToString() ?? "All")">@label <span class="msb-queue-n">@count</span></button>
+                    }
+                </nav>
+                <p class="msb-queue-hint mt-muted" data-testid="mtd-queue-hint">@(_filter.Queue switch
+                {
+                    ScenarioWorkQueue.Recommended => "Klare for å lage testtilfelle: forventet resultat er dokumentert, ingenting må avklares og de har ikke testtilfelle ennå. Sortert etter prioritet i kilden. Klar for klargjøring betyr ikke klar for kjøring — testdata og tilgang vises per scenario.",
+                    ScenarioWorkQueue.NeedsClarification => "Må avklares før et testtilfelle kan lages: manglende eller ubekreftet forventet resultat, motstridende kilder eller åpne spørsmål.",
+                    ScenarioWorkQueue.Prepared => "Har testtilfeller i aktive planer (utkast, under arbeid eller godkjent).",
+                    ScenarioWorkQueue.SourceChanged => "Testtilfeller laget fra en kilde som har endret seg siden — vurder dem i Planlegg og klargjør.",
+                    _ => "Alle scenarioer fra oppdagelsen.",
+                })@(_workView.UnmatchedCases > 0 ? $" {_workView.UnmatchedCases} testtilfelle(r) i aktive planer hører til scenarioer som ikke lenger finnes i kilden — se planene." : "")</p>
+            }
+            else
+            {
+                <p class="mt-alert" role="status" data-testid="mtd-queues-unavailable">Prioriteringen er ikke tilgjengelig@(_workError is { } workError ? $" ({workError})" : "").
+                    Alle scenarioer vises; om de har testtilfeller er ukjent.</p>
+            }
+
+            @* C. Search and filters (sticky). *@
             <div class="msb-toolbar" role="search" data-testid="mtd-toolbar">
                 <input type="search" class="msb-search" placeholder="Søk i scenarioer, krav og områder" aria-label="Søk i scenarioer" value="@_filter.Query"
                        @oninput="e => Set(_filter with { Query = e.Value?.ToString() ?? string.Empty })" data-testid="mtd-search" />
@@ -104,7 +130,7 @@
                 <label class="msb-toggle" data-testid="mtd-show-technical"><input type="checkbox" checked="@(_filter.Technical || _filter.All)" @onchange="e => Set(_filter with { Technical = e.Value is true, All = false })" />
                     Vis teknisk innhold</label>
                 <span class="msb-visible mt-muted" data-testid="mtd-visible" aria-live="polite">Viser @shown.Count av @_items.Count@(hidden > 0 ? $" · {hidden} tekniske skjult" : "")</span>
-                @if (hidden > 0 || _filter != new S.Filter())
+                @if (hidden > 0 || _filter != DefaultFilter)
                 {
                     <button type="button" class="msb-link" @onclick="() => Set(new S.Filter(All: true))" data-testid="mtd-show-all">Vis alle</button>
                 }
@@ -115,7 +141,11 @@
                 <section class="msb-list" aria-label="Scenarioer" data-testid="mtd-scenarios">
                     @if (shown.Count == 0)
                     {
-                        <p class="msb-empty" data-testid="mtd-empty">Ingen scenarioer passer filteret. <button type="button" class="msb-link" @onclick="() => Set(new S.Filter())">Nullstill filter</button></p>
+                        <p class="msb-empty" data-testid="mtd-empty">@EmptyText() <button type="button" class="msb-link" @onclick="() => Set(DefaultFilter)">Nullstill filter</button>
+                            @if (_filter.Queue == ScenarioWorkQueue.Recommended && _queueCounts.GetValueOrDefault(ScenarioWorkQueue.NeedsClarification) > 0)
+                            {
+                                <button type="button" class="msb-link" @onclick="() => Set(_filter with { Queue = ScenarioWorkQueue.NeedsClarification })" data-testid="mtd-empty-clarify">Se hva som må avklares (@_queueCounts[ScenarioWorkQueue.NeedsClarification])</button>
+                            }</p>
                     }
                     else
                     {
@@ -171,6 +201,22 @@
                                 <ul>@foreach (var claim in c.Conflicts.SelectMany(k => k.Claims).DistinctBy(x => x.CandidateId)) { <li>@claim.SourceCategory: «@claim.Expected»</li> }</ul>
                             </div>
                         }
+                        @if (active.Work is { } work)
+                        {
+                            <details class="msb-why" data-testid="mtd-detail-why">
+                                <summary>Hvorfor @(active.In(ScenarioWorkQueue.Recommended) ? "anbefalt" : "her")?</summary>
+                                <ul>@foreach (var reason in work.Reasons) { <li>@reason</li> }</ul>
+                            </details>
+                            @if (work.Clarifications.Count > 0)
+                            {
+                                <div class="msb-callout is-warn" data-testid="mtd-detail-clarify"><strong>Må avklares før klargjøring:</strong>
+                                    <ul>@foreach (var item in work.Clarifications) { <li>@item</li> }</ul></div>
+                            }
+                            @if (work.ExecutionNeeds.Count > 0)
+                            {
+                                <p class="msb-exec" data-testid="mtd-detail-exec"><strong>Før kjøring trengs:</strong> @string.Join("; ", work.ExecutionNeeds)</p>
+                            }
+                        }
                         <dl class="msb-facts">
                             @if (c.Preconditions.Count > 0) { <dt>Forutsetninger</dt><dd data-testid="mtd-detail-preconditions">@string.Join("; ", c.Preconditions)</dd> }
                             @if (c.Steps.Count > 0)
@@ -182,7 +228,7 @@
                             <dd data-testid="mtd-detail-expected">@(c.ExpectedBehaviour ?? "Ikke oppgitt") <span class="msb-basis">@S.ExpectedBasis(c)</span></dd>
                             @if (c.TestDataNeeds.Count > 0) { <dt>Testdata</dt><dd>@string.Join("; ", c.TestDataNeeds)</dd> }
                             <dt>Eksisterende dekning</dt>
-                            <dd data-testid="mtd-detail-coverage">@(active.Prepared is { } p ? $"{p.Cases} testtilfelle{(p.Cases == 1 ? "" : "r")} i lagrede planer, {p.Approved} godkjent" : "Ingen testtilfeller ennå")@if (c.ExistingTests.Count > 0) { <span class="msb-basis">@c.ExistingTests.Count automatisk(e) test(er) refererer kravet — det betyr at testen finnes, ikke at den er bestått.</span> }</dd>
+                            <dd data-testid="mtd-detail-coverage">@CoverageText(active)@if (c.ExistingTests.Count > 0) { <span class="msb-basis">@c.ExistingTests.Count automatisk(e) test(er) refererer kravet — det betyr at testen finnes, ikke at den er bestått.</span> }</dd>
                             @if (c.Story is { } story) { <dt>Brukerhistorie</dt><dd data-testid="mtd-detail-story">@(story.StoryId ?? $"Historie {story.Ordinal}") — @story.Title</dd> }
                             @if (c.RequirementIds.Count > 0)
                             {
@@ -323,7 +369,48 @@
     private List<S.Item> _items = [];
     private List<BirkNext.TestCoverage.CoverageUserStory> _stories = [];
     private List<string> _requirementIds = [];
-    private S.Filter _filter = new();
+    private S.Filter _filter = S.DefaultView;
+    private ScenarioWorkQueueView? _workView;
+    private string? _workError;
+    private Dictionary<ScenarioWorkQueue, int> _queueCounts = [];
+    private bool CoverageKnown => _workView is { CoverageComplete: true };
+    /// <summary>The scenario's saved test cases in plain words: current (draft / in progress / approved) apart from archived, superseded and excluded
+    /// cases, which are never counted as current coverage. Unknown when a plan could not be read — never "none".</summary>
+    private string CoverageText(S.Item item)
+    {
+        if (item.Work?.Coverage is not { } k)
+            return _workView is null ? "Ukjent — testtilfellene kunne ikke leses"
+                : !CoverageKnown ? "Ukjent — en lagret plan kunne ikke leses" : "Ingen testtilfeller ennå";
+        var parts = new List<string>();
+        if (k.Current > 0)
+        {
+            var states = new List<string>();
+            if (k.Draft > 0) states.Add($"{k.Draft} utkast");
+            if (k.InProgress > 0) states.Add($"{k.InProgress} under arbeid");
+            if (k.Approved > 0) states.Add($"{k.Approved} godkjent");
+            parts.Add($"{k.Current} testtilfelle{(k.Current == 1 ? "" : "r")} ({string.Join(", ", states)}) i {k.Plans.Count} aktiv{(k.Plans.Count == 1 ? "" : "e")} plan{(k.Plans.Count == 1 ? "" : "er")}");
+        }
+        else parts.Add("Ingen gjeldende testtilfeller");
+        if (k.SourceChanged > 0) parts.Add($"{k.SourceChanged} laget fra en kilde som er endret");
+        if (k.Archived > 0) parts.Add($"{k.Archived} i arkiverte planer");
+        if (k.Historical > 0) parts.Add($"{k.Historical} utgått");
+        if (k.Excluded > 0) parts.Add($"{k.Excluded} bevisst utelatt");
+        return string.Join(" · ", parts);
+    }
+
+    private S.Filter DefaultFilter => _workView is null ? new S.Filter() : S.DefaultView;
+
+    /// <summary>Why the current view is empty, per queue (an empty recommended queue is a fact, not an error).</summary>
+    private string EmptyText() => _filter.Queue switch
+    {
+        ScenarioWorkQueue.Recommended when _workView is { DiscoveryCurrent: false } => "Ingen anbefalinger: oppdagelsen er gjort på en eldre kildeversjon enn den gjeldende.",
+        ScenarioWorkQueue.Recommended when _workView is { CoverageComplete: false } => "Ingen anbefalinger: en lagret plan kunne ikke leses, så det er ukjent hvilke scenarioer som allerede har testtilfeller.",
+        ScenarioWorkQueue.Recommended => "Ingen scenarioer er klare for klargjøring med disse filtrene.",
+        ScenarioWorkQueue.NeedsClarification => "Ingen scenarioer trenger avklaring med disse filtrene.",
+        ScenarioWorkQueue.Prepared => "Ingen scenarioer har testtilfeller ennå med disse filtrene.",
+        ScenarioWorkQueue.SourceChanged => "Ingen testtilfeller er laget fra en kilde som har endret seg.",
+        _ => "Ingen scenarioer passer filteret.",
+    };
     private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
     private string? _active;
     private int _limit = S.PageSize;
@@ -351,13 +438,18 @@
             _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync();
             _trace = null;
             var api = ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
-            // Saved test cases per scenario: the project's most recent plans, read as stored (never changed here).
-            var plans = new List<TestPlanDraft>();
-            if (api is not null && _ws.Plans is { } ws)
-                foreach (var summary in ws.Drafts.Take(5))
-                    if ((await api.DraftAsync(summary.Id)).Draft is { } draft) plans.Add(draft);
+            // Work queues and saved test cases per scenario: computed once on the server over every plan of the application (cases matched by
+            // identity across imports). Unavailable → coverage is unknown (never shown as "no test case") and every scenario is listed.
             var candidates = _ws.Discovery?.Candidates ?? [];
-            _items = S.Items(candidates, S.PreparedCases(candidates, plans));
+            _workView = null; _workError = null;
+            if (api is not null && _ws.ProjectKey is { } projectKey && _ws.Discovery is { } found)
+                (_workView, _workError) = await api.WorkQueuesAsync(projectKey, found.DiscoveryId);
+            if (_workView is not null && _workView.DiscoveryId != _ws.Discovery?.DiscoveryId) { _workView = null; _workError = "Arbeidskøene hører til et annet oppdagelsesresultat."; }
+            _items = _workView is { } view
+                ? S.Items(candidates, view.Items.ToDictionary(w => w.CandidateId, StringComparer.Ordinal))
+                : S.Items(candidates, new Dictionary<string, S.Prepared>());
+            if (_workView is null && _filter.Queue is not null) _filter = _filter with { Queue = null };
+            _queueCounts = S.QueueCounts(_items, _filter);
             _stories = [.. candidates.Select(c => c.Story).OfType<BirkNext.TestCoverage.CoverageUserStory>().DistinctBy(s => s.Key).OrderBy(s => s.Ordinal)];
             _requirementIds = [.. candidates.SelectMany(c => c.RequirementIds).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
             _active ??= S.Apply(_items, _filter).Shown.FirstOrDefault()?.Id;
@@ -385,6 +477,7 @@
     {
         _filter = filter;
         _limit = S.PageSize;
+        _queueCounts = S.QueueCounts(_items, _filter);
         var shown = S.Apply(_items, _filter).Shown;
         if (shown.All(i => i.Id != _active)) _active = shown.FirstOrDefault()?.Id;
     }

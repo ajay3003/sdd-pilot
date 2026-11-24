@@ -123,6 +123,12 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     public Task<ActionResult> Changes([FromBody] ScenarioDiscoveryRequest request, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>
         Run(async () => Ok(await discovery.ChangesAsync(request, ct)));
     /// <summary>The last discovery result of the project (and snapshot), also after a restart (stored); 204 when there is none. Runs no analyzer.</summary>
+    /// <summary>Finn og forstå's work queues for a discovery result (default: the project's last): queue membership, rank, reasons and saved
+    /// test cases per scenario, computed once over every plan of the application. Read-only.</summary>
+    [HttpGet("project/work-queues")]
+    public Task<ActionResult> WorkQueues([FromQuery] string projectKey, [FromQuery] string? discoveryId, CancellationToken ct) =>
+        Run(async () => Ok(await service.WorkQueuesAsync(projectKey, discoveryId, ct)));
+
     /// <remarks>
     /// The result is large (all candidates with their evidence: 8 MB for 1,752 M2LB scenarios) and every Manual Testing page reads it. Its ETag is
     /// a hash of the exact JSON sent, so a client holding that version gets 304 Not Modified and reuses what it already parsed; any change to the

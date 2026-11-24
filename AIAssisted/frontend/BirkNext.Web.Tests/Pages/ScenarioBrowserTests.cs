@@ -121,6 +121,8 @@ public sealed class ScenarioBrowserTests : BunitContext
             Basis = new DiscoverySourceBasis { ApplicationKey = "repo:library", Kind = DiscoveryBasisKind.Current, SpecificationOrigin = SpecificationOrigin.ImportedSnapshot,
                 Members = [new DiscoverySourceMember { RepositoryKey = "repo:library", DisplayName = "Library", SnapshotId = Guid.NewGuid(), ArchiveName = "library-v2.zip", StateCode = "SINGLE_SNAPSHOT" }] },
         }, (string?)null));
+        // Work queues not available (server error): coverage is unknown, every scenario is listed (the fallback; the queues have their own tests).
+        api.Setup(x => x.WorkQueuesAsync("library", It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(((ScenarioWorkQueueView?)null, "Testplanforslag svarte ikke"));
         Services.AddSingleton(api.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.GetRequiredService<NavigationManager>().NavigateTo("manual-testing/discover");
@@ -137,7 +139,8 @@ public sealed class ScenarioBrowserTests : BunitContext
         cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().BeEquivalentTo(["c-spec", "c-unclear", "c-journey"]);
         cut.Find("[data-testid=mtd-visible]").TextContent.Should().Contain("Viser 3 av 5").And.Contain("2 tekniske skjult");
         cut.Find("[data-testid=mtd-count-suggestions]").TextContent.Should().Be("5", "the count says suggestions, not test cases");
-        cut.Find("[data-testid=mtd-count-prepared]").TextContent.Should().Be("0");
+        cut.Find("[data-testid=mtd-count-prepared]").TextContent.Should().Be("ukjent", "without the work queues the saved test cases are unknown, never zero");
+        cut.Find("[data-testid=mtd-queues-unavailable]").TextContent.Should().Contain("Prioriteringen er ikke tilgjengelig").And.Contain("ukjent");
         cut.FindAll("[data-testid=mtd-scenario-title]").Select(e => e.TextContent).Should().Contain("US-014 — Submit valid attendance report");
 
         // Select one, then narrow the filter so it is no longer visible: the selection stays.

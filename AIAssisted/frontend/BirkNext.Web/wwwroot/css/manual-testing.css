@@ -354,3 +354,18 @@
 .pi-changes > div { display: grid; }
 .mtp-testdata select { max-width: 100%; min-width: 0; }
 .mtp-testdata select[data-testid=mtp-testdata-add] { flex: 1 1 12rem; width: 100%; }
+
+/* Work queues of Finn og forstå (2026-11-24): compact selectable views of the one scenario list. */
+.msb-queues { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.25rem 0 0.15rem; }
+.msb-queue { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.75rem; border: 1px solid var(--msb-border); border-radius: 999px;
+    background: var(--msb-surface); color: inherit; font: inherit; font-size: 0.86rem; cursor: pointer; }
+.msb-queue:hover { border-color: var(--msb-accent); }
+.msb-queue:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 2px; }
+.msb-queue.is-current { background: color-mix(in srgb, var(--msb-accent) 12%, var(--msb-surface)); border-color: var(--msb-accent); font-weight: 600; }
+.msb-queue-n { font-variant-numeric: tabular-nums; font-size: 0.78rem; padding: 0 0.4rem; border-radius: 999px; background: var(--msb-subtle); }
+.msb-queue-hint { margin: 0 0 0.4rem; font-size: 0.82rem; max-width: 70rem; }
+.msb-why { margin: 0.4rem 0; font-size: 0.88rem; }
+.msb-why summary { cursor: pointer; color: var(--msb-accent); }
+.msb-why ul { margin: 0.25rem 0 0; padding-left: 1.1rem; }
+.msb-exec { margin: 0.4rem 0; font-size: 0.86rem; padding: 0.35rem 0.6rem; border-radius: 8px; background: var(--msb-subtle); }
+@media (max-width: 560px) { .msb-queue { font-size: 0.8rem; padding: 0.25rem 0.6rem; } }
