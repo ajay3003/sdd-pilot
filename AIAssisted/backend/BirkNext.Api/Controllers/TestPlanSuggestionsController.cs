@@ -123,9 +123,25 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     public Task<ActionResult> Changes([FromBody] ScenarioDiscoveryRequest request, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>
         Run(async () => Ok(await discovery.ChangesAsync(request, ct)));
     /// <summary>The last discovery result of the project (and snapshot), also after a restart (stored); 204 when there is none. Runs no analyzer.</summary>
+    /// <remarks>
+    /// The result is large (all candidates with their evidence: 8 MB for 1,752 M2LB scenarios) and every Manual Testing page reads it. Its ETag is
+    /// a hash of the exact JSON sent, so a client holding that version gets 304 Not Modified and reuses what it already parsed; any change to the
+    /// result changes the bytes and therefore the ETag. Cache-Control no-cache: always revalidated, never served stale.
+    /// </remarks>
     [HttpGet("discover/last")]
-    public Task<ActionResult> LastDiscovery([FromQuery] string projectKey, [FromQuery] Guid? snapshotId, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>
-        Run(async () => await discovery.LastAsync(projectKey, snapshotId, ct) is { } result ? Ok(result) : NoContent());
+    public Task<ActionResult> LastDiscovery([FromQuery] string projectKey, [FromQuery] Guid? snapshotId, [FromServices] TestScenarioDiscoveryService discovery,
+        [FromServices] Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> json, CancellationToken ct) =>
+        Run(async () =>
+        {
+            if (await discovery.LastAsync(projectKey, snapshotId, ct) is not { } result) return NoContent();
+            var body = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(result, json.Value.JsonSerializerOptions);
+            var etag = $"\"{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(body))}\"";
+            Response.Headers.ETag = etag;
+            Response.Headers.CacheControl = "no-cache";
+            if (Request.Headers.IfNoneMatch.Any(v => v is not null && v.Split(',').Any(t => t.Trim() == etag)))
+                return StatusCode(StatusCodes.Status304NotModified);
+            return File(body, "application/json; charset=utf-8");
+        });
 
     [HttpPost("project-drafts")]
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]

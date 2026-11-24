@@ -85,6 +85,8 @@ builder.Services.AddCors(options =>
         .WithOrigins(frontendOrigin)
         .AllowAnyHeader()
         .AllowAnyMethod()
+        // Conditional reads (discover/last): the client keeps the parsed result and revalidates it by its ETag.
+        .WithExposedHeaders("ETag")
         // The local-session cookie travels with the frontend's requests (one exact origin; never a wildcard with credentials).
         .AllowCredentials()));
 

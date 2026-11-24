@@ -58,6 +58,8 @@ builder.Services.AddHttpClient<AdminApiService>(client =>
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IBuildInfoApiService, BuildInfoApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISystemUnderstandingApiService, SystemUnderstandingApiService>(client => client.BaseAddress = backendBase);
+// One parsed last discovery per project and snapshot for the session, revalidated by ETag (LastDiscoveryCache).
+builder.Services.AddSingleton<LastDiscoveryCache>();
 builder.Services.AddHttpClient<ITestPlanSuggestionsApiService, TestPlanSuggestionsApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITranslationSettingsApiService, TranslationSettingsApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITechnicalHistoryApiService, TechnicalHistoryApiService>(client => client.BaseAddress = backendBase);

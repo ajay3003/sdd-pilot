@@ -90,7 +90,7 @@ public interface ITestPlanSuggestionsApiService
     const string NotAvailable = "Project test planning is not available in this host.";
 }
 
-public sealed class TestPlanSuggestionsApiService(HttpClient http) : ITestPlanSuggestionsApiService
+public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscoveryCache? lastDiscoveries = null) : ITestPlanSuggestionsApiService
 {
     private const string Base = "api/test-plan-suggestions";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
@@ -143,11 +143,31 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http) : ITestPlanSu
 
     public async Task<(ScenarioDiscoveryResult?, string?)> LastDiscoveryAsync(string projectKey, Guid? snapshotId, CancellationToken ct = default)
     {
+        var key = LastDiscoveryCache.KeyOf(projectKey, snapshotId);
         try
         {
-            using var response = await http.GetAsync($"{Base}/discover/last?projectKey={Uri.EscapeDataString(projectKey)}{(snapshotId is { } id ? $"&snapshotId={id}" : "")}", ct);
-            if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return (null, null);
-            if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<ScenarioDiscoveryResult>(Json, ct), null);
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{Base}/discover/last?projectKey={Uri.EscapeDataString(projectKey)}{(snapshotId is { } id ? $"&snapshotId={id}" : "")}");
+            // Revalidate the result already parsed in this session: 304 = byte-identical, reuse it (see LastDiscoveryCache).
+            ScenarioDiscoveryResult? cached = null;
+            if (lastDiscoveries is not null && lastDiscoveries.TryGet(key, out var etag, out var held))
+            {
+                cached = held;
+                request.Headers.TryAddWithoutValidation("If-None-Match", etag);
+            }
+            using var response = await http.SendAsync(request, ct);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotModified && cached is not null) return (cached, null);
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent) { lastDiscoveries?.Remove(key); return (null, null); }
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<ScenarioDiscoveryResult>(Json, ct);
+                if (lastDiscoveries is not null)
+                {
+                    if (result is not null && response.Headers.ETag?.Tag is { Length: > 0 } tag) lastDiscoveries.Set(key, tag, result);
+                    else lastDiscoveries.Remove(key);
+                }
+                return (result, null);
+            }
+            lastDiscoveries?.Remove(key);
             return (null, $"The last discovery could not be read (HTTP {(int)response.StatusCode}).");
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException or NotSupportedException)
