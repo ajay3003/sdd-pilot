@@ -77,7 +77,7 @@
                 <nav class="msb-queues" aria-label="Arbeidskøer" data-testid="mtd-queues">
                     @foreach (var (queue, label) in S.Queues)
                     {
-                        var count = queue is { } q ? _queueCounts.GetValueOrDefault(q) : S.Apply(_items, _filter with { Queue = null }).Shown.Count;
+                        var count = queue is { } q ? _queueCounts.GetValueOrDefault(q) : _allCount;
                         <button type="button" class="msb-queue @(_filter.Queue == queue ? "is-current" : null)" aria-pressed="@(_filter.Queue == queue ? "true" : "false")"
                                 @onclick="() => Set(_filter with { Queue = queue })" data-testid="mtd-queue" data-queue="@(queue?.ToString() ?? "All")">@label <span class="msb-queue-n">@count</span></button>
                     }
@@ -373,6 +373,7 @@
     private ScenarioWorkQueueView? _workView;
     private string? _workError;
     private Dictionary<ScenarioWorkQueue, int> _queueCounts = [];
+    private int _allCount;
     private bool CoverageKnown => _workView is { CoverageComplete: true };
     /// <summary>The scenario's saved test cases in plain words: current (draft / in progress / approved) apart from archived, superseded and excluded
     /// cases, which are never counted as current coverage. Unknown when a plan could not be read — never "none".</summary>
@@ -449,7 +450,7 @@
                 ? S.Items(candidates, view.Items.ToDictionary(w => w.CandidateId, StringComparer.Ordinal))
                 : S.Items(candidates, new Dictionary<string, S.Prepared>());
             if (_workView is null && _filter.Queue is not null) _filter = _filter with { Queue = null };
-            _queueCounts = S.QueueCounts(_items, _filter);
+            (_queueCounts, _allCount) = S.QueueCounts(_items, _filter);
             _stories = [.. candidates.Select(c => c.Story).OfType<BirkNext.TestCoverage.CoverageUserStory>().DistinctBy(s => s.Key).OrderBy(s => s.Ordinal)];
             _requirementIds = [.. candidates.SelectMany(c => c.RequirementIds).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
             _active ??= S.Apply(_items, _filter).Shown.FirstOrDefault()?.Id;
@@ -477,7 +478,7 @@
     {
         _filter = filter;
         _limit = S.PageSize;
-        _queueCounts = S.QueueCounts(_items, _filter);
+        (_queueCounts, _allCount) = S.QueueCounts(_items, _filter);
         var shown = S.Apply(_items, _filter).Shown;
         if (shown.All(i => i.Id != _active)) _active = shown.FirstOrDefault()?.Id;
     }

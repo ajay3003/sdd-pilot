@@ -230,7 +230,7 @@ public sealed class ScenarioWorkQueuePageTests : BunitContext
         var watch = System.Diagnostics.Stopwatch.StartNew();
         var items = S.Items(candidates, work);
         var shown = S.Apply(items, S.DefaultView).Shown;
-        var counts = S.QueueCounts(items, S.DefaultView);
+        var (counts, all) = S.QueueCounts(items, S.DefaultView);
         watch.Stop();
 
         shown.Should().HaveCount(667);
@@ -238,6 +238,7 @@ public sealed class ScenarioWorkQueuePageTests : BunitContext
         counts[Q.Recommended].Should().Be(667);
         counts[Q.Prepared].Should().Be(667);
         counts[Q.NeedsClarification].Should().Be(666);
+        all.Should().Be(2000);
         watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(30), "hang guard only; the measured cost is reported from the real M2LB data");
     }
 }

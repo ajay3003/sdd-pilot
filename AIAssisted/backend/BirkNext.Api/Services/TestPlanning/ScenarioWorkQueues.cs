@@ -48,7 +48,19 @@ public static partial class ScenarioWorkQueues
             };
             if (text is not null && !list.Contains(text)) list.Add(text);
         }
-        if (c.OpenQuestions.Count > 0) list.Add(c.OpenQuestions.Count == 1 ? "1 åpent spørsmål" : $"{c.OpenQuestions.Count} åpne spørsmål");
+        // The discovery's own questions, named by what they mean for a tester (measured on M2LB: 688 of 839 say no acceptance scenario describes how
+        // to test the requirement); other questions are counted and shown in full in the scenario's details.
+        var other = 0;
+        foreach (var question in c.OpenQuestions)
+        {
+            var text = question.StartsWith("No acceptance scenario describes how to exercise", StringComparison.Ordinal) ? "Ingen akseptansescenario beskriver hvordan kravet testes — steg mangler"
+                : question.StartsWith("The scenario states no action (When)", StringComparison.Ordinal) ? "Scenarioet sier ikke hva som gjøres (When) — steg mangler"
+                : question.StartsWith("Older snapshot: only parameter names are known", StringComparison.Ordinal) ? "Eldre kildeanalyse: bare parameternavn er kjent — analyser kilden på nytt"
+                : null;
+            if (text is null) other++;
+            else if (!list.Contains(text)) list.Add(text);
+        }
+        if (other > 0) list.Add(other == 1 ? "1 åpent spørsmål (se spørsmålene)" : $"{other} åpne spørsmål (se spørsmålene)");
         if (coverage is { Conflicts: > 0 } k) list.Add(k.Conflicts == 1 ? "Et testtilfelle har en uløst kildekonflikt" : $"{k.Conflicts} testtilfeller har en uløst kildekonflikt");
         return list;
     }

@@ -146,15 +146,16 @@ public static partial class ScenarioBrowserPresentation
 
     public static string QueueLabel(ScenarioWorkQueue? queue) => Queues.First(q => q.Queue == queue).Label;
 
-    /// <summary>How many scenarios each queue holds under the other filters (search, area, type, status, story, requirement, technical content).</summary>
-    public static Dictionary<ScenarioWorkQueue, int> QueueCounts(IReadOnlyList<Item> items, Filter f)
+    /// <summary>How many scenarios each queue holds under the other filters (search, area, type, status, story, requirement, technical content), and
+    /// how many those filters show in all — one pass, computed when a filter changes (never per render).</summary>
+    public static (Dictionary<ScenarioWorkQueue, int> Queues, int All) QueueCounts(IReadOnlyList<Item> items, Filter f)
     {
-        var others = f with { Queue = null };
+        var shown = Apply(items, f with { Queue = null }).Shown;
         var counts = Enum.GetValues<ScenarioWorkQueue>().ToDictionary(q => q, _ => 0);
-        foreach (var i in Apply(items, others).Shown)
+        foreach (var i in shown)
             foreach (var q in i.Work?.Queues ?? [])
                 counts[q]++;
-        return counts;
+        return (counts, shown.Count);
     }
 
     public static List<Item> Items(IReadOnlyList<DiscoveredScenario> candidates, IReadOnlyDictionary<string, Prepared> prepared) =>

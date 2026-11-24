@@ -101,7 +101,12 @@ public sealed class ScenarioWorkQueueTests : IAsyncLifetime, IDisposable
     [Fact]
     public void Open_questions_and_unclear_or_unconfirmed_sources_need_clarification()
     {
-        One(Scenario("a") with { OpenQuestions = ["Who locks the period?"] }).Clarifications.Should().Equal("1 åpent spørsmål");
+        One(Scenario("a") with { OpenQuestions = ["Who locks the period?"] }).Clarifications.Should().Equal("1 åpent spørsmål (se spørsmålene)");
+        // The discovery's recurring questions are named by what they mean for a tester (M2LB: 688 of 839 scenarios with a question).
+        One(Scenario("a") with { OpenQuestions = ["No acceptance scenario describes how to exercise this requirement: add the steps."] }).Clarifications
+            .Should().Equal("Ingen akseptansescenario beskriver hvordan kravet testes — steg mangler");
+        One(Scenario("a") with { OpenQuestions = ["The scenario states no action (When): add the steps.", "Who decides?", "And when?"] }).Clarifications
+            .Should().Equal("Scenarioet sier ikke hva som gjøres (When) — steg mangler", "2 åpne spørsmål (se spørsmålene)");
         One(Scenario("a") with { Gaps = [new EvidenceGap(EvidenceGapKind.AssociationNeedsReview, "?")] }).Clarifications.Should().Equal("Koblingen til kilden må bekreftes");
         One(Scenario("a") with { Gaps = [new EvidenceGap(EvidenceGapKind.BusinessExpectationUnclear, "?")] }).Queues.Should().Equal(Q.NeedsClarification);
     }
