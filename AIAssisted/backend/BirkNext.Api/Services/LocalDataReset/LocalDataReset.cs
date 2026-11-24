@@ -58,6 +58,8 @@ public sealed class LocalDataResetState
     }
 
     public int Epoch { get { lock (_gate) return _state.Epoch; } }
+    /// <summary>Where a reset writes the backup of what it removes on explicit request (manual test plans): beside the state file, outside the database.</summary>
+    public string BackupDirectory => Path.Combine(Path.GetDirectoryName(Path.GetFullPath(_path))!, "reset-backups");
     public DateTimeOffset? LastResetAt { get { lock (_gate) return _state.LastResetAt; } }
     /// <summary>The last reset kept system settings ("Reset project data, keep settings"): a browser tab from before it keeps its Target Environments.</summary>
     public bool LastResetKeptSettings { get { lock (_gate) return _state.LastResetKeptSettings; } }
@@ -115,6 +117,10 @@ public sealed record LocalDataResetResult
     public BirkNext.TestData.TestDataResetSummary? TestData { get; init; }
     /// <summary>Per domain outcome after the database: "Removed" or "Failed".</summary>
     public List<BirkNext.Maintenance.DataResetDomainResult> Domains { get; init; } = [];
+    public int TestPlansPreserved { get; init; }
+    public int TestPlansRemoved { get; init; }
+    /// <summary>File name of the backup written before manual test plans were removed.</summary>
+    public string? TestPlanBackup { get; init; }
 }
 
 /// <summary>
@@ -182,6 +188,25 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Remembered \"same repository\" decisions; Git Sources and their cloned copies",
     ];
 
+    /// <summary>
+    /// Manual test plans and everything that belongs to them (2026-11-24): user-authored, reviewed work that is not derived from any import, so
+    /// no reset scope removes it by default. Only "Reset everything" with an explicit opt-in and the reviewed count removes these tables, after
+    /// writing a backup. None of them has a foreign key to a table the reset empties (AdminService refuses the reset otherwise).
+    /// </summary>
+    public static readonly IReadOnlyList<Type> TestPlanEntityTypes =
+    [
+        typeof(BirkNext.Api.Models.TestPlanDraftRecord), typeof(BirkNext.Api.Models.TestPlanDraftRevisionRecord), typeof(BirkNext.Api.Models.TestPlanSnapshotRecord),
+        typeof(BirkNext.Api.Models.ManualTestRunRecord), typeof(BirkNext.Api.Models.ManualRunAttachmentRecord),
+    ];
+
+    /// <summary>The preserved line for manual test plans.</summary>
+    public const string TestPlansKept =
+        "Manual test plans (Manuell testing) with their revisions, snapshots, design decisions and manual test runs: kept by every reset unless Reset everything is run with «Also remove manual test plans»";
+
+    /// <summary>The removed line when manual test plans were explicitly included.</summary>
+    public const string TestPlansRemovedLine =
+        "Manual test plans with their revisions, snapshots, design decisions and manual test runs (a backup was written first to App_Data/reset-backups)";
+
     /// <summary>Why shared test areas survive an ordinary reset (listed as preserved; removed only by "Reset everything").</summary>
     public const string SharedTestAreasKept =
         "Shared test areas (scopes) with their revisions, approvals and review history: they hold reviewed test boundaries, so only Reset everything removes them";
@@ -197,6 +222,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "The highest synthetic CDC key per environment and the highest reserved synthetic identity per scope (so test keys are never reused)",
         "Protected Test Data defaults (skolenaervaer-reporter-default, skolenaervaer-child-default) with their current, possibly edited, values; Test Data supplied by backend configuration",
         SharedTestAreasKept,
+        TestPlansKept,
     ];
 
     public Task<LocalDataResetResult> ResetAsync(CancellationToken ct = default) => ResetAsync(includeProtected: false, ct);
@@ -206,8 +232,15 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
     /// <param name="includeProtected">True only for the explicitly confirmed "Reset everything" scope: protected Test Data defaults return to their
     /// product values and canonical fixtures are deleted. Otherwise protected Test Data survives with its current values.</param>
     /// <param name="keepSettings">"Reset project data, keep settings": the <see cref="SettingsEntityTypes"/> tables are not emptied.</param>
-    public async Task<LocalDataResetResult> ResetAsync(bool includeProtected, bool keepSettings, CancellationToken ct = default)
+    public Task<LocalDataResetResult> ResetAsync(bool includeProtected, bool keepSettings, CancellationToken ct = default) =>
+        ResetAsync(includeProtected, keepSettings, removeTestPlans: false, ct);
+
+    /// <param name="removeTestPlans">Also empty the <see cref="TestPlanEntityTypes"/> tables. Refused unless <paramref name="includeProtected"/>;
+    /// a backup of every row (including logically deleted plans) is written first, and nothing is deleted when it cannot be written.</param>
+    public async Task<LocalDataResetResult> ResetAsync(bool includeProtected, bool keepSettings, bool removeTestPlans, CancellationToken ct = default)
     {
+        if (removeTestPlans && !includeProtected)
+            return new() { Status = "Refused", Message = "Manual test plans can only be removed by Reset everything. Nothing was deleted.", PreservedDomains = [.. Preserved] };
         if (!await Gate.WaitAsync(0, ct)) return new() { Status = "Blocked", Message = "A local data reset is already in progress." };
         try
         {
@@ -218,7 +251,19 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
             var testDataBefore = services.GetService<TestDataLifecycleService>() is { } preview ? await TryAsync(() => preview.PreviewResetAsync(ct)) : null;
             var floors = await CdcFloorsAsync(ct);
             var identityFloors = await SyntheticIdentityFloorsAsync(ct);
-            var (success, message, deleted, at) = keepSettings ? await admin.ResetLocalDatabaseAsync(SettingsEntityTypes) : await admin.ResetLocalDatabaseAsync();
+            var testPlans = await db.TestPlanDrafts.AsNoTracking().CountAsync(ct);
+            string? backup = null;
+            if (removeTestPlans)
+            {
+                try { backup = await WriteTestPlanBackupAsync(ct); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or JsonException)
+                {
+                    logger.LogError(ex, "Local data reset refused: the manual test plan backup could not be written");
+                    return new() { Status = "Refused", Message = $"Reset refused: the backup of {testPlans} manual test plan(s) could not be written ({ex.GetType().Name}). Nothing was deleted.", PreservedDomains = [.. Preserved] };
+                }
+            }
+            IReadOnlyCollection<Type> keep = [.. (keepSettings ? SettingsEntityTypes : []), .. (removeTestPlans ? [] : TestPlanEntityTypes)];
+            var (success, message, deleted, at) = await admin.ResetLocalDatabaseAsync(keep);
             if (!success)
                 return new() { Status = message.StartsWith("Reset failed", StringComparison.Ordinal) ? "Failed" : message.StartsWith("Reset blocked", StringComparison.Ordinal) ? "Blocked" : "Refused", Message = message, PreservedDomains = [.. Preserved] };
 
@@ -296,15 +341,47 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
                 Message = (warnings.Count == 0
                     ? $"Local data reset completed. {deleted} database records and all project, workspace, review and evidence state were removed. Installation settings and provider capabilities were preserved."
                     : $"Local data reset completed with {warnings.Count} warning(s). The database was cleared ({deleted} records).")
-                    + (testData is { } td ? $" Test Data: {td.ProtectedDefaultsPreserved} protected default(s) preserved with their current values, {td.AssetsRemoved} asset(s) removed ({td.GeneratedFixturesRemoved} generated fixture(s))." : ""),
+                    + (testData is { } td ? $" Test Data: {td.ProtectedDefaultsPreserved} protected default(s) preserved with their current values, {td.AssetsRemoved} asset(s) removed ({td.GeneratedFixturesRemoved} generated fixture(s))." : "")
+                    + (removeTestPlans ? $" Manual test plans: {testPlans} removed (backup {backup})." : $" Manual test plans: {testPlans} kept."),
+                TestPlansPreserved = removeTestPlans ? 0 : testPlans, TestPlansRemoved = removeTestPlans ? testPlans : 0, TestPlanBackup = backup,
                 ResetAt = at, ResetEpoch = epoch, DatabaseCleared = true, DeletedRows = deleted, BackendStateCleared = warnings.Count == 0,
-                ClearedDomains = [.. Cleared, .. (includeProtected ? ClearedOnlyWhenResettingEverything : [])],
-                PreservedDomains = [.. (includeProtected ? Preserved.Where(p => !p.StartsWith("Protected Test Data", StringComparison.Ordinal) && p != SharedTestAreasKept) : Preserved),
+                ClearedDomains = [.. Cleared, .. (includeProtected ? ClearedOnlyWhenResettingEverything : []), .. (removeTestPlans ? new[] { TestPlansRemovedLine } : [])],
+                PreservedDomains = [.. (includeProtected ? Preserved.Where(p => !p.StartsWith("Protected Test Data", StringComparison.Ordinal) && p != SharedTestAreasKept) : Preserved)
+                        .Where(p => !removeTestPlans || p != TestPlansKept),
                     .. (keepSettings ? SettingsKept : [])],
                 Warnings = warnings, TestData = testData, Domains = domains,
             };
         }
         finally { Gate.Release(); }
+    }
+
+    /// <summary>Manual test plans that exist now (active and archived; logically deleted ones are hidden by the query filter).</summary>
+    public Task<int> CountTestPlansAsync(CancellationToken ct) => db.TestPlanDrafts.AsNoTracking().CountAsync(ct);
+
+    /// <summary>Writes every row of the <see cref="TestPlanEntityTypes"/> tables (logically deleted plans included) to one JSON file in
+    /// <see cref="LocalDataResetState.BackupDirectory"/>, flushed to disk before anything is deleted. Returns the file name.</summary>
+    private async Task<string> WriteTestPlanBackupAsync(CancellationToken ct)
+    {
+        var backup = new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["createdAtUtc"] = DateTimeOffset.UtcNow,
+            ["resetEpochBefore"] = state.Epoch,
+            ["test_plan_drafts"] = await db.TestPlanDrafts.IgnoreQueryFilters().AsNoTracking().ToListAsync(ct),
+            ["test_plan_draft_revisions"] = await db.TestPlanDraftRevisions.AsNoTracking().ToListAsync(ct),
+            ["test_plan_snapshots"] = await db.TestPlanSnapshots.AsNoTracking().ToListAsync(ct),
+            ["manual_test_runs"] = await db.ManualTestRuns.AsNoTracking().ToListAsync(ct),
+            ["manual_run_attachments"] = await db.ManualRunAttachments.AsNoTracking().ToListAsync(ct),
+        };
+        Directory.CreateDirectory(state.BackupDirectory);
+        var name = $"test-plans-before-reset-{DateTimeOffset.UtcNow:yyyyMMdd'T'HHmmss'Z'}-{Guid.NewGuid():N}.json";
+        var path = Path.Combine(state.BackupDirectory, name);
+        await using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.WriteThrough))
+        {
+            await JsonSerializer.SerializeAsync(stream, backup, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }, ct);
+            await stream.FlushAsync(ct);
+        }
+        logger.LogWarning("Local data reset: manual test plans backed up to {Backup}", path);
+        return name;
     }
 
     private async Task<Dictionary<string, int>> CdcFloorsAsync(CancellationToken ct)

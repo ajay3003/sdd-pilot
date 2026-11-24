@@ -251,6 +251,14 @@ public interface IArtifactExplorerContext
 
     Task<ArtifactExplorerState> GetStateAsync(WorkspaceArtifactType role, CancellationToken cancellationToken = default);
 
+    /// <summary>The state of several roles, resolved from one load of the scope (each <see cref="GetStateAsync"/> loads it again).</summary>
+    async Task<IReadOnlyList<ArtifactExplorerState>> GetStatesAsync(IReadOnlyList<WorkspaceArtifactType> roles, CancellationToken cancellationToken = default)
+    {
+        var states = new List<ArtifactExplorerState>(roles.Count);
+        foreach (var role in roles) states.Add(await GetStateAsync(role, cancellationToken));
+        return states;
+    }
+
     /// <summary>
     /// Chooses which artifact the explorers show for the role in <paramref name="module"/> (default: the focused module, or project-level).
     /// Not authority: approval and baselines do not change. A selection for one module never changes another module's selection.
@@ -592,6 +600,15 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
 
     public Task<ArtifactExplorerState> GetPackStateAsync(WorkspaceArtifactType role, string pack, CancellationToken cancellationToken = default) =>
         StateAsync(role, pack, cancellationToken);
+
+    /// <summary>Every role from one scope load: the review context reads all workflow roles on each rebuild (~1 s when each loaded the scope).</summary>
+    public async Task<IReadOnlyList<ArtifactExplorerState>> GetStatesAsync(IReadOnlyList<WorkspaceArtifactType> roles, CancellationToken cancellationToken = default)
+    {
+        var model = await LoadScopeAsync(cancellationToken);
+        var states = new List<ArtifactExplorerState>(roles.Count);
+        foreach (var role in roles) states.Add(await StateAsync(role, null, cancellationToken, loaded: model));
+        return states;
+    }
 
     public async Task<ArtifactExplorerState?> GetSharedBaseAsync(WorkspaceArtifactType role, CancellationToken cancellationToken = default)
     {

@@ -145,6 +145,102 @@ public sealed class StartupPerformanceTests
         provider.InputSignature(await Roles(explorers)).Should().NotBe(before, "a body that is not loaded is not the same input");
     }
 
+    // ---- Specification switch: only the changed model is parsed (2026-11-24: a switch held the browser for one ~14 s task) ----------------
+
+    private const string Constitution = "# Intake Constitution\n\n## Core Principles\n\n### I. Test-First\n\nEvery feature MUST have tests.\n\n### II. Simplicity\n\nCode SHOULD stay small.\n";
+    private const string Tasks = "# Tasks: Intake\n\n## Phase 1: Setup\n\n- [ ] T001 [FR-001] Create intake\n";
+
+    [Fact]
+    public async Task A_specification_change_parses_only_the_specification_and_reuses_the_other_models()
+    {
+        var (_, explorers, provider) = Workspace();
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Constitution, Constitution, "constitution.md", "File"));
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Tasks, Tasks, "tasks.md", "File"));
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Specification, SpecOf("FR-001"), "spec.md", "File"));
+        await provider.RebuildAsync();
+        var first = provider.GetCurrent()!;
+
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Specification, SpecOf("FR-002"), "spec.md", "File"));
+        await provider.RebuildAsync();
+
+        var second = provider.GetCurrent()!;
+        provider.LastRebuildWork.Should().Be((1, 4));
+        second.Constitution.Should().BeSameAs(first.Constitution);
+        second.Tasks.Should().BeSameAs(first.Tasks);
+        second.GetRequirements().Select(r => r.Id).Should().Equal("FR-002");
+        second.Constitution.Rules.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task Switching_back_to_a_recent_specification_parses_nothing()
+    {
+        var (_, explorers, provider) = Workspace();
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Constitution, Constitution, "constitution.md", "File"));
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Specification, SpecOf("FR-001"), "spec.md", "File"));
+        await provider.RebuildAsync();
+        var first = provider.GetCurrent()!.Specification;
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Specification, SpecOf("FR-002"), "spec.md", "File"));
+        await provider.RebuildAsync();
+
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Specification, SpecOf("FR-001"), "spec.md", "File"));
+        await provider.RebuildAsync();
+
+        provider.LastRebuildWork.Parsed.Should().Be(0);
+        provider.GetCurrent()!.Specification.Should().BeSameAs(first);
+        provider.GetCurrent()!.GetRequirements().Select(r => r.Id).Should().Equal("FR-001");
+    }
+
+    [Fact]
+    public async Task Reused_models_give_the_same_context_as_a_fresh_build()
+    {
+        var (_, explorers, provider) = Workspace();
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Constitution, Constitution, "constitution.md", "File"));
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Tasks, Tasks, "tasks.md", "File"));
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Specification, SpecOf("FR-002"), "spec.md", "File"));
+        await provider.RebuildAsync();
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Specification, SpecOf("FR-001"), "spec.md", "File"));
+        await provider.RebuildAsync();
+        var memoized = provider.GetCurrent()!;
+
+        var (_, freshExplorers, fresh) = Workspace();
+        freshExplorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Constitution, Constitution, "constitution.md", "File"));
+        freshExplorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Tasks, Tasks, "tasks.md", "File"));
+        freshExplorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Specification, SpecOf("FR-001"), "spec.md", "File"));
+        await fresh.RebuildAsync();
+        var built = fresh.GetCurrent()!;
+
+        memoized.GetRequirements().Select(r => r.Id).Should().Equal(built.GetRequirements().Select(r => r.Id));
+        memoized.GetTasks().Select(t => t.Id).Should().Equal(built.GetTasks().Select(t => t.Id));
+        memoized.Constitution.Rules.Count.Should().Be(built.Constitution.Rules.Count);
+        memoized.SpecToTasks.Count.Should().Be(built.SpecToTasks.Count);
+        memoized.Coverage.Should().BeEquivalentTo(built.Coverage);
+    }
+
+    [Fact]
+    public async Task A_changed_tasks_document_reparses_tasks_only()
+    {
+        var (_, explorers, provider) = Workspace();
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Constitution, Constitution, "constitution.md", "File"));
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Tasks, Tasks, "tasks.md", "File"));
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Specification, SpecOf("FR-001"), "spec.md", "File"));
+        await provider.RebuildAsync();
+        var first = provider.GetCurrent()!;
+
+        explorers.Import(new ArtifactImportRequest(WorkspaceArtifactType.Tasks, Tasks + "- [ ] T002 [FR-001] Validate intake\n", "tasks.md", "File"));
+        await provider.RebuildAsync();
+
+        provider.LastRebuildWork.Should().Be((1, 4));
+        provider.GetCurrent()!.GetTasks().Should().HaveCount(2);
+        provider.GetCurrent()!.Specification.Should().BeSameAs(first.Specification);
+    }
+
+    [Fact]
+    public void The_plan_key_covers_only_the_supporting_plan_documents_and_is_empty_without_an_inventory()
+    {
+        ReviewContextProvider.PlanInventoryKey(null).Should().BeEmpty();
+        ReviewContextProvider.PlanInventoryKey(ArtifactPackInventory.Empty("scope")).Should().BeEmpty();
+    }
+
     private static async Task<IReadOnlyList<ArtifactExplorerState>> Roles(ArtifactExplorerContext explorers)
     {
         var roles = new List<ArtifactExplorerState>();

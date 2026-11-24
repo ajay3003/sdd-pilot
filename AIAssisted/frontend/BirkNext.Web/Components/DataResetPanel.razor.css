@@ -34,6 +34,9 @@
 .drp-counts, .drp-note { margin: 0; font-size: .78rem; color: var(--clr-text-body); }
 .drp-ack { display: flex; gap: .5rem; align-items: flex-start; font-size: .85rem; color: var(--clr-text-body); }
 .drp-ack input { margin-top: .2rem; }
+.drp-plans { margin: .25rem 0 0; font-size: .85rem; font-weight: 600; color: var(--clr-text-body); }
+.drp-plans[data-removed="true"] { color: var(--clr-danger, #b42318); }
+.drp-ack-plans { margin-top: .25rem; }
 .drp-modal .modal-confirm-input { margin-bottom: 0; }
 .drp-modal .modal-body-text { margin: 0; display: block; }
 .drp-modal .modal-actions { flex-wrap: wrap; }

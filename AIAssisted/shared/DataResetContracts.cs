@@ -31,9 +31,18 @@ public sealed record DataResetPlan
     public string? ConfirmationPhrase { get; init; }
     public bool Allowed { get; init; } = true;
     public string? NotAllowedReason { get; init; }
+    /// <summary>Manual test plans that exist now (active and archived). Every scope keeps them unless the request explicitly removes them.</summary>
+    public int TestPlanCount { get; init; }
+    /// <summary>True only for <see cref="DataResetMode.FullIncludingProtected"/>: the one scope that may also remove manual test plans, and only
+    /// when the request opts in with <see cref="DataResetRequest.RemoveTestPlans"/> and the count the tester reviewed.</summary>
+    public bool CanRemoveTestPlans { get; init; }
 }
 
-public sealed record DataResetRequest(DataResetMode Mode, string? Confirmation);
+/// <param name="RemoveTestPlans">Also remove manual test plans (with revisions, snapshots and manual runs). Off by default; allowed only with
+/// <see cref="DataResetMode.FullIncludingProtected"/>. A backup file is written first, and the reset is refused when it cannot be.</param>
+/// <param name="ExpectedTestPlans">The <see cref="DataResetPlan.TestPlanCount"/> the tester reviewed: the removal is refused when plans were
+/// added or removed since, so a stale dialog can never delete plans it did not show.</param>
+public sealed record DataResetRequest(DataResetMode Mode, string? Confirmation, bool RemoveTestPlans = false, int? ExpectedTestPlans = null);
 
 /// <summary>One domain's outcome: removed, failed (with a safe reason), or skipped.</summary>
 public sealed record DataResetDomainResult(string Domain, string Status, string? Detail = null);
@@ -53,4 +62,10 @@ public sealed record DataResetResult
     public List<string> Warnings { get; init; } = [];
     /// <summary>"Reset everything": built-in protected Test Data defaults removed (restorable in Test Data → Restore built-in defaults).</summary>
     public List<string> ProtectedDefaultsRemoved { get; init; } = [];
+    /// <summary>Manual test plans kept by this reset (0 when they were removed or none existed).</summary>
+    public int TestPlansPreserved { get; init; }
+    /// <summary>Manual test plans removed (only with an explicit <see cref="DataResetRequest.RemoveTestPlans"/>).</summary>
+    public int TestPlansRemoved { get; init; }
+    /// <summary>The backup written before test plans were removed (file name only; it lives in the backend's App_Data/reset-backups).</summary>
+    public string? TestPlanBackup { get; init; }
 }

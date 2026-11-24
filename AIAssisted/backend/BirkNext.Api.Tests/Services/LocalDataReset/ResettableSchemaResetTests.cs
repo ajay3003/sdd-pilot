@@ -37,6 +37,7 @@ public sealed class ResettableSchemaResetTests : IDisposable
     {
         public Task<(bool Success, string Message, int DeletedRows, DateTimeOffset? ResetAtUtc)> ResetLocalDatabaseAsync() =>
             Task.FromResult((success, message, success ? 1 : 0, success ? DateTimeOffset.UtcNow : (DateTimeOffset?)null));
+        public Task<(bool Success, string Message, int DeletedRows, DateTimeOffset? ResetAtUtc)> ResetLocalDatabaseAsync(IReadOnlyCollection<Type> keepEntityTypes) => ResetLocalDatabaseAsync();
     }
 
     private (LocalDataResetCoordinator Coordinator, ServiceProvider Services) Build(bool databaseResetSucceeds)

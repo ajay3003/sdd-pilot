@@ -154,11 +154,12 @@ public static class ArtifactPackInventoryBuilder
 
         // Explicit references among applicable documents: who references whom (strong evidence, wins over location heuristics).
         var paths = applicable.Select(c => PathOf(c.Artifact)).ToList();
+        var pathsKey = string.Join('\n', paths);
         var referencedBy = new Dictionary<string, List<(string From, WorkspaceArtifactType? Role)>>(StringComparer.Ordinal);
         foreach (var source in applicable.Where(c => c.Artifact.Feature == pack || primarySet.Contains(c.Artifact.Id)))
         {
             if (source.Text() is not { Length: > 0 } text) continue;
-            foreach (var target in SupportingDocuments.References(PathOf(source.Artifact), text, paths))
+            foreach (var target in ReferencesOf(PathOf(source.Artifact), text, paths, pathsKey))
             {
                 if (!referencedBy.TryGetValue(target, out var list)) referencedBy[target] = list = [];
                 list.Add((PathOf(source.Artifact), primarySet.Contains(source.Artifact.Id) ? source.Artifact.Role : null));
@@ -256,5 +257,25 @@ public static class ArtifactPackInventoryBuilder
         _ => ArtifactExplorerRoles.Label(a.Role),
     };
 
-    private static string? FingerprintOf(PackInventoryCandidate c) => c.Text() is { Length: > 0 } text ? ArtifactFingerprint.Compute(text) : null;
+    private static string? FingerprintOf(PackInventoryCandidate c) =>
+        c.Text() is { Length: > 0 } text ? Fingerprints.GetValue(text, static s => ArtifactFingerprint.Compute(s)) : null;
+
+    // Exact caches keyed by the document text's identity (strings are immutable; the workspace hands out the same instance until the document
+    // changes). A specification switch rebuilds the inventory over the same ~50 unchanged documents: their cross-references (~1.8 s) and
+    // fingerprints (~0.6 s) were recomputed every time on the browser's only thread. Entries die with their text.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<string, string> Fingerprints = new();
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<string, Dictionary<string, IReadOnlyList<string>>> References = new();
+
+    /// <summary><see cref="SupportingDocuments.References"/>, remembered per text instance, source path and candidate path list.</summary>
+    internal static IReadOnlyList<string> ReferencesOf(string fromPath, string text, IReadOnlyList<string> paths, string pathsKey)
+    {
+        var perText = References.GetValue(text, static _ => new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal));
+        var key = fromPath + "\u0001" + pathsKey;
+        lock (perText)
+        {
+            if (perText.TryGetValue(key, out var hit)) return hit;
+            if (perText.Count > 16) perText.Clear(); // a text is read against a handful of path lists; never let one grow without bound
+            return perText[key] = SupportingDocuments.References(fromPath, text, paths);
+        }
+    }
 }

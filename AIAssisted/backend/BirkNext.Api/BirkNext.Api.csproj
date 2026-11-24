@@ -6,6 +6,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- Framework-dependent (developer) builds run as `dotnet BirkNext.Api.dll` through the signed dotnet host. A freshly built, unsigned
+         BirkNext.Api.exe apphost has no prevalence, so the Defender ASR rule "Block executable files unless they meet a prevalence, age,
+         or trusted list criterion" (01443614-CD74-433A-B99E-2ECDC07BFC25) denies it after every rebuild ("Ingen tilgang"/access denied).
+         The self-contained Tester Package publish sets a RuntimeIdentifier and keeps its BirkNext.Api.exe. -->
+    <UseAppHost Condition="'$(RuntimeIdentifier)' == ''">false</UseAppHost>
   </PropertyGroup>
 
   <ItemGroup>

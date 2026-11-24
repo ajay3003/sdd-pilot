@@ -35,6 +35,20 @@ public sealed class WorkspaceDocumentBodyUploader(HttpClient http)
         LastUploadedCharacters = 0;
         var bodies = new Dictionary<string, string>(StringComparer.Ordinal);
         var revisions = new List<SddArtifactRevision>(lifecycle.Revisions.Count);
+        // The first save after a page load hashes every body (~5 MB for an M2LB import, ~4.7 s in the browser): it gives the browser back its
+        // thread every ~40 ms of hashing, so the page keeps painting and responding instead of freezing (the stored fingerprint is not trusted
+        // as the address — a body the backend already holds would never be re-verified). Later saves hit the address cache.
+        // Warm-up pass over a copy (the live list may change while the browser has the thread); the pass below then reads one consistent
+        // lifecycle synchronously, with every address already known except bodies added meanwhile.
+        var slice = System.Diagnostics.Stopwatch.StartNew();
+        foreach (var revision in lifecycle.Revisions.ToList())
+        {
+            if (string.IsNullOrEmpty(revision.Content)) continue;
+            var key = $"{revision.RevisionId:N}:{revision.Fingerprint}:{revision.Content.Length}";
+            if (_addresses.ContainsKey(key)) continue;
+            _addresses[key] = Hash(revision.Content);
+            if (slice.ElapsedMilliseconds > 40) { await Task.Delay(1, ct); slice.Restart(); }
+        }
         foreach (var revision in lifecycle.Revisions)
         {
             if (string.IsNullOrEmpty(revision.Content)) { revisions.Add(revision); continue; } // body not loaded: its address (or stored body) is used

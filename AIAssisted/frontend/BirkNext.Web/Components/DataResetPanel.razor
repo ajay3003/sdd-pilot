@@ -98,6 +98,26 @@
                             }
                             @foreach (var note in plan.Notes) { <p class="drp-note" data-testid="reset-note">@note</p> }
                             @if (!plan.Allowed) { <p class="drp-error" role="alert" data-testid="reset-plan-refused">@plan.NotAllowedReason</p> }
+                            @if (mode != DataResetMode.DeliveryManagement)
+                            {
+                                <p class="drp-plans" data-testid="reset-test-plans" data-removed="@(RemovesPlans ? "true" : "false")">
+                                    @if (RemovesPlans)
+                                    {
+                                        <span>⛔ @PlanCount(plan.TestPlanCount) will be removed. A backup is written first.</span>
+                                    }
+                                    else
+                                    {
+                                        <span>✓ @PlanCount(plan.TestPlanCount) will be kept.</span>
+                                    }
+                                </p>
+                                @if (plan.CanRemoveTestPlans && plan.TestPlanCount > 0)
+                                {
+                                    <label class="drp-ack drp-ack-plans">
+                                        <input type="checkbox" data-testid="reset-remove-plans" checked="@_removePlans" @onchange="e => _removePlans = e.Value is true" disabled="@_busy" />
+                                        Also remove manual test plans (@plan.TestPlanCount), with their revisions, snapshots and manual test runs.
+                                    </label>
+                                }
+                            }
                         </div>
 
                         @if (plan.ConfirmationPhrase is { } phrase)
@@ -140,13 +160,18 @@
         new(DataResetMode.DeliveryManagement, "Reset Delivery Management only", "Delivery Overview and Delivery Reports data, including saved report history.", "moderate"),
     ];
 
-    private bool _open, _busy, _loadingPlan, _acknowledged;
+    private bool _open, _busy, _loadingPlan, _acknowledged, _removePlans;
     private DataResetMode? _mode;
     private DataResetPlan? _plan;
     private string _typed = "";
     private DataResetResult? _result, _lastDelivery;
 
     private static string SeverityOf(DataResetMode mode) => Scopes.Single(s => s.Mode == mode).Severity;
+
+    /// <summary>Manual test plans are removed only by an explicit opt-in on the one scope that allows it.</summary>
+    private bool RemovesPlans => _removePlans && _plan is { CanRemoveTestPlans: true, TestPlanCount: > 0 };
+
+    private static string PlanCount(int n) => n == 1 ? "1 manual test plan" : $"{n} manual test plans";
 
     private static string ModeTitle(DataResetMode mode) => Scopes.FirstOrDefault(s => s.Mode == mode)?.Title ?? mode.ToString();
 
@@ -184,7 +209,7 @@
 
     private void Open()
     {
-        (_open, _mode, _plan, _typed, _acknowledged, _result, _lastDelivery) = (true, null, null, "", false, null, null);
+        (_open, _mode, _plan, _typed, _acknowledged, _result, _lastDelivery, _removePlans) = (true, null, null, "", false, null, null, false);
     }
 
     private void Close()
@@ -195,7 +220,7 @@
 
     private async Task SelectAsync(DataResetMode mode)
     {
-        (_mode, _plan, _typed, _acknowledged, _loadingPlan) = (mode, null, "", false, true);
+        (_mode, _plan, _typed, _acknowledged, _loadingPlan, _removePlans) = (mode, null, "", false, true, false);
         try
         {
             var plan = await AdminApi.GetDataResetPlanAsync(mode);
@@ -213,7 +238,9 @@
         if (full && runtime is not null) await runtime.PauseAutoSaveForResetAsync();
         try
         {
-            var result = await AdminApi.ResetDataAsync(mode, plan.ConfirmationPhrase ?? "CONFIRM");
+            var result = RemovesPlans
+                ? await AdminApi.ResetDataAsync(new DataResetRequest(mode, plan.ConfirmationPhrase ?? "CONFIRM", RemoveTestPlans: true, ExpectedTestPlans: plan.TestPlanCount))
+                : await AdminApi.ResetDataAsync(mode, plan.ConfirmationPhrase ?? "CONFIRM");
             if (full && result.Status is "Completed" or "PartiallyCompleted")
             {
                 // The backend committed the reset: adopt its epoch first, so nothing this tab still holds can be saved again, then clear every

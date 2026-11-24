@@ -88,6 +88,97 @@ public sealed class DataResetPanelTests : BunitContext
         _api.Verify(a => a.ResetDataAsync(DataResetMode.FullIncludingProtected, "RESET EVERYTHING"), Times.Once);
     }
 
+    // ---- Manual test plans are kept unless explicitly removed (2026-11-24: a reset had removed a tester's plans) ------------------------
+
+    private void WithPlans(int count)
+    {
+        foreach (var mode in Enum.GetValues<DataResetMode>())
+            _api.Setup(a => a.GetDataResetPlanAsync(mode)).ReturnsAsync(Plan(mode) with
+            {
+                TestPlanCount = mode == DataResetMode.DeliveryManagement ? 0 : count, CanRemoveTestPlans = mode == DataResetMode.FullIncludingProtected,
+            });
+    }
+
+    [Theory]
+    [InlineData(DataResetMode.FullIncludingProtected, true)]
+    [InlineData(DataResetMode.FullPreserveProtected, false)]
+    [InlineData(DataResetMode.ProjectDataKeepSettings, false)]
+    public void Every_full_scope_says_the_plans_are_kept_and_only_reset_everything_offers_to_remove_them(DataResetMode mode, bool offered)
+    {
+        WithPlans(3);
+        var cut = RenderPanel();
+        cut.Find("[data-testid=reset-open]").Click();
+        cut.Find($"[data-testid=reset-scope-{mode}] input").Change(true);
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-test-plans]").TextContent.Should().Contain("3 manual test plans will be kept"));
+        cut.FindAll("[data-testid=reset-remove-plans]").Should().HaveCount(offered ? 1 : 0);
+        if (offered) cut.Find("[data-testid=reset-remove-plans]").HasAttribute("checked").Should().BeFalse("removing plans is never the default");
+    }
+
+    [Fact]
+    public void Delivery_only_does_not_mention_removing_plans()
+    {
+        WithPlans(3);
+        var cut = RenderPanel();
+        cut.Find("[data-testid=reset-open]").Click();
+        cut.Find("[data-testid=reset-scope-DeliveryManagement] input").Change(true);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-plan]"));
+        cut.FindAll("[data-testid=reset-test-plans]").Should().BeEmpty();
+        cut.FindAll("[data-testid=reset-remove-plans]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Reset_everything_without_the_opt_in_sends_the_plain_request()
+    {
+        WithPlans(2);
+        _api.Setup(a => a.ResetDataAsync(DataResetMode.FullIncludingProtected, "RESET EVERYTHING"))
+            .ReturnsAsync(new DataResetResult { Mode = DataResetMode.FullIncludingProtected, Status = "Completed", ResetEpoch = 4, TestPlansPreserved = 2 });
+        var cut = RenderPanel();
+        cut.Find("[data-testid=reset-open]").Click();
+        cut.Find("[data-testid=reset-scope-FullIncludingProtected] input").Change(true);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-confirm-text]").Input("RESET EVERYTHING"));
+        cut.Find("[data-testid=reset-run]").Click();
+
+        cut.WaitForAssertion(() => _api.Verify(a => a.ResetDataAsync(DataResetMode.FullIncludingProtected, "RESET EVERYTHING"), Times.Once));
+        _api.Verify(a => a.ResetDataAsync(It.IsAny<DataResetRequest>()), Times.Never);
+    }
+
+    [Fact]
+    public void Ticking_remove_plans_sends_the_reviewed_count_with_the_opt_in()
+    {
+        WithPlans(2);
+        DataResetRequest? sent = null;
+        _api.Setup(a => a.ResetDataAsync(It.IsAny<DataResetRequest>())).Callback<DataResetRequest>(r => sent = r)
+            .ReturnsAsync(new DataResetResult { Mode = DataResetMode.FullIncludingProtected, Status = "Completed", ResetEpoch = 4, TestPlansRemoved = 2 });
+        var cut = RenderPanel();
+        cut.Find("[data-testid=reset-open]").Click();
+        cut.Find("[data-testid=reset-scope-FullIncludingProtected] input").Change(true);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-remove-plans]").Change(true));
+
+        cut.Find("[data-testid=reset-test-plans]").TextContent.Should().Contain("2 manual test plans will be removed").And.Contain("backup");
+        cut.Find("[data-testid=reset-test-plans]").GetAttribute("data-removed").Should().Be("true");
+        cut.Find("[data-testid=reset-confirm-text]").Input("RESET EVERYTHING");
+        cut.Find("[data-testid=reset-run]").Click();
+
+        cut.WaitForAssertion(() => sent.Should().Be(new DataResetRequest(DataResetMode.FullIncludingProtected, "RESET EVERYTHING", RemoveTestPlans: true, ExpectedTestPlans: 2)));
+        _api.Verify(a => a.ResetDataAsync(DataResetMode.FullIncludingProtected, "RESET EVERYTHING"), Times.Never);
+    }
+
+    [Fact]
+    public void Changing_scope_clears_the_remove_plans_choice()
+    {
+        WithPlans(2);
+        var cut = RenderPanel();
+        cut.Find("[data-testid=reset-open]").Click();
+        cut.Find("[data-testid=reset-scope-FullIncludingProtected] input").Change(true);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-remove-plans]").Change(true));
+        cut.Find("[data-testid=reset-scope-FullPreserveProtected] input").Change(true);
+        cut.Find("[data-testid=reset-scope-FullIncludingProtected] input").Change(true);
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-remove-plans]").HasAttribute("checked").Should().BeFalse());
+        cut.Find("[data-testid=reset-test-plans]").TextContent.Should().Contain("will be kept");
+    }
+
     [Fact]
     public void Delivery_only_is_acknowledged_shows_per_domain_results_and_clears_only_delivery_state()
     {

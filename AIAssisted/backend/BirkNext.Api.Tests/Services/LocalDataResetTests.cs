@@ -46,6 +46,14 @@ public sealed class LocalDataResetTests : IDisposable
             if (hold is not null) await hold.Task;
             return (success, message, success ? 42 : 0, success ? DateTimeOffset.UtcNow : null);
         }
+
+        /// <summary>The tables the coordinator asked to keep (manual test plans, and settings for "keep settings").</summary>
+        public IReadOnlyCollection<Type> Kept = [];
+        public Task<(bool Success, string Message, int DeletedRows, DateTimeOffset? ResetAtUtc)> ResetLocalDatabaseAsync(IReadOnlyCollection<Type> keepEntityTypes)
+        {
+            Kept = keepEntityTypes;
+            return ResetLocalDatabaseAsync();
+        }
     }
 
     private string StatePath => Path.Combine(_dir, "local-data-reset.json");

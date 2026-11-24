@@ -116,10 +116,15 @@ public class AdminApiService
     }
 
     /// <summary>Runs one confirmed reset scope. Refused (400), blocked (409) and failed (500) resets come back with their status, never as success.</summary>
-    public virtual async Task<BirkNext.Maintenance.DataResetResult> ResetDataAsync(BirkNext.Maintenance.DataResetMode mode, string confirmation)
+    public virtual Task<BirkNext.Maintenance.DataResetResult> ResetDataAsync(BirkNext.Maintenance.DataResetMode mode, string confirmation) =>
+        ResetDataAsync(new BirkNext.Maintenance.DataResetRequest(mode, confirmation));
+
+    /// <summary>The same, with the full request (Reset everything that also removes manual test plans carries the reviewed plan count).</summary>
+    public virtual async Task<BirkNext.Maintenance.DataResetResult> ResetDataAsync(BirkNext.Maintenance.DataResetRequest request)
     {
+        var mode = request.Mode;
         HttpResponseMessage response;
-        try { response = await _client.PostAsJsonAsync("api/admin/data-reset", new BirkNext.Maintenance.DataResetRequest(mode, confirmation)); }
+        try { response = await _client.PostAsJsonAsync("api/admin/data-reset", request); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             return new() { Mode = mode, Status = "Failed", Message = "Reset failed: the BirkNext backend could not be reached. Nothing is reported as reset; check that the backend is running and try again." };
