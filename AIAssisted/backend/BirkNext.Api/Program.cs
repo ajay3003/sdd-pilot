@@ -629,6 +629,8 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationRev
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewEvidenceSources, BirkNext.Api.Services.Integrations.IntegrationReviewEvidenceSources>();
+// Identity projections of immutable stored snapshots: one process-wide cache so identity reads stop re-reading every evidence document.
+builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.SourceEvidence.SourceIdentityCache>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>();
 // The shared source context: one snapshot per logical source for every module (analysis baseline or explicit fallback); never combines alternatives.
 builder.Services.AddScoped<BirkNext.Api.Services.SourceAnalysis.SourceBaselineService>();

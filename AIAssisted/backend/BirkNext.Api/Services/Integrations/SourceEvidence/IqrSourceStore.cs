@@ -51,7 +51,7 @@ public sealed class SourceSnapshotPersistenceException(string reason, string? sq
             : null;
 }
 
-public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? logger = null)
+public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? logger = null, SourceIdentityCache? identities = null)
 {
     /// <summary>False when a test host swapped the store for a non-relational provider: then the shared Snapshot Registry (a relational schema in the
     /// configured database) does not describe this store's payloads and must not be read or written for it.</summary>
@@ -105,13 +105,37 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
     /// The same snapshots as <see cref="ListSourceAnalysisAsync"/>, read for identity and source recognition only (<see cref="IdentityMembers"/>): test
     /// inventories, database architecture, behaviour evidence and the other large sections are skipped, not materialized (about a sixth of the
     /// evidence on the real M2LB workspace). For the source context and System Understanding's source roles; never for a consumer of evidence.
-    /// Nothing is cached: every call reads the stored rows.
+    /// Which rows exist is read on every call. With a <see cref="SourceIdentityCache"/> (the application registers one) only snapshots not seen
+    /// before are read in full: stored snapshots are immutable, so their identity projection never changes.
     /// </summary>
     public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceAnalysisIdentitiesAsync(int take = 100, CancellationToken ct = default)
     {
-        var records = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.IntegrationId == SourceAnalysisOwner)
-            .OrderByDescending(r => r.AnalyzedAt).ThenByDescending(r => r.Id).Take(take).ToListAsync(ct);
-        return records.Select(r => JsonSerializer.Deserialize<IqrSourceSnapshot>(r.EvidenceJson, IdentityJson)!).ToList();
+        var listed = db.IqrSourceSnapshots.AsNoTracking().Where(r => r.IntegrationId == SourceAnalysisOwner)
+            .OrderByDescending(r => r.AnalyzedAt).ThenByDescending(r => r.Id).Take(take);
+        if (identities is null)
+            return (await listed.ToListAsync(ct)).Select(r => JsonSerializer.Deserialize<IqrSourceSnapshot>(r.EvidenceJson, IdentityJson)!).ToList();
+
+        var heads = await listed.Select(r => new { r.Id, r.AnalyzedAt }).ToListAsync(ct);
+        var found = new Dictionary<Guid, IqrSourceSnapshot>(heads.Count);
+        foreach (var head in heads)
+            if (identities.TryGet(head.Id, head.AnalyzedAt, out var cached)) found[head.Id] = cached;
+        var missing = heads.Where(h => !found.ContainsKey(h.Id)).Select(h => h.Id).ToList();
+        if (missing.Count > 0)
+        {
+            var rows = await db.IqrSourceSnapshots.AsNoTracking().Where(r => missing.Contains(r.Id))
+                .Select(r => new { r.Id, r.AnalyzedAt, r.EvidenceJson }).ToListAsync(ct);
+            foreach (var row in rows)
+            {
+                var snapshot = JsonSerializer.Deserialize<IqrSourceSnapshot>(row.EvidenceJson, IdentityJson)!;
+                // The cache is bounded by the size of what it holds: the projection's own JSON, not the full evidence document.
+                identities.Add(row.Id, row.AnalyzedAt, snapshot, JsonSerializer.SerializeToUtf8Bytes(snapshot, Json).LongLength);
+                found[row.Id] = snapshot;
+            }
+        }
+        // Fewer rows than asked for = every stored row: entries of deleted snapshots (Local Data Reset, restore) leave the cache.
+        if (heads.Count < take) identities.Retain(heads.Select(h => h.Id).ToHashSet());
+        // A row deleted between the two reads is simply not listed.
+        return [.. heads.Where(h => found.ContainsKey(h.Id)).Select(h => found[h.Id])];
     }
 
     /// <summary>Lists only Source Analysis snapshot metadata needed by Schema Studio; never returns the large evidence document.</summary>

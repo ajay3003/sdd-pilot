@@ -29,7 +29,8 @@ public sealed class SystemGuideException(int status, string message) : Exception
 /// <c>system_guide_revisions</c>; a seed is inserted once as an unreviewed Draft (never Approved), a published revision is never rewritten,
 /// and newly imported source snapshots for the guide's roles are reported as "may need review" — the content is never rewritten automatically.
 /// </summary>
-public sealed partial class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideCatalogEntry> catalog, IEnumerable<IIntegrationJourneyPack> packs, TimeProvider? clock = null)
+public sealed partial class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideCatalogEntry> catalog, IEnumerable<IIntegrationJourneyPack> packs, TimeProvider? clock = null,
+    Integrations.SourceEvidence.SourceIdentityCache? identities = null)
 {
     public const string SeedAuthor = "BirkNext curated seed (not reviewed)";
 
@@ -198,7 +199,7 @@ public sealed partial class SystemGuideService(AppDbContext db, IEnumerable<Syst
             .OrderByDescending(r => r.Revision).FirstOrDefault();
         var shownRow = published ?? open ?? rows.LastOrDefault();
         var shown = shownRow is null ? await EmptyRevisionAsync(guideKey, ct) : ToRevision(shownRow);
-        snapshots ??= await new Integrations.SourceEvidence.IqrSourceStore(db).ListSourceAnalysisIdentitiesAsync(500, ct);
+        snapshots ??= await new Integrations.SourceEvidence.IqrSourceStore(db, null, identities).ListSourceAnalysisIdentitiesAsync(500, ct);
         var current = await CurrentSourcesAsync(entry, shown.Content, ct, snapshots);
         return new SystemGuideView
         {
@@ -296,7 +297,7 @@ public sealed partial class SystemGuideService(AppDbContext db, IEnumerable<Syst
         // Only the snapshot each logical source is analysed with (its analysis baseline, else its only content): alternative branch snapshots of the
         // same source are never all cited as the guide's basis, and none is cited while BASELINE_NOT_SELECTED. Switching the baseline changes the
         // basis, so affected claims show as source changes.
-        var all = loaded ?? await new Integrations.SourceEvidence.IqrSourceStore(db).ListSourceAnalysisIdentitiesAsync(500, ct);
+        var all = loaded ?? await new Integrations.SourceEvidence.IqrSourceStore(db, null, identities).ListSourceAnalysisIdentitiesAsync(500, ct);
         var snapshots = SourceAnalysis.SourceBaselineService.Resolve(all, await SourceAnalysis.SourceBaselineService.CurrentBaselinesAsync(db, ct)).OrderBy(s => s.AnalyzedAt).ToList();
         var resolvedKeys = snapshots.Select(SourceAnalysis.SourceBaselineService.KeyOf).ToHashSet(StringComparer.Ordinal);
         var unresolved = all.Where(s => !resolvedKeys.Contains(SourceAnalysis.SourceBaselineService.KeyOf(s))).ToList();
