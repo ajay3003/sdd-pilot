@@ -21,7 +21,7 @@ namespace BirkNext.Web.Tests.Pages;
 /// F — review: "Klar for gjennomgang" and "Godkjenn" only for a complete case; a source conflict blocks approval.
 /// G — the selection from Finn og forstå becomes cases (new plan or this plan); Oversett and Eksporter are the existing ones.
 /// </summary>
-public sealed class ManualTestingPlanTests : BunitContext
+public sealed partial class ManualTestingPlanTests : BunitContext
 {
     private static readonly Guid PlanId = Guid.Parse("66666666-6666-6666-6666-666666666666");
     private readonly Mock<ITestPlanSuggestionsApiService> _api = new();

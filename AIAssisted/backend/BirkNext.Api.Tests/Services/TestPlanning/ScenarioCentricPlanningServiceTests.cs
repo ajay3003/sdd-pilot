@@ -153,8 +153,12 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         var (_, plan, s42, _) = await PlanAsync(db);
         var c = plan.Cases.Single(x => x.Source.ScenarioId == s42);
 
-        c.EffectiveSteps.Should().Equal(TestScenarioDiscoveryEngine.PrepareStepPrefix + "a child past compulsory school age", TestScenarioDiscoveryEngine.ActionStepPrefix + "the period locks");
-        c.EffectiveStepExpected.Should().Equal(TestScenarioDiscoveryEngine.PrepareStepExpected, "the child is not expected, even with an upper secondary education relationship");
+        // 2026-11-24: the Given is the precondition (not a generic "prepare the starting situation" step); the When is the action as written, and
+        // how it is brought about in a test environment is an open question, never invented.
+        c.EffectiveSteps.Should().Equal("The period locks.");
+        c.EffectiveStepExpected.Should().Equal("the child is not expected, even with an upper secondary education relationship");
+        c.Generated.Preconditions.Should().Be("a child past compulsory school age", "the Given stays verbatim as the precondition");
+        c.Generated.OpenQuestions.Should().Contain(q => q.StartsWith("How this is brought about in the test environment is not stated", StringComparison.Ordinal));
         c.Missing.Should().Contain("Verification method: " + ScenarioPlanning.NeedsVerificationMethod);
         c.Testability.Observation.Should().Be(TestabilityFact.Missing, "a stated outcome is not a way to observe it");
         c.Testability.Ready.Should().BeFalse();
@@ -198,7 +202,7 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
 
         plan = await Service(Context()).DraftAsync(plan.Id, default); // reload
         plan.Cases.Single(c => c.Source.ScenarioId == variant).EffectiveSteps.Should().Equal("Lock the period without any report");
-        plan.Cases.Single(c => c.Source.ScenarioId == s42).EffectiveSteps.Should().HaveCount(2, "the scenario's own case is untouched");
+        plan.Cases.Single(c => c.Source.ScenarioId == s42).EffectiveSteps.Should().Equal(["The period locks."], "the scenario's own case is untouched");
         (await Service(Context()).RevisionsAsync(plan.Id, default)).Select(r => r.Reason).Should().Contain("Test case added").And.Contain("Saved");
     }
 
@@ -236,6 +240,57 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         added.EffectivePreconditions.Should().Contain("a child past compulsory school age").And.ContainEquivalentOf("an upper secondary education relationship");
         added.EffectiveExpected.Should().Contain("Even with an upper secondary education relationship");
         (await service.VariantsAsync(plan.Id, s42, default)).Should().BeEmpty("the variant is written now");
+    }
+
+    [Fact]
+    public async Task An_accepted_design_proposal_becomes_one_case_and_accepting_it_again_is_refused()
+    {
+        await using var db = Context();
+        var (service, plan, s42, _) = await PlanAsync(db);
+        var v = (await service.VariantsAsync(plan.Id, s42, default))[0];
+        plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, v.Title, null, null, ScenarioKey: s42, Variant: v.Key), "anna", default);
+        var again = () => service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, v.Title, null, null, ScenarioKey: s42, Variant: v.Key), "anna", default);
+
+        (await again.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("variant-unknown", "a case with its title exists: no duplicate");
+        plan.Cases.Count(c => c.EffectiveTitle == v.Title).Should().Be(1);
+        var added = plan.Cases.Single(c => c.EffectiveTitle == v.Title);
+        added.FromVariant.Should().Be(v.Key);
+
+        // The tester renames the case: the proposal must still not come back (2026-11-24 walkthrough finding).
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == added.Source.ScenarioId ? part with { Edits = part.Edits with { Title = v.Title + " (verifisert)" } } : part), "anna", default);
+        plan.Cases.Single(c => c.Source.ScenarioId == added.Source.ScenarioId).FromVariant.Should().Be(v.Key, "kept through a save");
+        (await service.VariantsAsync(plan.Id, s42, default)).Should().NotContain(x => x.Key == v.Key);
+    }
+
+    [Fact]
+    public async Task Rejected_and_deferred_design_proposals_are_saved_with_who_and_when_and_kept_by_later_saves()
+    {
+        await using var db = Context();
+        var (service, plan, s42, s7) = await PlanAsync(db);
+        var approvedEdits = plan.Cases.Single(c => c.Source.ScenarioId == s7).Edits;
+        plan = await service.SaveAsync(plan.Id, Human(plan) with
+        {
+            DesignDecisions =
+            [
+                new TestDesignDecision { ScenarioKey = s42, ProposalKey = "boundary:abc", ProposalTitle = "grense", Decision = TestDesignDecisions.Rejected, By = "spoofed" },
+                new TestDesignDecision { ScenarioKey = s42, ProposalKey = "repeat:def", ProposalTitle = "gjenta", Decision = TestDesignDecisions.Deferred },
+                new TestDesignDecision { ScenarioKey = s42, ProposalKey = "x", Decision = "Approved" },
+            ],
+        }, "anna", default);
+
+        plan.DesignDecisions.Should().HaveCount(2, "only Rejected and Deferred are decisions; accepting adds a case");
+        plan.DesignDecisions!.Should().OnlyContain(d => d.By == "anna" && d.At != default, "the server records who and when");
+        var at = plan.DesignDecisions![0].At;
+
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s7 ? part with { Edits = part.Edits with { Title = "Edited later" } } : part), "inger", default);
+        plan.DesignDecisions.Should().HaveCount(2, "a save that does not send decisions keeps them");
+        plan.DesignDecisions![0].Should().Match<TestDesignDecision>(d => d.By == "anna" && d.At == at);
+
+        plan = await service.SaveAsync(plan.Id, Human(plan) with { DesignDecisions = [.. plan.DesignDecisions!] }, "inger", default);
+        plan.DesignDecisions![0].By.Should().Be("anna", "an unchanged decision keeps its author");
+        await using var fresh = Context();
+        (await Service(fresh).DraftAsync(plan.Id, default)).DesignDecisions.Should().HaveCount(2, "read back after a reload");
+        approvedEdits.Should().NotBeNull();
     }
 
     // ── Translation ─────────────────────────────────────────────────────────────────────────────────────────────

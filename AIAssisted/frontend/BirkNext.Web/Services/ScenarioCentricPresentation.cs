@@ -145,7 +145,8 @@ public static class ScenarioCentricPresentation
         var excluded = options.Where(o => linkedIds.Contains(o.RequirementId.Trim().ToUpperInvariant())).Select(o => ScenarioPlanning.Key(o.RequirementId, o.SpecificationPath))
             .Concat((c.RejectedSuggestions ?? []).Select(r => ScenarioPlanning.Key(r.RequirementId, r.SpecificationPath)));
         var explicitIds = source.Generated.Requirements.Select(r => r.RuleId).Concat(c.Generated.Requirements.Select(r => r.RuleId));
-        return ScenarioPlanning.SuggestRequirements(text, explicitIds, ScenarioPlanning.StructuralReferences(source), options, excluded);
+        return ScenarioPlanning.SuggestRequirements(text, explicitIds, ScenarioPlanning.StructuralReferences(source), options, excluded,
+            scopePath: RequirementLinkPresentation.SpecificationPathOf(source) ?? RequirementLinkPresentation.SpecificationPathOf(c));
     }
 
     public static string LevelLabel(RequirementSuggestionLevel level) => level switch

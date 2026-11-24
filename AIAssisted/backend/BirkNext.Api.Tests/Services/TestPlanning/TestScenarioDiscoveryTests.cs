@@ -84,8 +84,8 @@ public sealed class TestScenarioDiscoveryTests
         c.OpenQuestions.Should().Contain(q => q.Contains("clarify the expected result"));
         var content = D.Content(c);
         content.ExpectedBasis.Should().Be(ExpectedResultBasis.Missing);
-        // The procedure prepares the starting situation and then carries out the action; the action's result stays open (never invented).
-        content.Steps.Last().Should().StartWith(D.ActionStepPrefix);
+        // One concrete action from the When (no generic "carry out or trigger" wrapper); its result stays open (never invented).
+        content.Steps.Should().ContainSingle().Which.Should().NotStartWith("Carry out or trigger").And.NotStartWith("Prepare the starting situation");
         content.StepExpected.Last().Should().BeNull();
         content.StepExpected.Count(e => e is null).Should().Be(1);
     }

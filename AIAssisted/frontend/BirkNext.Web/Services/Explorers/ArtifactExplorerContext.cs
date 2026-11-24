@@ -862,6 +862,16 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
             .Where(s => s.WorkspaceScope == model.Scope && s.Role == role.ToString() && (s.Module ?? ArtifactModules.ProjectLevel) == module)
             .Select(s => candidates.FirstOrDefault(c => c.Artifact.Id == s.ArtifactId)).LastOrDefault(c => c is not null);
 
+        // The latest explicit choice for this feature (or the whole module) of a shared document that is offered in the same list as the feature's
+        // own wins over the feature's own file. Before (2026-11-24, M2LB SkoleService): the list offered SkoleService/docs/avhengigheter-bestilling.md
+        // next to specs/001-skoleservice/spec.md, the choice was stored, but resolution looked for a stored choice among the feature's own files only,
+        // so it always returned spec.md and the tester's choice was silently undone. A choice made for another feature still does not carry over.
+        if (!sharedOnly && !(borrowedOnly && local.Count > 0)
+            && _workspace.SddLifecycle.ExplorerSelections
+                .Where(s => s.WorkspaceScope == model.Scope && s.Role == role.ToString() && (s.Module ?? ArtifactModules.ProjectLevel) == module && (s.Pack is null || s.Pack == viewing))
+                .MaxBy(s => s.SelectedAt) is { } latest
+            && shared.FirstOrDefault(c => c.Artifact.Id == latest.ArtifactId) is { } explicitShared)
+            return State(ExplorerArtifactStatus.Loaded, listed, explicitShared, ExplorerSelectionReason.Explicit);
         if (local.Count == 1)
             return State(ExplorerArtifactStatus.Loaded, listed, Stored(local) ?? local[0], Stored(local) is not null ? ExplorerSelectionReason.Explicit
                 : entries.Count == 1 ? ExplorerSelectionReason.OnlyArtifact : ExplorerSelectionReason.PackArtifact);

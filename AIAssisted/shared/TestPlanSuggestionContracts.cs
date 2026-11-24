@@ -291,6 +291,9 @@ public sealed record TestCaseDraft
     public string? ScenarioTitle { get; init; }
     /// <summary>The case this one was duplicated from (a new identity; nothing else is shared, no Azure DevOps id is copied).</summary>
     public string? DuplicatedFrom { get; init; }
+    /// <summary>The test-design proposal (variant key) this case was added from (2026-11-24): the proposal is not offered again even after the
+    /// case's title is edited. Null for other cases.</summary>
+    public string? FromVariant { get; init; }
     /// <summary>Translations of the case by language code ("nb" = Norwegian bokmål, …), machine-translated and/or written by a person. The
     /// original stays authoritative and unchanged.</summary>
     public Dictionary<string, TestCaseTranslation>? Translations { get; init; }
@@ -405,6 +408,8 @@ public sealed record TestPlanDraft
     public List<StoryRequirementRejection>? StoryRejectedSuggestions { get; init; }
     /// <summary>User story text translated per language (omitted when empty).</summary>
     public List<StoryTranslation>? StoryTranslations { get; init; }
+    /// <summary>Rejected and deferred test-design proposals (omitted when empty).</summary>
+    public List<TestDesignDecision>? DesignDecisions { get; init; }
     /// <summary>Requirement wording translated for display (omitted when empty).</summary>
     public List<RequirementTextTranslation>? RequirementTranslations { get; init; }
     /// <summary>The application the plan belongs to (logical identity of its application source), shared by later imports of the same application:
@@ -471,6 +476,26 @@ public sealed record ResolveConflictRequest(int BaseRevision, string CaseId, str
 public sealed record StoryRequirementLink(string StoryKey, ManualRequirementLink Link);
 
 public sealed record StoryRequirementRejection(string StoryKey, RejectedRequirementSuggestion Rejection);
+
+/// <summary>A reviewer's decision on a test-design proposal of a scenario (2026-11-24): rejected or deferred. Accepting adds a case (the existing
+/// add-from-variant path), so it is not stored here. Bound to the proposal key, which is derived from the source text: when the source changes,
+/// the key no longer matches and the proposal comes back for reconsideration.</summary>
+public sealed record TestDesignDecision
+{
+    public string ScenarioKey { get; init; } = "";
+    public string ProposalKey { get; init; } = "";
+    public string ProposalTitle { get; init; } = "";
+    /// <summary>"Rejected" or "Deferred".</summary>
+    public string Decision { get; init; } = "";
+    public string? Reason { get; init; }
+    public string By { get; init; } = "";
+    public DateTimeOffset At { get; init; }
+}
+
+public static class TestDesignDecisions
+{
+    public const string Rejected = "Rejected", Deferred = "Deferred";
+}
 
 public sealed record TestPlanDraftSummary(Guid Id, string GuideKey, string PlanName, string? DeliveryLabel, int Revision, int Cases, int Accepted, int NeedsClarification,
     int MissingExpected, int MissingTestData, int Blocked, string UpdatedBy, DateTimeOffset UpdatedAt)
@@ -573,6 +598,8 @@ public sealed record SaveTestPlanDraftRequest
     public List<StoryRequirementRejection>? StoryRejectedSuggestions { get; init; }
     /// <summary>User story translations after this save (null = unchanged); a changed text is marked written by a person.</summary>
     public List<StoryTranslation>? StoryTranslations { get; init; }
+    /// <summary>Test-design decisions after this save (null = unchanged); the server records who and when for new ones.</summary>
+    public List<TestDesignDecision>? DesignDecisions { get; init; }
 }
 
 public sealed record TestCaseHumanPart

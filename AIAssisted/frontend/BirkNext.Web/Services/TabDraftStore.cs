@@ -17,6 +17,9 @@ public static class TabDraftStore
 
     public static string ExportSettingsKey(string projectKey) => $"{Prefix}adx-settings.{projectKey}";
 
+    /// <summary>Finn og forstå's search, filters and work queue for this tab and project (kept when the tester comes back from Plan &amp; prepare).</summary>
+    public static string DiscoverFilterKey(string projectKey) => $"{Prefix}mtd-filter.{projectKey}";
+
     public static async Task<T?> ReadAsync<T>(IJSRuntime js, string key)
     {
         try

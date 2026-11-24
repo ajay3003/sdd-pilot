@@ -92,6 +92,12 @@ public enum RequirementSuggestionLevel { Explicit, Structural, Semantic, Weak }
 /// <summary>One suggested requirement for a scenario or case, with why it was suggested and the file it comes from.</summary>
 public sealed record RequirementSuggestion(string RequirementId, string SpecificationPath, string Title, RequirementSuggestionLevel Level, string Reason, double Score);
 
+/// <summary>How a requirement's text changed since a link was made: not at all, wording only, or its behaviour (outcome, threshold, negation …).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RequirementChangeKind { Unchanged, WordingOnly, Behavioural }
+
+public sealed record RequirementChange(RequirementChangeKind Kind, IReadOnlyList<string> Differences);
+
 /// <summary>A test-case variant the evidence supports (a stated failure case, a condition clause of the expected outcome, a contract error
 /// response). A proposal only: nothing is added until a tester adds it. <see cref="Expected"/> is null when the evidence states no outcome.</summary>
 public sealed record TestCaseVariantProposal(string Key, string Title, string Dimension, string Basis, string? Preconditions, string? Action, string? Expected);
@@ -225,9 +231,9 @@ public static partial class ScenarioPlanning
     }
 
     // Technical identifiers are replaced by numbered placeholders before a text is translated and put back afterwards, so they cannot be
-    // translated: requirement and scenario ids, URLs, file paths, code in backticks, HTTP status codes, identifiers in code style (camelCase,
+    // translated: requirement and scenario ids, URLs, app routes ("/admin/child-specific-roles"), file paths, code in backticks, HTTP status codes, identifiers in code style (camelCase,
     // PascalCase with an inner capital, snake_case, dotted.names), enum-like UPPER_CASE words and quoted machine values.
-    [GeneratedRegex(@"https?://\S+|`[^`]+`|""[A-Za-z0-9_.:/\-]+""|\b[A-Za-z]{1,10}-\d+[A-Za-z]?\b|(?:[\w.\-]+[/\\])+[\w.\-]+\.\w{1,6}\b|[\w\-]+\.(?:md|json|xml|xsd|cs|yaml|yml|graphql|ts|js|csv|xlsx)\b|\b[a-z]+(?:[A-Z][a-z0-9]*)+\b|\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+\b|\b\w+_\w+\b|\b[a-zA-Z]\w*(?:\.[a-zA-Z]\w*){1,}\(?\)?|\b[1-5]\d\d\b|\b[A-Z][A-Z0-9]{2,}\b", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"https?://\S+|(?<![\w/])/[\w.~{}%:\-]+(?:/[\w.~{}%:\-]*)*|`[^`]+`|""[A-Za-z0-9_.:/\-]+""|\b[A-Za-z]{1,10}-\d+[A-Za-z]?\b|(?:[\w.\-]+[/\\])+[\w.\-]+\.\w{1,6}\b|[\w\-]+\.(?:md|json|xml|xsd|cs|yaml|yml|graphql|ts|js|csv|xlsx)\b|\b[a-z]+(?:[A-Z][a-z0-9]*)+\b|\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+\b|\b\w+_\w+\b|\b[a-zA-Z]\w*(?:\.[a-zA-Z]\w*){1,}\(?\)?|\b[1-5]\d\d\b|\b[A-Z][A-Z0-9]{2,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex TechnicalToken();
 
     private static readonly HashSet<string> PlainUpper = new(StringComparer.Ordinal) { "MUST", "SHALL", "SHOULD", "NOT", "MAY", "AND", "THE", "WHEN", "THEN", "GIVEN", "NOTE" };
@@ -301,8 +307,13 @@ public static partial class ScenarioPlanning
 
     // ── Requirement suggestions ─────────────────────────────────────────────────────────────────────────────────────
 
-    [GeneratedRegex(@"\b[A-Z]{1,6}-\d+[a-z]?\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(?<![\w-])[A-Z]{1,6}-\d+[a-z]?\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex RequirementIdPattern();
+
+    /// <summary>The requirement ids a text names, exactly as written (suffix kept: FR-015a is not FR-015). An id inside another id
+    /// ("SR-FR-017a") is not that id.</summary>
+    public static List<string> RequirementIdsIn(string? text) =>
+        text is null ? [] : [.. RequirementIdPattern().Matches(text).Select(m => m.Value).Distinct(StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>The scenario text requirement matching reads: title, purpose, starting situation, actions and outcomes.</summary>
     public static string ScenarioText(TestCaseDraft c) => string.Join("\n", new[]
@@ -317,18 +328,21 @@ public static partial class ScenarioPlanning
     /// state the same behaviour — distinctive words and phrases they share, weighted by how rare they are in the specification, above a firm
     /// threshold, explained by the shared words. D: weaker overlap, shown only as possible. Linked and rejected requirements are left out; strongest first.
     /// </summary>
+    /// <param name="scopePath">The specification the scenario comes from, when known. An id and a story reference mean something only inside one
+    /// specification: FR-001 of another service is never an explicit (A) or structural (B) match.</param>
     public static List<RequirementSuggestion> SuggestRequirements(string scenarioText, IEnumerable<string> explicitIds, IEnumerable<string> structuralRefs,
-        IReadOnlyCollection<ProjectRequirementOption> requirements, IEnumerable<string>? excludedKeys = null, int maxSemantic = 3, int maxWeak = 3)
+        IReadOnlyCollection<ProjectRequirementOption> requirements, IEnumerable<string>? excludedKeys = null, int maxSemantic = 3, int maxWeak = 3, string? scopePath = null)
     {
+        bool InScope(ProjectRequirementOption r) => scopePath is null || BirkNext.Specifications.SpecificationCatalogRules.SamePath(r.SpecificationPath, scopePath);
         var excluded = new HashSet<string>(excludedKeys ?? [], StringComparer.Ordinal);
         var ids = new HashSet<string>(explicitIds.Concat(RequirementIdPattern().Matches(scenarioText).Select(m => m.Value)).Select(NormId), StringComparer.Ordinal);
         var refs = structuralRefs.Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var result = new List<RequirementSuggestion>();
         var candidates = requirements.Where(r => !excluded.Contains(Key(r.RequirementId, r.SpecificationPath))).ToList();
 
-        foreach (var r in candidates.Where(r => ids.Contains(NormId(r.RequirementId))))
+        foreach (var r in candidates.Where(r => ids.Contains(NormId(r.RequirementId)) && InScope(r)))
             result.Add(new(r.RequirementId, r.SpecificationPath, r.Title, RequirementSuggestionLevel.Explicit, $"The scenario names {r.RequirementId}.", 100));
-        foreach (var r in candidates.Where(r => !ids.Contains(NormId(r.RequirementId))))
+        foreach (var r in candidates.Where(r => !ids.Contains(NormId(r.RequirementId)) && InScope(r)))
             if (refs.FirstOrDefault(x => Regex.IsMatch(r.Title, $@"(^|[^\w-]){Regex.Escape(x)}($|[^\w-])", RegexOptions.IgnoreCase)) is { } named)
                 result.Add(new(r.RequirementId, r.SpecificationPath, r.Title, RequirementSuggestionLevel.Structural, $"The requirement's wording refers to {named}, which this scenario belongs to.", 90));
 
@@ -346,21 +360,38 @@ public static partial class ScenarioPlanning
         if (scenarioWords.Count == 0) return result;
         var maxPossible = scenarioWords.Sum(Idf);
 
+        var scenarioFacts = RuleFactsOf(scenarioText);
         var scored = new List<(ProjectRequirementOption R, double Score, List<string> Shared, List<string> SharedPhrases)>();
+        var ruled = new List<RequirementSuggestion>();
         foreach (var r in rest)
         {
             var words = Words(r.Title);
             var shared = scenarioWords.Where(words.Contains).OrderByDescending(Idf).ToList();
             if (shared.Count == 0) continue;
+            // Rule level, not words: both name an outcome ("flagged \"attendance above plan\"", "rejected with reason \"missing identifier\"").
+            // The same outcome is the same rule; different outcomes are different rules, however many words they share (FR-015 vs FR-015a).
+            var facts = RuleFactsOf(r.Title);
+            if (facts.Outcomes.Count > 0 && scenarioFacts.Outcomes.Count > 0)
+            {
+                var same = facts.Outcomes.Where(o => scenarioFacts.Outcomes.Contains(o)).ToList();
+                if (same.Count == 0) continue;
+                ruled.Add(new(r.RequirementId, r.SpecificationPath, r.Title, RequirementSuggestionLevel.Semantic,
+                    $"Same rule: both state the outcome {Quote(same)}{(facts.Numbers.Count > 0 ? $" under the same condition ({string.Join(", ", facts.Numbers)})" : "")}.", 1.0));
+                continue;
+            }
             var phrases = Phrases(r.Title).Where(scenarioPhrases.Contains).ToList();
             var score = (shared.Sum(Idf) + 1.5 * phrases.Count) / maxPossible;
             // The reason quotes the requirement's own words (never the stems matching works on).
             var surface = Surface(r.Title);
             scored.Add((r, score, [.. shared.Select(w => surface.GetValueOrDefault(w, w))], [.. phrases.Select(ph => surface.GetValueOrDefault(ph, ph))]));
         }
+        foreach (var s in ruled.OrderBy(s => s.RequirementId, StringComparer.OrdinalIgnoreCase).Take(maxSemantic)) result.Add(s);
         foreach (var (r, score, shared, phrases) in scored.OrderByDescending(s => s.Score).ThenBy(s => s.R.RequirementId, StringComparer.OrdinalIgnoreCase))
         {
-            var semantic = score >= 0.30 && phrases.Count >= 1 && shared.Count >= 3;
+            // A threshold the requirement states that the scenario contradicts (it names other numbers, none of the requirement's) is not the same rule.
+            var rf = RuleFactsOf(r.Title);
+            var otherThreshold = rf.Numbers.Count > 0 && scenarioFacts.Numbers.Count > 0 && !rf.Numbers.Overlaps(scenarioFacts.Numbers);
+            var semantic = !otherThreshold && score >= 0.30 && phrases.Count >= 1 && shared.Count >= 3;
             var weak = !semantic && score >= 0.18 && shared.Count >= 2;
             if (semantic && result.Count(x => x.Level == RequirementSuggestionLevel.Semantic) < maxSemantic)
                 result.Add(new(r.RequirementId, r.SpecificationPath, r.Title, RequirementSuggestionLevel.Semantic,
@@ -395,6 +426,65 @@ public static partial class ScenarioPlanning
 
     public static string Key(string id, string? path) => $"{NormId(id)}|{(path ?? "").Replace('\\', '/').Trim().TrimStart('/').ToUpperInvariant()}";
     private static string NormId(string id) => id.Trim().ToUpperInvariant();
+
+    // ── Rule facts: what makes two texts the same rule (2026-11-24) ───────────────────────────────────────────────────
+
+    [GeneratedRegex("[\"“”«]([^\"“”«»]{3,80})[\"“”»]")]
+    private static partial Regex QuotedOutcome();
+
+    [GeneratedRegex(@"(?<![\w.,])\d+(?:[.,]\d+)?(?![\w.,]?\d)")]
+    private static partial Regex Number();
+
+    [GeneratedRegex(@"\[[^\]]*\]")]
+    private static partial Regex BracketReference();
+
+    [GeneratedRegex(@"\b(MUST NOT|SHALL NOT|SHOULD NOT|MUST|SHALL|SHOULD|MAY)\b")]
+    private static partial Regex Modal();
+
+    [GeneratedRegex(@"\b(not|no|never|without|none|nothing|ikke|aldri|ingen|uten)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex NegationWord();
+
+    [GeneratedRegex(@"\b(accept(?:ed|s)?|reject(?:ed|s)?|flag(?:ged|s)?|stor(?:ed|es)|delet(?:ed|es)|merg(?:ed|es)|deliver(?:ed|s)|return(?:ed|s)|log(?:ged|s)|publish(?:ed|es)|skipp(?:ed)?|appl(?:ied|ies))\b", RegexOptions.IgnoreCase)]
+    private static partial Regex OutcomeVerb();
+
+    /// <summary>The parts of a rule a word overlap cannot see: quoted outcomes (flags, reasons), numbers (thresholds), negation, modal strength
+    /// and outcome verbs. Requirement and source references ("FR-015a", "[SR-FR-017, DEC-50]") are not part of the rule.</summary>
+    public sealed record RuleFacts(IReadOnlySet<string> Outcomes, IReadOnlySet<string> Numbers, bool Negated, IReadOnlySet<string> Modals, IReadOnlySet<string> Verbs);
+
+    public static RuleFacts RuleFactsOf(string? text)
+    {
+        var t = RequirementIdPattern().Replace(BracketReference().Replace(text ?? "", " "), " ");
+        var outcomes = QuotedOutcome().Matches(t).Select(m => Regex.Replace(m.Groups[1].Value.Trim(), @"\s+", " ").ToLowerInvariant()).ToHashSet(StringComparer.Ordinal);
+        var numbers = Number().Matches(t).Select(m => m.Value.Replace(',', '.')).ToHashSet(StringComparer.Ordinal);
+        var negated = NegationWord().IsMatch(t);
+        var modals = Modal().Matches(t).Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
+        var verbs = OutcomeVerb().Matches(t).Select(m => m.Value.ToLowerInvariant()[..Math.Min(5, m.Value.Length)]).ToHashSet(StringComparer.Ordinal);
+        return new(outcomes, numbers, negated, modals, verbs);
+    }
+
+    /// <summary>
+    /// How a requirement's wording changed: <see cref="RequirementChangeKind.WordingOnly"/> only when every rule fact is the same (outcomes,
+    /// numbers, negation, MUST/SHOULD/MAY, outcome verbs); otherwise <see cref="RequirementChangeKind.Behavioural"/> with each difference named.
+    /// Whitespace and line breaks are not a change.
+    /// </summary>
+    public static RequirementChange ClassifyRequirementChange(string? before, string? after)
+    {
+        static string Norm(string? s) => Regex.Replace(s ?? "", @"\s+", " ").Trim();
+        if (string.Equals(Norm(before), Norm(after), StringComparison.Ordinal)) return new(RequirementChangeKind.Unchanged, []);
+        var a = RuleFactsOf(before); var b = RuleFactsOf(after);
+        var diffs = new List<string>();
+        void Set(string what, IReadOnlySet<string> x, IReadOnlySet<string> y)
+        {
+            foreach (var gone in x.Except(y).Order(StringComparer.Ordinal)) diffs.Add($"{what} fjernet: «{gone}»");
+            foreach (var added in y.Except(x).Order(StringComparer.Ordinal)) diffs.Add($"{what} lagt til: «{added}»");
+        }
+        Set("Utfall", a.Outcomes, b.Outcomes);
+        Set("Tall", a.Numbers, b.Numbers);
+        Set("Kravstyrke", a.Modals, b.Modals);
+        Set("Handling", a.Verbs, b.Verbs);
+        if (a.Negated != b.Negated) diffs.Add(b.Negated ? "Nekting lagt til" : "Nekting fjernet");
+        return new(diffs.Count == 0 ? RequirementChangeKind.WordingOnly : RequirementChangeKind.Behavioural, diffs);
+    }
     private static string Quote(IEnumerable<string> items) => string.Join(", ", items.Select(i => $"\"{i}\""));
 
     // ── Test-case variants from evidence ─────────────────────────────────────────────────────────────────────────────
@@ -431,8 +521,12 @@ public static partial class ScenarioPlanning
             var result = i < scenario.Generated.StepExpected.Count ? scenario.Generated.StepExpected[i] : null;
             list.Add(new($"step:{Sha(steps[i])[..10]}", Clip($"{scenario.Generated.Title} — {steps[i]}", 200), "Negative", $"The contract states this error path: \"{steps[i]}\".", null, steps[i], result));
         }
+        // Test-design techniques the scenario's own text supports (boundaries, repetition/order, access, state sequences) — bounded (2026-11-24).
+        list.AddRange(TestDesignAdvisor.DesignProposals(scenario).Concat(TestDesignAdvisor.StateSequences(scenario)).Take(TestDesignAdvisor.MaxProposals));
         var titles = siblings.Select(s => s.EffectiveTitle.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return [.. list.Where(v => !titles.Contains(v.Title)).DistinctBy(v => v.Key)];
+        // A case added from a proposal keeps its key: the proposal is not offered again when the case's title is later edited.
+        var used = siblings.Select(s => s.FromVariant).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        return [.. list.Where(v => !titles.Contains(v.Title) && !used.Contains(v.Key)).DistinctBy(v => v.Key).DistinctBy(v => v.Title, StringComparer.OrdinalIgnoreCase)];
     }
 
     // ── Words ──────────────────────────────────────────────────────────────────────────────────────────────────────

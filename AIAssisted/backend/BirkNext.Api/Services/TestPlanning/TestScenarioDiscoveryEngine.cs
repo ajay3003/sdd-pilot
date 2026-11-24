@@ -639,42 +639,54 @@ public static class TestScenarioDiscoveryEngine
     {
         var group = c.Area ?? ScenarioCandidateTypes.Label(c.Type);
         var steps = ProcedureSteps(c);
+        var interpreted = Interpret(c);
+        var preconditions = c.Preconditions.Count > 0 ? string.Join("\n", c.Preconditions) : interpreted?.Preconditions;
+        var testData = c.TestDataNeeds.Count > 0 ? string.Join("; ", c.TestDataNeeds) : interpreted?.TestDataRequirement;
+        var questions = interpreted is null ? c.OpenQuestions
+            : [.. c.OpenQuestions, .. interpreted.Unresolved, .. interpreted.Variants.Select(v => "Separate variant in the source (prepare as its own test case if needed): " + v)];
         return new TestCaseContent
         {
-            Title = c.Title, Purpose = c.Purpose, Preconditions = c.Preconditions.Count == 0 ? null : string.Join("\n", c.Preconditions),
+            Title = c.Title, Purpose = c.Purpose, Preconditions = preconditions,
             Steps = [.. steps.Select(s => s.Action)], StepExpected = [.. steps.Select(s => s.Expected)],
             ExpectedResult = c.ExpectedBehaviour, ExpectedBasis = Basis(c),
-            RequiredTestData = c.TestDataNeeds.Count == 0 ? null : string.Join("; ", c.TestDataNeeds),
+            RequiredTestData = testData,
             EnvironmentPrerequisites = c.Prerequisites.Count == 0 ? null : string.Join("\n", c.Prerequisites),
             Requirements = [.. c.RequirementIds.Select(id => new TestCaseRequirement(id, id, null))],
             NamedExistingTests = [.. c.ExistingTests.Select(t => t.Name)],
             StageId = AreaSuiteId(group), GroupTitle = group, CandidateType = c.Type, Confidence = c.Confidence,
-            Template = [.. c.Template], Evidence = [.. c.Evidence], ExistingTests = [.. c.ExistingTests], OpenQuestions = [.. c.OpenQuestions],
-            TestDataNeed = c.TestDataNeeds.Count > 0 ? TestDataNeed.Required : TestDataNeed.Unknown, Capability = c.CapabilityId,
+            Template = [.. c.Template], Evidence = [.. c.Evidence], ExistingTests = [.. c.ExistingTests], OpenQuestions = [.. questions],
+            TestDataNeed = testData is not null ? TestDataNeed.Required : TestDataNeed.Unknown, Capability = c.CapabilityId,
             Story = c.Story, NumberInStory = c.NumberInStory, Clarifications = [.. c.Clarifications],
             SourceIdentity = c.SourceIdentity.Length > 0 ? c.SourceIdentity : null, SnapshotKey = string.IsNullOrEmpty(c.SnapshotKey) ? null : c.SnapshotKey,
             Conflicts = c.Conflicts.Count > 0 ? [.. c.Conflicts] : null,
         };
     }
 
-    public const string PrepareStepPrefix = "Prepare the starting situation in the test environment: ";
-    public const string PrepareStepExpected = "The starting situation is in place before the action (check the prepared data and state).";
-    public const string ActionStepPrefix = "Carry out or trigger: ";
+    /// <summary>
+    /// The interpretation of a specification acceptance scenario (<see cref="AcceptanceScenarioInterpreter"/>), or null for other sources and for
+    /// scenarios without a When. Built when a case is prepared (new drafts only), so the scenario's evidence fingerprint does not change.
+    /// </summary>
+    public static AcceptanceScenarioInterpreter.Interpretation? Interpret(DiscoveredScenario c)
+    {
+        if (c.CapabilityId != Specification || c.Steps.Count != 1) return null;
+        var when = c.Template.FirstOrDefault(t => t.Key == "when")?.Value;
+        if (string.IsNullOrWhiteSpace(when)) return null;
+        var given = c.Template.FirstOrDefault(t => t.Key == "given")?.Value;
+        var then = c.Template.FirstOrDefault(t => t.Key == "then")?.Value ?? c.ExpectedBehaviour;
+        return AcceptanceScenarioInterpreter.Interpret(given, when, then, c.Story);
+    }
 
     /// <summary>
-    /// The manual procedure of a specification acceptance scenario: first prepare its starting situation (Given), then carry out or trigger the
-    /// action (When) with the stated outcome (Then) as its expected result. Nothing else is added: how the action is triggered in the environment
-    /// and how the outcome is observed are not in the specification, so the case names them as needing clarification (never invented). Other
-    /// sources keep their own steps. Built when a case is prepared, so the scenario's evidence fingerprint does not change.
+    /// The manual procedure of a specification acceptance scenario (2026-11-24): the Given is the precondition and test-data requirement (not a
+    /// generic "prepare the starting situation" step), the When is one concrete action with its pronoun resolved, and the Then is the list of
+    /// verification points. How an arrival is sent, how processing is triggered and where a negative outcome can be checked are not in the
+    /// specification, so they are listed as unresolved questions on the case — never invented. Other sources keep their own steps.
     /// </summary>
     public static List<DiscoveredStep> ProcedureSteps(DiscoveredScenario c)
     {
-        if (c.CapabilityId != Specification || c.Steps.Count != 1) return c.Steps;
-        var given = c.Template.FirstOrDefault(t => t.Key == "given")?.Value;
-        var when = c.Template.FirstOrDefault(t => t.Key == "when")?.Value;
-        if (string.IsNullOrWhiteSpace(when)) return c.Steps;
-        var action = new DiscoveredStep(ActionStepPrefix + when, c.Steps[0].Expected);
-        return string.IsNullOrWhiteSpace(given) ? [action] : [new DiscoveredStep(PrepareStepPrefix + given, PrepareStepExpected), action];
+        if (Interpret(c) is not { } interpreted) return c.Steps;
+        var expected = interpreted.Expected.Count > 0 ? string.Join("\n", interpreted.Expected) : c.Steps[0].Expected;
+        return [new DiscoveredStep(interpreted.Action, expected)];
     }
 
     public static ExpectedResultBasis Basis(DiscoveredScenario c) => c.ExpectedBehaviour is null ? ExpectedResultBasis.Missing : c.CapabilityId switch

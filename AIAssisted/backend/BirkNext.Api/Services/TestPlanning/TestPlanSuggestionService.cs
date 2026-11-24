@@ -710,6 +710,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             ScenarioKey = scenarioKey,
             ScenarioTitle = scenarioKey is null ? null : parent?.Generated.Title ?? siblings.Select(s => s.ScenarioTitle).FirstOrDefault(t => t is not null),
             DuplicatedFrom = copy?.Source.ScenarioId,
+            FromVariant = request.Variant is { Length: > 0 } fromVariant && copy is null ? fromVariant : null,
             SuiteId = parent?.SuiteId ?? copy?.SuiteId ?? manual.SuiteId,
             Edits = edits is null ? manual.Edits : Clean(edits),
             TestData = copy?.TestData ?? [],
@@ -1001,6 +1002,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             StoryRequirementLinks = request.StoryRequirementLinks is { } storyLinks ? StoryLinks(current, storyLinks, catalog, serverCatalog, actor) : current.StoryRequirementLinks,
             StoryRejectedSuggestions = request.StoryRejectedSuggestions is { } storyRejections ? StoryRejections(current, storyRejections, actor) : current.StoryRejectedSuggestions,
             StoryTranslations = request.StoryTranslations is { } storyTexts ? StoryTexts(current, storyTexts, actor) : current.StoryTranslations,
+            DesignDecisions = request.DesignDecisions is { } decisions ? DesignDecisions(current, decisions, actor) : current.DesignDecisions,
         };
         return await WriteAsync(row, FlagProject(plan), ct);
     }
@@ -1042,6 +1044,25 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             var held = (current.StoryRequirementLinks ?? []).Where(l => l.StoryKey == story.Key).Select(l => l.Link);
             result.AddRange(RequirementLinks(held, [.. story.Select(w => w.Link)], catalog, serverCatalog, actor).Select(l => new StoryRequirementLink(story.Key, l with { Scope = null })));
         }
+        return result.Count == 0 ? null : result;
+    }
+
+    public const int MaxDesignDecisions = 2000;
+
+    /// <summary>Test-design decisions after a save: an unchanged decision keeps who and when; a new or changed one is recorded for this actor.</summary>
+    private List<TestDesignDecision>? DesignDecisions(TestPlanDraft current, List<TestDesignDecision> wanted, string actor)
+    {
+        var held = (current.DesignDecisions ?? []).ToDictionary(d => (d.ScenarioKey, d.ProposalKey), d => d);
+        var result = wanted.Where(w => !string.IsNullOrWhiteSpace(w.ScenarioKey) && !string.IsNullOrWhiteSpace(w.ProposalKey)
+                && w.Decision is TestDesignDecisions.Rejected or TestDesignDecisions.Deferred)
+            .DistinctBy(w => (w.ScenarioKey, w.ProposalKey)).Take(MaxDesignDecisions)
+            .Select(w => held.TryGetValue((w.ScenarioKey, w.ProposalKey), out var kept) && kept.Decision == w.Decision && kept.Reason == w.Reason ? kept
+                : new TestDesignDecision
+                {
+                    ScenarioKey = w.ScenarioKey.Trim(), ProposalKey = w.ProposalKey.Trim(), ProposalTitle = (w.ProposalTitle ?? "").Trim(), Decision = w.Decision,
+                    Reason = string.IsNullOrWhiteSpace(w.Reason) ? null : w.Reason.Trim(), By = actor, At = Now,
+                })
+            .ToList();
         return result.Count == 0 ? null : result;
     }
 

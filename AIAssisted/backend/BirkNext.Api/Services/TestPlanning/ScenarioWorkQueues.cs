@@ -6,8 +6,9 @@ namespace BirkNext.Api.Services.TestPlanning;
 /// <summary>
 /// Finn og forstå's work queues (<see cref="ScenarioWorkQueue"/>), from facts the discovery and the saved plans already hold — no new engine, no
 /// score. Eligibility and ranking are separate: a scenario is recommended only when it is ready for test-case preparation (relevant facts known,
-/// expected result stated and supported, nothing to clarify, current source, no current test case); among those, the order follows the user story's
-/// declared priority, then how the expected result is supported, then described preconditions, then the specification's own order. Every
+/// expected result stated and supported, nothing to clarify, current source, no current test case); missing steps are preparation work, not a
+/// clarification. Among those, the order follows the user story's declared priority, then how the expected result is supported, then described
+/// preconditions, then written steps before steps still to write, then the specification's own order. Every
 /// membership carries plain Norwegian reasons. Ready to prepare is never presented as ready to execute: test data, access and observation needs
 /// are listed separately (<see cref="ScenarioWorkItem.ExecutionNeeds"/>).
 /// </summary>
@@ -48,20 +49,37 @@ public static partial class ScenarioWorkQueues
             };
             if (text is not null && !list.Contains(text)) list.Add(text);
         }
-        // The discovery's own questions, named by what they mean for a tester (measured on M2LB: 688 of 839 say no acceptance scenario describes how
-        // to test the requirement); other questions are counted and shown in full in the scenario's details.
+        // The discovery's own questions, named by what they mean for a tester; other questions are counted and shown in full in the details.
+        // Missing steps are not a clarification: writing the steps IS test-case preparation (2026-11-24) — see PreparationNotes.
         var other = 0;
         foreach (var question in c.OpenQuestions)
         {
-            var text = question.StartsWith("No acceptance scenario describes how to exercise", StringComparison.Ordinal) ? "Ingen akseptansescenario beskriver hvordan kravet testes — steg mangler"
-                : question.StartsWith("The scenario states no action (When)", StringComparison.Ordinal) ? "Scenarioet sier ikke hva som gjøres (When) — steg mangler"
-                : question.StartsWith("Older snapshot: only parameter names are known", StringComparison.Ordinal) ? "Eldre kildeanalyse: bare parameternavn er kjent — analyser kilden på nytt"
+            if (StepsMissing(question)) continue;
+            var text = question.StartsWith("Older snapshot: only parameter names are known", StringComparison.Ordinal) ? "Eldre kildeanalyse: bare parameternavn er kjent — analyser kilden på nytt"
                 : null;
             if (text is null) other++;
             else if (!list.Contains(text)) list.Add(text);
         }
         if (other > 0) list.Add(other == 1 ? "1 åpent spørsmål (se spørsmålene)" : $"{other} åpne spørsmål (se spørsmålene)");
         if (coverage is { Conflicts: > 0 } k) list.Add(k.Conflicts == 1 ? "Et testtilfelle har en uløst kildekonflikt" : $"{k.Conflicts} testtilfeller har en uløst kildekonflikt");
+        return list;
+    }
+
+    private static bool StepsMissing(string question) =>
+        question.StartsWith("No acceptance scenario describes how to exercise", StringComparison.Ordinal)
+        || question.StartsWith("The scenario states no action (When)", StringComparison.Ordinal);
+
+    /// <summary>
+    /// What the tester writes while preparing (does not block preparation): no acceptance scenario describes the steps, or the scenario states no
+    /// action. Measured on M2LB: 740 of 1,752 scenarios — with a stated, supported expected result they are preparable; the steps are the work.
+    /// </summary>
+    public static List<string> PreparationNotes(DiscoveredScenario c)
+    {
+        var list = new List<string>();
+        if (c.OpenQuestions.Any(q => q.StartsWith("No acceptance scenario describes how to exercise", StringComparison.Ordinal)))
+            list.Add("Ingen akseptansescenario beskriver stegene — de skrives under klargjøring");
+        if (c.OpenQuestions.Any(q => q.StartsWith("The scenario states no action (When)", StringComparison.Ordinal)))
+            list.Add("Scenarioet sier ikke hva som gjøres — handlingen skrives under klargjøring");
         return list;
     }
 
@@ -127,6 +145,7 @@ public static partial class ScenarioWorkQueues
                 reasons.Add(Supported(c));
                 reasons.Add(priority == 1 ? "Høy prioritet (P1)" : priority is { } p ? $"Prioritet P{p}" : "Prioritet ikke oppgitt i kilden");
                 reasons.Add(c.Preconditions.Count > 0 ? "Forutsetninger beskrevet" : "Ingen forutsetninger beskrevet");
+                reasons.AddRange(PreparationNotes(c));
                 reasons.Add("Kildegrunnlaget er oppdatert");
                 if (cov is { Archived: > 0 }) reasons.Add("Finnes også i en arkivert plan");
             }
@@ -150,6 +169,7 @@ public static partial class ScenarioWorkQueues
             .OrderBy(x => PriorityNumber(x.C.Story?.Priority) ?? int.MaxValue)
             .ThenBy(x => SupportOrder(x.C))
             .ThenBy(x => x.C.Preconditions.Count > 0 ? 0 : 1)
+            .ThenBy(x => PreparationNotes(x.C).Count > 0 ? 1 : 0)
             .ThenBy(x => x.C.Story?.Ordinal ?? int.MaxValue).ThenBy(x => x.C.NumberInStory ?? int.MaxValue)
             .ThenBy(x => x.C.Title, StringComparer.Ordinal).ThenBy(x => x.C.CandidateId, StringComparer.Ordinal)
             .Select(x => x.C.CandidateId).ToDictionary(id => id, _ => ++rank, StringComparer.Ordinal);

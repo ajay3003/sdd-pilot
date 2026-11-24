@@ -197,6 +197,64 @@ public sealed class MultipleDocumentsPerFeatureTests
         (await Shown(WorkspaceArtifactType.Constitution)).Should().Be(".specify/memory/constitution.md", "without its own, the project's constitution applies");
     }
 
+    /// <summary>
+    /// Regression (2026-11-24, M2LB SkoleService): the module document was listed as an alternative, the choice was stored, but resolution looked for
+    /// a stored choice among the feature's own files only — the feature's spec.md came back every time and the choice was silently undone.
+    /// </summary>
+    [Fact]
+    public async Task Choosing_the_module_document_keeps_it_and_switching_back_and_forth_works()
+    {
+        ImportServices();
+        await _explorers.SelectModuleAsync("attendance");
+        var listed = (await State(WorkspaceArtifactType.Specification)).Artifacts;
+        string Id(string path) => listed.Single(a => a.SourcePath == path).Id;
+
+        for (var round = 0; round < 3; round++)
+        {
+            _explorers.Select(WorkspaceArtifactType.Specification, Id("attendance/docs/dependencies.md"));
+            var chosen = await State(WorkspaceArtifactType.Specification);
+            chosen.Selected!.SourcePath.Should().Be("attendance/docs/dependencies.md", $"round {round}: the choice stays");
+            chosen.Reason.Should().Be(ExplorerSelectionReason.Explicit);
+            chosen.Module.Should().Be("attendance", "the module stays chosen");
+            chosen.Content.Should().Contain("FR-699", "the chosen document's own content is read");
+
+            _explorers.Select(WorkspaceArtifactType.Specification, Id("attendance/specs/001-attendance/spec.md"));
+            (await Shown(WorkspaceArtifactType.Specification)).Should().Be("attendance/specs/001-attendance/spec.md", $"round {round}: switching back works");
+        }
+    }
+
+    [Fact]
+    public async Task The_chosen_module_document_survives_other_modules_and_a_rerender()
+    {
+        ImportServices();
+        await _explorers.SelectModuleAsync("attendance");
+        var dependencies = (await State(WorkspaceArtifactType.Specification)).Artifacts.Single(a => a.SourcePath == "attendance/docs/dependencies.md").Id;
+        _explorers.Select(WorkspaceArtifactType.Specification, dependencies);
+
+        await Feature("002-replay");
+        (await Shown(WorkspaceArtifactType.Specification)).Should().Be("events/specs/002-replay/spec.md", "another module never borrows the choice");
+        await _explorers.SelectModuleAsync("attendance");
+        (await Shown(WorkspaceArtifactType.Specification)).Should().Be("attendance/docs/dependencies.md", "back in the module, its choice stands");
+        (await Shown(WorkspaceArtifactType.Specification)).Should().Be("attendance/docs/dependencies.md", "reading the state again changes nothing");
+    }
+
+    [Fact]
+    public async Task The_requirements_manual_testing_reads_follow_the_chosen_module_document()
+    {
+        ImportServices();
+        var provider = new ReviewContextProvider(_repository, new WorkspaceUpdateCoordinator(), new ConstitutionAnalysisService(), new PlanAnalysisService(), new DataModelAnalysisService(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ReviewContextProvider>.Instance, _explorers);
+        await _explorers.SelectModuleAsync("attendance");
+        await provider.RebuildAsync();
+        provider.GetCurrent()!.GetRequirements().Select(r => r.Id).Should().Equal("FR-601");
+
+        var dependencies = (await State(WorkspaceArtifactType.Specification)).Artifacts.Single(a => a.SourcePath == "attendance/docs/dependencies.md").Id;
+        _explorers.Select(WorkspaceArtifactType.Specification, dependencies);
+        await provider.RebuildAsync();
+
+        provider.GetCurrent()!.GetRequirements().Select(r => r.Id).Should().Equal(["FR-699"], "the chosen specification's requirements, not the feature's");
+    }
+
     [Fact]
     public async Task Switching_modules_and_back_restores_the_feature_and_every_role_follows_it()
     {

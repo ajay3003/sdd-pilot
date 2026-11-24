@@ -83,9 +83,11 @@ public sealed class RealM2lbManualTestingTests : IAsyncLifetime
             (await page.GetByTestId("mtd-requirement").First.InnerTextAsync()).Should().NotContain("**", "requirement text is shown without Markdown");
 
             // 5. Discover scenarios: the specification now contributes business scenarios.
-            // Discover now (offered after the choice) opens Plan & prepare and runs discovery for the chosen specification.
-            await page.GetByTestId("ssp-discover").ClickAsync();
-            await ReadyAsync(page, "tps");
+            // Finn og forstå runs discovery in place: «Oppdag på nytt» beside the module and specification choice (2026-11-24).
+            await page.GetByTestId("mtd-discover").ClickAsync();
+            await Assertions.Expect(page.GetByTestId("mtd-count-spec")).Not.ToHaveTextAsync("0", new() { Timeout = 300000 });
+            // The rest of this workflow prepares in the advanced Plans & export page (kept with advanced=1), which discovers for the chosen specification.
+            await GoAsync(page, "test-plan-suggestions?advanced=1&area=choose&discover=now", "tps");
             await MessageAsync(page, "candidates found");
             page.Url.Should().NotContain("discover=now", "a reload does not run discovery again");
             await Assertions.Expect(page.GetByTestId("tps-capability-specification")).ToHaveAttributeAsync("data-state", "Available");

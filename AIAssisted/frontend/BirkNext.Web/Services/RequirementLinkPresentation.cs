@@ -122,15 +122,18 @@ public static class RequirementLinkPresentation
     public static List<Row> Rows(TestCaseDraft c, IReadOnlyCollection<ProjectRequirementOption>? options)
     {
         var known = options is null ? null : options.Select(o => Key(o.RequirementId, o.SpecificationPath)).ToHashSet();
-        var ids = options?.Select(o => o.RequirementId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var titles = options?.GroupBy(o => o.RequirementId, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Title, StringComparer.OrdinalIgnoreCase);
+        // An automatic link belongs to the specification the case came from: FR-001 of another service is another requirement (2026-11-24).
+        var casePath = SpecificationPathOf(c);
+        ProjectRequirementOption? Own(string id) => options?.FirstOrDefault(o => string.Equals(o.RequirementId.Trim(), id, StringComparison.OrdinalIgnoreCase)
+            && (casePath is null || BirkNext.Specifications.SpecificationCatalogRules.SamePath(o.SpecificationPath, casePath)));
         var rows = new List<Row>();
         if (IsSpecificationCase(c))
             foreach (var r in c.Generated.Requirements.Where(r => !string.IsNullOrWhiteSpace(r.RuleId)).DistinctBy(r => r.RuleId.Trim(), StringComparer.OrdinalIgnoreCase))
             {
                 var id = r.RuleId.Trim();
-                var (validity, tone) = ids is null ? NotChecked : ids.Contains(id) ? Current : NotFound;
-                rows.Add(new(id, titles?.GetValueOrDefault(id) ?? r.Title, null, true, false, validity, tone, true, null, null));
+                var own = Own(id);
+                var (validity, tone) = options is null ? NotChecked : own is not null ? Current : NotFound;
+                rows.Add(new(id, own?.Title ?? r.Title, own?.SpecificationPath ?? casePath, true, false, validity, tone, true, null, null));
             }
         foreach (var m in c.RequirementLinks.Where(m => !string.IsNullOrWhiteSpace(m.RequirementId)))
         {
@@ -138,7 +141,8 @@ public static class RequirementLinkPresentation
             var (validity, tone) = known is null ? NotChecked : known.Contains(Key(id, m.SpecificationPath)) ? Current : NotFound;
             var saved = m.LinkedAt != default;
             var existing = rows.FindIndex(x => x.Automatic && string.Equals(x.RequirementId, id, StringComparison.OrdinalIgnoreCase));
-            var row = new Row(id, titles?.GetValueOrDefault(id) ?? (string.IsNullOrWhiteSpace(m.Title) ? id : m.Title), m.SpecificationPath, existing >= 0, true, validity, tone, saved,
+            var current = options?.FirstOrDefault(o => Key(o.RequirementId, o.SpecificationPath) == Key(id, m.SpecificationPath));
+            var row = new Row(id, current?.Title ?? (string.IsNullOrWhiteSpace(m.Title) ? id : m.Title), m.SpecificationPath, existing >= 0, true, validity, tone, saved,
                 string.IsNullOrWhiteSpace(m.LinkedBy) ? null : m.LinkedBy, saved ? m.LinkedAt : null);
             if (existing >= 0) rows[existing] = row; else rows.Add(row);
         }
@@ -163,6 +167,11 @@ public static class RequirementLinkPresentation
     /// <summary>Removes the manual link only; the case's own evidence (an automatic link) is never removed.</summary>
     public static TestCaseDraft Unlink(TestCaseDraft c, string requirementId, string? specificationPath) =>
         c with { RequirementLinks = [.. c.RequirementLinks.Where(m => Key(m.RequirementId, m.SpecificationPath) != Key(requirementId, specificationPath))] };
+
+    /// <summary>The specification file a case was prepared from: its user story's file, else the file its first evidence names ("path#…").</summary>
+    public static string? SpecificationPathOf(TestCaseDraft c) =>
+        c.Generated.Story?.SpecificationPath is { Length: > 0 } path ? path
+        : c.Generated.Evidence.FirstOrDefault()?.Reference is { Length: > 0 } r && r.IndexOf('#') is var hash and > 0 ? r[..hash] : null;
 
     public static bool IsSpecificationCase(TestCaseDraft c) =>
         c.Source.Kind is not (ScenarioSourceKind.SystemGuide or ScenarioSourceKind.Manual) && string.Equals(c.Generated.Capability, "specification", StringComparison.Ordinal);

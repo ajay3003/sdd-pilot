@@ -77,6 +77,7 @@ public sealed class ScenarioPlanningTests
     [InlineData("Send POST to https://localhost/api/reports and expect 202")]
     [InlineData("The field `childId` and utdanningsforhold_id stay; status ACCEPTED")]
     [InlineData("Call ReportService.Lock() and read periodLockedAt")]
+    [InlineData("Open /admin/child-specific-roles and read the list")]
     public void Technical_identifiers_survive_translation_unchanged(string text)
     {
         var (masked, tokens) = ScenarioPlanning.Protect(text);
@@ -87,6 +88,15 @@ public sealed class ScenarioPlanningTests
         var restored = ScenarioPlanning.Restore(translated, tokens);
         restored.Should().NotBeNull();
         foreach (var t in tokens) restored.Should().Contain(t);
+    }
+
+    [Fact]
+    public void An_app_route_is_one_protected_token_and_and_or_is_not_a_route()
+    {
+        // Real case (2026-11-24 walkthrough): "/admin/child-specific-roles" came back as "/admin/barnespesifikke roller".
+        ScenarioPlanning.Protect("Open /admin/child-specific-roles").Tokens.Should().Equal("/admin/child-specific-roles");
+        ScenarioPlanning.Protect("Open /barn/{id}/tjenester now").Tokens.Should().Equal("/barn/{id}/tjenester");
+        ScenarioPlanning.Protect("Approve and/or reject the report").Tokens.Should().BeEmpty();
     }
 
     [Fact]

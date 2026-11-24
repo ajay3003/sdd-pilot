@@ -1,0 +1,1260 @@
+{
+ "source": "AIAssisted/testdata/M2LB.zip",
+ "note": "Verbatim acceptance scenarios. humanReview is empty until an expert reviews it; model output is never a label.",
+ "scenarios": [
+  {
+   "id": "SkoleService/US1-1@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US1",
+    "title": "Accept a valid report without keeping the child's national ID",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a report for a child Person knows, with valid hours, dates within the open period and valid absence codes",
+   "when": "it arrives",
+   "then": "it is accepted, stored against the child's M2LB identity with BirkID and reporter, and the child's fødselsnummer/DUF-nummer is not stored, published or logged.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US1-2@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US1",
+    "title": "Accept a valid report without keeping the child's national ID",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "a report where `AntallTimerFaktiskNaervaer` is greater than `AntallTimerEtterPlanen`",
+   "when": "it arrives",
+   "then": "it is accepted and flagged \"attendance above plan\", and the absence-sum check is not applied to it.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US1-4@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US1",
+    "title": "Accept a valid report without keeping the child's national ID",
+    "priority": "P1"
+   },
+   "scenarioNumber": 4,
+   "given": "a report whose absence hours sum differs from planned minus actual hours by more than 0.5 hours",
+   "when": "it arrives",
+   "then": "it is accepted and flagged \"inconsistent hour totals\".",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US1-9@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US1",
+    "title": "Accept a valid report without keeping the child's national ID",
+    "priority": "P1"
+   },
+   "scenarioNumber": 9,
+   "given": "the same message delivered twice",
+   "when": "the second copy arrives",
+   "then": "nothing changes and the same outcome is returned.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US1-11@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US1",
+    "title": "Accept a valid report without keeping the child's national ID",
+    "priority": "P1"
+   },
+   "scenarioNumber": 11,
+   "given": "a report with an hour value greater than 24 × the number of days in its date range",
+   "when": "it arrives",
+   "then": "it is rejected with a machine-readable reason.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US2-1@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US2",
+    "title": "Process reports for security-classified children and enforce gradering on access",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a report for a child Person returns as Kode 6 or Kode 7",
+   "when": "it arrives",
+   "then": "it is validated, stored and versioned like any other report, the child's gradering is not stored, and it is answered as received.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US2-2@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US2",
+    "title": "Process reports for security-classified children and enforce gradering on access",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "stored data for a Kode 6/7 child",
+   "when": "a user without `Person:SeGradertBarn` for that child reads any list or lookup",
+   "then": "the child does not appear and is not counted, and a direct lookup answers as if the child did not exist.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US3-1@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US3",
+    "title": "Lock the period and deliver one final dataset",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "accepted reports in an open period",
+   "when": "the lock time passes",
+   "then": "the period locks and one dataset is produced containing one row per accepted report with BirkID, period, report dates, reporter type and identity, planned and actual hours, absence lines, source `ALTINN` and quality flags, except reports for children who are Kode 6/7 at lock (User Story 2).",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US3-2@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US3",
+    "title": "Lock the period and deliver one final dataset",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "a locked period",
+   "when": "the lock or export is run again",
+   "then": "the result is identical and nothing changes.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US4-1@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US4",
+    "title": "Hold reports for children not yet known",
+    "priority": "P2"
+   },
+   "scenarioNumber": 1,
+   "given": "a report whose identifier Person cannot resolve",
+   "when": "it arrives",
+   "then": "it is answered as received and held, the identifier and the report content are stored encrypted together with their own access control, and the lookup is retried when Person reports a new or changed person and at a fixed interval.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US4-2@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US4",
+    "title": "Hold reports for children not yet known",
+    "priority": "P2"
+   },
+   "scenarioNumber": 2,
+   "given": "a held report",
+   "when": "the child becomes resolvable before lock",
+   "then": "the report is processed as in User Stories 1 and 2 and the held identifier is deleted.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US5-1@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US5",
+    "title": "Corrections, withdrawals and more than one reporter",
+    "priority": "P2"
+   },
+   "scenarioNumber": 1,
+   "given": "an accepted report",
+   "when": "the same reporter sends a correction (`Oppdatering`) within the window",
+   "then": "a new version replaces the previous one, and the previous version is kept as history.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US5-2@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US5",
+    "title": "Corrections, withdrawals and more than one reporter",
+    "priority": "P2"
+   },
+   "scenarioNumber": 2,
+   "given": "reports from two different reporters for the same child and period",
+   "when": "the period locks",
+   "then": "both are delivered as separate rows, each with its reporter and flagged \"multiple reporters\".",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US6-1@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US6",
+    "title": "Expected population and coverage breakdown",
+    "priority": "P2"
+   },
+   "scenarioNumber": 1,
+   "given": "a child placed in a foster home (any type) or a private institution for at least one day of the period, of compulsory school age (grades 1–10), and with an utdanningsforhold overlapping the period",
+   "when": "the period locks",
+   "then": "the child is expected.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US6-2@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US6",
+    "title": "Expected population and coverage breakdown",
+    "priority": "P2"
+   },
+   "scenarioNumber": 2,
+   "given": "a child placed only in a state institution during the period",
+   "when": "the period locks",
+   "then": "the child is not expected (the state channel reports through BiRK).",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US7-1@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US7",
+    "title": "Maintain education master data",
+    "priority": "P2"
+   },
+   "scenarioNumber": 1,
+   "given": "a new utdanningsforhold whose child reference Person resolves",
+   "when": "it is ingested",
+   "then": "it is stored linked to the child's M2LB identity with from–to, education type and school type, and the child reference is not kept.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleService/US7-2@001-skoleservice",
+   "service": "SkoleService",
+   "specificationPath": "SkoleService/specs/001-skoleservice/spec.md",
+   "sourceVersion": "910156174945",
+   "story": {
+    "id": "US7",
+    "title": "Maintain education master data",
+    "priority": "P2"
+   },
+   "scenarioNumber": 2,
+   "given": "an existing record",
+   "when": "an update or an end/delete is ingested",
+   "then": "the record changes or ends, and the previous state remains readable for past periods.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleAdapter/US1-1@001-skoleadapter",
+   "service": "SkoleAdapter",
+   "specificationPath": "SkoleAdapter/specs/001-skoleadapter/spec.md",
+   "sourceVersion": "1962e20b040c",
+   "story": {
+    "id": "US1",
+    "title": "Keep education relations and missing school offers current",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a new utdanningsforhold in BiRK",
+   "when": "the change arrives",
+   "then": "SkoleService receives a create with a stable record identity, the child reference, from date, to date (or open-ended), education type and school type in SkoleService's code lists.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleAdapter/US1-2@001-skoleadapter",
+   "service": "SkoleAdapter",
+   "specificationPath": "SkoleAdapter/specs/001-skoleadapter/spec.md",
+   "sourceVersion": "1962e20b040c",
+   "story": {
+    "id": "US1",
+    "title": "Keep education relations and missing school offers current",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "a new manglende skoletilbud",
+   "when": "the change arrives",
+   "then": "SkoleService receives a create with record identity, child reference, from date, to date and reason in SkoleService's code list.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleAdapter/US2-1@001-skoleadapter",
+   "service": "SkoleAdapter",
+   "specificationPath": "SkoleAdapter/specs/001-skoleadapter/spec.md",
+   "sourceVersion": "1962e20b040c",
+   "story": {
+    "id": "US2",
+    "title": "Forward every row with the child reference; never resolve or guess identity",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a row whose child is unknown to Person",
+   "when": "it arrives",
+   "then": "it is forwarded with its child reference like any other row.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleAdapter/US2-2@001-skoleadapter",
+   "service": "SkoleAdapter",
+   "specificationPath": "SkoleAdapter/specs/001-skoleadapter/spec.md",
+   "sourceVersion": "1962e20b040c",
+   "story": {
+    "id": "US2",
+    "title": "Forward every row with the child reference; never resolve or guess identity",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "a row whose child is Kode 6 or Kode 7",
+   "when": "it arrives",
+   "then": "it is forwarded like any other row, and no classification is stored, logged or counted by the adapter.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "SkoleAdapter/US3-1@001-skoleadapter",
+   "service": "SkoleAdapter",
+   "specificationPath": "SkoleAdapter/specs/001-skoleadapter/spec.md",
+   "sourceVersion": "1962e20b040c",
+   "story": {
+    "id": "US3",
+    "title": "Deletes and ends reach SkoleService",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a forwarded row",
+   "when": "it is deleted in BiRK",
+   "then": "SkoleService receives a delete for the same record identity.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Person/US1-1@001-person-module",
+   "service": "Person",
+   "specificationPath": "Person/specs/001-person-module/spec.md",
+   "sourceVersion": "026dd11a792e",
+   "story": {
+    "id": "US1",
+    "title": "Search for Children",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a caseworker with `Person:SøkBarn` for an org unit",
+   "when": "they search by partial name",
+   "then": "they receive a paginated summary list containing only children in that org unit at security level 0 or 1, within acceptable response time.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Person/US1-2@001-person-module",
+   "service": "Person",
+   "specificationPath": "Person/specs/001-person-module/spec.md",
+   "sourceVersion": "026dd11a792e",
+   "story": {
+    "id": "US1",
+    "title": "Search for Children",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "a caseworker with `Person:SeGradertBarn` for a specific Kode 6 child",
+   "when": "they search by that child's name",
+   "then": "the child appears in results with a clear address-protection flag indicating the address must not be disclosed.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Person/US2-1@001-person-module",
+   "service": "Person",
+   "specificationPath": "Person/specs/001-person-module/spec.md",
+   "sourceVersion": "026dd11a792e",
+   "story": {
+    "id": "US2",
+    "title": "View Child Profile",
+    "priority": "P2"
+   },
+   "scenarioNumber": 1,
+   "given": "a caseworker with `Person:SeBarnGrunnprofil`",
+   "when": "they open a child profile",
+   "then": "they see: Name, BirkId, BarnType, BarnStatusType, Municipality, security level, and data source. National ID is masked.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Person/US2-2@001-person-module",
+   "service": "Person",
+   "specificationPath": "Person/specs/001-person-module/spec.md",
+   "sourceVersion": "026dd11a792e",
+   "story": {
+    "id": "US2",
+    "title": "View Child Profile",
+    "priority": "P2"
+   },
+   "scenarioNumber": 2,
+   "given": "a caseworker with `Person:SeFullIdentitet` for a child",
+   "when": "they view the profile",
+   "then": "the full national ID (fødselsnummer/DUF) is shown unmasked.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Person/US3-1@001-person-module",
+   "service": "Person",
+   "specificationPath": "Person/specs/001-person-module/spec.md",
+   "sourceVersion": "026dd11a792e",
+   "story": {
+    "id": "US3",
+    "title": "Manage Access to Kode 6/7 Children",
+    "priority": "P3"
+   },
+   "scenarioNumber": 1,
+   "given": "a user with `Person:AdministerGradertBarntilgang` for a Kode 6/7 child",
+   "when": "they grant another named user access via the Person module",
+   "then": "the Person module validates pre-conditions (child exists, is classified, no self-assignment) and calls the Authorisation module to create the grant; the new access appears in the access list.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "PersonAdapter/US1-1@001-birk-person-adapter",
+   "service": "PersonAdapter",
+   "specificationPath": "PersonAdapter/specs/001-birk-person-adapter/spec.md",
+   "sourceVersion": "e8e84ee6225d",
+   "story": {
+    "id": "US1",
+    "title": "Continuous Person Data Synchronization",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a new person record is created in BiRK",
+   "when": "the CDC event is processed",
+   "then": "the person exists in PersonModule with identity fields (name, national ID, date of birth, DUF number) correctly mapped from BiRK values.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "PersonAdapter/US1-2@001-birk-person-adapter",
+   "service": "PersonAdapter",
+   "specificationPath": "PersonAdapter/specs/001-birk-person-adapter/spec.md",
+   "sourceVersion": "e8e84ee6225d",
+   "story": {
+    "id": "US1",
+    "title": "Continuous Person Data Synchronization",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "an existing person's data is updated in BiRK",
+   "when": "the CDC event is processed",
+   "then": "PersonModule reflects the updated data.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "PersonAdapter/US2-1@001-birk-person-adapter",
+   "service": "PersonAdapter",
+   "specificationPath": "PersonAdapter/specs/001-birk-person-adapter/spec.md",
+   "sourceVersion": "e8e84ee6225d",
+   "story": {
+    "id": "US2",
+    "title": "Child Registration Synchronization",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a child registration is created in BiRK",
+   "when": "the CDC event is processed",
+   "then": "the registration exists in PersonModule with BirkID, registration type, status, and municipality correctly mapped.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "PersonAdapter/US2-2@001-birk-person-adapter",
+   "service": "PersonAdapter",
+   "specificationPath": "PersonAdapter/specs/001-birk-person-adapter/spec.md",
+   "sourceVersion": "e8e84ee6225d",
+   "story": {
+    "id": "US2",
+    "title": "Child Registration Synchronization",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "a child registration has a composite status value (e.g., \"Bestilling/Under Behandling\")",
+   "when": "processed",
+   "then": "the value is preserved in PersonModule unchanged — no splitting or transformation.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Tjeneste/US1-1@001-tjenestemodul-m01",
+   "service": "Tjeneste",
+   "specificationPath": "Tjeneste/specs/001-tjenestemodul-m01/spec.md",
+   "sourceVersion": "c587477a9f12",
+   "story": {
+    "id": "US1",
+    "title": "Saksbehandler ser tjenesteoversikt for et barn",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a child has two active placements registered in the system",
+   "when": "a case worker queries for that child's services",
+   "then": "both placements are returned, sorted with the most recent first, each including type, status, and all relevant dates.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Tjeneste/US1-2@001-tjenestemodul-m01",
+   "service": "Tjeneste",
+   "specificationPath": "Tjeneste/specs/001-tjenestemodul-m01/spec.md",
+   "sourceVersion": "c587477a9f12",
+   "story": {
+    "id": "US1",
+    "title": "Saksbehandler ser tjenesteoversikt for et barn",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "a child has no registered services",
+   "when": "a case worker queries for that child's services",
+   "then": "an empty list is returned — not an error.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Tjeneste/US2-1@001-tjenestemodul-m01",
+   "service": "Tjeneste",
+   "specificationPath": "Tjeneste/specs/001-tjenestemodul-m01/spec.md",
+   "sourceVersion": "c587477a9f12",
+   "story": {
+    "id": "US2",
+    "title": "Saksbehandler ser detaljer for én tjeneste",
+    "priority": "P2"
+   },
+   "scenarioNumber": 1,
+   "given": "a placement exists with a known identifier and is fully linked to a child",
+   "when": "a case worker queries for that specific placement",
+   "then": "all fields are returned with correct values, and optional fields not set are returned as empty rather than errors.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Tjeneste/US2-2@001-tjenestemodul-m01",
+   "service": "Tjeneste",
+   "specificationPath": "Tjeneste/specs/001-tjenestemodul-m01/spec.md",
+   "sourceVersion": "c587477a9f12",
+   "story": {
+    "id": "US2",
+    "title": "Saksbehandler ser detaljer for én tjeneste",
+    "priority": "P2"
+   },
+   "scenarioNumber": 2,
+   "given": "a placement identifier that does not exist",
+   "when": "a case worker queries for it",
+   "then": "an empty result is returned — not an error.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Autorisasjon/US1-1@001-translate-source-english",
+   "service": "Autorisasjon",
+   "specificationPath": "Autorisasjon/specs/001-translate-source-english/spec.md",
+   "sourceVersion": "b7f838f9c6bb",
+   "story": {
+    "id": "US1",
+    "title": "Translate Non-Domain Identifiers to English",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "an internal service class currently named `TilgangsEvalueringService`",
+   "when": "the translation is applied",
+   "then": "the class is renamed to `AccessEvaluationService` and all internal references are updated. (Internal class — not part of the public API surface.)",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Autorisasjon/US1-2@001-translate-source-english",
+   "service": "Autorisasjon",
+   "specificationPath": "Autorisasjon/specs/001-translate-source-english/spec.md",
+   "sourceVersion": "b7f838f9c6bb",
+   "story": {
+    "id": "US1",
+    "title": "Translate Non-Domain Identifiers to English",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "a GraphQL response type property named `BrukerIdentifikator` or a Service Bus event field named `KorrelasjonsId`",
+   "when": "the translation is applied",
+   "then": "both are left unchanged (serialized surface — do not rename).",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Autorisasjon/US2-1@001-translate-source-english",
+   "service": "Autorisasjon",
+   "specificationPath": "Autorisasjon/specs/001-translate-source-english/spec.md",
+   "sourceVersion": "b7f838f9c6bb",
+   "story": {
+    "id": "US2",
+    "title": "Domain Term Inventory Is Agreed and Documented",
+    "priority": "P2"
+   },
+   "scenarioNumber": 1,
+   "given": "the codebase contains a Norwegian identifier",
+   "when": "a developer consults the domain term list",
+   "then": "the identifier is present with a classification (preserve / translate-to) and a short rationale.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Autorisasjon/US2-2@001-translate-source-english",
+   "service": "Autorisasjon",
+   "specificationPath": "Autorisasjon/specs/001-translate-source-english/spec.md",
+   "sourceVersion": "b7f838f9c6bb",
+   "story": {
+    "id": "US2",
+    "title": "Domain Term Inventory Is Agreed and Documented",
+    "priority": "P2"
+   },
+   "scenarioNumber": 2,
+   "given": "the domain term list is finalized",
+   "when": "a reviewer checks a translated file",
+   "then": "every preserved term matches the list and every translated term does not appear on the \"preserve\" list.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Autorisasjon/US3-1@001-translate-source-english",
+   "service": "Autorisasjon",
+   "specificationPath": "Autorisasjon/specs/001-translate-source-english/spec.md",
+   "sourceVersion": "b7f838f9c6bb",
+   "story": {
+    "id": "US3",
+    "title": "All Tests Pass After Translation",
+    "priority": "P3"
+   },
+   "scenarioNumber": 1,
+   "given": "the translation is complete",
+   "when": "the full test suite is executed",
+   "then": "all tests pass (zero failures, zero errors).",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "MeldingsutvekslerReceiver/US1-1@001-meldingsutveksler-receiver",
+   "service": "MeldingsutvekslerReceiver",
+   "specificationPath": "MeldingsutvekslerReceiver/specs/001-meldingsutveksler-receiver/spec.md",
+   "sourceVersion": "8aae6f1b60b7",
+   "story": {
+    "id": "US1",
+    "title": "Deliver a valid skolenærvær message to SkoleService",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a valid skolenærvær v2.0.1 message",
+   "when": "the intake processes it",
+   "then": "SkoleService receives one request containing the child's identifier and its type, the reporter's type and identity, period dates, planned and actual hours, absence lines, message id, send time and message-chain information.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "MeldingsutvekslerReceiver/US1-2@001-meldingsutveksler-receiver",
+   "service": "MeldingsutvekslerReceiver",
+   "specificationPath": "MeldingsutvekslerReceiver/specs/001-meldingsutveksler-receiver/spec.md",
+   "sourceVersion": "8aae6f1b60b7",
+   "story": {
+    "id": "US1",
+    "title": "Deliver a valid skolenærvær message to SkoleService",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "SkoleService answers that the request was received",
+   "when": "the answer arrives",
+   "then": "a positive application receipt is sent, as the skolenærvær receipt policy requires, and the MU message is completed.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "MeldingsutvekslerReceiver/US2-1@001-meldingsutveksler-receiver",
+   "service": "MeldingsutvekslerReceiver",
+   "specificationPath": "MeldingsutvekslerReceiver/specs/001-meldingsutveksler-receiver/spec.md",
+   "sourceVersion": "8aae6f1b60b7",
+   "story": {
+    "id": "US2",
+    "title": "Reject structurally invalid messages without losing track of them",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a skolenærvær message that violates the v2.0.1 schema",
+   "when": "it is processed",
+   "then": "it is not forwarded, the MU message is completed, and a rejection is recorded with message id, message type, version and reason, without any payload content.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "MeldingsutvekslerReceiver/US2-2@001-meldingsutveksler-receiver",
+   "service": "MeldingsutvekslerReceiver",
+   "specificationPath": "MeldingsutvekslerReceiver/specs/001-meldingsutveksler-receiver/spec.md",
+   "sourceVersion": "8aae6f1b60b7",
+   "story": {
+    "id": "US2",
+    "title": "Reject structurally invalid messages without losing track of them",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "a skolenærvær message in a version other than v2.0.1 (for example v2.0.0 or v0.8.2)",
+   "when": "it is processed",
+   "then": "it is rejected as \"unsupported version\" and never validated against another version.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Frontend/US1-1@002-child-search-profile",
+   "service": "Frontend",
+   "specificationPath": "Frontend/specs/002-child-search-profile/spec.md",
+   "sourceVersion": "5c2014391561",
+   "story": {
+    "id": "US1",
+    "title": "Search for a Child",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "the caseworker is on the child search page",
+   "when": "they type a child's name in the search field",
+   "then": "a list of matching children appears with name, age, birth date, and current case status",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Frontend/US1-2@002-child-search-profile",
+   "service": "Frontend",
+   "specificationPath": "Frontend/specs/002-child-search-profile/spec.md",
+   "sourceVersion": "5c2014391561",
+   "story": {
+    "id": "US1",
+    "title": "Search for a Child",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "the caseworker is on the child search page",
+   "when": "they type a BiRK-ID in the search field",
+   "then": "the matching child appears in the results",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Frontend/US2-1@002-child-search-profile",
+   "service": "Frontend",
+   "specificationPath": "Frontend/specs/002-child-search-profile/spec.md",
+   "sourceVersion": "5c2014391561",
+   "story": {
+    "id": "US2",
+    "title": "View Child Profile Overview",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a child has complete identity data",
+   "when": "a caseworker opens their profile",
+   "then": "name, age, gender, birth number, BiRK-ID, home municipality, and uncertain-birth-number indicator are all shown",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Frontend/US2-2@002-child-search-profile",
+   "service": "Frontend",
+   "specificationPath": "Frontend/specs/002-child-search-profile/spec.md",
+   "sourceVersion": "5c2014391561",
+   "story": {
+    "id": "US2",
+    "title": "View Child Profile Overview",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "a child has current measures and events",
+   "when": "the profile loads",
+   "then": "the \"Gjeldende tiltak/opphold\" and \"Siste hendelser\" panels each display the relevant items with their overline label, title, and supporting text",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Frontend/US3-1@002-child-search-profile",
+   "service": "Frontend",
+   "specificationPath": "Frontend/specs/002-child-search-profile/spec.md",
+   "sourceVersion": "5c2014391561",
+   "story": {
+    "id": "US3",
+    "title": "Filter the Child's Event Timeline",
+    "priority": "P2"
+   },
+   "scenarioNumber": 1,
+   "given": "a child has a mix of event types",
+   "when": "the caseworker opens the profile",
+   "then": "the timeline shows all events newest-first with \"Vis alle\" active",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Revisjon/US1-1@001-revisjonstjenesten-m01",
+   "service": "Revisjon",
+   "specificationPath": "Revisjon/specs/001-revisjonstjenesten-m01/spec.md",
+   "sourceVersion": "efac5379c25e",
+   "story": {
+    "id": "US1",
+    "title": "Source service delivers a leselogg event",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a valid `LeseloggHendelse` with a unique `hendelsesId` is published to the `leselogg` queue",
+   "when": "M2LB.Revisjon processes the event",
+   "then": "the file `{year}/{month}/{day}/{hendelsesId}.json` exists in Blob Storage with content identical to the received event (no transformation).",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Revisjon/US1-2@001-revisjonstjenesten-m01",
+   "service": "Revisjon",
+   "specificationPath": "Revisjon/specs/001-revisjonstjenesten-m01/spec.md",
+   "sourceVersion": "efac5379c25e",
+   "story": {
+    "id": "US1",
+    "title": "Source service delivers a leselogg event",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "a valid event has been processed",
+   "when": "the event is acknowledged to Service Bus",
+   "then": "the event is removed from the queue.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Revisjon/US2-1@001-revisjonstjenesten-m01",
+   "service": "Revisjon",
+   "specificationPath": "Revisjon/specs/001-revisjonstjenesten-m01/spec.md",
+   "sourceVersion": "efac5379c25e",
+   "story": {
+    "id": "US2",
+    "title": "Idempotent handling of a duplicate event",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a `LeseloggHendelse` with an already stored `hendelsesId` is received again",
+   "when": "M2LB.Revisjon attempts to write with `IfNoneMatch: *`",
+   "then": "Blob Storage returns HTTP 412, the event is acknowledged to Service Bus without error, and no new file is created.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "HendelseAdapter/US1-1@001-birk-hendelse-adapter",
+   "service": "HendelseAdapter",
+   "specificationPath": "HendelseAdapter/specs/001-birk-hendelse-adapter/spec.md",
+   "sourceVersion": "9ad195af4594",
+   "story": {
+    "id": "US1",
+    "title": "Continuous Event Stream Processing",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a new `TvangsProtokoll` record appears in the Event Hubs stream",
+   "when": "the adapter processes it",
+   "then": "a `Inngrep` event is created in Hendelsestjenesten with all mandatory fields correctly populated.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "HendelseAdapter/US1-2@001-birk-hendelse-adapter",
+   "service": "HendelseAdapter",
+   "specificationPath": "HendelseAdapter/specs/001-birk-hendelse-adapter/spec.md",
+   "sourceVersion": "9ad195af4594",
+   "story": {
+    "id": "US1",
+    "title": "Continuous Event Stream Processing",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "a new `Rømming` record with `RommingKategoriType = 1` appears",
+   "when": "the adapter processes it",
+   "then": "a `Uteblivelse` event is created with the correct `HendelsesTypeId` and `RommingsDetalj`.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "HendelseAdapter/US2-1@001-birk-hendelse-adapter",
+   "service": "HendelseAdapter",
+   "specificationPath": "HendelseAdapter/specs/001-birk-hendelse-adapter/spec.md",
+   "sourceVersion": "9ad195af4594",
+   "story": {
+    "id": "US2",
+    "title": "Child Resolution via Tjeneste Lookup",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a BiRK event with `BirkTiltakPK = 12345`",
+   "when": "Tjeneste returns a matching `BarnId` and `TjenesteId`",
+   "then": "the event is delivered to Hendelsestjenesten with both fields populated.",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Hendelse/US1-1@002-fix-romning-refdata",
+   "service": "Hendelse",
+   "specificationPath": "Hendelse/specs/002-fix-romning-refdata/spec.md",
+   "sourceVersion": "aa39a437cd83",
+   "story": {
+    "id": "US1",
+    "title": "Correct Terminology in Event Classification",
+    "priority": "P1"
+   },
+   "scenarioNumber": 1,
+   "given": "a caller requests the available event types",
+   "when": "they inspect the runaway event entry",
+   "then": "the label reads \"Rømning\" (not \"Rømming\")",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  },
+  {
+   "id": "Hendelse/US1-2@002-fix-romning-refdata",
+   "service": "Hendelse",
+   "specificationPath": "Hendelse/specs/002-fix-romning-refdata/spec.md",
+   "sourceVersion": "aa39a437cd83",
+   "story": {
+    "id": "US1",
+    "title": "Correct Terminology in Event Classification",
+    "priority": "P1"
+   },
+   "scenarioNumber": 2,
+   "given": "an event classified as a runaway is stored and later retrieved",
+   "when": "the event type label is read",
+   "then": "it reads \"Rømning\" (not \"Rømming\")",
+   "explicitRequirementIds": [],
+   "humanReview": {
+    "status": "not reviewed",
+    "reviewer": null,
+    "expectedApproaches": null,
+    "notes": null
+   }
+  }
+ ]
+}

@@ -491,3 +491,73 @@ public static class TestCoverageText
     public const string SourceRequired = "Source analysis is required before test coverage can be reviewed.";
     public const string NoPercentage = "No code coverage report was found; no coverage percentage is shown.";
 }
+
+// ── User story interpretation (2026-11-24) ───────────────────────────────────────────────────────────────────────────────────────────
+// A user story explains WHY its acceptance scenarios matter; its "Independent Test" names what a tester must be able to show (coverage
+// objectives). Both are read from the story's own stored text, deterministically — nothing is invented, and an interpretation that is not a
+// plain list split is marked for review with its original sentence kept.
+
+/// <summary>What an objective is: a condition to exercise (an input or situation) or something to verify.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum StoryObjectiveKind { Condition, Verification }
+
+/// <summary>One coverage objective from a user story's "Independent Test", with the sentence it came from. <see cref="NeedsReview"/> when the
+/// split is an interpretation rather than an explicit list in the text.</summary>
+public sealed record StoryTestObjective(string Text, StoryObjectiveKind Kind, string Source, bool NeedsReview);
+
+public static partial class StoryInterpretation
+{
+    [System.Text.RegularExpressions.GeneratedRegex(@"\[(US-[A-Za-z0-9]+(?:\s*,\s*US-[A-Za-z0-9]+)*)\]")]
+    private static partial System.Text.RegularExpressions.Regex ReferenceBlock();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\b(?:verify|verifies|check|checks|confirm|confirms|ensure|ensures|assert|asserts|observe|observes)\s+(?:that\s+)?(?<list>.+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex VerifyClause();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(?:\w+\s+)?(?<verb>submit|send|create|post|publish|run|use|enter|search|open|request|deliver|upload)\s+(?<mods>(?:[\w-]+,\s+)*[\w-]+\s+(?:and|or)\s+[\w-]+)\s+(?<noun>[\w-]+)(?<rest>.*?)(?:\s+and\s*)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex ConditionList();
+
+    /// <summary>Story ids the description links to ("[US-B1, US-B2]"). Never the story's own id: US1 is not an alias of US-B1.</summary>
+    public static IReadOnlyList<string> ReferencedStories(string? description) =>
+        description is null ? [] : [.. ReferenceBlock().Matches(description).SelectMany(m => m.Groups[1].Value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)).Distinct(StringComparer.Ordinal)];
+
+    /// <summary>The coverage objectives of an "Independent Test" text: conditions to exercise and things to verify, in source order.</summary>
+    public static IReadOnlyList<StoryTestObjective> Objectives(string? independentTest)
+    {
+        if (string.IsNullOrWhiteSpace(independentTest)) return [];
+        var result = new List<StoryTestObjective>();
+        foreach (var raw in System.Text.RegularExpressions.Regex.Split(independentTest.Trim(), @"(?<=[.!?])\s+"))
+        {
+            var sentence = raw.Trim().TrimEnd('.');
+            if (sentence.Length == 0) continue;
+            var verify = VerifyClause().Match(sentence);
+            var before = verify.Success ? sentence[..verify.Index].Trim().TrimEnd(',') : sentence;
+            var conditions = ConditionList().Match(before);
+            if (conditions.Success)
+            {
+                var mods = System.Text.RegularExpressions.Regex.Split(conditions.Groups["mods"].Value, @",\s+|\s+(?:and|or)\s+").Where(m => m.Length > 0).ToList();
+                var noun = conditions.Groups["noun"].Value;
+                var rest = conditions.Groups["rest"].Value.Trim();
+                foreach (var m in mods)
+                    result.Add(new StoryTestObjective($"{m} {noun}{(rest.Length > 0 ? " " + rest : "")}", StoryObjectiveKind.Condition, raw.Trim(), NeedsReview: true));
+            }
+            else if (before.Length > 0 && verify.Success)
+                result.Add(new StoryTestObjective(before, StoryObjectiveKind.Condition, raw.Trim(), NeedsReview: true));
+            if (verify.Success)
+            {
+                var items = SplitList(verify.Groups["list"].Value);
+                foreach (var item in items)
+                    result.Add(new StoryTestObjective(item, StoryObjectiveKind.Verification, raw.Trim(), NeedsReview: items.Count == 1 && item.Contains(" and ", StringComparison.Ordinal)));
+            }
+            else if (!conditions.Success)
+                result.Add(new StoryTestObjective(sentence, StoryObjectiveKind.Verification, raw.Trim(), NeedsReview: true));
+        }
+        return result;
+    }
+
+    /// <summary>A comma list ("the stored outcome, the rejection reasons, the flags, and that no … exists") — split at commas only, so an
+    /// "and" inside one item is never split; a leading "that" is dropped.</summary>
+    private static List<string> SplitList(string list) =>
+        [.. System.Text.RegularExpressions.Regex.Split(list.Trim().TrimEnd('.'), @",\s+(?:and\s+)?")
+            .Select(x => System.Text.RegularExpressions.Regex.Replace(x.Trim(), @"^(?:and\s+)?(?:that\s+)?", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            .Where(x => x.Length > 0)];
+}

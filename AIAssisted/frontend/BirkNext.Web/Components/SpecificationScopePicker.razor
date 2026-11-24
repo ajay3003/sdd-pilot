@@ -35,7 +35,7 @@
             @if (!s.ModuleRequired && !s.PackRequired && SpecificationChoices(s) is { Count: > 1 } choices)
             {
                 <label class="ssp-field"><span class="ssp-k">Specification</span>
-                    <select class="ssp-select" data-testid="ssp-specification" disabled="@_busy" value="@(s.Selected?.Id ?? "")" @onchange="OnSpecification">
+                    <select @key="_renderKey" class="ssp-select" data-testid="ssp-specification" disabled="@_busy" value="@(s.Selected?.Id ?? "")" @onchange="OnSpecification">
                         @if (s.Selected is null) { <option value="">Choose a specification…</option> }
                         @foreach (var a in choices)
                         {
@@ -43,6 +43,7 @@
                         }
                     </select></label>
             }
+            @if (Actions is not null) { <div class="ssp-actions" data-testid="ssp-actions">@Actions</div> }
         </div>
         <p class="ssp-current" role="status" data-testid="ssp-current" data-state="@CurrentState(s)">
             @if (s.Status == ExplorerArtifactStatus.Loaded && s.Selected is { } selected)
@@ -85,7 +86,13 @@
             </p>
         }
         @if (_saveWarning is not null) { <p class="ssp-note" role="alert" data-testid="ssp-save-warning">@_saveWarning</p> }
+        @if (_refused is not null) { <p class="ssp-note" role="alert" data-testid="ssp-refused">@_refused</p> }
     </section>
+}
+else if (Actions is not null)
+{
+    @* Nothing to choose here: the page's actions keep their place. *@
+    <section class="ssp ssp-bare" data-testid="ssp"><div class="ssp-row"><div class="ssp-actions" data-testid="ssp-actions">@Actions</div></div></section>
 }
 
 @code {
@@ -94,6 +101,9 @@
 
     /// <summary>False to leave the "discover again" notice to the page.</summary>
     [Parameter] public bool ShowDiscoverLink { get; set; } = true;
+
+    /// <summary>The page's actions for the chosen scope (Finn og forstå: «Oppdag på nytt»), shown in the same row as the dropdowns.</summary>
+    [Parameter] public RenderFragment? Actions { get; set; }
 
     /// <summary>Runs discovery on this page (Plan &amp; prepare); without it, Discover now opens Plan &amp; prepare and runs it there.</summary>
     [Parameter] public EventCallback Discover { get; set; }
@@ -109,6 +119,9 @@
     private bool _busy;
     private bool _changed;
     private string? _saveWarning;
+    /// <summary>Why the last specification choice could not be applied (shown; the dropdown then shows the specification actually used).</summary>
+    private string? _refused;
+    private int _renderKey;
 
     protected override async Task OnInitializedAsync()
     {
@@ -148,8 +161,21 @@
     private Task OnFeature(ChangeEventArgs e) =>
         e.Value?.ToString() is { Length: > 0 } pack ? ApplyAsync(() => _explorer!.SelectPackAsync(pack, _state?.Module)) : Task.CompletedTask;
 
-    private Task OnSpecification(ChangeEventArgs e) =>
-        e.Value?.ToString() is { Length: > 0 } id ? ApplyAsync(() => { _explorer!.Select(WorkspaceArtifactType.Specification, id); return Task.CompletedTask; }) : Task.CompletedTask;
+    private async Task OnSpecification(ChangeEventArgs e)
+    {
+        if (e.Value?.ToString() is not { Length: > 0 } id) return;
+        _refused = null;
+        await ApplyAsync(() => { _explorer!.Select(WorkspaceArtifactType.Specification, id); return Task.CompletedTask; });
+        // Never show a choice that is not in use: when the explorers resolve another document, say so and redraw the dropdown from the real state.
+        if (_state is { } now && now.Selected?.Id != id)
+        {
+            var wanted = now.Artifacts.FirstOrDefault(a => a.Id == id)?.DisplayName ?? "Den valgte spesifikasjonen";
+            _refused = now.Selected is { } used
+                ? $"«{wanted}» kunne ikke brukes her; «{used.DisplayName}» brukes fortsatt."
+                : $"«{wanted}» kunne ikke brukes her. Velg en annen spesifikasjon.";
+            _renderKey++;
+        }
+    }
 
     private async Task ApplyAsync(Func<Task> change)
     {
@@ -158,15 +184,21 @@
         try
         {
             await change();
-            // Saved like a choice in the explorers, so a reload and every explorer show the same specification.
-            if (Services.GetService(typeof(IWorkspaceAutoSaveService)) is IWorkspaceAutoSaveService autoSave)
-                _saveWarning = await autoSave.SaveNowAsync() ? null : "The choice is used in this session but could not be saved to the workspace, so it will be lost on reload.";
-            // Requirements are read from the review context: wait until it is rebuilt from the new choice.
+            // Requirements are read from the review context: wait until it is rebuilt from the new choice, then show it.
             if (Services.GetService(typeof(IReviewContextProvider)) is IReviewContextProvider context) await context.RebuildAsync();
             await ReadAsync();
             _changed = true;
         }
         finally { _busy = false; }
         await Changed.InvokeAsync();
+        // Saved like a choice in the explorers, so a reload and every explorer show the same specification. After the page shows the choice (the
+        // save took seconds on a large workspace and held the page back); a failed save is still reported.
+        if (Services.GetService(typeof(IWorkspaceAutoSaveService)) is IWorkspaceAutoSaveService autoSave)
+        {
+            // Flush, not a second full save: the auto-save already saves the change; this waits for it (or saves what is still unsaved) and
+            // reports a failure. Two full saves took 4-5 s each of the browser's thread on a large workspace.
+            _saveWarning = await autoSave.FlushAsync() ? null : "The choice is used in this session but could not be saved to the workspace, so it will be lost on reload.";
+            StateHasChanged();
+        }
     }
 }

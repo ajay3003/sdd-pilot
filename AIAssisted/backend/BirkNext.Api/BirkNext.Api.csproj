@@ -161,6 +161,7 @@
     <Compile Include="../../shared/SystemUnderstandingContracts.cs" Link="Models/SystemUnderstandingContracts.cs" />
     <Compile Include="../../shared/TestPlanSuggestionContracts.cs" Link="Models/TestPlanSuggestionContracts.cs" />
     <Compile Include="../../shared/ScenarioCentricPlanning.cs" Link="Models/ScenarioCentricPlanning.cs" />
+    <Compile Include="../../shared/TestDesignAdvice.cs" Link="Models/TestDesignAdvice.cs" />
     <Compile Include="../../shared/TranslationSettingsContracts.cs" Link="Models/TranslationSettingsContracts.cs" />
     <Compile Include="../../shared/ManualTestRunContracts.cs" Link="Models/ManualTestRunContracts.cs" />
     <Compile Include="../../shared/TechnicalFindingContracts.cs" Link="Models/TechnicalFindingContracts.cs" />

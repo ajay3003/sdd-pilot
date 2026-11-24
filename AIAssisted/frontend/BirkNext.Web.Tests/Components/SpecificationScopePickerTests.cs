@@ -35,7 +35,7 @@ public sealed class SpecificationScopePickerTests : BunitContext
     {
         _state = state;
         _explorer.Setup(x => x.GetStateAsync(WorkspaceArtifactType.Specification, It.IsAny<CancellationToken>())).ReturnsAsync(() => _state);
-        _save.Setup(x => x.SaveNowAsync()).ReturnsAsync(true);
+        _save.Setup(x => x.FlushAsync()).ReturnsAsync(true);
         Services.AddSingleton(_explorer.Object);
         Services.AddSingleton(_save.Object);
         return Render<SpecificationScopePicker>(p => p.Add(x => x.Changed, () => changed?.Invoke()));
@@ -59,7 +59,8 @@ public sealed class SpecificationScopePickerTests : BunitContext
         cut.Find("[data-testid=ssp-module]").Change("HendelseAdapter");
 
         _explorer.Verify(x => x.SelectModuleAsync("HendelseAdapter", It.IsAny<CancellationToken>()));
-        _save.Verify(x => x.SaveNowAsync(), "the choice is saved like one made in the explorers");
+        _save.Verify(x => x.FlushAsync(), "the choice is saved like one made in the explorers");
+        _save.Verify(x => x.SaveNowAsync(), Times.Never, "the auto-save already saves the change: no second full save");
         changed.Should().Be(1);
         cut.Find("[data-testid=ssp-current]").GetAttribute("data-state").Should().Be("feature");
         cut.FindAll("[data-testid=ssp-feature] option").Select(o => o.TextContent).Should().Equal("Choose a feature…", "BiRK Hendelsesadapter (001-adapter)", "Translate HendelseAdapter (004-translate)");
@@ -88,7 +89,7 @@ public sealed class SpecificationScopePickerTests : BunitContext
         var spec = Spec("h4", "HendelseAdapter/specs/004-translate/spec.md", "Translate HendelseAdapter", "HendelseAdapter");
         _state = State(ExplorerArtifactStatus.SelectionRequired, module: "HendelseAdapter", packRequired: true, packs: true);
         _explorer.Setup(x => x.GetStateAsync(WorkspaceArtifactType.Specification, It.IsAny<CancellationToken>())).ReturnsAsync(() => _state);
-        _save.Setup(x => x.SaveNowAsync()).ReturnsAsync(true);
+        _save.Setup(x => x.FlushAsync()).ReturnsAsync(true);
         Services.AddSingleton(_explorer.Object);
         Services.AddSingleton(_save.Object);
         var discovered = 0;
@@ -132,5 +133,92 @@ public sealed class SpecificationScopePickerTests : BunitContext
         var cut = Open(State(ExplorerArtifactStatus.Empty, module: "HendelseAdapter", pack: "001-adapter", packs: true));
         cut.Find("[data-testid=ssp-current]").GetAttribute("data-state").Should().Be("none");
         cut.Find("[data-testid=ssp-current]").TextContent.Should().Contain("BiRK Hendelsesadapter has no specification of its own");
+    }
+
+    // ── 2026-11-24: choosing the second specification of SkoleService ───────────────────────────────────────
+
+    private static readonly ExplorerArtifact Main = Spec("s1", "SkoleService/specs/001-skoleservice/spec.md", "Feature Specification: SkoleService", "SkoleService");
+    private static readonly ExplorerArtifact Dependencies = Spec("s2", "SkoleService/docs/avhengigheter-bestilling.md", "Avhengigheter for SkoleService før go-live", "SkoleService");
+
+    private static ArtifactExplorerState Skole(ExplorerArtifact selected) => State(ExplorerArtifactStatus.Loaded, [Main, Dependencies], selected, module: "SkoleService");
+
+    [Fact]
+    public void The_second_specification_stays_chosen_and_switching_back_and_forth_works()
+    {
+        var changed = 0;
+        var cut = Open(Skole(Main), () => changed++);
+        _explorer.Setup(x => x.Select(WorkspaceArtifactType.Specification, It.IsAny<string>(), null))
+            .Callback<WorkspaceArtifactType, string, string?>((_, id, _) => _state = Skole(id == "s2" ? Dependencies : Main));
+
+        foreach (var (id, name) in new[] { ("s2", "Avhengigheter"), ("s1", "Feature Specification"), ("s2", "Avhengigheter") })
+        {
+            cut.Find("[data-testid=ssp-specification]").Change(id);
+            cut.Find("[data-testid=ssp-specification]").GetAttribute("value").Should().Be(id);
+            cut.Find("[data-testid=ssp-current]").TextContent.Should().Contain(name);
+            cut.Find("[data-testid=ssp-module]").GetAttribute("value").Should().Be("SkoleService", "the module stays chosen");
+            cut.FindAll("[data-testid=ssp-refused]").Should().BeEmpty();
+        }
+        changed.Should().Be(3);
+    }
+
+    [Fact]
+    public void A_choice_that_cannot_be_used_is_said_plainly_and_the_dropdown_shows_the_specification_in_use()
+    {
+        var cut = Open(Skole(Main));
+        // The explorers keep using the first specification (for example a document that is no longer available).
+        _explorer.Setup(x => x.Select(WorkspaceArtifactType.Specification, It.IsAny<string>(), null));
+
+        cut.Find("[data-testid=ssp-specification]").Change("s2");
+
+        cut.Find("[data-testid=ssp-refused]").TextContent.Should().Contain("«Avhengigheter for SkoleService før go-live» kunne ikke brukes her")
+            .And.Contain("«Feature Specification: SkoleService» brukes fortsatt");
+        cut.Find("[data-testid=ssp-specification]").GetAttribute("value").Should().Be("s1", "the dropdown is redrawn from the real state");
+        cut.Find("[data-testid=ssp-current]").TextContent.Should().Contain("Feature Specification");
+    }
+
+    [Fact]
+    public void A_choice_that_could_not_be_saved_is_reported()
+    {
+        var cut = Open(Skole(Main));
+        _save.Setup(x => x.FlushAsync()).ReturnsAsync(false);
+        _explorer.Setup(x => x.Select(WorkspaceArtifactType.Specification, It.IsAny<string>(), null)).Callback(() => _state = Skole(Dependencies));
+
+        cut.Find("[data-testid=ssp-specification]").Change("s2");
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ssp-save-warning]").TextContent.Should().Contain("could not be saved"));
+        cut.Find("[data-testid=ssp-specification]").GetAttribute("value").Should().Be("s2", "the choice is still used in this session");
+    }
+
+    [Fact]
+    public void The_pages_actions_sit_in_the_same_row_as_the_dropdowns()
+    {
+        _state = Skole(Main);
+        _explorer.Setup(x => x.GetStateAsync(WorkspaceArtifactType.Specification, It.IsAny<CancellationToken>())).ReturnsAsync(() => _state);
+        Services.AddSingleton(_explorer.Object);
+        Services.AddSingleton(_save.Object);
+        var cut = Render<SpecificationScopePicker>(p => p.Add(x => x.Actions, (Microsoft.AspNetCore.Components.RenderFragment)(b =>
+        {
+            b.OpenElement(0, "button"); b.AddAttribute(1, "data-testid", "page-action"); b.AddContent(2, "Oppdag på nytt"); b.CloseElement();
+        })));
+
+        var row = cut.Find(".ssp-row");
+        row.QuerySelector("[data-testid=ssp-module]").Should().NotBeNull();
+        row.QuerySelector("[data-testid=ssp-specification]").Should().NotBeNull();
+        row.QuerySelector("[data-testid=ssp-actions] [data-testid=page-action]")!.TextContent.Should().Be("Oppdag på nytt");
+    }
+
+    [Fact]
+    public void With_nothing_to_choose_the_pages_actions_keep_their_place()
+    {
+        _state = new ArtifactExplorerState(WorkspaceArtifactType.Specification, ExplorerArtifactStatus.Empty, "p", "P", []);
+        _explorer.Setup(x => x.GetStateAsync(WorkspaceArtifactType.Specification, It.IsAny<CancellationToken>())).ReturnsAsync(() => _state);
+        Services.AddSingleton(_explorer.Object);
+        var cut = Render<SpecificationScopePicker>(p => p.Add(x => x.Actions, (Microsoft.AspNetCore.Components.RenderFragment)(b =>
+        {
+            b.OpenElement(0, "button"); b.AddAttribute(1, "data-testid", "page-action"); b.AddContent(2, "Oppdag scenarioer"); b.CloseElement();
+        })));
+
+        cut.Find("[data-testid=ssp-actions] [data-testid=page-action]").Should().NotBeNull();
+        cut.FindAll("[data-testid=ssp-specification]").Should().BeEmpty();
     }
 }

@@ -7,3 +7,5 @@
 .ssp-path { color: var(--clr-text-muted, #57606a); font-size: 0.85rem; }
 .ssp-link { font-size: 0.85rem; }
 .ssp-note { margin: 0.5rem 0 0; font-size: 0.9rem; }
+.ssp-actions { display: flex; align-items: flex-end; gap: 0.5rem; flex: 0 0 auto; }
+.ssp-bare { padding: 0.5rem 0.9rem; }

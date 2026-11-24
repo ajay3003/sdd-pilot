@@ -118,6 +118,9 @@ public static partial class ScenarioBrowserPresentation
     public sealed record Item(DiscoveredScenario Candidate, ScenarioOwnershipInfo Owner, Relevance Relevance, string Title, string Area, Status Status, Prepared? Prepared,
         ScenarioWorkItem? Work = null)
     {
+        private ExecutionSuitability? _suitability;
+        /// <summary>How the scenario can be executed (computed once per item, from its own text; a recommendation, not a label).</summary>
+        public ExecutionSuitability Suitability => _suitability ??= TestDesignAdvisor.Suitability(TestDesignAdvisor.FactsOf(Candidate));
         public string Id => Candidate.CandidateId;
         public string TypeLabel => ScenarioCandidateTypes.Label(Candidate.Type);
         public bool In(ScenarioWorkQueue queue) => Work?.Queues.Contains(queue) == true;
@@ -169,7 +172,40 @@ public static partial class ScenarioBrowserPresentation
 
     /// <summary>All filters compose. <see cref="Queue"/> null = every scenario (Finn og forstå starts on <see cref="DefaultView"/>).</summary>
     public sealed record Filter(string Query = "", string? Area = null, string? Type = null, string? Status = null, string? Story = null, string? Requirement = null, bool Technical = false, bool All = false,
-        ScenarioWorkQueue? Queue = null);
+        ScenarioWorkQueue? Queue = null, string? Priority = null, ExecutionApproach? Approach = null);
+
+    /// <summary>The priority filter value for scenarios whose user story declares no priority (never guessed).</summary>
+    public const string NoPriority = "(none)";
+
+    /// <summary>The declared priorities present (P1, P2 …, in order), plus <see cref="NoPriority"/> when some scenarios have none. Empty when no
+    /// scenario declares one — then there is nothing to filter by.</summary>
+    public static IReadOnlyList<string> Priorities(IReadOnlyList<Item> items)
+    {
+        var declared = items.Select(i => i.Candidate.Story?.Priority).OfType<string>().Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(p => int.TryParse(new string(p.Where(char.IsDigit).ToArray()), out var n) ? n : int.MaxValue).ThenBy(p => p, StringComparer.Ordinal).ToList();
+        if (declared.Count > 0 && items.Any(i => string.IsNullOrEmpty(i.Candidate.Story?.Priority))) declared.Add(NoPriority);
+        return declared;
+    }
+
+    /// <summary>Filters behind «Flere filtre» that are set (status, type, user story, requirement, priority).</summary>
+    public static int AdvancedFilterCount(Filter f) =>
+        new[] { f.Status, f.Type, f.Story, f.Requirement, f.Priority, f.Approach?.ToString() }.Count(v => v is not null);
+
+    /// <summary>Whether search or any filter narrows the view (the queue and «Vis teknisk innhold» are views, not filters).</summary>
+    public static bool HasFilters(Filter f) => f.Query.Length > 0 || f.Area is not null || AdvancedFilterCount(f) > 0;
+
+    /// <summary>«Nullstill filtre»: search and filters cleared; the work queue and the technical-content preference stay as chosen.</summary>
+    public static Filter ResetFilters(Filter f) => new(Technical: f.Technical, All: f.All, Queue: f.Queue);
+
+    /// <summary>One short sentence per work queue (the rules are under «Hva betyr dette?»).</summary>
+    public static string QueueHint(ScenarioWorkQueue? queue) => queue switch
+    {
+        ScenarioWorkQueue.Recommended => "Scenarioer med tydelig forventet resultat og uten forberedte testtilfeller.",
+        ScenarioWorkQueue.NeedsClarification => "Scenarioer som må gjennomgås før testforberedelse.",
+        ScenarioWorkQueue.Prepared => "Scenarioer med eksisterende testtilfeller.",
+        ScenarioWorkQueue.SourceChanged => "Scenarioer som bør vurderes etter kildeendringer.",
+        _ => "Viser alle scenarioer innenfor gjeldende filtre.",
+    };
 
     /// <summary>Finn og forstå's default view: the work queue «Anbefalt å forberede» (technical content hidden).</summary>
     public static readonly Filter DefaultView = new(Queue: ScenarioWorkQueue.Recommended);
@@ -185,6 +221,9 @@ public static partial class ScenarioBrowserPresentation
             && (f.Status is null || i.Status.Key == f.Status)
             && (f.Story is null || i.Candidate.Story?.Key == f.Story)
             && (f.Requirement is null || i.Candidate.RequirementIds.Contains(f.Requirement, StringComparer.OrdinalIgnoreCase))
+            && (f.Priority is null || (f.Priority == NoPriority ? string.IsNullOrEmpty(i.Candidate.Story?.Priority)
+                : string.Equals(i.Candidate.Story?.Priority, f.Priority, StringComparison.OrdinalIgnoreCase)))
+            && (f.Approach is not { } approach || i.Suitability.Has(approach))
             && words.All(w => $"{i.Title} {i.Candidate.Title} {i.Candidate.Purpose} {i.Area} {string.Join(' ', i.Candidate.RequirementIds)}".Contains(w, StringComparison.CurrentCultureIgnoreCase));
         bool InQueue(Item i) => f.Queue is not { } q || i.In(q);
         var shown = items.Where(i => InQueue(i) && Match(i)).ToList();

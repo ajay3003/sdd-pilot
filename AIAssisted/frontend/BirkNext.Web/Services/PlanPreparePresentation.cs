@@ -178,6 +178,7 @@ public static partial class PlanPreparePresentation
         public List<string> TestDataAssetIds { get; set; } = [];
         /// <summary>The Norwegian translation as the reviewer sees and edits it (null = the case has none).</summary>
         public string? TranslatedTitle { get; set; }
+        public string TranslatedPurpose { get; set; } = "";
         public string TranslatedPreconditions { get; set; } = "";
         public string TranslatedExpected { get; set; } = "";
         public bool HasTranslation => TranslatedTitle is not null;
@@ -189,6 +190,7 @@ public static partial class PlanPreparePresentation
             if (c.Translation(ScenarioPlanning.Norwegian) is { } nb)
             {
                 form.TranslatedTitle = nb.Title ?? "";
+                form.TranslatedPurpose = nb.Purpose ?? "";
                 form.TranslatedPreconditions = nb.Preconditions ?? "";
                 form.TranslatedExpected = nb.ExpectedResult ?? "";
                 for (var i = 0; i < form.Steps.Count; i++)
@@ -220,7 +222,7 @@ public static partial class PlanPreparePresentation
             var steps = Kept;
             var next = held with
             {
-                Title = Blank(TranslatedTitle), Preconditions = Blank(TranslatedPreconditions), ExpectedResult = Blank(TranslatedExpected),
+                Title = Blank(TranslatedTitle), Purpose = Blank(TranslatedPurpose), Preconditions = Blank(TranslatedPreconditions), ExpectedResult = Blank(TranslatedExpected),
                 Steps = [.. steps.Select(r => r.TranslatedAction.Trim())], StepExpected = [.. steps.Select(r => Blank(r.TranslatedExpected))],
             };
             return SameText(held, next) ? held : next;
@@ -229,7 +231,7 @@ public static partial class PlanPreparePresentation
         private static string? Blank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
 
         private static bool SameText(TestCaseTranslation a, TestCaseTranslation b) =>
-            (a.Title ?? "") == (b.Title ?? "") && (a.Preconditions ?? "") == (b.Preconditions ?? "") && (a.ExpectedResult ?? "") == (b.ExpectedResult ?? "")
+            (a.Title ?? "") == (b.Title ?? "") && (a.Purpose ?? "") == (b.Purpose ?? "") && (a.Preconditions ?? "") == (b.Preconditions ?? "") && (a.ExpectedResult ?? "") == (b.ExpectedResult ?? "")
             && a.Steps.Select(x => x ?? "").SequenceEqual(b.Steps.Select(x => x ?? "")) && a.StepExpected.Select(x => x ?? "").SequenceEqual(b.StepExpected.Select(x => x ?? ""));
 
         public void AddStep() => Steps.Add(new StepRow());

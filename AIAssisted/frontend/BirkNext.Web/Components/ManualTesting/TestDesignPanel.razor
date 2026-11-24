@@ -1,0 +1,179 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@* Testdesign (2026-11-24): how to test the scenario, what to verify, what is missing, and additional test designs the source supports. One
+   component for Finn og forstå (read-only) and Planlegg og klargjør (accept / reject / defer). Advice only: nothing is added, approved or
+   rewritten without a person, and no endpoint, query, queue, path, permission or tool is invented. *@
+<section class="tdp" aria-label="Testdesign" data-testid="tdp">
+    <div class="tdp-approaches" data-testid="tdp-approaches">
+        <span class="mtp-ctx-label">Testtilnærming</span>
+        <ul>
+            @foreach (var a in _suitability.Approaches)
+            {
+                <li data-approach="@a.Approach" data-testid="tdp-approach"><span class="tdp-chip tdp-@a.Approach.ToString().ToLowerInvariant()">@TestDesignAdvisor.ApproachLabel(a.Approach)</span> <span class="mt-muted msb-small">@a.Reason</span></li>
+            }
+        </ul>
+        <span class="mt-muted msb-small">Anbefaling ut fra hva kilden sier — ikke en vurdering av om det finnes tester, og ikke et resultat.</span>
+    </div>
+
+    @if (Readiness is { } r)
+    {
+        <div class="tdp-readiness" data-level="@r.Level" data-testid="tdp-readiness">
+            <span class="mtp-ctx-label">Klar til kjøring?</span>
+            <span class="msb-status msb-tone-@(r.Level switch { ReadinessLevel.ReadyToRun => "ok", ReadinessLevel.Blocked => "bad", ReadinessLevel.ReadyForReview => "info", _ => "warn" })" data-testid="tdp-readiness-level">@TestDesignAdvisor.ReadinessLabel(r.Level)</span>
+            <ul class="tdp-checks">
+                @foreach (var check in r.Checks)
+                {
+                    <li data-satisfied="@check.Satisfied" data-testid="tdp-check"><span class="tdp-mark" aria-hidden="true">@(check.Satisfied switch { Tri.Yes => "✓", Tri.No => "✕", _ => "?" })</span>
+                        <strong>@check.Name</strong> <span class="mt-muted msb-small">@check.Detail</span></li>
+                }
+            </ul>
+            <span class="mt-muted msb-small">Klar til kjøring betyr ikke at testen er kjørt eller bestått. Ukjent teller aldri som oppfylt. Lagring er alltid mulig.</span>
+        </div>
+    }
+
+    @if (_points.Count > 0)
+    {
+        <div class="tdp-verify" data-testid="tdp-verification">
+            <span class="mtp-ctx-label">Slik verifiseres det</span>
+            <ul>
+                @foreach (var p in _points)
+                {
+                    <li data-surface="@p.Surface" data-negative="@(p.Negative ? "true" : "false")" data-testid="tdp-point">
+                        <span>@p.Assertion</span>
+                        <span class="mt-muted msb-small">@p.Where@(p.Negative ? " · negativ påstand: fravær må kontrolleres på alle flater" : "")</span>
+                        <span class="msb-status msb-tone-@(p.MethodConfirmed ? "ok" : p.Critical ? "warn" : "muted")" data-testid="tdp-point-method">@(p.MethodConfirmed ? "Metode bekreftet" : "Verifisering kreves — metode ikke bekreftet")</span>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+
+    @if (TestData is { Count: > 0 } data)
+    {
+        <div class="tdp-data" data-testid="tdp-testdata">
+            <span class="mtp-ctx-label">Testdata: krav og tilgjengelighet</span>
+            <ul>@foreach (var d in data) { <li data-availability="@d.Availability" data-testid="tdp-data-item"><span>@d.Requirement</span> <span class="msb-status msb-tone-@(d.Availability switch { DataAvailability.Confirmed => "ok", DataAvailability.Blocked => "bad", _ => "warn" })">@AvailabilityLabel(d.Availability)</span></li> }</ul>
+            <span class="mt-muted msb-small">@data[0].Note</span>
+        </div>
+    }
+
+    @if (_proposals.Count > 0 || _hidden > 0)
+    {
+        <div class="tdp-proposals" data-testid="tdp-proposals">
+            <span class="mtp-ctx-label">Forslag til flere tester (@_proposals.Count)</span>
+            <ul>
+                @foreach (var v in _proposals)
+                {
+                    var proposal = v;
+                    var decision = Decisions?.FirstOrDefault(d => d.ProposalKey == proposal.Key);
+                    <li class="tdp-proposal" data-key="@proposal.Key" data-testid="tdp-proposal">
+                        <div class="tdp-proposal-head"><span class="tdp-technique">@proposal.Dimension</span> <strong>@proposal.Title</strong>
+                            @if (decision is not null) { <span class="msb-status msb-tone-muted" data-testid="tdp-decision">@(decision.Decision == TestDesignDecisions.Rejected ? "Avvist" : "Utsatt") av @decision.By</span> }</div>
+                        <span class="msb-small">@proposal.Basis</span>
+                        @if (proposal.Preconditions is { Length: > 0 } pre) { <span class="mt-muted msb-small">Betingelse: @pre</span> }
+                        <span class="mt-muted msb-small" data-testid="tdp-proposal-expected">Forventet: @(proposal.Expected ?? "ikke oppgitt i kilden — avklares før kjøring")</span>
+                        @if (CanAct)
+                        {
+                            <span class="tdp-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" disabled="@Busy" @onclick="() => OnAccept.InvokeAsync(proposal)" data-testid="tdp-accept">Legg til som testtilfelle</button>
+                                @if (decision?.Decision != TestDesignDecisions.Deferred) { <button type="button" class="msb-link" disabled="@Busy" @onclick="() => OnDecide.InvokeAsync((proposal, TestDesignDecisions.Deferred))" data-testid="tdp-defer">Utsett</button> }
+                                @if (decision?.Decision != TestDesignDecisions.Rejected) { <button type="button" class="msb-link" disabled="@Busy" @onclick="() => OnDecide.InvokeAsync((proposal, TestDesignDecisions.Rejected))" data-testid="tdp-reject">Avvis</button> }
+                            </span>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (!CanAct) { <span class="mt-muted msb-small">Forslagene legges til i Planlegg og klargjør etter at scenarioet er forberedt.</span> }
+            @if (_hidden > 0) { <span class="mt-muted msb-small" data-testid="tdp-proposals-rejected">@_hidden avviste forslag er skjult.</span> }
+        </div>
+    }
+
+    @if (_e2e is not null || _matrix.Rows.Count > 0 || _states.Count >= 2 || Table is { Rows.Count: > 1 })
+    {
+        <details class="tdp-advanced" data-testid="tdp-advanced">
+            <summary>Teknisk testdesign</summary>
+            @if (_e2e is { } e)
+            {
+                <div class="tdp-block" data-testid="tdp-e2e">
+                    <strong>På tvers av tjenester: @string.Join(" → ", e.Services)</strong>
+                    <ol>@foreach (var cp in e.Checkpoints) { <li>@cp</li> }</ol>
+                    <ul class="tdp-gaps">@foreach (var g in e.Gaps) { <li>@g</li> }</ul>
+                    <span class="mt-muted msb-small">Bare tjenester og kontrollpunkter kilden nevner. Ende-til-ende-dekning er ikke påstått før kontrollpunktene kan observeres.</span>
+                </div>
+            }
+            @if (_matrix.Rows.Count > 0)
+            {
+                <div class="tdp-block" data-testid="tdp-security">
+                    <strong>Tilgangsmatrise (representative kombinasjoner)</strong>
+                    <ul>@foreach (var row in _matrix.Rows) { <li>@row</li> }</ul>
+                    @if (_matrix.NegativeChecks.Count > 0) { <span class="msb-small">Negative kontroller fra kilden:</span><ul>@foreach (var n in _matrix.NegativeChecks) { <li>@n</li> }</ul> }
+                    <span class="mt-muted msb-small">At et barn mangler i én liste beviser ikke konfidensialitet — kontroller oppslag, liste og telling hver for seg.</span>
+                </div>
+            }
+            @if (_states.Count >= 2)
+            {
+                <div class="tdp-block" data-testid="tdp-states"><strong>Tilstander kilden nevner:</strong> @string.Join(" → ", _states)</div>
+            }
+            @if (Table is { Rows.Count: > 1 } t)
+            {
+                <div class="tdp-block" data-testid="tdp-decisions">
+                    <strong>Beslutningstabell</strong>
+                    @foreach (var p in t.Precedence) { <p class="msb-small" data-testid="tdp-precedence">@p</p> }
+                    <ul class="tdp-table">
+                        @foreach (var row in t.Rows)
+                        {
+                            <li data-kind="@row.Kind" data-testid="tdp-decision-row"><span class="tdp-technique">@row.Kind</span> @string.Join(" + ", row.Conditions) → <strong>@(row.Outcome ?? "ikke fastsatt i kilden")</strong> <span class="mt-muted msb-small">@row.Basis</span></li>
+                        }
+                    </ul>
+                </div>
+            }
+        </details>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ScenarioFacts Facts { get; set; } = default!;
+    /// <summary>The scenario's own case (or the discovered scenario seen as one) the proposals are made from.</summary>
+    [Parameter, EditorRequired] public TestCaseDraft Scenario { get; set; } = default!;
+    [Parameter] public ExecutionSuitability? Suitability { get; set; }
+    /// <summary>The selected case (Planlegg og klargjør): its verification method, readiness and test data. Null in Finn og forstå.</summary>
+    [Parameter] public TestCaseDraft? Case { get; set; }
+    [Parameter] public ExecutionReadiness? Readiness { get; set; }
+    [Parameter] public IReadOnlyList<TestDataItem>? TestData { get; set; }
+    [Parameter] public IEnumerable<TestCaseDraft>? Siblings { get; set; }
+    [Parameter] public IReadOnlyList<TestDesignDecision>? Decisions { get; set; }
+    [Parameter] public DecisionTable? Table { get; set; }
+    [Parameter] public bool CanAct { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<TestCaseVariantProposal> OnAccept { get; set; }
+    [Parameter] public EventCallback<(TestCaseVariantProposal Proposal, string Decision)> OnDecide { get; set; }
+
+    private ExecutionSuitability _suitability = new([], []);
+    private IReadOnlyList<VerificationPoint> _points = [];
+    private List<TestCaseVariantProposal> _proposals = [];
+    private int _hidden;
+    private EndToEndProposal? _e2e;
+    private (IReadOnlyList<string> Rows, IReadOnlyList<string> NegativeChecks) _matrix = ([], []);
+    private IReadOnlyList<string> _states = [];
+
+    protected override void OnParametersSet()
+    {
+        _suitability = Suitability ?? TestDesignAdvisor.Suitability(Facts);
+        _points = Case is { } c ? TestDesignAdvisor.Verification(c) : TestDesignAdvisor.Verification(Facts);
+        var all = ScenarioPlanning.Variants(Scenario, Siblings ?? []);
+        var rejected = (Decisions ?? []).Where(d => d.Decision == TestDesignDecisions.Rejected).Select(d => d.ProposalKey).ToHashSet(StringComparer.Ordinal);
+        _proposals = [.. all.Where(v => !rejected.Contains(v.Key))];
+        _hidden = all.Count - _proposals.Count;
+        _e2e = TestDesignAdvisor.EndToEnd(Facts);
+        _matrix = TestDesignAdvisor.SecurityMatrix(Facts.All);
+        _states = TestDesignAdvisor.StatesNamed(Facts.All);
+    }
+
+    private static string AvailabilityLabel(DataAvailability a) => a switch
+    {
+        DataAvailability.Confirmed => "Tilgjengelig",
+        DataAvailability.MustBeCreated => "Må lages/godkjennes",
+        DataAvailability.Blocked => "Blokkert",
+        _ => "Ukjent",
+    };
+}

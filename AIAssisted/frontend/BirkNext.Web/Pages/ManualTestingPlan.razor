@@ -1,5 +1,6 @@
 @page "/manual-testing/plan"
 @using BirkNext.TestPlanning
+@using BirkNext.TestCoverage
 @using BirkNext.Web.Services
 @using M = BirkNext.Web.Services.ManualTestingPresentation
 @using P = BirkNext.Web.Services.PlanPreparePresentation
@@ -248,19 +249,157 @@
                                 </div>
                             }
 
-                            <div class="mtp-editor" data-testid="mtp-editor">
-                                <label class="mtp-field">
-                                    <span>Tittel</span>
-                                    <input type="text" value="@_form.Title" @oninput="e => _form.Title = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" data-testid="mtp-title" />
-                                </label>
-                                <label class="mtp-field">
-                                    <span>Formål</span>
-                                    <textarea rows="2" value="@_form.Purpose" @oninput="e => _form.Purpose = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" data-testid="mtp-purpose"></textarea>
-                                </label>
-                                <label class="mtp-field">
-                                    <span>Forutsetninger</span>
-                                    <textarea rows="2" value="@_form.Preconditions" @oninput="e => _form.Preconditions = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" data-testid="mtp-preconditions"></textarea>
-                                </label>
+                            @if (current.Generated.Story is { } us)
+                            {
+                                var objectives = P.StoryObjectiveCoverage(_plan!, us);
+                                var refs = StoryInterpretation.ReferencedStories(us.Description);
+                                <details class="mtp-us" data-testid="mtp-story">
+                                    <summary>
+                                        <span class="mtp-us-kicker">Brukerhistorie og testmål</span>
+                                        <span class="mtp-us-title">@(us.StoryId is { Length: > 0 } usid ? $"{usid} — " : "")@us.Title</span>
+                                        @if (us.Priority is { Length: > 0 } prio) { <span class="msb-status msb-tone-info" data-testid="mtp-story-priority">@prio</span> }
+                                        @if (objectives.Count > 0)
+                                        {
+                                            <span class="msb-status msb-tone-@(objectives.All(o => o.Covered) ? "ok" : "warn")" data-testid="mtp-story-coverage">@objectives.Count(o => o.Covered) av @objectives.Count testmål funnet i planen</span>
+                                        }
+                                    </summary>
+                                    <div class="mtp-us-body">
+                                        @if (us.Description is { Length: > 0 } desc) { <p data-testid="mtp-story-description">@desc</p> }
+                                        @if (refs.Count > 0)
+                                        {
+                                            <p class="mtp-us-refs" data-testid="mtp-story-refs"><span class="mtp-ctx-label">Viser til</span>
+                                                @foreach (var rf in refs) { <span class="mtp-chip" data-testid="mtp-story-ref">@rf</span> }
+                                            </p>
+                                        }
+                                        @if (us.WhyThisPriority is { Length: > 0 } why2)
+                                        {
+                                            <div class="mtp-us-block" data-testid="mtp-story-why"><span class="mtp-ctx-label">Hvorfor denne prioriteten</span><p>@why2</p></div>
+                                        }
+                                        @if (us.IndependentTest is { Length: > 0 } independent)
+                                        {
+                                            <div class="mtp-us-block" data-testid="mtp-story-independent">
+                                                <span class="mtp-ctx-label">Uavhengig test (fra spesifikasjonen)</span>
+                                                <p class="mtp-quote">@independent</p>
+                                                <ul class="mtp-objectives">
+                                                    @foreach (var oc in objectives)
+                                                    {
+                                                        <li class="mtp-objective" data-covered="@(oc.Covered ? "true" : "false")" data-testid="mtp-objective">
+                                                            <span class="mtp-obj-kind">@(oc.Objective.Kind == StoryObjectiveKind.Condition ? "Situasjon" : "Kontroller")</span>
+                                                            <span class="mtp-obj-text">@oc.Objective.Text</span>
+                                                            @if (oc.Objective.NeedsReview) { <span class="msb-tag" title="Delt opp av BirkNext — sjekk mot originalteksten over.">tolket</span> }
+                                                            @if (oc.Covered)
+                                                            {
+                                                                <span class="mtp-obj-cov is-ok" title="Ordene i testmålet finnes i disse testtilfellene. Et forslag, ikke en vurdering." data-testid="mtp-objective-covered">Ser ut til å dekkes av: @string.Join(", ", oc.CaseTitles)</span>
+                                                            }
+                                                            else
+                                                            {
+                                                                <span class="mtp-obj-cov is-gap" data-testid="mtp-objective-gap">Ikke funnet i planens testtilfeller</span>
+                                                            }
+                                                        </li>
+                                                    }
+                                                </ul>
+                                            </div>
+                                        }
+                                    </div>
+                                </details>
+                            }
+
+                            var hasNb = _form.HasTranslation;
+                            var showO = _lang != EditorLanguage.Norwegian;
+                            var showN = hasNb && _lang != EditorLanguage.Original;
+                            var emptyNb = !hasNb && _lang != EditorLanguage.Original;
+                            var compare = showO && showN;
+                            var tstatus = P.TranslationStatus(current);
+                            var stale = hasNb && ScenarioPlanning.StateOf(current) == TranslationState.SourceChanged;
+                            var gaps = P.UntranslatedFields(_form);
+                            var canTranslate = CanWrite && !ReadOnlyPlan && current.ParentScenario is not null;
+                            <div class="mtp-editor @(compare ? "is-compare" : "")" data-language="@_lang" data-testid="mtp-editor">
+                                <div class="mtp-langbar" data-testid="mtp-translation-review">
+                                    <div class="mtp-seg" role="radiogroup" aria-label="Språk i testtilfellet" data-testid="mtp-lang">
+                                        @foreach (var lang in new[] { EditorLanguage.Norwegian, EditorLanguage.Original, EditorLanguage.Compare })
+                                        {
+                                            var l = lang;
+                                            <button type="button" role="radio" aria-checked="@(_lang == l ? "true" : "false")" class="mtp-seg-btn @(_lang == l ? "is-on" : "")"
+                                                    @onclick="() => _lang = l" data-lang="@l" data-testid="mtp-lang-option">@P.LanguageLabel(l)</button>
+                                        }
+                                    </div>
+                                    @if (tstatus is { } ts) { <span class="msb-status msb-tone-@ts.Tone" data-testid="mtp-translation-state">@ts.Text</span> }
+                                    @if (hasNb && P.IsProtectedTranslation(current))
+                                    {
+                                        <span class="mt-muted msb-small" data-testid="mtp-translation-protected">Beholdes ved ny maskinoversettelse.</span>
+                                    }
+                                    @if (gaps.Count > 0)
+                                    {
+                                        <span class="msb-status msb-tone-warn" title="@string.Join(", ", gaps)" data-testid="mtp-translation-gaps">Delvis oversatt: @gaps.Count @(gaps.Count == 1 ? "felt" : "felter") mangler</span>
+                                    }
+                                </div>
+
+                                @if (stale && _lang != EditorLanguage.Original)
+                                {
+                                    <p class="mtp-source-banner" data-testid="mtp-translation-stale">Originalteksten er endret etter at den ble oversatt. Sammenlign og oppdater den norske teksten før du godkjenner.
+                                        @if (!compare) { <button type="button" class="msb-link" @onclick="() => _lang = EditorLanguage.Compare" data-testid="mtp-translation-compare">Sammenlign</button> }</p>
+                                }
+
+                                @if (emptyNb)
+                                {
+                                    <div class="mtp-lang-empty" data-testid="mtp-lang-empty">
+                                        <p><strong>Ingen norsk oversettelse finnes ennå.</strong></p>
+                                        <p class="mt-muted msb-small">Oversettelse skjer bare når du ber om det. Originalteksten er gjeldende til en oversettelse er laget og gjennomgått.</p>
+                                        <div class="mtp-lang-empty-actions">
+                                            @if (canTranslate)
+                                            {
+                                                <button type="button" class="btn btn-primary btn-sm" disabled="@(Dirty || _busy || !_translationAvailable)" title="@(Dirty ? "Lagre først." : _translationAvailable ? null : "Oversettelse er ikke satt opp.")"
+                                                        @onclick="() => TranslateAsync(current.ParentScenario!)" data-testid="mtp-translate-inline">Oversett til norsk</button>
+                                            }
+                                            @if (_lang == EditorLanguage.Norwegian)
+                                            {
+                                                <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _lang = EditorLanguage.Original" data-testid="mtp-lang-show-original">Vis originalen</button>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+
+                                @if (showO || showN)
+                                {
+                                    @if (compare)
+                                    {
+                                        <div class="mtp-lhead" aria-hidden="true"><span></span><span>Original</span><span>Norsk</span></div>
+                                    }
+                                    <div class="mtp-lrow" data-field="title">
+                                        <span class="mtp-lrow-label">Tittel</span>
+                                        @if (showO) { <input type="text" class="mtp-lcell" value="@_form.Title" @oninput="e => _form.Title = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="Tittel (original)" data-testid="mtp-title" /> }
+                                        @if (showN)
+                                        {
+                                            <span class="mtp-lcell-wrap">
+                                                <input type="text" class="mtp-lcell" value="@_form.TranslatedTitle" @oninput="e => _form.TranslatedTitle = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="Tittel (norsk)" placeholder="@_form.Title" data-testid="mtp-tr-title" />
+                                                @if (P.IsUntranslated(_form, _form.Title, _form.TranslatedTitle)) { <span class="mtp-untr" data-testid="mtp-untranslated">Ikke oversatt</span> }
+                                            </span>
+                                        }
+                                    </div>
+                                    <div class="mtp-lrow" data-field="purpose">
+                                        <span class="mtp-lrow-label">Formål</span>
+                                        @if (showO) { <textarea class="mtp-lcell mtp-auto" rows="2" value="@_form.Purpose" @oninput="e => _form.Purpose = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="Formål (original)" data-testid="mtp-purpose"></textarea> }
+                                        @if (showN)
+                                        {
+                                            <span class="mtp-lcell-wrap">
+                                                <textarea class="mtp-lcell mtp-auto" rows="2" value="@_form.TranslatedPurpose" @oninput="e => _form.TranslatedPurpose = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="Formål (norsk)" placeholder="@_form.Purpose" data-testid="mtp-tr-purpose"></textarea>
+                                                @if (P.IsUntranslated(_form, _form.Purpose, _form.TranslatedPurpose)) { <span class="mtp-untr" data-testid="mtp-untranslated">Ikke oversatt</span> }
+                                            </span>
+                                        }
+                                    </div>
+                                    <div class="mtp-lrow" data-field="preconditions">
+                                        <span class="mtp-lrow-label">Forutsetninger</span>
+                                        @if (showO) { <textarea class="mtp-lcell mtp-auto" rows="2" value="@_form.Preconditions" @oninput="e => _form.Preconditions = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="Forutsetninger (original)" data-testid="mtp-preconditions"></textarea> }
+                                        @if (showN)
+                                        {
+                                            <span class="mtp-lcell-wrap">
+                                                <textarea class="mtp-lcell mtp-auto" rows="2" value="@_form.TranslatedPreconditions" @oninput="e => _form.TranslatedPreconditions = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="Forutsetninger (norsk)" placeholder="@_form.Preconditions" data-testid="mtp-tr-preconditions"></textarea>
+                                                @if (P.IsUntranslated(_form, _form.Preconditions, _form.TranslatedPreconditions)) { <span class="mtp-untr" data-testid="mtp-untranslated">Ikke oversatt</span> }
+                                            </span>
+                                        }
+                                    </div>
+                                }
+
                                 <div class="mtp-field">
                                     <span>Testdata</span>
                                     <div class="mtp-testdata">
@@ -289,70 +428,84 @@
                                             </select>
                                         }
                                     </div>
-                                    @if (current.Generated.RequiredTestData is { Length: > 0 } required) { <span class="mt-muted msb-small">Kilden sier: @required</span> }
+                                    @if (current.Generated.RequiredTestData is { Length: > 0 } required) { <span class="mt-muted msb-small" data-testid="mtp-testdata-source">Kilden sier: @required</span> }
                                 </div>
 
-                                <fieldset class="mtp-steps" data-testid="mtp-steps">
-                                    <legend>Teststeg</legend>
-                                    @if (_form.Steps.Count == 0) { <p class="mt-muted msb-small" data-testid="mtp-steps-none">Ingen teststeg ennå.</p> }
-                                    <ol>
-                                        @foreach (var (step, i) in _form.Steps.Select((st, i) => (st, i)))
-                                        {
-                                            var index = i;
-                                            <li class="mtp-step" @key="step.Key" data-testid="mtp-step">
-                                                <span class="mtp-step-no" aria-hidden="true">@(index + 1)</span>
-                                                <label class="mtp-field"><span>Handling</span>
-                                                    <textarea rows="2" value="@step.Action" @oninput="e => step.Action = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="@($"Handling, steg {index + 1}")" data-testid="mtp-step-action"></textarea>
-                                                </label>
-                                                <label class="mtp-field"><span>Forventet resultat</span>
-                                                    <textarea rows="2" value="@step.Expected" @oninput="e => step.Expected = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="@($"Forventet resultat, steg {index + 1}")" data-testid="mtp-step-expected"></textarea>
-                                                </label>
-                                                @if (!readonlyCase)
-                                                {
-                                                    <span class="mtp-step-tools">
-                                                        <button type="button" class="mtp-icon" disabled="@(index == 0)" @onclick="() => _form.MoveStep(index, -1)" aria-label="@($"Flytt steg {index + 1} opp")" data-testid="mtp-step-up">↑</button>
-                                                        <button type="button" class="mtp-icon" disabled="@(index == _form.Steps.Count - 1)" @onclick="() => _form.MoveStep(index, 1)" aria-label="@($"Flytt steg {index + 1} ned")" data-testid="mtp-step-down">↓</button>
-                                                        <button type="button" class="mtp-icon" @onclick="() => _form.RemoveStep(index)" aria-label="@($"Fjern steg {index + 1}")" data-testid="mtp-step-remove">✕</button>
-                                                    </span>
-                                                }
-                                            </li>
-                                        }
-                                    </ol>
-                                    @if (!readonlyCase)
-                                    {
-                                        <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _form.AddStep()" data-testid="mtp-step-add">+ Teststeg</button>
-                                    }
-                                </fieldset>
-
-                                <label class="mtp-field">
-                                    <span>Forventet resultat</span>
-                                    <textarea rows="3" value="@_form.ExpectedResult" @oninput="e => _form.ExpectedResult = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" data-testid="mtp-expected"></textarea>
-                                </label>
-
-                                @if (_form.HasTranslation)
+                                @if (showO || showN)
                                 {
-                                    var tstatus = P.TranslationStatus(current);
-                                    <details class="mtp-translation" open="@_translationOpen" data-testid="mtp-translation-review">
-                                        <summary @onclick="() => _translationOpen = !_translationOpen" @onclick:preventDefault="true">
-                                            <span class="msb-h">Norsk oversettelse</span>
-                                            @if (tstatus is { } ts) { <span class="msb-status msb-tone-@ts.Tone" data-testid="mtp-translation-state">@ts.Text</span> }
-                                        </summary>
-                                        <label class="mtp-field"><span>Tittel (norsk)</span><input type="text" value="@_form.TranslatedTitle" @oninput="e => _form.TranslatedTitle = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" data-testid="mtp-tr-title" /></label>
-                                        <label class="mtp-field"><span>Forutsetninger (norsk)</span><textarea rows="2" value="@_form.TranslatedPreconditions" @oninput="e => _form.TranslatedPreconditions = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" data-testid="mtp-tr-preconditions"></textarea></label>
-                                        <ol class="mtp-tr-steps">
+                                    <fieldset class="mtp-steps" data-testid="mtp-steps">
+                                        <legend>Teststeg</legend>
+                                        @if (_form.Steps.Count == 0) { <p class="mt-muted msb-small" data-testid="mtp-steps-none">Ingen teststeg ennå.</p> }
+                                        <ol>
                                             @foreach (var (step, i) in _form.Steps.Select((st, i) => (st, i)))
                                             {
                                                 var index = i;
-                                                <li @key="step.Key" data-testid="mtp-tr-step">
+                                                <li class="mtp-step" @key="step.Key" data-testid="mtp-step">
                                                     <span class="mtp-step-no" aria-hidden="true">@(index + 1)</span>
-                                                    <input type="text" value="@step.TranslatedAction" @oninput="e => step.TranslatedAction = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="@($"Handling på norsk, steg {index + 1}")" placeholder="@step.Action" data-testid="mtp-tr-step-action" />
-                                                    <input type="text" value="@step.TranslatedExpected" @oninput="e => step.TranslatedExpected = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="@($"Forventet resultat på norsk, steg {index + 1}")" placeholder="@step.Expected" data-testid="mtp-tr-step-expected" />
+                                                    <div class="mtp-step-body">
+                                                        <div class="mtp-lrow" data-field="step-action">
+                                                            <span class="mtp-lrow-label">Handling</span>
+                                                            @if (showO) { <textarea class="mtp-lcell mtp-auto" rows="2" value="@step.Action" @oninput="e => step.Action = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="@($"Handling, steg {index + 1}")" data-testid="mtp-step-action"></textarea> }
+                                                            @if (showN)
+                                                            {
+                                                                <span class="mtp-lcell-wrap" data-testid="mtp-tr-step">
+                                                                    <textarea class="mtp-lcell mtp-auto" rows="2" value="@step.TranslatedAction" @oninput="e => step.TranslatedAction = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="@($"Handling på norsk, steg {index + 1}")" placeholder="@step.Action" data-testid="mtp-tr-step-action"></textarea>
+                                                                    @if (P.IsUntranslated(_form, step.Action, step.TranslatedAction)) { <span class="mtp-untr" data-testid="mtp-untranslated">Ikke oversatt</span> }
+                                                                </span>
+                                                            }
+                                                        </div>
+                                                        <div class="mtp-lrow" data-field="step-expected">
+                                                            <span class="mtp-lrow-label">Forventet resultat</span>
+                                                            @if (showO) { <textarea class="mtp-lcell mtp-auto" rows="2" value="@step.Expected" @oninput="e => step.Expected = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="@($"Forventet resultat, steg {index + 1}")" data-testid="mtp-step-expected"></textarea> }
+                                                            @if (showN)
+                                                            {
+                                                                <span class="mtp-lcell-wrap">
+                                                                    <textarea class="mtp-lcell mtp-auto" rows="2" value="@step.TranslatedExpected" @oninput="e => step.TranslatedExpected = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="@($"Forventet resultat på norsk, steg {index + 1}")" placeholder="@step.Expected" data-testid="mtp-tr-step-expected"></textarea>
+                                                                    @if (P.IsUntranslated(_form, step.Expected, step.TranslatedExpected)) { <span class="mtp-untr" data-testid="mtp-untranslated">Ikke oversatt</span> }
+                                                                </span>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                    @if (!readonlyCase)
+                                                    {
+                                                        <span class="mtp-step-tools">
+                                                            <button type="button" class="mtp-icon" disabled="@(index == 0)" @onclick="() => _form.MoveStep(index, -1)" aria-label="@($"Flytt steg {index + 1} opp")" data-testid="mtp-step-up">↑</button>
+                                                            <button type="button" class="mtp-icon" disabled="@(index == _form.Steps.Count - 1)" @onclick="() => _form.MoveStep(index, 1)" aria-label="@($"Flytt steg {index + 1} ned")" data-testid="mtp-step-down">↓</button>
+                                                            <button type="button" class="mtp-icon" @onclick="() => _form.RemoveStep(index)" aria-label="@($"Fjern steg {index + 1}")" data-testid="mtp-step-remove">✕</button>
+                                                        </span>
+                                                    }
                                                 </li>
                                             }
                                         </ol>
-                                        <label class="mtp-field"><span>Forventet resultat (norsk)</span><textarea rows="2" value="@_form.TranslatedExpected" @oninput="e => _form.TranslatedExpected = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" data-testid="mtp-tr-expected"></textarea></label>
-                                        <p class="mt-muted msb-small">Originalteksten over er fortsatt gjeldende. Lagre for å beholde endringer i oversettelsen; de blir ikke overskrevet av en ny maskinoversettelse.</p>
-                                    </details>
+                                        @if (!readonlyCase)
+                                        {
+                                            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _form.AddStep()" data-testid="mtp-step-add">+ Teststeg</button>
+                                        }
+                                    </fieldset>
+
+                                    <div class="mtp-lrow" data-field="expected">
+                                        <span class="mtp-lrow-label">Samlet forventet resultat</span>
+                                        @if (showO) { <textarea class="mtp-lcell mtp-auto" rows="3" value="@_form.ExpectedResult" @oninput="e => _form.ExpectedResult = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="Samlet forventet resultat (original)" data-testid="mtp-expected"></textarea> }
+                                        @if (showN)
+                                        {
+                                            <span class="mtp-lcell-wrap">
+                                                <textarea class="mtp-lcell mtp-auto" rows="3" value="@_form.TranslatedExpected" @oninput="e => _form.TranslatedExpected = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="Samlet forventet resultat (norsk)" placeholder="@_form.ExpectedResult" data-testid="mtp-tr-expected"></textarea>
+                                                @if (P.IsUntranslated(_form, _form.ExpectedResult, _form.TranslatedExpected)) { <span class="mtp-untr" data-testid="mtp-untranslated">Ikke oversatt</span> }
+                                            </span>
+                                        }
+                                    </div>
+                                }
+
+                                @if (!readonlyCase && P.QualityHints(_form) is { Count: > 0 } hints)
+                                {
+                                    <div class="mtp-quality" data-testid="mtp-quality">
+                                        <span class="mtp-ctx-label">Kvalitetsråd</span>
+                                        <ul>@foreach (var h in hints) { <li data-testid="mtp-quality-hint">@h</li> }</ul>
+                                    </div>
+                                }
+                                @if (showN && !readonlyCase)
+                                {
+                                    <p class="mt-muted msb-small">Den norske teksten lagres sammen med testtilfellet og overskrives ikke av en ny maskinoversettelse når du har redigert den. Originalteksten er fortsatt gjeldende kilde.</p>
                                 }
                             </div>
 
@@ -397,6 +550,26 @@
                                 <div class="mtp-actions"><button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => ReviewAsync(TestCaseReviewState.UnderReview)" data-testid="mtp-include">Ta med igjen</button></div>
                             }
 
+                            var parentKey = current.ParentScenario;
+                            var scenarioCase = parentKey is null ? null : _plan!.Cases.FirstOrDefault(x => x.Source.Kind != ScenarioSourceKind.Manual && x.Source.ScenarioId == parentKey);
+                            var linkedAll = Linked(current);
+                            var linkedIds = linkedAll.Select(l => l.RequirementId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                            var designReqs = _ws?.Requirements is { } allReqs && RequirementLinkPresentation.SpecificationPathOf(current) is { } ownSpec
+                                    ? allReqs.Where(r => linkedIds.Contains(r.RequirementId) && BirkNext.Specifications.SpecificationCatalogRules.SamePath(r.SpecificationPath, ownSpec)).ToList() : [];
+                            <details class="mtp-design" open="@_designOpen" data-testid="mtp-design">
+                                <summary @onclick="() => _designOpen = !_designOpen" @onclick:preventDefault="true"><span class="msb-h">Testdesign og klargjøring</span></summary>
+                                @if (_designOpen)
+                                {
+                                    <BirkNext.Web.Components.ManualTesting.TestDesignPanel Facts="TestDesignAdvisor.FactsOf(current)" Scenario="scenarioCase ?? current" Case="current"
+                                        Readiness="TestDesignAdvisor.Readiness(current)" TestData="TestDesignAdvisor.TestData(current)"
+                                        Siblings="@(parentKey is null ? [] : _plan!.Cases.Where(x => x.ParentScenario == parentKey))"
+                                        Decisions="@(_plan!.DesignDecisions?.Where(d => d.ScenarioKey == parentKey).ToList())"
+                                        Table="@(designReqs.Count() > 1 ? TestDesignAdvisor.Decisions(designReqs) : null)"
+                                        CanAct="@(CanWrite && !ReadOnlyPlan && parentKey is not null && scenarioCase is not null && !Dirty)" Busy="_busy"
+                                        OnAccept="AcceptDesignAsync" OnDecide="DecideDesignAsync" />
+                                }
+                            </details>
+
                             <aside class="mtp-context" aria-label="Kildegrunnlag" data-testid="mtp-context">
                                 <h3 class="msb-h">Kildegrunnlag</h3>
                                 @if (current.Generated.Story is { } story)
@@ -407,18 +580,56 @@
                                             @if (P.IsTechnicalStory(story)) { <span class="msb-tag" data-testid="mtp-ctx-story-technical">teknisk</span> }</span>
                                     </div>
                                 }
-                                @if (P.RequirementIds(current) is { Count: > 0 } reqs)
+                                @if (linkedAll is { Count: > 0 } linkedReqs)
                                 {
-                                    <div class="mtp-ctx" data-testid="mtp-ctx-requirements">
-                                        <span class="mtp-ctx-label">Krav</span>
-                                        <ul class="mtp-reqs">
-                                            @foreach (var r in reqs)
+                                    var shownReqs = _showAllSuggestions ? linkedReqs : linkedReqs.Where(x => x.Relation != RequirementRelation.Suggested || x.Suggestion?.Level != RequirementSuggestionLevel.Weak).ToList();
+                                    var hiddenWeak = linkedReqs.Count - shownReqs.Count;
+                                    <div class="mtp-ctx mtp-ctx-wide" data-testid="mtp-ctx-requirements">
+                                        <span class="mtp-ctx-label">Tilknyttede krav</span>
+                                        <ul class="mtp-reqs mtp-linked">
+                                            @foreach (var lr in shownReqs)
                                             {
-                                                var text = RequirementText(r);
-                                                <li data-testid="mtp-ctx-requirement">@r@(text is null ? "" : $": {text}")
-                                                    @if (P.IsTechnicalRequirement(text)) { <span class="msb-tag" title="Gjelder kodebasen, ikke atferd en tester ser. Vises her fordi det er koblet til testtilfellet." data-testid="mtp-ctx-requirement-technical">teknisk</span> }</li>
+                                                var req = lr;
+                                                <li class="mtp-linked-req" data-relation="@req.Relation" data-testid="mtp-ctx-requirement">
+                                                    <div class="mtp-linked-head">
+                                                        <a class="mtp-req-id" href="@($"artifact-traceability?q={Uri.EscapeDataString(req.RequirementId)}")" translate="no" data-testid="mtp-req-id">@req.RequirementId</a>
+                                                        <span class="msb-status msb-tone-@req.Tone" data-testid="mtp-req-relation">@req.RelationText</span>
+                                                        @if (req.Technical) { <span class="msb-tag" title="Gjelder kodebasen, ikke atferd en tester ser. Vises her fordi det er knyttet til testtilfellet." data-testid="mtp-ctx-requirement-technical">teknisk</span> }
+                                                        @if (req.Missing) { <span class="msb-status msb-tone-warn" data-testid="mtp-req-missing">Finnes ikke i valgt spesifikasjon — teller ikke</span> }
+                                                        @if (req.Change is { } ch)
+                                                        {
+                                                            <span class="msb-status msb-tone-@(ch.Kind == RequirementChangeKind.Behavioural ? "warn" : "muted")" title="@string.Join("; ", ch.Differences)" data-testid="mtp-req-change">@(ch.Kind == RequirementChangeKind.Behavioural ? "Kravets atferd er endret — gjennomgå testtilfellet" : "Kravteksten er omformulert")</span>
+                                                        }
+                                                    </div>
+                                                    <span class="mtp-req-title" data-testid="mtp-req-title">@req.Title</span>
+                                                    @if (req.Behaviour is { Length: > 0 } beh) { <span class="mt-muted msb-small" data-testid="mtp-req-behaviour">@beh</span> }
+                                                    @if (req.Change is { Differences.Count: > 0 } chd) { <span class="mt-muted msb-small" data-testid="mtp-req-change-detail">@string.Join(" · ", chd.Differences)</span> }
+                                                    @if (req.SpecificationPath is { Length: > 0 } rp) { <span class="mt-muted msb-small mtp-req-source" data-testid="mtp-req-source"><code>@rp</code></span> }
+                                                    <span class="mtp-req-levels" data-testid="mtp-req-levels">
+                                                        @foreach (var (chip, chipTone) in P.CoverageChips(req.Coverage)) { <span class="msb-status msb-tone-@chipTone">@chip</span> }
+                                                    </span>
+                                                    @if (CanWrite && !ReadOnlyPlan && current.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded))
+                                                    {
+                                                        @if (req.Suggestion is { } sug)
+                                                        {
+                                                            <span class="mtp-req-actions">
+                                                                <button type="button" class="btn btn-secondary btn-sm" disabled="@(Dirty || _busy || _ws?.Requirements is null)" title="@(Dirty ? "Lagre først." : null)" @onclick="() => ConfirmRequirementAsync(sug)" data-testid="mtp-req-confirm">Bekreft kobling</button>
+                                                                <button type="button" class="msb-link" disabled="@(Dirty || _busy)" @onclick="() => RejectRequirementAsync(sug)" data-testid="mtp-req-reject">Avvis</button>
+                                                            </span>
+                                                        }
+                                                        else if (req.Relation == RequirementRelation.Confirmed && current.RequirementLinks.Any(l => RequirementLinkPresentation.Key(l.RequirementId, l.SpecificationPath) == RequirementLinkPresentation.Key(req.RequirementId, req.SpecificationPath)))
+                                                        {
+                                                            <span class="mtp-req-actions"><button type="button" class="msb-link" disabled="@(Dirty || _busy)" @onclick="() => UnlinkRequirementAsync(req)" data-testid="mtp-req-unlink">Fjern bekreftet kobling</button></span>
+                                                        }
+                                                    }
+                                                </li>
                                             }
                                         </ul>
+                                        @if (hiddenWeak > 0)
+                                        {
+                                            <button type="button" class="msb-link msb-small" @onclick="() => _showAllSuggestions = true" data-testid="mtp-req-more">Vis @hiddenWeak svakere forslag</button>
+                                        }
+                                        <span class="mt-muted msb-small">Forslag er ikke koblinger før en person bekrefter dem, og teller ikke som dekning. Godkjent er ikke utført; utført er ikke bestått.</span>
                                     </div>
                                 }
                                 <div class="mtp-ctx" data-testid="mtp-ctx-why">
@@ -472,7 +683,9 @@
 
     private static readonly (string Key, string Label)[] Tools = [("cases", "Testtilfeller"), ("export", "Eksporter"), ("versions", "Versjoner"), ("changes", "Kildeendringer")];
 
-    private bool _loading = true, _busy, _showTechnical, _archiveAsk, _excludeAsk, _translationOpen = true, _translationAvailable = true;
+    private bool _loading = true, _busy, _showTechnical, _archiveAsk, _excludeAsk, _translationAvailable = true;
+    /// <summary>The editor's language view; reset to the default (Norsk when a translation exists) for each case.</summary>
+    private EditorLanguage _lang = EditorLanguage.Original;
     private string _query = string.Empty, _tool = "cases", _excludeWhy = string.Empty, _conflictText = string.Empty, _conflictWhy = string.Empty;
     private string? _error, _notice, _selectedId, _conflictChoice;
     private ManualTestingWorkspace.Snapshot? _ws;
@@ -512,6 +725,7 @@
             if (Api is { } api) { try { _translationAvailable = (await api.TranslationAsync())?.Available ?? false; } catch (Exception e) when (e is not OperationCanceledException) { } }
             if (_ws.ProjectKey is { } key)
                 _selection = [.. await TabDraftStore.ReadAsync<string[]>(JS, TabDraftStore.SelectionKey(key)) ?? []];
+            await LoadTraceAsync();
             var id = DraftParameter is { } wanted && (_plans.Any(p => p.Id == wanted) || _archived.Any(p => p.Id == wanted)) ? wanted : _plans.FirstOrDefault()?.Id;
             if (id is { } draftId) await OpenPlanAsync(draftId);
             if (CaseParameter is { Length: > 0 } wantedCase && _plan?.Cases.FirstOrDefault(c => P.IdOf(c) == wantedCase) is { } linked)
@@ -538,6 +752,7 @@
     {
         _selectedId = caseId;
         _form = Selected is { } c ? P.CaseForm.From(c) : null;
+        _lang = _form is null ? EditorLanguage.Original : P.DefaultLanguage(_form);
         _excludeAsk = false;
         _excludeWhy = string.Empty;
         _conflictChoice = null;
@@ -645,6 +860,41 @@
             _plan = draft;
             Open(P.IdOf(c));
             _notice = "Konflikten er avklart. Testtilfellet kan nå gjennomgås og godkjennes.";
+        }
+        finally { _busy = false; }
+    }
+
+    private bool _designOpen = true;
+
+    /// <summary>Accepts a test-design proposal: the existing add-from-variant path (the server re-derives the proposal from the scenario's
+    /// evidence and refuses it when it no longer applies or a case with its title exists — no duplicate cases).</summary>
+    private async Task AcceptDesignAsync(TestCaseVariantProposal v)
+    {
+        if (_plan is null || Api is not { } api || Selected?.ParentScenario is not { } scenarioKey || Dirty) return;
+        _busy = true; _error = null;
+        try
+        {
+            var before = _plan.Cases.Select(P.IdOf).ToHashSet(StringComparer.Ordinal);
+            var (draft, error) = await api.AddManualCaseAsync(_plan.Id, new AddManualTestCaseRequest(_plan.Revision, v.Title, v.Basis, null, ScenarioKey: scenarioKey, Variant: v.Key));
+            if (draft is null) { _error = P.Friendly(error, "Forslaget kunne ikke legges til."); return; }
+            _plan = draft;
+            Open(draft.Cases.Select(P.IdOf).FirstOrDefault(id => !before.Contains(id)) ?? _selectedId);
+            _notice = $"«{v.Title}» er lagt til som nytt testtilfelle (utkast). Gå gjennom og lagre.";
+        }
+        finally { _busy = false; }
+    }
+
+    /// <summary>Rejects or defers a proposal for the scenario (saved with the plan; who and when recorded by the server).</summary>
+    private async Task DecideDesignAsync((TestCaseVariantProposal Proposal, string Decision) d)
+    {
+        if (_plan is null || Api is not { } api || Selected?.ParentScenario is not { } scenarioKey || Dirty) return;
+        _busy = true; _error = null;
+        try
+        {
+            var (saved, error) = await api.SaveAsync(_plan.Id, P.DesignDecisionRequest(_plan, scenarioKey, d.Proposal, d.Decision));
+            if (saved is null) { _error = P.Friendly(error, "Avgjørelsen ble ikke lagret."); return; }
+            _plan = saved; Open(_selectedId);
+            _notice = d.Decision == TestDesignDecisions.Rejected ? $"Forslaget «{d.Proposal.Title}» er avvist." : $"Forslaget «{d.Proposal.Title}» er utsatt.";
         }
         finally { _busy = false; }
     }
@@ -757,9 +1007,59 @@
         finally { _busy = false; }
     }
 
-    /// <summary>The requirement's wording from the project's specification (null when not known here).</summary>
-    private string? RequirementText(string id) =>
-        _ws?.Requirements?.FirstOrDefault(r => string.Equals(r.RequirementId, id, StringComparison.OrdinalIgnoreCase))?.Title;
+    /// <summary>Executed / passed per requirement across saved plans (completed manual runs); null until loaded or when not available.</summary>
+    private PreparedCaseTraceView? _trace;
+    private (int Revision, string CaseId, PreparedCaseTraceView? Trace, List<ProjectRequirementOption>? Requirements, List<P.LinkedRequirement> Rows)? _linkedMemo;
+
+    /// <summary>The case's linked and suggested requirements, computed once per saved case revision (never per render or keystroke: the
+    /// suggester reads the whole requirement list).</summary>
+    private List<P.LinkedRequirement> Linked(TestCaseDraft c)
+    {
+        var id = P.IdOf(c);
+        if (_linkedMemo is { } m && m.Revision == _plan!.Revision && m.CaseId == id && ReferenceEquals(m.Trace, _trace) && ReferenceEquals(m.Requirements, _ws?.Requirements)) return m.Rows;
+        var rows = P.LinkedRequirements(c, _plan!, _ws?.Requirements, _trace, _ws?.Discovery?.Candidates);
+        _linkedMemo = (_plan!.Revision, id, _trace, _ws?.Requirements, rows);
+        return rows;
+    }
+    private bool _showAllSuggestions;
+
+    private async Task LoadTraceAsync()
+    {
+        _trace = null;
+        if (Api is not { } api || _ws?.ProjectKey is not { } key || _ws.Requirements is not { Count: > 0 } requirements) return;
+        try
+        {
+            var (trace, _) = await api.PreparedCaseTraceAsync(key, new PreparedCaseTraceRequest([.. requirements.Select(r => r.SpecificationPath).Distinct()],
+                [.. requirements.Select(r => r.RequirementId)], requirements.GroupBy(r => r.RequirementId, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Title, StringComparer.OrdinalIgnoreCase)));
+            _trace = trace;
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _trace = null; }
+    }
+
+    /// <summary>Confirms a suggested requirement for this case (the existing confirm: who and when are recorded by the server). Never automatic.</summary>
+    private Task ConfirmRequirementAsync(RequirementSuggestion s) =>
+        SaveRequirementChangeAsync(c => ScenarioCentricPresentation.Confirm(c, s, null), $"{s.RequirementId} er bekreftet for testtilfellet.");
+
+    private Task RejectRequirementAsync(RequirementSuggestion s) =>
+        SaveRequirementChangeAsync(c => ScenarioCentricPresentation.Reject(c, s), $"Forslaget {s.RequirementId} er avvist for testtilfellet.");
+
+    private Task UnlinkRequirementAsync(P.LinkedRequirement r) =>
+        SaveRequirementChangeAsync(c => RequirementLinkPresentation.Unlink(c, r.RequirementId, r.SpecificationPath), $"Den bekreftede koblingen til {r.RequirementId} er fjernet.");
+
+    /// <summary>Saves one requirement-link change of the selected case on its own (only when nothing else is unsaved), with the project's
+    /// requirement list so the server can check a new link.</summary>
+    private async Task SaveRequirementChangeAsync(Func<TestCaseDraft, TestCaseDraft> change, string done)
+    {
+        if (_plan is null || Selected is not { } c || Dirty || Api is not { } api) return;
+        _busy = true; _error = null;
+        try
+        {
+            var (saved, error) = await api.SaveAsync(_plan.Id, P.RequirementChangeRequest(_plan, P.IdOf(c), change, _ws?.Requirements));
+            if (saved is null) { _error = P.Friendly(error, "Koblingen ble ikke lagret."); return; }
+            _plan = saved; Open(_selectedId); _notice = done;
+        }
+        finally { _busy = false; }
+    }
 
     private void OnProjectChanged() => _ = InvokeAsync(async () => { _ws = null; _plan = null; _form = null; _selectedId = null; _pending = null; await LoadAsync(); StateHasChanged(); });
 

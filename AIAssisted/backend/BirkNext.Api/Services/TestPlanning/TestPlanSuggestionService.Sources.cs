@@ -88,6 +88,18 @@ public sealed partial class TestPlanSuggestionService
             return (CaseSourceState.SourceUnavailable, $"Kilde mangler: {(capability?.Label ?? c.Generated.Capability ?? "kilden")} kunne ikke leses i gjeldende kildeversjon. Det betyr ikke at scenarioet er fjernet.");
         if (c.Generated.Capability == D.Specification && basis.SpecificationOrigin == SpecificationOrigin.None)
             return (CaseSourceState.SourceUnavailable, "Kilde mangler: gjeldende grunnlag har ingen spesifikasjon.");
+        if (c.Generated.Capability == D.Specification)
+        {
+            // The scenario's own specification file must be one the current discovery read. A discovery made with another specification selected
+            // (2026-11-24, M2LB SkoleService: spec.md vs docs/avhengigheter-bestilling.md) does not contain it, and its absence proves nothing —
+            // before, every case of the other specification was shown as «Utgått scenario».
+            var own = SpecificationPathOf(c);
+            var read = current.Candidates.Where(x => x.CapabilityId == D.Specification).Select(SpecificationPathOf).OfType<string>().ToList();
+            if (own is null)
+                return (CaseSourceState.SourceUnavailable, "Kilde mangler: det er ikke registrert hvilken spesifikasjon scenarioet kom fra, så det kan ikke avgjøres om det er fjernet.");
+            if (!read.Any(p => BirkNext.Specifications.SpecificationCatalogRules.SamePath(p, own)))
+                return (CaseSourceState.SourceUnavailable, $"Kilde mangler: spesifikasjonen scenarioet kom fra ({own}) ble ikke lest i siste oppdagelse — en annen spesifikasjon var valgt. Velg den og oppdag på nytt for å sammenligne.");
+        }
         if (c.Generated.Capability != D.Specification)
         {
             // The source the scenario was read from must be known and part of the current basis; otherwise its absence proves nothing.
@@ -102,6 +114,17 @@ public sealed partial class TestPlanSuggestionService
             : string.Join(", ", basis.Members.Where(m => m.Resolved).Select(m => m.ArchiveName ?? m.DisplayName));
         return (CaseSourceState.Removed, $"Utgått scenario: finnes ikke lenger i gjeldende kildeversjon ({where}). Opprinnelig kilde: {c.Generated.Evidence.FirstOrDefault()?.Reference ?? c.Source.ScenarioId}.");
     }
+
+    /// <summary>The specification file a specification scenario was read from: its user story's file, else the path part of its first evidence
+    /// reference ("spec.md#scenario-1"). Null when neither is recorded.</summary>
+    internal static string? SpecificationPathOf(TestCaseDraft c) =>
+        c.Generated.Story?.SpecificationPath is { Length: > 0 } path ? path : PathPart(c.Generated.Evidence.FirstOrDefault()?.Reference);
+
+    internal static string? SpecificationPathOf(DiscoveredScenario s) =>
+        s.Story?.SpecificationPath is { Length: > 0 } path ? path : PathPart(s.Evidence.FirstOrDefault()?.Reference);
+
+    private static string? PathPart(string? reference) =>
+        reference is { Length: > 0 } r && r.IndexOf('#') is var hash and > 0 ? r[..hash] : null;
 
     /// <summary>Source state flags of a project plan against its application's current discovery (read-time; nothing is rewritten).</summary>
     private TestPlanDraft FlagProject(TestPlanDraft plan)

@@ -102,13 +102,40 @@ public sealed class ScenarioWorkQueueTests : IAsyncLifetime, IDisposable
     public void Open_questions_and_unclear_or_unconfirmed_sources_need_clarification()
     {
         One(Scenario("a") with { OpenQuestions = ["Who locks the period?"] }).Clarifications.Should().Equal("1 åpent spørsmål (se spørsmålene)");
-        // The discovery's recurring questions are named by what they mean for a tester (M2LB: 688 of 839 scenarios with a question).
-        One(Scenario("a") with { OpenQuestions = ["No acceptance scenario describes how to exercise this requirement: add the steps."] }).Clarifications
-            .Should().Equal("Ingen akseptansescenario beskriver hvordan kravet testes — steg mangler");
         One(Scenario("a") with { OpenQuestions = ["The scenario states no action (When): add the steps.", "Who decides?", "And when?"] }).Clarifications
-            .Should().Equal("Scenarioet sier ikke hva som gjøres (When) — steg mangler", "2 åpne spørsmål (se spørsmålene)");
+            .Should().Equal(["2 åpne spørsmål (se spørsmålene)"], "missing steps are preparation work, not a question to clarify");
         One(Scenario("a") with { Gaps = [new EvidenceGap(EvidenceGapKind.AssociationNeedsReview, "?")] }).Clarifications.Should().Equal("Koblingen til kilden må bekreftes");
         One(Scenario("a") with { Gaps = [new EvidenceGap(EvidenceGapKind.BusinessExpectationUnclear, "?")] }).Queues.Should().Equal(Q.NeedsClarification);
+    }
+
+    /// <summary>Writing the steps is test-case preparation (2026-11-24): a clear, supported expected result without acceptance-scenario steps is
+    /// recommended, with the missing steps named; it ranks after scenarios whose steps are already written.</summary>
+    [Fact]
+    public void Missing_steps_with_a_clear_expected_result_are_prepared_not_clarified()
+    {
+        var noSteps = Scenario("fr", Story(1, "P1"), 2) with { OpenQuestions = ["No acceptance scenario describes how to exercise this requirement: add the steps."] };
+        var item = One(noSteps);
+
+        item.Queues.Should().Equal(Q.Recommended);
+        item.Clarifications.Should().BeEmpty();
+        item.Reasons.Should().Contain("Ingen akseptansescenario beskriver stegene — de skrives under klargjøring");
+        One(noSteps with { ExpectedBehaviour = null }).Queues.Should().Equal([Q.NeedsClarification], "without an expected result there is nothing to prepare against");
+
+        var withSteps = Scenario("as", Story(1, "P1"), 9);
+        ScenarioWorkQueues.Classify([noSteps, withSteps], None, true, true).OrderBy(i => i.Rank).Select(i => i.CandidateId)
+            .Should().Equal(["as", "fr"], "written steps first, then steps still to write");
+    }
+
+    [Fact]
+    public void Missing_test_data_or_environment_access_alone_does_not_block_preparation_but_a_conflict_does()
+    {
+        One(Scenario("a") with { TestDataNeeds = ["Elev"] }).Queues.Should().Equal(Q.Recommended);
+        One(Scenario("a") with { Gaps = [new EvidenceGap(EvidenceGapKind.TestPrerequisiteMissing, "Tilgang til testmiljø?")] }).Queues.Should().Equal(Q.Recommended);
+        var conflict = Scenario("a") with
+        {
+            Conflicts = [new ScenarioConflict { Explanation = "200 or 503", Claims = [new("x", "Spec", "HTTP 200", "spec.md"), new("y", "Contract", "HTTP 503", "api.yaml")] }],
+        };
+        One(conflict).Queues.Should().Equal([Q.NeedsClarification], "a contradiction about the expected result must be resolved first");
     }
 
     [Fact]
