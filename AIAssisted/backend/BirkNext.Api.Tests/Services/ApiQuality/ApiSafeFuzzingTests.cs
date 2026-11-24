@@ -384,12 +384,19 @@ public sealed class ApiSafeFuzzingTests
     {
         public readonly List<(string Method, string PathAndQuery, string? Body, bool HasAuthorization)> Requests = [];
         public TimeSpan Delay { get; init; }
+        private int _cutOff;
+        /// <summary>Requests whose response delay was cancelled by the caller's token before it elapsed (the request never got a response).</summary>
+        public int CutOff => Volatile.Read(ref _cutOff);
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(ct);
             Requests.Add((request.Method.Method, request.RequestUri!.PathAndQuery, body, request.Headers.Authorization is not null));
-            if (Delay > TimeSpan.Zero) await Task.Delay(Delay, ct);
+            if (Delay > TimeSpan.Zero)
+            {
+                try { await Task.Delay(Delay, ct); }
+                catch (OperationCanceledException) { Interlocked.Increment(ref _cutOff); throw; }
+            }
             var path = request.RequestUri.AbsolutePath;
             var query = System.Web.HttpUtility.ParseQueryString(request.RequestUri.Query);
             if (path == "/swagger/v1/swagger.json") return Respond(200, OpenApi);
@@ -581,14 +588,17 @@ public sealed class ApiSafeFuzzingTests
     [Fact]
     public async Task Run_TimeoutIsEnforcedPerRequest()
     {
+        // Every fuzz request waits 3 s for its response; the 1 s per-request timeout must cut each one off. The proof is causal, not a
+        // wall-clock bound: each fuzz request's own token cancelled its pending response (CutOff), so no case waited for the 3 s answer.
+        // (The former "whole run < 12 s" bound failed under full-suite load — timers and continuations wait for pool threads, the same run
+        // took 19–22 s — and did not prove enforcement: two unbounded 3 s requests plus the plan also stay under 12 s.)
         var api = new FixtureApi { Delay = TimeSpan.FromSeconds(3) };
-        var watch = Stopwatch.StartNew();
         // Plan (contract fetch) is not bounded by the fuzz timeout; keep the run to two cases.
-        var report = await Service(api).RunAsync(Run(Settings(total: 2, timeout: 1)), "run-timeout", null);
-        watch.Stop();
+        var report = await Service(api).RunAsync(Run(Settings(total: 2, timeout: 1)), "run-timeout", null).WaitAsync(TimeSpan.FromSeconds(120)); // hang guard only
+        Assert.Equal(2, report.Results.Count);
         Assert.All(report.Results, r => Assert.Equal(ApiFuzzOutcome.Timeout, r.Outcome));
         Assert.Equal(ApiFuzzCompleteness.Failed, report.Completeness);   // nothing produced a response
-        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(12), $"took {watch.Elapsed}");
+        Assert.Equal(report.Results.Count, api.CutOff);                   // each fuzz request was cancelled by its own timeout
     }
 
     [Fact]
