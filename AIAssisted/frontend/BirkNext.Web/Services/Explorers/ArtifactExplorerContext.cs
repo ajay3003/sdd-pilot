@@ -1211,9 +1211,24 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         {
             if (_revisionMeta.TryGetValue(key, out var cached)) return cached;
         }
-        var meta = (DisplayNameOf(revision.Content, fileName), MarkdownTokenizer.DocumentFingerprint(revision.Content));
+        var meta = (DisplayNameOf(revision.Content, fileName), DocumentIdentityOf(revision));
         lock (_metaGate) _revisionMeta[key] = meta;
         return meta;
+    }
+
+    /// <summary>
+    /// The document identity of a revision: <see cref="MarkdownTokenizer.DocumentFingerprint"/> of its content. A revision's stored
+    /// <see cref="SddArtifactRevision.Fingerprint"/> is <see cref="ArtifactFingerprint.Compute"/> of the same text, and both hash the same bytes when
+    /// the text has no carriage return and no leading byte-order mark (the canonical form is then the text itself). In that case the stored value
+    /// is the identity and hashing every document again is skipped — on a large imported project that rehash took seconds of the browser's single
+    /// thread after every reload. Any other text is hashed as before.
+    /// </summary>
+    internal static string DocumentIdentityOf(SddArtifactRevision revision)
+    {
+        var content = revision.Content;
+        return revision.Fingerprint is { Length: 64 } stored && !content.Contains('\r') && (content.Length == 0 || content[0] != '\uFEFF')
+            ? stored
+            : MarkdownTokenizer.DocumentFingerprint(content);
     }
 
     private (string DisplayName, string? Identity) SampleMeta(string slug, string path, string fileName, string? content)

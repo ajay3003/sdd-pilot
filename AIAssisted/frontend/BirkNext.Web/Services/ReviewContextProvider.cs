@@ -44,6 +44,41 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
 
     private ReviewContext? _current;
     private bool _isRebuilding;
+    /// <summary>The inputs <see cref="_current"/> was built from (<see cref="InputSignature"/>); null when it was not built from the explorers.</summary>
+    private string? _builtFrom;
+
+    /// <summary>
+    /// Everything a rebuild reads, as one exact string: the explorer scope, each workflow role as the explorers resolve it (status, module, pack,
+    /// candidates, the selected document and its identity, the loaded content's length) and every revision of the workspace (identity, authority,
+    /// selection, scope, loaded length — supporting documents feed the pack inventory) plus the generated-documentation and import records.
+    /// Equal signatures mean an identical context; any document, selection, authority, scope or body-load change makes them differ.
+    /// </summary>
+    internal string InputSignature(IReadOnlyList<BirkNext.Web.Services.Explorers.ArtifactExplorerState> roles)
+    {
+        var b = new System.Text.StringBuilder();
+        b.Append(_artifactContext?.CurrentScope).Append('\n');
+        foreach (var s in roles)
+        {
+            b.Append(s.Role).Append('|').Append(s.Status).Append('|').Append(s.Module).Append('|').Append(s.Pack).Append('|')
+                .Append(s.Selected?.Id).Append('|').Append(s.Selected?.DocumentIdentity).Append('|').Append(s.Content?.Length ?? -1).Append('|');
+            foreach (var a in s.Artifacts) b.Append(a.Id).Append(':').Append(a.DocumentIdentity).Append(',');
+            b.Append('\n');
+        }
+        var lifecycle = _artifacts.SddLifecycle;
+        foreach (var r in lifecycle.Revisions)
+            b.Append(r.RevisionId).Append('|').Append(r.Fingerprint).Append('|').Append(r.Authority).Append('|').Append(r.IsCurrentSelection).Append('|')
+                .Append(r.WorkspaceScope).Append('|').Append(r.Content.Length).Append('|').Append(r.SupersededByRevisionId).Append('\n');
+        b.Append(lifecycle.GeneratedDocumentContents.Count).Append('\n');
+        foreach (var set in lifecycle.GeneratedDocumentationSets)
+        {
+            b.Append(set.ProjectImportId).Append('|');
+            foreach (var a in set.Artifacts) b.Append(a.RelativePath).Append(':').Append(a.Fingerprint).Append(',');
+            b.Append('\n');
+        }
+        foreach (var import in lifecycle.ProjectImports)
+            b.Append(import.ImportId).Append('|').Append(import.SourceSnapshotId).Append('|').Append(import.ArchiveFileName).Append('\n');
+        return b.ToString();
+    }
 
     public event EventHandler? ReviewContextChanged;
 
@@ -122,6 +157,7 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
             PlanSemanticModel plan;
             TaskSemanticModel tasks;
             DataModelSemanticModel dataModel;
+            string? signature = null;
             if (_artifactContext is null)
             {
                 constitution = BuildConstitutionModel();
@@ -133,6 +169,14 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
             else
             {
                 var roles = await Task.WhenAll(CurrentWorkspaceSnapshot.WorkflowRoles.Select(role => _artifactContext.GetStateAsync(role)));
+                // Nothing the context is built from changed (an environment save, a navigation that re-announces the same workspace): the
+                // current context stands. Rebuilding it reparsed every document for an identical result — seconds of the browser's only thread.
+                signature = InputSignature(roles);
+                if (_current is not null && string.Equals(signature, _builtFrom, StringComparison.Ordinal))
+                {
+                    _logger.LogInformation("ReviewContext inputs unchanged; rebuild skipped");
+                    return;
+                }
                 string? Content(WorkspaceArtifactType role) => roles.FirstOrDefault(state => state.Role == role) is { Status: BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.Loaded } state ? state.Content : null;
                 constitution = BuildConstitutionModel(Content(WorkspaceArtifactType.Constitution));
                 specification = BuildSpecificationModel(Content(WorkspaceArtifactType.Specification));
@@ -145,6 +189,7 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
 
             // Create ReviewContext from semantic models
             _current = ReviewContextFactory.Create(constitution, specification, plan, tasks, dataModel);
+            _builtFrom = signature;
 
             _logger.LogInformation(
                 "ReviewContext rebuilt: {ReqCount} requirements, {TaskCount} tasks, {EntityCount} entities",
@@ -159,6 +204,7 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
         {
             _logger.LogError(ex, "Error rebuilding ReviewContext");
             _current = null;
+            _builtFrom = null;
             // Don't rethrow - gracefully handle errors
         }
         finally
