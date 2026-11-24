@@ -1,0 +1,175 @@
+@using BirkNext.Sdd
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using G = BirkNext.Web.Services.StoryGroupingPresentation
+@* «Administrer grupper» (2026-11-24): a compact organizer for business groups — create, rename, reorder (buttons; keyboard-accessible), the source
+   functional areas each group organizes, where each user story is placed, merge, split, delete an empty group, restore source-defined navigation,
+   and history. Every change is previewed and saved together. Grouping is navigation only: it never changes a story, a requirement link, a scenario,
+   a plan or a case. *@
+<section class="gor" aria-label="Administrer grupper" data-testid="gor">
+    <div class="gor-head"><strong>Administrer grupper</strong> <button type="button" class="msb-link" @onclick="OnClose" data-testid="gor-close">Lukk</button></div>
+
+    <div class="gor-create">
+        <input class="msb-search" placeholder="Ny gruppe, f.eks. «Mottak og behandling»" value="@_newName" @oninput="e => _newName = e.Value?.ToString() ?? string.Empty" data-testid="gor-new-name" />
+        <button type="button" class="btn btn-secondary btn-sm" disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="gor-create"
+                @onclick="() => { Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.CreateGroup, Name = _newName.Trim() }); _newName = string.Empty; }">Opprett gruppe</button>
+    </div>
+
+    @{ var groups = Staged.Groups.OrderBy(g => g.Order).ToList(); }
+    @if (groups.Count == 0) { <p class="mt-muted msb-small" data-testid="gor-empty">Ingen forretningsgrupper ennå. Funksjonelle områder fra spesifikasjonen brukes til navigasjon.</p> }
+    <ul class="gor-groups">
+        @foreach (var g in groups)
+        {
+            var group = g;
+            var members = Profiles.Count(p => p.GroupId == group.Id);
+            <li class="gor-group" data-testid="gor-group" data-group="@group.Id">
+                <div class="gor-row">
+                    <input class="msb-search gor-name" value="@group.Name" aria-label="Navn på gruppe" @onchange="e => Rename(group, e.Value?.ToString())" data-testid="gor-rename" />
+                    <button type="button" class="msb-link" aria-label="Flytt opp" disabled="@(group.Order == 0)" @onclick="() => Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.MoveGroup, GroupId = group.Id, Order = group.Order - 1 })" data-testid="gor-up">↑</button>
+                    <button type="button" class="msb-link" aria-label="Flytt ned" disabled="@(group.Order == groups.Count - 1)" @onclick="() => Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.MoveGroup, GroupId = group.Id, Order = group.Order + 1 })" data-testid="gor-down">↓</button>
+                    <span class="mt-muted msb-small">@members brukerhistorie@(members == 1 ? "" : "r")</span>
+                    @if (members == 0)
+                    {
+                        <button type="button" class="msb-link" @onclick="() => Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.DeleteGroup, GroupId = group.Id })" data-testid="gor-delete">Slett tom gruppe</button>
+                    }
+                    @if (groups.Count > 1)
+                    {
+                        <select class="msb-select" aria-label="Slå sammen med" @onchange="e => Merge(group, e.Value?.ToString())" data-testid="gor-merge">
+                            <option value="">Slå sammen inn i …</option>
+                            @foreach (var other in groups.Where(x => x.Id != group.Id)) { <option value="@other.Id">@other.Name</option> }
+                        </select>
+                    }
+                </div>
+                <fieldset class="gor-areas"><legend class="msb-small">Funksjonsområder fra spesifikasjonen</legend>
+                    @foreach (var area in Sections.Sections.Select(s => s.Title).Distinct())
+                    {
+                        var a = area;
+                        <label class="msb-small"><input type="checkbox" checked="@group.FunctionalAreas.Contains(a)" @onchange="e => ToggleArea(group, a, e.Value is true)" data-testid="gor-area" data-area="@a" /> @a</label>
+                    }
+                </fieldset>
+                @if (_splitting == group.Id)
+                {
+                    <div class="gor-split" data-testid="gor-split-form">
+                        <input class="msb-search" placeholder="Navn på ny gruppe" value="@_splitName" @oninput="e => _splitName = e.Value?.ToString() ?? string.Empty" data-testid="gor-split-name" />
+                        @foreach (var p in Profiles.Where(p => p.GroupId == group.Id))
+                        {
+                            var key = p.StoryKey;
+                            <label class="msb-small"><input type="checkbox" checked="@_splitStories.Contains(key)" @onchange="e => { if (e.Value is true) _splitStories.Add(key); else _splitStories.Remove(key); }" /> @Label(key)</label>
+                        }
+                        <button type="button" class="btn btn-secondary btn-sm" disabled="@(string.IsNullOrWhiteSpace(_splitName) || _splitStories.Count == 0)" data-testid="gor-split-stage"
+                                @onclick="() => { Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.SplitGroup, GroupId = group.Id, Name = _splitName.Trim(), StoryKeys = [.. _splitStories] }); _splitting = null; }">Forhåndsvis</button>
+                    </div>
+                }
+                else if (members > 1)
+                {
+                    <button type="button" class="msb-link msb-small" @onclick="() => { _splitting = group.Id; _splitName = string.Empty; _splitStories.Clear(); }" data-testid="gor-split">Del gruppe …</button>
+                }
+            </li>
+        }
+    </ul>
+
+    <span class="mtp-ctx-label">Plassering av brukerhistorier</span>
+    <table class="gor-stories">
+        <thead><tr><th scope="col">Brukerhistorie</th><th scope="col">Forslag</th><th scope="col">Gruppe</th></tr></thead>
+        <tbody>
+            @foreach (var p in Profiles)
+            {
+                var profile = p;
+                <tr data-testid="gor-story" data-story="@profile.StoryKey">
+                    <td>@Label(profile.StoryKey)</td>
+                    <td class="mt-muted msb-small">@(profile.SuggestedArea ?? G.StateLabel(profile.State))</td>
+                    <td>
+                        <select class="msb-select" aria-label="Gruppe for @Label(profile.StoryKey)" @onchange="e => Place(profile, e.Value?.ToString())" data-testid="gor-place">
+                            <option value="" selected="@(profile.GroupId is null)">Følg forslaget</option>
+                            @foreach (var g in groups) { <option value="@g.Id" selected="@(profile.GroupId == g.Id)">@g.Name</option> }
+                        </select>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <button type="button" class="msb-link" @onclick="() => Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.RestoreSourceNavigation })" data-testid="gor-restore">Gjenopprett kildebasert navigasjon</button>
+
+    @if (_staged.Count > 0)
+    {
+        <div class="srl-preview" role="region" aria-label="Forhåndsvisning" data-testid="gor-preview">
+            <span class="mtp-ctx-label">Forhåndsvisning — ingenting er lagret ennå</span>
+            <ul>@foreach (var line in _preview) { <li data-testid="gor-preview-line">@line</li> }</ul>
+            <button type="button" class="btn btn-primary btn-sm" disabled="@_saving" @onclick="SaveAsync" data-testid="gor-save">@(_saving ? "Lagrer …" : "Lagre")</button>
+            <button type="button" class="msb-link" disabled="@_saving" @onclick="Discard" data-testid="gor-discard">Forkast</button>
+        </div>
+    }
+    @if (_error is { } err) { <p class="mt-alert" role="alert" data-testid="gor-error">@err</p> }
+    <details class="srl-history" data-testid="gor-history"><summary>Endringshistorikk</summary>
+        <ul>@foreach (var h in Document.History.AsEnumerable().Reverse().Take(25)) { <li>@h.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @h.By · <b>@h.Action</b> @h.Detail</li> }</ul>
+    </details>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public StoryGroupingDocument Document { get; set; } = default!;
+    [Parameter, EditorRequired] public RequirementSectionMap Sections { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<StoryGroupingEngine.StoryInputs> Inputs { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<StoryGroupingProfile> Profiles { get; set; } = default!;
+    [Parameter] public Func<IReadOnlyList<StoryGroupingOperation>, Task<string?>>? OnApply { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private readonly List<StoryGroupingOperation> _staged = [];
+    private List<string> _preview = [];
+    private string _newName = string.Empty, _splitName = string.Empty;
+    private string? _splitting, _error;
+    private readonly HashSet<string> _splitStories = [];
+    private bool _saving;
+
+    /// <summary>The document with the staged operations applied (so new groups can be used in later steps before saving).</summary>
+    private StoryGroupingDocument Staged
+    {
+        get
+        {
+            try { return _staged.Count == 0 ? Document : StoryGroupingEngine.Apply(Document, _staged, "forhåndsvisning", DateTimeOffset.UtcNow, _ => true, Stable); }
+            catch (StoryGroupingEngine.GroupingRefusal) { return Document; }
+        }
+    }
+
+    /// <summary>Ids for staged groups are fixed when staged, so a later step can name them and the server keeps them.</summary>
+    private readonly Dictionary<string, string> _ids = new(StringComparer.Ordinal);
+    private string Stable(string name) => _ids.TryGetValue(name, out var id) ? id : _ids[name] = Guid.NewGuid().ToString("N")[..12];
+
+    private void Stage(StoryGroupingOperation op)
+    {
+        if (op.Kind is StoryGroupingOperationKind.CreateGroup or StoryGroupingOperationKind.SplitGroup && op.Name is { } name)
+            op = op.Kind == StoryGroupingOperationKind.CreateGroup ? op with { GroupId = Stable(name) } : op with { TargetGroupId = Stable(name) };
+        _staged.Add(op);
+        _error = null;
+        _preview = G.Preview(Inputs, Sections, Document, _staged, _ => true);
+    }
+
+    private void Discard() { _staged.Clear(); _preview = []; _error = null; }
+
+    private void Rename(BusinessGroup g, string? name) { if (name is { Length: > 0 } n && n.Trim() != g.Name) Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.RenameGroup, GroupId = g.Id, Name = n.Trim() }); }
+
+    private void Merge(BusinessGroup g, string? into) { if (into is { Length: > 0 }) Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.MergeGroups, GroupId = g.Id, TargetGroupId = into }); }
+
+    private void ToggleArea(BusinessGroup g, string area, bool on)
+    {
+        var areas = on ? g.FunctionalAreas.Append(area).Distinct().ToList() : g.FunctionalAreas.Where(a => a != area).ToList();
+        Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.SetGroupAreas, GroupId = g.Id, Areas = areas });
+    }
+
+    private void Place(StoryGroupingProfile p, string? groupId) => Stage(string.IsNullOrEmpty(groupId)
+        ? new StoryGroupingOperation { Kind = StoryGroupingOperationKind.ClearPlacement, StoryKey = p.StoryKey }
+        : new StoryGroupingOperation { Kind = StoryGroupingOperationKind.PlaceStory, StoryKey = p.StoryKey, GroupId = groupId, SuggestedArea = p.SuggestedArea });
+
+    private string Label(string storyKey) => Inputs.FirstOrDefault(i => i.Story.Key == storyKey)?.Story is { } s ? $"{ScenarioWorkspacePresentation.StoryLabel(s)} {ScenarioWorkspacePresentation.StoryTitle(s)}" : storyKey;
+
+    private async Task SaveAsync()
+    {
+        if (OnApply is null || _staged.Count == 0) return;
+        _saving = true;
+        try
+        {
+            _error = await OnApply([.. _staged]);
+            if (_error is null) { _staged.Clear(); _preview = []; _ids.Clear(); }
+        }
+        finally { _saving = false; }
+    }
+}

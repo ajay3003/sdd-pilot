@@ -210,7 +210,7 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
                         reused++;
                         return (T)hit.Model;
                     }
-                    if (parsed++ > 0) await Task.Delay(1);
+                    if (parsed++ > 0 && OperatingSystem.IsBrowser()) await Task.Delay(1); // the browser's only thread: let it paint between models
                     var model = build();
                     memos.Insert(0, (text, extra, model));
                     if (memos.Count > ModelsPerRole) memos.RemoveRange(ModelsPerRole, memos.Count - ModelsPerRole);

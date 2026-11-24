@@ -184,7 +184,12 @@ public sealed partial class ManualTestingPlanTests
         sw.Stop();
 
         manual.Should().Be(200);
-        first.Should().BeLessThan(1500, "600 scenarios classified once");
-        (sw.ElapsedMilliseconds - first).Should().BeLessThan(300, "later filters reuse the per-item classification");
+        // The property itself, not wall-clock time (a timing budget failed under full-suite CPU load while the test alone takes ~0.1 s):
+        // each scenario is classified once and every later filter reads the same classification.
+        items.Should().OnlyContain(i => ReferenceEquals(i.Suitability, i.Suitability));
+        var before = items.Select(i => i.Suitability).ToList();
+        S.Apply(items, new S.Filter(All: true, Approach: ExecutionApproach.AutomatedRecommended));
+        items.Select(i => i.Suitability).Should().Equal(before, (a, b) => ReferenceEquals(a, b), "a later filter reuses the per-item classification");
+        first.Should().BeLessThan(10_000, "a guard against pathological slowness only; alone this is ~0.1 s");
     }
 }

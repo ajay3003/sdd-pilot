@@ -74,7 +74,9 @@ public static class SpecificationEvidenceBuilder
         {
             var path = rawPath.Replace('\\', '/');
             var file = path[(path.LastIndexOf('/') + 1)..];
-            if (!new[] { "plan.md", "quickstart.md" }.Contains(file, StringComparer.OrdinalIgnoreCase) || !string.Equals(Folder(path), folder, StringComparison.OrdinalIgnoreCase)) continue;
+            // tasks.md too (2026-11-24): its "[US1]" task lines name the story's requirements — the browser's builder always read them, discovery did not,
+            // so a story showed only the plan's references (SkoleService US1: FR-018 instead of FR-007, FR-014, FR-015c, FR-016, FR-018, FR-022, FR-026a).
+            if (!new[] { "plan.md", "quickstart.md", "tasks.md" }.Contains(file, StringComparer.OrdinalIgnoreCase) || !string.Equals(Folder(path), folder, StringComparison.OrdinalIgnoreCase)) continue;
             var lines = (text ?? "").Split('\n');
             for (var i = 0; i < lines.Length; i++)
             {

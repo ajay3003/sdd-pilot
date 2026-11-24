@@ -219,7 +219,7 @@ public static partial class ScenarioBrowserPresentation
             && (f.Area is null || i.Area == f.Area)
             && (f.Type is null || i.TypeLabel == f.Type)
             && (f.Status is null || i.Status.Key == f.Status)
-            && (f.Story is null || i.Candidate.Story?.Key == f.Story)
+            && (f.Story is null || (f.Story == ScenarioWorkspacePresentation.NoStory ? i.Candidate.Story is null : i.Candidate.Story?.Key == f.Story))
             && (f.Requirement is null || i.Candidate.RequirementIds.Contains(f.Requirement, StringComparer.OrdinalIgnoreCase))
             && (f.Priority is null || (f.Priority == NoPriority ? string.IsNullOrEmpty(i.Candidate.Story?.Priority)
                 : string.Equals(i.Candidate.Story?.Priority, f.Priority, StringComparison.OrdinalIgnoreCase)))

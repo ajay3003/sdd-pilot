@@ -48,9 +48,11 @@ public sealed class GitOnlySourcesTests : IDisposable
         psi.Environment["GIT_CONFIG_GLOBAL"] = Path.Combine(Path.GetTempPath(), "birknext-git-only-empty.gitconfig");
         File.WriteAllText(psi.Environment["GIT_CONFIG_GLOBAL"]!, "");
         using var p = Process.Start(psi)!;
-        var output = p.StandardOutput.ReadToEnd();
-        var error = p.StandardError.ReadToEnd();
-        p.WaitForExit();
+        var outputTask = p.StandardOutput.ReadToEndAsync();
+        var errorTask = p.StandardError.ReadToEndAsync();
+        if (!p.WaitForExit(120_000)) { p.Kill(entireProcessTree: true); throw new TimeoutException($"git {string.Join(' ', args)} did not finish within 2 minutes."); }
+        var output = outputTask.GetAwaiter().GetResult();
+        var error = errorTask.GetAwaiter().GetResult();
         if (p.ExitCode != 0) throw new InvalidOperationException($"git {string.Join(' ', args)}: {error}");
         return output.Trim();
     }

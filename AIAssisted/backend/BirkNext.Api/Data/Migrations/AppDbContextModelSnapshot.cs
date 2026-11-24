@@ -3666,6 +3666,47 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("specification_catalogs", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.StoryGroupingRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ProjectKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SpecificationPath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectKey", "SpecificationPath")
+                        .IsUnique()
+                        .HasDatabaseName("ux_story_groupings_project_spec");
+
+                    b.ToTable("story_groupings", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.SystemGuideCandidateRecord", b =>
                 {
                     b.Property<Guid>("Id")

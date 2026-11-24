@@ -76,6 +76,14 @@ public interface ITestPlanSuggestionsApiService
     Task<(ScenarioWorkQueueView? View, string? Error)> WorkQueuesAsync(string projectKey, string? discoveryId, CancellationToken ct = default) =>
         Task.FromResult<(ScenarioWorkQueueView?, string?)>((null, NotAvailable));
 
+    /// <summary>The user story grouping and requirement review decisions of one project and specification (GET story-grouping). Read-only.</summary>
+    Task<(StoryGroupingDocument? Document, string? Error)> StoryGroupingAsync(string projectKey, string specificationPath, CancellationToken ct = default) =>
+        Task.FromResult<(StoryGroupingDocument?, string?)>((null, NotAvailable));
+
+    /// <summary>Applies grouping / link operations together (POST story-grouping) against the revision the page read; a stale change is refused.</summary>
+    Task<(StoryGroupingDocument? Document, string? Error)> ApplyStoryGroupingAsync(string projectKey, string specificationPath, StoryGroupingChangeRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(StoryGroupingDocument?, string?)>((null, NotAvailable));
+
     /// <summary>The project's saved test cases traced to a specification's requirements (POST project/traceability). Read-only.</summary>
     Task<(PreparedCaseTraceView? Trace, string? Error)> PreparedCaseTraceAsync(string projectKey, PreparedCaseTraceRequest request, CancellationToken ct = default) =>
         Task.FromResult<(PreparedCaseTraceView?, string?)>((null, NotAvailable));
@@ -235,6 +243,12 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
 
     public Task<(ScenarioWorkQueueView?, string?)> WorkQueuesAsync(string projectKey, string? discoveryId, CancellationToken ct = default) =>
         Send<ScenarioWorkQueueView>(() => http.GetAsync($"{Base}/project/work-queues?projectKey={Uri.EscapeDataString(projectKey)}{(discoveryId is { Length: > 0 } d ? $"&discoveryId={Uri.EscapeDataString(d)}" : "")}", ct), ct);
+
+    public Task<(StoryGroupingDocument?, string?)> StoryGroupingAsync(string projectKey, string specificationPath, CancellationToken ct = default) =>
+        Send<StoryGroupingDocument>(() => http.GetAsync($"{Base}/story-grouping?projectKey={Uri.EscapeDataString(projectKey)}&specificationPath={Uri.EscapeDataString(specificationPath)}", ct), ct);
+
+    public Task<(StoryGroupingDocument?, string?)> ApplyStoryGroupingAsync(string projectKey, string specificationPath, StoryGroupingChangeRequest request, CancellationToken ct = default) =>
+        Send<StoryGroupingDocument>(() => http.PostAsJsonAsync($"{Base}/story-grouping?projectKey={Uri.EscapeDataString(projectKey)}&specificationPath={Uri.EscapeDataString(specificationPath)}", request, Json, ct), ct);
 
     public Task<(PreparedCaseTraceView?, string?)> PreparedCaseTraceAsync(string projectKey, PreparedCaseTraceRequest request, CancellationToken ct = default) =>
         Send<PreparedCaseTraceView>(() => http.PostAsJsonAsync($"{Base}/project/traceability?projectKey={Uri.EscapeDataString(projectKey)}", request, Json, ct), ct);

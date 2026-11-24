@@ -92,6 +92,15 @@ public static partial class PlanPreparePresentation
         "anywhere", "afterwards", "exists", "exist", "known", "reports", "report", "verify", "check", "each", "every", "only", "also",
     };
 
+    /// <summary>A plain singular form for matching only ("children" → "child", "reports" → "report", "identifiers" → "identifier"); never shown.</summary>
+    internal static string Stem(string word) => word switch
+    {
+        "children" => "child", "barna" or "barnet" => "barn",
+        _ when word.Length > 5 && word.EndsWith("ies", StringComparison.Ordinal) => word[..^3] + "y",
+        _ when word.Length > 4 && word.EndsWith('s') && !word.EndsWith("ss", StringComparison.Ordinal) => word[..^1],
+        _ => word,
+    };
+
     private static IEnumerable<string> ContentWords(string text) =>
         Regex.Matches(text.ToLowerInvariant(), @"[\p{L}\p{N}]+").Select(m => m.Value).Where(w => w.Length >= 4 && !Stop.Contains(w)).Distinct();
 
@@ -103,14 +112,20 @@ public static partial class PlanPreparePresentation
     {
         var cases = plan.Cases.Where(c => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)
             && c.Generated.Story is { } s && string.Equals(s.Key, story.Key, StringComparison.Ordinal)).ToList();
-        var texts = cases.Select(c => (c.EffectiveTitle, Text: string.Join(" ",
+        return ObjectiveCoverageOf(story, cases.Select(c => (c.EffectiveTitle, string.Join(" ",
             new[] { c.EffectiveTitle, c.EffectivePurpose, c.EffectivePreconditions, c.EffectiveExpected }.Concat(c.EffectiveSteps).Concat(c.EffectiveStepExpected)
-                .Where(x => !string.IsNullOrWhiteSpace(x))).ToLowerInvariant())).ToList();
+                .Where(x => !string.IsNullOrWhiteSpace(x))))));
+    }
+
+    /// <summary>The same literal objective match over any labelled texts (cases of a plan, or the discovered scenarios of a story).</summary>
+    public static IReadOnlyList<ObjectiveCoverage> ObjectiveCoverageOf(CoverageUserStory story, IEnumerable<(string Label, string Text)> sources)
+    {
+        var texts = sources.Select(s => (s.Label, Stems: Regex.Matches(s.Text.ToLowerInvariant(), @"[\p{L}\p{N}]+").Select(m => Stem(m.Value)).ToHashSet(StringComparer.Ordinal))).ToList();
         return [.. StoryInterpretation.Objectives(story.IndependentTest).Select(o =>
         {
-            var words = ContentWords(o.Text).ToList();
-            var hits = words.Count == 0 ? [] : texts.Where(t => words.Count(w => t.Text.Contains(w, StringComparison.Ordinal)) * 10 >= words.Count * 7)
-                .Select(t => t.EffectiveTitle).Distinct(StringComparer.Ordinal).ToList();
+            var words = ContentWords(o.Text).Select(Stem).Distinct(StringComparer.Ordinal).ToList();
+            var hits = words.Count == 0 ? [] : texts.Where(t => words.Count(t.Stems.Contains) * 10 >= words.Count * 7)
+                .Select(t => t.Label).Distinct(StringComparer.Ordinal).ToList();
             return new ObjectiveCoverage(o, hits);
         })];
     }

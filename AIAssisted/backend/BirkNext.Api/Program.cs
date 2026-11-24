@@ -823,6 +823,8 @@ builder.Services.AddScoped<BirkNext.Api.Services.SystemUnderstanding.SystemGuide
 builder.Services.AddScoped<BirkNext.Api.Services.SystemUnderstanding.SystemGuideGenerationService>();
 builder.Services.AddHostedService<BirkNext.Api.Services.SystemUnderstanding.SystemGuideGenerationWorker>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>();
+// User story grouping and US → FR review decisions (2026-11-24): user-owned metadata beside the plans, never source facts.
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.StoryGroupingService>();
 // Translation of test-case text (System Settings → Translation; default the embedded offline translator packaged with BirkNext, English →
 // Norwegian bokmål, CPU only, no internet). The translator is resolved from the current settings on every request: a change applies without a
 // restart. The offline engine owns its helper process and stops it when BirkNext stops (disposed with the container).

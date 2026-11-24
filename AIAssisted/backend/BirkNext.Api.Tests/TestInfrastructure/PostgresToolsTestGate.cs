@@ -36,9 +36,10 @@ public static class PostgresToolsTestGate
             foreach (var a in args) info.ArgumentList.Add(a);
             using var p = Process.Start(info);
             if (p is null) return false;
-            p.StandardOutput.ReadToEnd();
-            p.StandardError.ReadToEnd();
-            return p.WaitForExit(30_000) && p.ExitCode == 0;
+            // Both streams drained concurrently and the whole check bounded: a sequential ReadToEnd could block before the 30 s wait applies.
+            var drained = Task.WhenAll(p.StandardOutput.ReadToEndAsync(), p.StandardError.ReadToEndAsync());
+            if (!p.WaitForExit(30_000) || !drained.Wait(5_000)) { try { p.Kill(entireProcessTree: true); } catch (InvalidOperationException) { } return false; }
+            return p.ExitCode == 0;
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { return false; }
     }

@@ -19,7 +19,9 @@ namespace BirkNext.Api.Tests.Controllers;
 /// </summary>
 public sealed class LocalDeploymentBoundaryTests
 {
-    private const string AnyApiRead = "/api/performance-tests/providers";
+    // A read that starts no external process (2026-11-24): the earlier "/api/performance-tests/providers" ran the real podman CLI (version, info,
+    // image inspect; 30 s each) and timed out the 100 s test client whenever a full suite kept podman busy. The boundary rules are the same for any API route.
+    private const string AnyApiRead = "/api/system/build-info";
 
     private static WebApplicationFactory<Program> Host(IPAddress? peer = null) =>
         peer is null ? TestHostConfiguration.CreateDefaultHostWithEnginesDisabled()

@@ -20,11 +20,14 @@
         <div class="tdp-readiness" data-level="@r.Level" data-testid="tdp-readiness">
             <span class="mtp-ctx-label">Klar til kjøring?</span>
             <span class="msb-status msb-tone-@(r.Level switch { ReadinessLevel.ReadyToRun => "ok", ReadinessLevel.Blocked => "bad", ReadinessLevel.ReadyForReview => "info", _ => "warn" })" data-testid="tdp-readiness-level">@TestDesignAdvisor.ReadinessLabel(r.Level)</span>
-            <ul class="tdp-checks">
-                @foreach (var check in r.Checks)
+            @{ var checklist = ScenarioWorkspacePresentation.Checklist(r); }
+            <span class="mtw-met" data-testid="tdp-readiness-count">@checklist.Count(x => x.State == Tri.Yes) / @checklist.Count</span>
+            <ul class="tdp-checks mtw-checklist">
+                @foreach (var check in checklist)
                 {
-                    <li data-satisfied="@check.Satisfied" data-testid="tdp-check"><span class="tdp-mark" aria-hidden="true">@(check.Satisfied switch { Tri.Yes => "✓", Tri.No => "✕", _ => "?" })</span>
-                        <strong>@check.Name</strong> <span class="mt-muted msb-small">@check.Detail</span></li>
+                    <li data-satisfied="@check.State" data-state="@check.State" data-key="@check.Key" data-testid="tdp-check"><span class="tdp-mark" aria-hidden="true">@ScenarioWorkspacePresentation.Mark(check.State)</span>
+                        <span class="mtw-check-text"><strong>@check.Question</strong> <span class="mtw-check-state">@ScenarioWorkspacePresentation.StateText(check.State)</span>
+                            @if (check.State != Tri.Yes) { <span class="mt-muted msb-small">@check.Detail Løses vanligvis av: @check.Owner.</span> }</span></li>
                 }
             </ul>
             <span class="mt-muted msb-small">Klar til kjøring betyr ikke at testen er kjørt eller bestått. Ukjent teller aldri som oppfylt. Lagring er alltid mulig.</span>

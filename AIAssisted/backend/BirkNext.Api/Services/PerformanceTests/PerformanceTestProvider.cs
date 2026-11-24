@@ -259,7 +259,8 @@ public sealed class SystemProcessRunner : IProcessRunner
         try
         {
             await process.WaitForExitAsync(linked.Token);
-            process.WaitForExit(); // flush redirected streams
+            // Flush redirected streams, bounded: a child process that inherited the pipes (a CLI's helper) must never hold a thread forever.
+            process.WaitForExit(TimeSpan.FromSeconds(5));
             return new ProcessOutcome(process.ExitCode, stdout.ToString(), stderr.ToString(), false, false, null);
         }
         catch (OperationCanceledException)

@@ -226,7 +226,7 @@ public sealed class TestPlanResetProtectionTests : IDisposable
         // AdminService refuses a keep-tables reset when a kept table depends on an emptied one; this keeps the default (keep plans) runnable.
         using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql("Host=localhost;Database=none").Options);
         var planTables = LocalDataResetCoordinator.TestPlanEntityTypes.Select(t => db.Model.FindEntityType(t)!.GetTableName()).ToHashSet();
-        planTables.Should().HaveCount(5);
+        planTables.Should().HaveCount(6, "plans, revisions, snapshots, runs, attachments and the story grouping decisions");
         var fks = db.Model.GetRelationalModel().Tables.Where(t => planTables.Contains(t.Name)).SelectMany(t => t.ForeignKeyConstraints);
         fks.Where(fk => !planTables.Contains(fk.PrincipalTable.Name)).Should().BeEmpty();
     }

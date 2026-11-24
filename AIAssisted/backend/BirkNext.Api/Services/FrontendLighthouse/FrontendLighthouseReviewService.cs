@@ -205,7 +205,7 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
             catch (OperationCanceledException)
             {
                 if (!process.HasExited) process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync(CancellationToken.None);
+                try { await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10)); } catch (TimeoutException) { }
                 if (cancellationToken.IsCancellationRequested)
                     throw;
                 return new(-1, await Safe(stdout), await Safe(stderr), timeout.IsCancellationRequested, false);

@@ -169,7 +169,8 @@ public sealed class ScenarioBrowserTests : BunitContext
         var detail = cut.Find("[data-testid=mtd-detail]");
         detail.QuerySelector("[data-testid=mtd-detail-title]")!.TextContent.Should().Be("US-014 — A report for a closed period");
         detail.QuerySelector("[data-testid=mtd-detail-story]")!.TextContent.Should().Contain("US-014").And.Contain("Rapportering av fravær");
-        detail.QuerySelector("[data-testid=mtd-detail-requirements]")!.TextContent.Should().Contain("FR-002").And.Contain("Eksplisitt nevnt i kilden");
+        detail.QuerySelector("[data-testid=mtd-detail-requirements]")!.TextContent.Should().Contain("FR-002").And.Contain("Nevnt i kilden");
+        detail.QuerySelector("[data-testid=mtd-req-link]")!.GetAttribute("data-relation").Should().Be("Explicit", "a requirement the source names is shown as named, never as a suggestion");
         detail.QuerySelector("[data-testid=mtd-detail-expected]")!.TextContent.Should().Contain("Ikke oppgitt").And.Contain("trenger avklaring");
         var evidence = detail.QuerySelector("[data-testid=mtd-detail-evidence]")!;
         evidence.HasAttribute("open").Should().BeFalse("technical evidence is collapsed by default");

@@ -1,0 +1,222 @@
+@using BirkNext.Sdd
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using G = BirkNext.Web.Services.StoryGroupingPresentation
+@* «Tilknyttede krav» of one user story (2026-11-24): the requirements by the source section they are written under, each with how it is supported
+   (named in the story, confirmed by a person, named by a scenario, from the tasks, suggested). «Administrer kravkoblinger» manages the editable
+   relations: add an existing requirement, confirm or reject a suggestion, remove or replace a link a person added, dispute a source-stated link
+   (its evidence stays), restore, history and undo. Every change is previewed and saved as one operation; nothing touches the specification,
+   scenarios, plans or cases. *@
+<section class="srl" aria-label="Tilknyttede krav" data-testid="srl">
+    <div class="srl-head">
+        <span class="mtp-ctx-label">Tilknyttede krav</span>
+        @if (CanEdit)
+        {
+            <button type="button" class="msb-link" aria-expanded="@(_editing ? "true" : "false")" @onclick="ToggleEditor" data-testid="srl-manage">@(_editing ? "Lukk kravkoblinger" : "Administrer kravkoblinger")</button>
+        }
+    </div>
+    @{ var active = Profile.Requirements.Where(r => !r.Rejected).ToList(); var rejected = Profile.Requirements.Where(r => r.Rejected).ToList(); }
+    @if (active.Count == 0)
+    {
+        <p class="mt-muted msb-small" data-testid="srl-none">Ingen krav er knyttet til brukerhistorien i kilden, oppgavene eller av en person.@(CanEdit ? " Knytt til et eksisterende krav under «Administrer kravkoblinger»." : "")</p>
+    }
+    else
+    {
+        @foreach (var area in active.GroupBy(r => r.Area ?? StoryGroupingEngine.UnknownArea).OrderBy(g => g.Key == StoryGroupingEngine.UnknownArea).ThenBy(g => SectionOrder(g.Key)))
+        {
+            <div class="srl-area" data-testid="srl-area" data-area="@area.Key">
+                <span class="srl-area-title">@area.Key</span>
+                <ul class="srl-links">
+                    @foreach (var r in area)
+                    {
+                        <li data-testid="srl-link" data-requirement="@r.RequirementId" data-basis="@r.Basis" data-disputed="@(r.Disputed ? "true" : "false")">
+                            <span class="msb-req mtw-req-@G.BasisTone(r.Basis)" title="@Title(r.RequirementId)">@r.DisplayId</span>
+                            <span class="msb-small">@G.BasisLabel(r.Basis)@(r.CrossCutting ? " · tverrgående" : "")@(r.Disputed ? " · omstridt" : "")</span>
+                            <span class="mt-muted msb-small srl-text">@Title(r.RequirementId)</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
+    }
+    @if (rejected.Count > 0) { <p class="mt-muted msb-small" data-testid="srl-rejected">Avviste forslag: @string.Join(", ", rejected.Select(r => r.DisplayId))</p> }
+
+    @if (_editing)
+    {
+        <div class="srl-editor" data-testid="srl-editor">
+            <span class="mtp-ctx-label">Gjeldende koblinger</span>
+            <ul class="srl-edit-list">
+                @foreach (var r in Profile.Requirements)
+                {
+                    var rel = r;
+                    var manual = rel.Decision is StoryLinkDecisionKind.Added or StoryLinkDecisionKind.Confirmed && rel.Basis == StoryLinkBasis.HumanConfirmed;
+                    <li data-testid="srl-edit-row" data-requirement="@rel.RequirementId">
+                        <span class="msb-req mtw-req-@G.BasisTone(rel.Basis)">@rel.DisplayId</span>
+                        <span class="msb-small">@G.BasisLabel(rel.Basis)@(rel.Rejected ? " · avvist" : "")@(rel.Disputed ? " · omstridt" : "")</span>
+                        <span class="mt-muted msb-small">@(rel.Area)</span>
+                        <span class="srl-actions">
+                            @if (rel.Basis == StoryLinkBasis.Suggested && !rel.Rejected)
+                            {
+                                <button type="button" class="msb-link" @onclick="() => Stage(Op(StoryGroupingOperationKind.ConfirmLink, rel))" data-testid="srl-confirm">Bekreft kobling</button>
+                                <button type="button" class="msb-link" @onclick="() => Stage(Op(StoryGroupingOperationKind.RejectLink, rel))" data-testid="srl-reject">Avvis forslag</button>
+                            }
+                            @if (rel.Rejected || rel.Disputed)
+                            {
+                                <button type="button" class="msb-link" @onclick="() => Stage(Op(StoryGroupingOperationKind.RestoreLink, rel))" data-testid="srl-restore">Gjenopprett</button>
+                            }
+                            @if (manual)
+                            {
+                                <button type="button" class="msb-link" @onclick="() => Stage(Op(StoryGroupingOperationKind.RemoveLink, rel))" data-testid="srl-remove">Fjern manuell kobling</button>
+                                <button type="button" class="msb-link" @onclick="() => _replacing = rel.RequirementId" data-testid="srl-replace">Erstatt kobling</button>
+                            }
+                            else if (rel.Basis is not StoryLinkBasis.Suggested and not StoryLinkBasis.HumanConfirmed && !rel.Disputed)
+                            {
+                                <button type="button" class="msb-link" @onclick="() => { _disputing = rel.RequirementId; _reason = string.Empty; }" data-testid="srl-dispute">Marker som omstridt</button>
+                            }
+                        </span>
+                        <details class="srl-evidence"><summary>Se kilde</summary>
+                            <ul>@foreach (var e in rel.Evidence) { <li><span class="msb-ev-kind">@EvidenceKind(e.Kind)</span> <code>@e.Reference</code>@if (e.Detail is { Length: > 0 } d) { <span class="mt-muted"> — @(d.Length > 160 ? d[..157] + "…" : d)</span> }</li> }</ul>
+                        </details>
+                        @if (_replacing == rel.RequirementId)
+                        {
+                            <div class="srl-inline" data-testid="srl-replace-form">
+                                <label class="msb-small">Erstatt @rel.DisplayId med
+                                    <select class="msb-select" @onchange="e => _replaceWith = e.Value?.ToString()" data-testid="srl-replace-with">
+                                        <option value="">Velg krav …</option>
+                                        @foreach (var o in Catalog.Where(o => !string.Equals(o.RequirementId, rel.RequirementId, StringComparison.OrdinalIgnoreCase))) { <option value="@o.RequirementId">@Sections.DisplayId(o.RequirementId) — @Short(o.Title)</option> }
+                                    </select></label>
+                                <input class="msb-search" placeholder="Begrunnelse" value="@_reason" @oninput="e => _reason = e.Value?.ToString() ?? string.Empty" data-testid="srl-reason" />
+                                <button type="button" class="btn btn-secondary btn-sm" disabled="@string.IsNullOrEmpty(_replaceWith)" data-testid="srl-replace-stage"
+                                        @onclick="() => { Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.ReplaceLink, StoryKey = Profile.StoryKey, RequirementId = rel.RequirementId, DisplayId = rel.DisplayId, NewRequirementId = _replaceWith, NewDisplayId = Sections.DisplayId(_replaceWith!), Reason = _reason }); _replacing = null; }">Forhåndsvis</button>
+                            </div>
+                        }
+                        @if (_disputing == rel.RequirementId)
+                        {
+                            <div class="srl-inline" data-testid="srl-dispute-form">
+                                <p class="msb-small">Kilden oppgir @rel.DisplayId. Den står som kildebevis; du registrerer en vurdert korrigering ved siden av.</p>
+                                <input class="msb-search" placeholder="Hvorfor er koblingen omstridt? (påkrevd)" value="@_reason" @oninput="e => _reason = e.Value?.ToString() ?? string.Empty" data-testid="srl-dispute-reason" />
+                                <select class="msb-select" @onchange="e => _replaceWith = e.Value?.ToString()" data-testid="srl-dispute-with">
+                                    <option value="">Ingen rettet kobling</option>
+                                    @foreach (var o in Catalog) { <option value="@o.RequirementId">@Sections.DisplayId(o.RequirementId) — @Short(o.Title)</option> }
+                                </select>
+                                <label class="msb-small"><input type="checkbox" checked="@_exclude" @onchange="e => _exclude = e.Value is true" /> Ikke bruk den omstridte koblingen i grupperingsforslaget</label>
+                                <button type="button" class="btn btn-secondary btn-sm" disabled="@string.IsNullOrWhiteSpace(_reason)" data-testid="srl-dispute-stage"
+                                        @onclick="() => { Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.DisputeLink, StoryKey = Profile.StoryKey, RequirementId = rel.RequirementId, DisplayId = rel.DisplayId, NewRequirementId = string.IsNullOrEmpty(_replaceWith) ? null : _replaceWith, NewDisplayId = string.IsNullOrEmpty(_replaceWith) ? null : Sections.DisplayId(_replaceWith), Reason = _reason, ExcludeFromGrouping = _exclude }); _disputing = null; }">Forhåndsvis</button>
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+
+            <span class="mtp-ctx-label">Knytt til krav</span>
+            <input type="search" class="msb-search" placeholder="Søk på krav-id, funksjonsdel eller tekst" value="@_query" @oninput="e => _query = e.Value?.ToString() ?? string.Empty" data-testid="srl-search" />
+            @if (_query.Length > 0)
+            {
+                <ul class="srl-results" data-testid="srl-results">
+                    @foreach (var o in Search().Take(12))
+                    {
+                        var option = o;
+                        <li data-testid="srl-result" data-requirement="@option.RequirementId">
+                            <span class="msb-req">@Sections.DisplayId(option.RequirementId)</span> <span class="mt-muted msb-small">@(Sections.Find(option.RequirementId)?.Section ?? StoryGroupingEngine.UnknownArea)</span>
+                            <span class="msb-small srl-text">@Short(option.Title)</span>
+                            <button type="button" class="msb-link" data-testid="srl-add"
+                                    @onclick="() => Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.AddLink, StoryKey = Profile.StoryKey, RequirementId = option.RequirementId, DisplayId = Sections.DisplayId(option.RequirementId), Reason = string.IsNullOrWhiteSpace(_reason) ? null : _reason })">Knytt til krav</button>
+                        </li>
+                    }
+                </ul>
+                <span class="mt-muted msb-small">Bare krav i denne spesifikasjonen kan kobles; ingen nye krav opprettes.</span>
+            }
+
+            @if (_staged.Count > 0)
+            {
+                <div class="srl-preview" role="region" aria-label="Forhåndsvisning" data-testid="srl-preview">
+                    <span class="mtp-ctx-label">Forhåndsvisning — ingenting er lagret ennå</span>
+                    <ul>@foreach (var line in _preview) { <li data-testid="srl-preview-line">@line</li> }</ul>
+                    <button type="button" class="btn btn-primary btn-sm" disabled="@_saving" @onclick="SaveAsync" data-testid="srl-save">@(_saving ? "Lagrer …" : "Lagre")</button>
+                    <button type="button" class="msb-link" disabled="@_saving" @onclick="Discard" data-testid="srl-discard">Forkast</button>
+                </div>
+            }
+            @if (_error is { } err) { <p class="mt-alert" role="alert" data-testid="srl-error">@err</p> }
+
+            <details class="srl-history" data-testid="srl-history">
+                <summary>Endringshistorikk</summary>
+                @{ var mine = Document.Decisions.Where(d => d.StoryKey == Profile.StoryKey).Reverse().Take(20).ToList(); }
+                @if (mine.Count == 0) { <p class="mt-muted msb-small">Ingen endringer er gjort.</p> }
+                else
+                {
+                    <ul>@foreach (var d in mine) { <li data-testid="srl-history-item"><b>@DecisionLabel(d.Decision)</b> @d.DisplayId@(d.ReplacementOf is { } was ? $" (erstattet {Sections.DisplayId(was)})" : "") · @d.By · @d.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(d.Reason is { } why ? $" · «{why}»" : "")</li> }</ul>
+                    <button type="button" class="msb-link" @onclick="() => Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.Undo, StoryKey = Profile.StoryKey })" data-testid="srl-undo">Angre siste endring</button>
+                }
+            </details>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public StoryGroupingProfile Profile { get; set; } = default!;
+    [Parameter, EditorRequired] public StoryGroupingDocument Document { get; set; } = default!;
+    [Parameter, EditorRequired] public RequirementSectionMap Sections { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<StoryGroupingEngine.StoryInputs> Inputs { get; set; } = default!;
+    /// <summary>The requirements of this story's specification (the only ones that may be linked).</summary>
+    [Parameter] public IReadOnlyList<ProjectRequirementOption> Catalog { get; set; } = [];
+    [Parameter] public bool CanEdit { get; set; }
+    /// <summary>Saves the operations; returns null on success or the reason it was refused.</summary>
+    [Parameter] public Func<IReadOnlyList<StoryGroupingOperation>, Task<string?>>? OnApply { get; set; }
+
+    private bool _editing, _saving, _exclude = true;
+    private string _query = string.Empty, _reason = string.Empty;
+    private string? _replacing, _replaceWith, _disputing, _error;
+    private readonly List<StoryGroupingOperation> _staged = [];
+    private List<string> _preview = [];
+
+    private void ToggleEditor() { _editing = !_editing; Discard(); }
+
+    private StoryGroupingOperation Op(StoryGroupingOperationKind kind, StoryRequirementRelation r) =>
+        new() { Kind = kind, StoryKey = Profile.StoryKey, RequirementId = r.RequirementId, DisplayId = r.DisplayId, Reason = string.IsNullOrWhiteSpace(_reason) ? null : _reason };
+
+    private void Stage(StoryGroupingOperation op)
+    {
+        _staged.Add(op);
+        _error = null;
+        var known = Catalog.Select(o => RequirementReferenceParser.Normalize(o.RequirementId)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _preview = G.Preview(Inputs, Sections, Document, _staged, known.Contains);
+    }
+
+    private void Discard() { _staged.Clear(); _preview = []; _error = null; _replacing = null; _disputing = null; _replaceWith = null; }
+
+    private async Task SaveAsync()
+    {
+        if (OnApply is null || _staged.Count == 0) return;
+        _saving = true;
+        try
+        {
+            _error = await OnApply([.. _staged]);
+            if (_error is null) { _staged.Clear(); _preview = []; _query = string.Empty; _reason = string.Empty; }
+        }
+        finally { _saving = false; }
+    }
+
+    private IEnumerable<ProjectRequirementOption> Search()
+    {
+        var words = _query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var linked = Profile.Requirements.Where(r => r.Established).Select(r => r.RequirementId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return Catalog.Where(o => !linked.Contains(RequirementReferenceParser.Normalize(o.RequirementId)) && words.All(w =>
+            $"{o.RequirementId} {Sections.DisplayId(o.RequirementId)} {Sections.Find(o.RequirementId)?.Section} {o.Title}".Contains(w, StringComparison.CurrentCultureIgnoreCase)));
+    }
+
+    private string? Title(string id) => Catalog.FirstOrDefault(o => string.Equals(RequirementReferenceParser.Normalize(o.RequirementId), id, StringComparison.OrdinalIgnoreCase))?.Title is { } t ? Short(t) : null;
+    private static string Short(string? t) => t is null ? "" : t.Length > 140 ? t[..137].TrimEnd() + "…" : t;
+    private int SectionOrder(string area) => Sections.Sections.Select((s, i) => (s.Title, i)).FirstOrDefault(x => x.Title == area) is var (title, i) && title is not null ? i : int.MaxValue;
+
+    private static string EvidenceKind(string kind) => kind switch
+    {
+        "story" => "Brukerhistorie", "scenario" => "Akseptansescenario", "task" => "Oppgave", "plan" => "Testplan", "manual" => "Lagt til", "confirmed" => "Bekreftet",
+        "suggestion" => "Forslag", _ => kind,
+    };
+
+    private static string DecisionLabel(StoryLinkDecisionKind k) => k switch
+    {
+        StoryLinkDecisionKind.Added => "Lagt til", StoryLinkDecisionKind.Confirmed => "Bekreftet", StoryLinkDecisionKind.Rejected => "Avvist",
+        StoryLinkDecisionKind.Disputed => "Omstridt", _ => "Fjernet",
+    };
+}

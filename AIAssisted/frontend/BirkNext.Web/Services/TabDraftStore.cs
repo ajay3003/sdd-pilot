@@ -20,6 +20,9 @@ public static class TabDraftStore
     /// <summary>Finn og forstå's search, filters and work queue for this tab and project (kept when the tester comes back from Plan &amp; prepare).</summary>
     public static string DiscoverFilterKey(string projectKey) => $"{Prefix}mtd-filter.{projectKey}";
 
+    /// <summary>Finn og forstå's working context for this tab and project: the user story group, the open scenario and the tab (restored on return).</summary>
+    public static string DiscoverContextKey(string projectKey) => $"{Prefix}mtd-context.{projectKey}";
+
     public static async Task<T?> ReadAsync<T>(IJSRuntime js, string key)
     {
         try

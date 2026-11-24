@@ -197,11 +197,13 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
     [
         typeof(BirkNext.Api.Models.TestPlanDraftRecord), typeof(BirkNext.Api.Models.TestPlanDraftRevisionRecord), typeof(BirkNext.Api.Models.TestPlanSnapshotRecord),
         typeof(BirkNext.Api.Models.ManualTestRunRecord), typeof(BirkNext.Api.Models.ManualRunAttachmentRecord),
+        // User story grouping and US → FR review decisions (2026-11-24): user-authored review work like the plans.
+        typeof(BirkNext.Api.Models.StoryGroupingRecord),
     ];
 
     /// <summary>The preserved line for manual test plans.</summary>
     public const string TestPlansKept =
-        "Manual test plans (Manuell testing) with their revisions, snapshots, design decisions and manual test runs: kept by every reset unless Reset everything is run with «Also remove manual test plans»";
+        "Manual test plans (Manuell testing) with their revisions, snapshots, design decisions and manual test runs, and the user story grouping and requirement review decisions: kept by every reset unless Reset everything is run with «Also remove manual test plans»";
 
     /// <summary>The removed line when manual test plans were explicitly included.</summary>
     public const string TestPlansRemovedLine =
@@ -371,6 +373,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
             ["test_plan_snapshots"] = await db.TestPlanSnapshots.AsNoTracking().ToListAsync(ct),
             ["manual_test_runs"] = await db.ManualTestRuns.AsNoTracking().ToListAsync(ct),
             ["manual_run_attachments"] = await db.ManualRunAttachments.AsNoTracking().ToListAsync(ct),
+            ["story_groupings"] = await db.StoryGroupings.AsNoTracking().ToListAsync(ct),
         };
         Directory.CreateDirectory(state.BackupDirectory);
         var name = $"test-plans-before-reset-{DateTimeOffset.UtcNow:yyyyMMdd'T'HHmmss'Z'}-{Guid.NewGuid():N}.json";

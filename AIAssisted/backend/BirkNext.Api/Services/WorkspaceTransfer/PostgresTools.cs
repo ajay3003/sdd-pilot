@@ -140,7 +140,7 @@ public sealed class PostgresTools(PostgresToolOptions options)
         catch (IOException) when (process.HasExited)
         {
             // The tool exited early (e.g. pg_restore refused the input): report its exit code and stderr, not the broken pipe.
-            await process.WaitForExitAsync(CancellationToken.None);
+            try { await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10)); } catch (TimeoutException) { }
         }
         return (process.ExitCode, errors.ToString());
     }

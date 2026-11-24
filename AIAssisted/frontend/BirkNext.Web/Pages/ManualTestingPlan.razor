@@ -212,6 +212,17 @@
                         else
                         {
                             var readonlyCase = !CanWrite || ReadOnlyPlan || current.Review is TestCaseReviewState.Excluded or TestCaseReviewState.Superseded;
+                            var crumbScenario = current.ParentScenario is { } crumbKey ? _plan!.Cases.FirstOrDefault(x => x.Source.Kind != ScenarioSourceKind.Manual && x.Source.ScenarioId == crumbKey) : null;
+                            <nav class="mtw-crumbs" aria-label="Plassering" data-testid="mtp-breadcrumb">
+                                @if (current.Generated.Story is { } crumbStory) { <span data-testid="mtp-breadcrumb-story">@ScenarioWorkspacePresentation.StoryLabel(crumbStory)</span><span aria-hidden="true"> › </span> }
+                                else { <span class="mt-muted">Uten brukerhistorie</span><span aria-hidden="true"> › </span> }
+                                @if (crumbScenario is not null && !ReferenceEquals(crumbScenario, current)) { <span data-testid="mtp-breadcrumb-scenario">Scenario «@crumbScenario.EffectiveTitle»</span><span aria-hidden="true"> › </span> }
+                                <span>Testtilfelle</span>
+                                @if (DiscoverScenarioId(current) is { } discoverId)
+                                {
+                                    <button type="button" class="msb-link" @onclick="() => ShowInDiscoverAsync(current, discoverId)" data-testid="mtp-show-in-discover">Vis scenarioet i Finn og forstå</button>
+                                }
+                            </nav>
                             <div class="mtp-detail-head">
                                 <span class="msb-status msb-tone-@P.ReviewTone(current.Review)" data-testid="mtp-detail-state">@P.ReviewLabel(current.Review)</span>
                                 @if (P.SourceLabel(current) is { } src)
@@ -680,6 +691,23 @@
     [SupplyParameterFromQuery(Name = "panel")] public string? PanelParameter { get; set; }
     /// <summary>A case to open (drill-down from Test Coverage / Requirements Traceability); shown even when it is technical.</summary>
     [SupplyParameterFromQuery(Name = "case")] public string? CaseParameter { get; set; }
+
+    /// <summary>The discovered scenario a case belongs to (its own discovery id, or its parent scenario's); null for a case written by hand.</summary>
+    private static string? DiscoverScenarioId(TestCaseDraft c) =>
+        c.ParentScenario is { Length: > 0 } parent ? parent : c.Source.Kind == ScenarioSourceKind.ProjectDiscovery && c.Source.ScenarioId is { Length: > 0 } id ? id : null;
+
+    /// <summary>Opens the case's scenario in Finn og forstå with its user story chosen (unsaved edits are guarded by the navigation lock).</summary>
+    private async Task ShowInDiscoverAsync(TestCaseDraft c, string scenarioId)
+    {
+        if (_ws?.ProjectKey is { } key)
+        {
+            var filter = await TabDraftStore.ReadAsync<ScenarioBrowserPresentation.Filter>(JS, TabDraftStore.DiscoverFilterKey(key)) ?? new ScenarioBrowserPresentation.Filter();
+            await TabDraftStore.WriteAsync(JS, TabDraftStore.DiscoverFilterKey(key), filter with { Story = c.Generated.Story?.Key, Queue = null, Query = "" });
+            await TabDraftStore.WriteAsync(JS, TabDraftStore.DiscoverContextKey(key),
+                new ScenarioWorkspacePresentation.WorkContext(c.Generated.Story?.Key, scenarioId, ScenarioWorkspacePresentation.Tabs.Scenarios, c.EffectiveTitle));
+        }
+        Nav.NavigateTo(M.DiscoverRoute);
+    }
 
     private static readonly (string Key, string Label)[] Tools = [("cases", "Testtilfeller"), ("export", "Eksporter"), ("versions", "Versjoner"), ("changes", "Kildeendringer")];
 

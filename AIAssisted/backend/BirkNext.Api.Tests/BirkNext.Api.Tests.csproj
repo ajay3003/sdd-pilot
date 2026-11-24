@@ -1,6 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!-- Server GC, as BirkNext.Api itself runs (the Web SDK default) (2026-11-24). The suite hosts dozens of in-process copies of the web app;
+         under the default workstation GC a full run spent ~229 s (33 %) frozen in collections, single pauses up to 6 s, and in-memory HTTP calls hit
+         their 100 s timeouts (9-11 failures per run). With Server GC: 32 s total, longest pause 0.44 s (runtime probe: BIRKNEXT_TEST_STALL_PROBE). -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

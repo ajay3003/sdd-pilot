@@ -177,10 +177,17 @@ public sealed class LocalSessionService
 
     private void Write(string code)
     {
-        var temp = _codePath + ".tmp";
+        // A unique temporary name and a bounded retry: on Windows the replace fails briefly while another reader (antivirus scanning the fresh
+        // file, the launcher reading it) holds the target, and two writers must never share one temporary file.
+        var temp = $"{_codePath}.{Guid.NewGuid():N}.tmp";
         File.WriteAllText(temp, code);
         RestrictToCurrentUser(temp, isDirectory: false);
-        File.Move(temp, _codePath, overwrite: true);
+        for (var attempt = 1; ; attempt++)
+        {
+            try { File.Move(temp, _codePath, overwrite: true); break; }
+            catch (IOException) when (attempt < 6) { Thread.Sleep(25 * attempt); }
+            catch { try { File.Delete(temp); } catch (IOException) { } throw; }
+        }
         RestrictToCurrentUser(_codePath, isDirectory: false);
     }
 

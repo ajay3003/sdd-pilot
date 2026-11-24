@@ -158,7 +158,7 @@ public sealed class NativeProcessExecutionRuntime(PerformanceTestOptions options
             try
             {
                 await process.WaitForExitAsync(linked.Token);
-                process.WaitForExit();
+                process.WaitForExit(TimeSpan.FromSeconds(5)); // flush redirected output, bounded (an inherited pipe must not hold the thread)
                 return new ContainerRunOutcome(process.ExitCode, stdout.ToString(), stderr.ToString(), false, false, null, true) { UnappliedLimits = unapplied };
             }
             catch (OperationCanceledException)

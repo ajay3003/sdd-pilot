@@ -31,6 +31,7 @@ public class AppDbContext : DbContext
     public DbSet<SpecificationCatalogEvidenceRecord> SpecificationCatalogEvidence => Set<SpecificationCatalogEvidenceRecord>();
     public DbSet<TechnicalReviewRunRecord> TechnicalReviewRuns => Set<TechnicalReviewRunRecord>();
     public DbSet<TestPlanDraftRevisionRecord> TestPlanDraftRevisions => Set<TestPlanDraftRevisionRecord>();
+    public DbSet<StoryGroupingRecord> StoryGroupings => Set<StoryGroupingRecord>();
     public DbSet<ScenarioDiscoveryRecord> ScenarioDiscoveryResults => Set<ScenarioDiscoveryRecord>();
     public DbSet<AdoExportProfileRecord> AdoExportProfiles => Set<AdoExportProfileRecord>();
     public DbSet<AdoExportRecord> AdoExports => Set<AdoExportRecord>();
@@ -1333,6 +1334,19 @@ public class AppDbContext : DbContext
             entity.Property(a => a.WithdrawnBy).HasMaxLength(200);
             entity.Property(a => a.WithdrawReason).HasMaxLength(500);
             entity.HasIndex(a => new { a.ProjectKey, a.RunId });
+        });
+
+        // User-owned grouping and US → FR review decisions per project and specification (2026-11-24). One row per (project, specification).
+        modelBuilder.Entity<StoryGroupingRecord>(entity =>
+        {
+            entity.ToTable("story_groupings");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.ProjectKey).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.SpecificationPath).HasMaxLength(500).IsRequired();
+            entity.Property(r => r.Revision).IsConcurrencyToken();
+            entity.Property(r => r.ContentJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.UpdatedBy).HasMaxLength(200).IsRequired();
+            entity.HasIndex(r => new { r.ProjectKey, r.SpecificationPath }).IsUnique().HasDatabaseName("ux_story_groupings_project_spec");
         });
 
         modelBuilder.Entity<TestPlanDraftRevisionRecord>(entity =>

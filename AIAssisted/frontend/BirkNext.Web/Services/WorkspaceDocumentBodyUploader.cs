@@ -47,7 +47,7 @@ public sealed class WorkspaceDocumentBodyUploader(HttpClient http)
             var key = $"{revision.RevisionId:N}:{revision.Fingerprint}:{revision.Content.Length}";
             if (_addresses.ContainsKey(key)) continue;
             _addresses[key] = Hash(revision.Content);
-            if (slice.ElapsedMilliseconds > 40) { await Task.Delay(1, ct); slice.Restart(); }
+            if (slice.ElapsedMilliseconds > 40 && OperatingSystem.IsBrowser()) { await Task.Delay(1, ct); slice.Restart(); }
         }
         foreach (var revision in lifecycle.Revisions)
         {
