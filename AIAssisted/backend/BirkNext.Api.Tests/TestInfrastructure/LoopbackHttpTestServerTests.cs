@@ -121,6 +121,44 @@ public sealed class LoopbackHttpTestServerTests
         }
     }
 
+    /// <summary>
+    /// Regression (2026-11-24, ContractTestDataTests failing in DisposeAsync under full-suite load): a test that ends microseconds after Start
+    /// stops the server while the accept loop is between its "not stopping" check and BeginGetContext. http.sys then throws synchronously on the
+    /// closed request queue — ArgumentException "The handle is invalid" (parameter "handle") or ObjectDisposedException for
+    /// HttpRequestQueueV2Handle. That start-of-accept failure escaped the loop and failed the stop. Here the accept is entered while running and
+    /// throws exactly that once the stop has closed the listener.
+    /// </summary>
+    [Theory]
+    [InlineData("handle")]
+    [InlineData("disposed")]
+    public async Task AStopRacingTheStartOfAnAccept_EndsCleanly(string failure)
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var server = new LoopbackHttpTestServer(Ok, listener =>
+        {
+            entered.TrySetResult();
+            Assert.True(SpinWait.SpinUntil(() => !listener.IsListening, Bound), "the stop closes the listener");
+            throw failure == "handle"
+                ? new ArgumentException("The handle is invalid.", "handle")
+                : new ObjectDisposedException("System.Net.HttpRequestQueueV2Handle");
+        });
+        server.Start();
+        await entered.Task.WaitAsync(Bound);
+
+        await server.StopAsync().WaitAsync(Bound);
+    }
+
+    [Fact]
+    public async Task AStartOfAcceptFailure_WhileNotStopping_StillFailsTheOwningTest()
+    {
+        var server = new LoopbackHttpTestServer(Ok, _ => throw new ArgumentException("The handle is invalid.", "handle"));
+        server.Start();
+
+        // The loop fails on its own (the server is not stopping), and the stop reports it.
+        await Assert.ThrowsAsync<ArgumentException>(() => server.AcceptLoop!.WaitAsync(Bound));
+        await Assert.ThrowsAsync<ArgumentException>(() => server.StopAsync().WaitAsync(Bound));
+    }
+
     [Fact]
     public async Task UnexpectedHandlerFailure_StillFailsTheOwningTest()
     {

@@ -35,6 +35,9 @@ public sealed class LoopbackHttpTestServer : IAsyncDisposable
 
     public int Port { get; private set; }
 
+    /// <summary>For the shutdown tests: the accept loop (null before <see cref="Start"/>).</summary>
+    internal Task? AcceptLoop => _loop;
+
     public string Url(string path) => $"http://localhost:{Port}{path}";
 
     /// <summary>
@@ -106,16 +109,20 @@ public sealed class LoopbackHttpTestServer : IAsyncDisposable
         while (!_stopping.IsCancellationRequested)
         {
             HttpListenerContext context;
-            var accept = _accept(listener);
+            Task<HttpListenerContext>? accept = null;
             try
             {
+                // Starting the accept is inside the try: a stop can land between the loop check and this call, and http.sys then
+                // throws synchronously from BeginGetContext on the closed request queue (ObjectDisposedException, or ArgumentException
+                // "The handle is invalid") — a test that finishes within microseconds of Start used to fail its DisposeAsync on that race.
+                accept = _accept(listener);
                 // The stop token ends this wait deterministically; the listener's own way of ending a pending accept on stop
                 // differs per platform and does not always happen.
                 context = await accept.WaitAsync(_stopping.Token);
             }
             catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
             {
-                ReleaseAbandoned(accept);
+                if (accept is not null) ReleaseAbandoned(accept);
                 return;
             }
             catch (Exception ex) when (_stopping.IsCancellationRequested && IsStopSignal(ex))
@@ -166,7 +173,8 @@ public sealed class LoopbackHttpTestServer : IAsyncDisposable
             else if (done.IsCompletedSuccessfully) done.Result.Response.Abort();
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
-    /// <summary>What a stopped listener throws on each platform.</summary>
+    /// <summary>What a stopped listener throws on each platform. Only ever consulted while this server is stopping. An accept started on a
+    /// request queue that Stop just closed fails binding its handle: ArgumentException for the parameter "handle" (http.sys).</summary>
     private static bool IsStopSignal(Exception ex) =>
-        ex is HttpListenerException or ObjectDisposedException or InvalidOperationException;
+        ex is HttpListenerException or ObjectDisposedException or InvalidOperationException or ArgumentException { ParamName: "handle" };
 }
