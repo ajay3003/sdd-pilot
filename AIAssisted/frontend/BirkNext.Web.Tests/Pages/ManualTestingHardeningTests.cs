@@ -231,7 +231,7 @@ public sealed class LegacyPlanLinkRedirectTests : BunitContext
     [InlineData("test-plan-suggestions?area=prepare", "manual-testing/plan")]
     [InlineData("test-plan-suggestions", "manual-testing/plan")]
     [InlineData("test-plan-suggestions?area=choose", "manual-testing/discover")]
-    [InlineData("test-plan-suggestions?draft=44444444-4444-4444-4444-444444444444&area=export", "manual-testing/plan?draft=44444444-4444-4444-4444-444444444444&panel=export")]
+    [InlineData("test-plan-suggestions?draft=44444444-4444-4444-4444-444444444444&area=export", "manual-testing/plans?transfer=44444444-4444-4444-4444-444444444444")]
     public void An_ordinary_link_is_redirected(string from, string to)
     {
         Services.AddSingleton(new Mock<ITestPlanSuggestionsApiService>().Object);

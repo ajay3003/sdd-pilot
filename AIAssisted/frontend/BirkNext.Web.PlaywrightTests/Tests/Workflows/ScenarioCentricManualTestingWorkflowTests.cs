@@ -264,7 +264,7 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
             await page.GetByTestId("adx-area").FillAsync($@"{project}\Manual");
             await page.GetByTestId("adx-area").DispatchEventAsync("change");
             await wizard.WaitForAsync(new() { Timeout = 60000 });
-            await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("klar", new() { Timeout = 60000 });
+            await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("Klar for eksport", new() { Timeout = 60000 });
             var download = await page.RunAndWaitForDownloadAsync(() => page.GetByTestId("adx-download-xlsx").ClickAsync());
             var file = Path.Combine(Path.GetTempPath(), $"{project}-{download.SuggestedFilename}");
             await download.SaveAsAsync(file);

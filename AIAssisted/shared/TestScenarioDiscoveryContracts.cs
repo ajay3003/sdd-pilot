@@ -385,6 +385,11 @@ public sealed record CreateProjectTestPlanRequest
     public int? BaseRevision { get; init; }
     /// <summary>Start with one hand-written case (e.g. when discovery found nothing). Never generated content.</summary>
     public string? ManualCaseTitle { get; init; }
+    /// <summary>«+ Ny testplan» (2026-11-25): create the test plan with no cases (scenarios are added later from Finn og forstå). Needs a name.</summary>
+    public bool AllowEmpty { get; init; }
+    /// <summary>One id per «Opprett testplan» draft in the browser: a double-click or a retry of the same draft returns the plan already created from
+    /// it instead of a second plan.</summary>
+    public string? CreationRequestId { get; init; }
 }
 
 /// <summary>A test case a person writes by hand: title and purpose; steps are added while editing. <see cref="ScenarioKey"/> = write it under that

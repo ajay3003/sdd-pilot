@@ -80,12 +80,13 @@ public sealed class ManualTestingReloadTests : IAsyncLifetime
             var draftId = Regex.Match(page.Url, @"[?&]draft=([^&]+)").Groups[1].Value;
             draftId.Should().NotBeNullOrEmpty();
 
-            // 3. An export field changed but not saved for the project survives a reload, and says so; saving it ends that.
+            // 3. An export field changed for this export only survives a reload, and says so (the project's defaults live in System Settings).
             await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/manual-testing", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
             await ReadyAsync(page, "mt");
             await page.Locator($"[data-testid=mt-plan-export][href*=\"{draftId}\"]").ClickAsync();
             await ReadyAsync(page, "adx");
             var area = $@"{project}\Reload";
+            await page.GetByTestId("adx-fields-edit").Locator("summary").ClickAsync();
             await page.GetByTestId("adx-area").FillAsync(area);
             await page.GetByTestId("adx-area").DispatchEventAsync("change");
             await Assertions.Expect(page.GetByTestId("adx-settings-unsaved")).ToBeVisibleAsync(new() { Timeout = 30000 });
@@ -93,12 +94,7 @@ public sealed class ManualTestingReloadTests : IAsyncLifetime
             await ReadyAsync(page, "adx");
             await Assertions.Expect(page.GetByTestId("adx-area")).ToHaveValueAsync(area, new() { Timeout = 60000 });
             await Assertions.Expect(page.GetByTestId("adx-settings-unsaved")).ToContainTextAsync("tatt vare på fra før siden ble lastet på nytt");
-            await page.GetByTestId("adx-save-profile").ClickAsync();
-            await Assertions.Expect(page.GetByTestId("adx-settings-unsaved")).ToHaveCountAsync(0, new() { Timeout = 30000 });
-            await page.ReloadAsync();
-            await ReadyAsync(page, "adx");
-            await Assertions.Expect(page.GetByTestId("adx-area")).ToHaveValueAsync(area, new() { Timeout = 60000 });
-            await Assertions.Expect(page.GetByTestId("adx-settings-unsaved")).ToHaveCountAsync(0);
+            await Assertions.Expect(page.GetByTestId("adx-fields-summary")).ToContainTextAsync("endret for denne eksporten");
             pageErrors.Should().BeEmpty();
         }
         finally { await page.CloseAsync(); }

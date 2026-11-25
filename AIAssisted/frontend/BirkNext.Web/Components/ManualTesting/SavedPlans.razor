@@ -8,8 +8,8 @@
    name, at the revision shown (a changed plan is refused). Nothing is ever deleted by name matching or in bulk. *@
 <section aria-labelledby="mt-plans-title" data-testid="mt-plans">
     <div class="mtp-plans-head">
-        <h2 id="mt-plans-title" class="msb-h">Lagrede planer</h2>
-        <div class="mtp-segment" role="group" aria-label="Vis planer">
+        <h2 id="mt-plans-title" class="msb-h">Lagrede testplaner</h2>
+        <div class="mtp-segment" role="group" aria-label="Vis testplaner">
             <button type="button" aria-pressed="@(!_archivedView ? "true" : "false")" @onclick="() => Show(false)" data-testid="mt-plans-active">Aktive (@Workspace.Drafts.Count)</button>
             <button type="button" aria-pressed="@(_archivedView ? "true" : "false")" @onclick="() => Show(true)" data-testid="mt-plans-archived">Arkiverte (@Workspace.ArchivedDrafts.Count)</button>
         </div>
@@ -21,11 +21,11 @@
     {
         @if (_archivedView)
         {
-            <p class="msb-empty" data-testid="mt-plans-archived-none">Ingen arkiverte planer.</p>
+            <p class="msb-empty" data-testid="mt-plans-archived-none">Ingen arkiverte testplaner.</p>
         }
         else
         {
-            <p class="msb-empty" data-testid="mt-plans-none">Ingen plan ennå. <a href="@M.DiscoverRoute">Velg scenarioer</a> i Finn og forstå, så lager du testtilfeller i Planlegg og klargjør.</p>
+            <p class="msb-empty" data-testid="mt-plans-none">Ingen testplan ennå. Velg «+ Ny testplan», eller <a href="@M.DiscoverRoute">velg scenarioer</a> i Finn og forstå.</p>
         }
     }
     else
@@ -47,7 +47,7 @@
                     <a class="btn btn-secondary btn-sm" href="@($"{M.PlanRoute}?draft={p.Id}")" data-testid="mt-plan-open">@(_archivedView ? "Vis" : "Åpne")</a>
                     @if (!_archivedView)
                     {
-                        <a class="msb-link" href="@($"{M.PlanRoute}?draft={p.Id}&panel=export")" data-testid="mt-plan-export">Eksporter</a>
+                        <a class="msb-link" href="@M.TransferRoute(p.Id)" data-testid="mt-plan-export">Overfør</a>
                         @if (CanWrite) { <button type="button" class="msb-link" disabled="@_busy" @onclick="() => ArchiveAsync(p)" data-testid="mt-plan-archive">Arkiver</button> }
                     }
                     else if (CanWrite)
@@ -57,11 +57,11 @@
                     }
                     @if (_deleting == p.Id)
                     {
-                        <div class="mtp-confirm mtp-confirm-danger" role="group" aria-label="Slett plan" data-testid="mt-plan-delete-confirm">
-                            <p>Slett «@p.PlanName»? Planen forsvinner fra alle lister og kan ikke åpnes igjen. Versjonene og eksporterte øyeblikksbilder beholdes for sporbarhet.</p>
-                            <label class="mtp-field"><span>Skriv planens navn for å bekrefte</span>
+                        <div class="mtp-confirm mtp-confirm-danger" role="group" aria-label="Slett testplan" data-testid="mt-plan-delete-confirm">
+                            <p>Slett «@p.PlanName»? Testplanen forsvinner fra alle lister og kan ikke åpnes igjen. Versjonene og eksporterte øyeblikksbilder beholdes for sporbarhet.</p>
+                            <label class="mtp-field"><span>Skriv testplanens navn for å bekrefte</span>
                                 <input type="text" value="@_confirmName" @oninput="e => _confirmName = e.Value?.ToString() ?? string.Empty" autocomplete="off" data-testid="mt-plan-delete-name" /></label>
-                            <button type="button" class="btn btn-danger btn-sm" disabled="@(_busy || _confirmName.Trim() != p.PlanName.Trim())" @onclick="() => DeleteAsync(p)" data-testid="mt-plan-delete-yes">Slett planen</button>
+                            <button type="button" class="btn btn-danger btn-sm" disabled="@(_busy || _confirmName.Trim() != p.PlanName.Trim())" @onclick="() => DeleteAsync(p)" data-testid="mt-plan-delete-yes">Slett testplanen</button>
                             <button type="button" class="msb-link" @onclick="() => _deleting = null" data-testid="mt-plan-delete-no">Avbryt</button>
                         </div>
                     }
@@ -102,20 +102,20 @@
     private async Task ArchiveAsync(TestPlanDraftSummary p) => await RunAsync(async api =>
     {
         var (done, error) = await api.ArchiveAsync(p.Id, new TestPlanLifecycleRequest(p.Revision));
-        return done is null ? P.Friendly(error, "Planen kunne ikke arkiveres.") : null;
+        return done is null ? P.Friendly(error, "Testplanen kunne ikke arkiveres.") : null;
     }, $"«{p.PlanName}» er arkivert. Du finner den under Arkiverte.");
 
     private async Task UnarchiveAsync(TestPlanDraftSummary p) => await RunAsync(async api =>
     {
         var (done, error) = await api.UnarchiveAsync(p.Id, new TestPlanLifecycleRequest(p.Revision));
-        return done is null ? P.Friendly(error, "Planen kunne ikke gjenopprettes.") : null;
+        return done is null ? P.Friendly(error, "Testplanen kunne ikke gjenopprettes.") : null;
     }, $"«{p.PlanName}» er gjenopprettet.");
 
     private async Task DeleteAsync(TestPlanDraftSummary p) => await RunAsync(async api =>
     {
         var error = await api.DeleteAsync(p.Id, new DeleteTestPlanRequest(p.Revision, _confirmName.Trim()));
         if (error is null) _deleting = null;
-        return error is null ? null : P.Friendly(error, "Planen kunne ikke slettes.");
+        return error is null ? null : P.Friendly(error, "Testplanen kunne ikke slettes.");
     }, $"«{p.PlanName}» er slettet.");
 
     private async Task RunAsync(Func<ITestPlanSuggestionsApiService, Task<string?>> action, string done)

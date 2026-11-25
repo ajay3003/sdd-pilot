@@ -5,18 +5,19 @@
 
 @* «Eksporter til fil» (offline, the default method of Overfør testplan): select saved test cases → the fields Azure DevOps needs → check → preview →
    download an Azure Test Plans import file (Excel by default, CSV as alternative) and a mapping report. Tester-facing text in Norwegian (2026-11-25).
-   Nothing is sent to Azure DevOps; destination values are checked for form only. The history of files and transfers is shown by the panel. *@
+   Nothing is sent to Azure DevOps; destination values are checked for form only. The history of files and transfers is shown by the panel.
+   Simplified (2026-11-25): System Settings owns the field defaults; here they are a one-line summary with «Endre felter for denne eksporten»
+   (closed), the check is a compact «Klar for eksport» / «N ting må rettes» with blocking problems always visible and the details in
+   «Kontroller før overføring» (closed), and the import guide is behind «Vis importveiledning» (closed). *@
 
 <section class="adx" data-testid="adx" aria-label="Eksporter til fil" aria-busy="@(_busy || _working ? "true" : "false")">
-    <p class="adx-muted" data-testid="adx-format-note">Filen er i formatet til <strong>Azure Test Plans → Import test cases</strong> (Microsoft: «Bulk import or export test cases»): én rad per steg med handling og forventet resultat. Den importeres i en testgruppe som finnes fra før — filen oppretter ikke testplanen eller testgruppen.</p>
-
     @if (_api is null)
     {
         <p class="adx-muted" data-testid="adx-unavailable">Eksport til Azure DevOps er ikke tilgjengelig her.</p>
     }
     else
     {
-        @if (Dirty) { <p class="adx-alert" role="alert" data-testid="adx-dirty">Planen har endringer som ikke er lagret. Eksporten bruker den lagrede planen — lagre først for å ta dem med.</p> }
+        @if (Dirty) { <p class="adx-alert" role="alert" data-testid="adx-dirty">Testplanen har endringer som ikke er lagret. Eksporten bruker den lagrede testplanen — lagre først for å ta dem med.</p> }
         @if (_error is not null) { <p class="adx-alert" role="alert" data-testid="adx-error">@_error <button type="button" class="adx-btn adx-btn-quiet" @onclick="PreviewAsync" data-testid="adx-retry">Prøv igjen</button></p> }
 
         @* 1 · Select test cases *@
@@ -25,7 +26,7 @@
             @if (_preview is { } pv)
             {
                 <p class="adx-counts" data-testid="adx-counts" role="status">
-                    <span>@pv.TotalCases i planen</span> · <span data-testid="adx-selected">@pv.SelectedCases valgt</span> · <span data-testid="adx-ready">@pv.ReadyCases klare</span>
+                    <span>@pv.TotalCases i testplanen</span> · <span data-testid="adx-selected">@pv.SelectedCases valgt</span> · <span data-testid="adx-ready">@pv.ReadyCases klare</span>
                     @if (pv.CasesNeedingAttention > 0) { <span> · </span><span class="adx-bad" data-testid="adx-attention">@pv.CasesNeedingAttention må rettes</span> }
                 </p>
             }
@@ -40,7 +41,7 @@
                         @foreach (var l in exportLanguages) { <option value="@l" selected="@(_language == l)">@TranslationLanguages.Name(l) (testtilfeller med fullstendig tekst på @TranslationLanguages.Name(l))</option> }
                     </select></label>
             }
-            else { <p class="adx-muted adx-small" data-testid="adx-language-none">Eksporteres på originalspråket: ingen testtilfeller i planen er oversatt ennå (Planlegg og klargjør → språkikonet på et scenario).</p> }
+            else { <p class="adx-muted adx-small" data-testid="adx-language-none">Eksporteres på originalspråket: ingen testtilfeller i testplanen er oversatt ennå (Planlegg og klargjør → språkikonet på et scenario).</p> }
             @if (_language is { } chosen && _preview is { } lp) { <p class="adx-muted adx-small" data-testid="adx-language-summary">@lp.Cases.Count(c => c.Included && c.Language == chosen) på @TranslationLanguages.Name(chosen) · @lp.Cases.Count(c => c.Included && c.Language != chosen) på originalspråket (uten fullstendig tekst på @TranslationLanguages.Name(chosen)). Hvert testtilfelle er på ett språk.</p> }
             <div class="adx-bar">
                 <button type="button" class="adx-btn adx-btn-quiet" @onclick="() => Set(() => _selected.Clear())" data-testid="adx-select-eligible">Velg alle som kan eksporteres</button>
@@ -72,6 +73,10 @@
         @* 2 · Configure Azure DevOps *@
         <fieldset class="adx-step" data-testid="adx-configure">
             <legend class="adx-legend"><span class="adx-n">2</span> Felter i Azure DevOps</legend>
+            <p class="adx-muted adx-small" data-testid="adx-fields-summary">@FieldsSummary
+                · <a href="admin/system-settings?section=azure-devops-test-plans" data-testid="adx-settings-link">Standardverdier i Systeminnstillinger</a></p>
+            <details class="adx-advanced" data-testid="adx-fields-edit" open="@(_mode == AdoExportMode.UpdateExisting || Unsaved || FieldsNeedFix)">
+            <summary>Endre felter for denne eksporten</summary>
             <div class="adx-grid">
                 <label class="adx-field"><span>Azure DevOps-versjon</span>
                     <select @onchange="e => Set(() => _profile = _profile with { Target = Enum.Parse<AdoTarget>(e.Value!.ToString()!) })" data-testid="adx-target">
@@ -130,13 +135,10 @@
             @if (Unsaved)
             {
                 <p class="adx-muted adx-small" role="status" data-testid="adx-settings-unsaved">@(_restored
-                    ? "Disse innstillingene er tatt vare på fra før siden ble lastet på nytt. De er ikke prosjektets eksportinnstillinger ennå: bare denne fanen har dem."
-                    : "Disse innstillingene er forskjellige fra prosjektets eksportinnstillinger. Fanen husker dem ved ny innlasting; lagre dem for å bruke dem ved hver eksport.")</p>
+                    ? "Disse verdiene er tatt vare på fra før siden ble lastet på nytt. De gjelder bare denne eksporten i denne fanen."
+                    : "Disse verdiene gjelder bare denne eksporten (fanen husker dem ved ny innlasting). Standardverdiene endres i Systeminnstillinger.")</p>
             }
-            @if (CanWrite)
-            {
-                <button type="button" class="adx-btn adx-btn-quiet" disabled="@_working" @onclick="SaveProfileAsync" data-testid="adx-save-profile">Lagre som prosjektets eksportinnstillinger</button>
-            }
+            </details>
         </fieldset>
 
         @* 3 · Validate *@
@@ -144,6 +146,32 @@
             <legend class="adx-legend"><span class="adx-n">3</span> Kontroll</legend>
             @if (_preview is { } p)
             {
+                var blocking = p.Issues.Where(i => i.Level == AdoIssueLevel.Blocking).ToList();
+                var notes = p.Issues.Count(i => i.Level != AdoIssueLevel.Blocking);
+                @if (p.CanDownload)
+                {
+                    <p class="adx-ok" role="status" data-testid="adx-can-download"><strong>Klar for eksport.</strong> @p.ReadyCases testtilfelle@(p.ReadyCases == 1 ? "" : "r") (@p.Rows.Count rader).</p>
+                }
+                else
+                {
+                    <p class="adx-bad" role="status" data-testid="adx-must-fix"><strong>@Math.Max(blocking.Count, 1) ting må rettes</strong> før filen kan lastes ned.</p>
+                }
+                @if (blocking.Count > 0)
+                {
+                    <div class="adx-issues adx-issues-Blocking" data-testid="adx-issues-blocking">
+                        <h3 class="adx-h3">Må rettes før nedlasting (@blocking.Count)</h3>
+                        <ul>
+                            @foreach (var i in blocking)
+                            {
+                                var caseTitle = i.CaseId is { } cid ? p.Cases.FirstOrDefault(c => c.CaseId == cid)?.Title : null;
+                                <li data-testid="adx-issue">@(caseTitle is not null ? $"{caseTitle}: " : "")@i.Message
+                                    @if (i.CaseId is { } ic) { <a href="@($"test-plan-suggestions?draft={Draft.Id}&area=prepare&case={Uri.EscapeDataString(ic)}")">Åpne</a> }</li>
+                            }
+                        </ul>
+                    </div>
+                }
+                <details class="adx-advanced" data-testid="adx-check-details">
+                <summary>Kontroller før overføring (@p.Fields.Count felt@(notes > 0 ? $", {notes} merknad{(notes == 1 ? "" : "er")}" : ""))</summary>
                 <table class="adx-table" data-testid="adx-fields">
                     <thead><tr><th scope="col">Felt</th><th scope="col">Verdi</th><th scope="col">Kontroll</th></tr></thead>
                     <tbody>
@@ -156,7 +184,7 @@
                         }
                     </tbody>
                 </table>
-                @foreach (var (level, title) in new[] { (AdoIssueLevel.Blocking, "Må rettes før nedlasting"), (AdoIssueLevel.Warning, "Advarsler"), (AdoIssueLevel.Info, "Greit å vite") })
+                @foreach (var (level, title) in new[] { (AdoIssueLevel.Warning, "Advarsler"), (AdoIssueLevel.Info, "Greit å vite") })
                 {
                     var list = p.Issues.Where(i => i.Level == level).ToList();
                     if (list.Count == 0) continue;
@@ -172,7 +200,7 @@
                         </ul>
                     </div>
                 }
-                @if (p.CanDownload) { <p class="adx-ok" role="status" data-testid="adx-can-download">@p.ReadyCases testtilfelle@(p.ReadyCases == 1 ? " er" : "r er") klar@(p.ReadyCases == 1 ? "" : "e") for eksport (@p.Rows.Count rader).</p> }
+                </details>
             }
             else if (_busy) { <p class="adx-muted" role="status">Kontrollerer …</p> }
         </fieldset>
@@ -203,7 +231,9 @@
                 <button type="button" class="adx-btn adx-btn-quiet" disabled="@(_working || _preview is null)" @onclick="ReportAsync" data-testid="adx-download-report">Last ned koblingsrapport</button>
             </div>
             @if (_downloaded is not null) { <p class="adx-ok" role="status" data-testid="adx-downloaded">@_downloaded</p> }
-            <h3 class="adx-h3">Slik importerer du filen</h3>
+            <details class="adx-advanced" data-testid="adx-howto-details">
+            <summary>Vis importveiledning</summary>
+            <p class="adx-muted" data-testid="adx-format-note">Filen er i formatet til <strong>Azure Test Plans → Import test cases</strong> (Microsoft: «Bulk import or export test cases»): én rad per steg med handling og forventet resultat. Den importeres i en testgruppe som finnes fra før — filen oppretter ikke testplanen eller testgruppen.</p>
             <ol class="adx-howto" data-testid="adx-howto">
                 <li>Åpne <strong>Test Plans</strong> i Azure DevOps, og velg testplanen og deretter testgruppen. Finnes de ikke, oppretter du dem først (eller i Systeminnstillinger → Azure DevOps – Test Plans).</li>
                 <li>Velg <strong>Import test cases from CSV/XLSX</strong> og velg filen du lastet ned.</li>
@@ -211,6 +241,7 @@
                 <li>Koble kravene i koblingsrapporten til testtilfellene i Azure DevOps — filen lager ikke slike koblinger.</li>
             </ol>
             <p class="adx-muted adx-small" data-testid="adx-boundary">BirkNext lager bare filen. Å laste ned er ikke å importere, og BirkNext kan ikke kontrollere at Area Path, bruker eller status finnes i organisasjonen deres.</p>
+            </details>
         </fieldset>
     }
 </section>
@@ -359,18 +390,16 @@
         _downloaded = $"{file.FileName} er lastet ned.";
     }
 
-    private async Task SaveProfileAsync()
-    {
-        _working = true; _error = null;
-        await SettledAsync();
-        var (profile, error) = await _api!.SaveProfileAsync(ProjectKey, _profile);
-        _working = false;
-        if (profile is null) { _error = error ?? "Innstillingene kunne ikke lagres."; return; }
-        _profile = _saved = profile;
-        _restored = false;
-        await TabDraftStore.RemoveAsync(JS, TabDraftStore.ExportSettingsKey(ProjectKey));
-        _downloaded = "Eksportinnstillingene er lagret for prosjektet.";
-    }
+    /// <summary>The effective field values in one line (the defaults come from System Settings → Azure DevOps – Test Plans → Field defaults).</summary>
+    private string FieldsSummary =>
+        $"Area Path: {(string.IsNullOrWhiteSpace(_profile.AreaPath) ? "ikke satt" : _profile.AreaPath)} · Status: {(string.IsNullOrWhiteSpace(_profile.State) ? "ikke satt" : _profile.State)}"
+        + (string.IsNullOrWhiteSpace(_profile.AssignedTo) ? "" : $" · Tildelt: {_profile.AssignedTo}")
+        + (_profile.Format == AdoExportFormat.Xlsx ? " · Excel" : " · CSV")
+        + (_profile.Target == AdoTarget.Server ? " · Azure DevOps Server" : "")
+        + (Unsaved ? " (endret for denne eksporten)" : "");
+
+    /// <summary>A required field is missing or invalid: the field editor opens so it can be fixed here.</summary>
+    private bool FieldsNeedFix => _preview?.Fields.Any(f => f.Check is AdoFieldCheck.Invalid or AdoFieldCheck.Missing) == true;
 
     private static string CheckLabel(AdoFieldCheck check) => check switch
     {

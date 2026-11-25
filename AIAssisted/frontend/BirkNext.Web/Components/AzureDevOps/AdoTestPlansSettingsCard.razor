@@ -10,7 +10,9 @@
    access token is stored encrypted and never shown), the default destination for manual test cases (organization → project → test plan → test suite),
    a new test plan or test suite created only after Review → Create in Azure DevOps, and creates whose answer was lost (Check in Azure DevOps).
    Opening the section reads only BirkNext's own settings; Azure DevOps is contacted when the user chooses or checks something. Saving a default is
-   local and never creates anything. Only Reset data → Reset everything removes these settings. *@
+   local and never creates anything. Only Reset data → Reset everything removes these settings.
+   Field defaults (2026-11-25): the selected project's work item field values for every transfer (Area Path, Assigned To, State, preconditions,
+   priority, source references, file format, Azure DevOps version). Manual Testing shows them as one line and can change them for one export only. *@
 <section class="gsx ats" aria-labelledby="ats-title" data-testid="ats">
     <header class="gsx-header">
         <div>
@@ -116,6 +118,53 @@
             @if (_error is { } error) { <p class="gsx-error" role="alert" data-testid="ats-error">@error</p> }
         </div>
 
+        @* Field defaults: the project's export profile *@
+        <div class="gsx-panel" data-testid="ats-fields">
+            <div class="gsx-panel-head"><h3 class="gsx-panel-title">Field defaults</h3>@if (_projectName is not null) { <span class="gsx-pill gsx-pill-neutral">@_projectName</span> }</div>
+            @if (_projectKey is null)
+            {
+                <p class="gsx-muted" data-testid="ats-fields-no-project">Select a project to set its field defaults.</p>
+            }
+            else if (_fields is not { } f)
+            {
+                <p class="gsx-muted" role="status" data-testid="ats-fields-loading">@(_fieldsError ?? "Reading the field defaults…")</p>
+            }
+            else
+            {
+                <p class="gar-help">Used for every transfer of this project's test plans, as a file or directly. Saving changes nothing in Azure DevOps.</p>
+                <div class="ats-fields-grid">
+                    <div class="gar-field gar-narrow"><label for="ats-f-target">Azure DevOps version</label>
+                        <select id="ats-f-target" class="form-control" @onchange="e => _fields = f with { Target = Enum.Parse<AdoTarget>(e.Value!.ToString()!) }" data-testid="ats-f-target">
+                            <option value="Services" selected="@(f.Target == AdoTarget.Services)">Azure DevOps Services</option>
+                            <option value="Server" selected="@(f.Target == AdoTarget.Server)">Azure DevOps Server 2022 or later</option>
+                        </select></div>
+                    <div class="gar-field gar-narrow"><label for="ats-f-area">Area Path @(f.Target == AdoTarget.Services ? "(required)" : "(optional)")</label>
+                        <input id="ats-f-area" class="form-control" value="@f.AreaPath" placeholder="Project\Area" maxlength="4000" @onchange="e => _fields = f with { AreaPath = e.Value?.ToString() }" data-testid="ats-f-area" /></div>
+                    <div class="gar-field gar-narrow"><label for="ats-f-assigned">Assigned To (optional)</label>
+                        <input id="ats-f-assigned" class="form-control" value="@f.AssignedTo" placeholder="name@organization.com" maxlength="256" @onchange="e => _fields = f with { AssignedTo = e.Value?.ToString() }" data-testid="ats-f-assigned" /></div>
+                    <div class="gar-field gar-narrow"><label for="ats-f-state">State</label>
+                        <input id="ats-f-state" class="form-control" value="@f.State" maxlength="128" @onchange="e => _fields = f with { State = e.Value?.ToString() ?? string.Empty }" data-testid="ats-f-state" /></div>
+                    <div class="gar-field gar-narrow"><label for="ats-f-pre">Preconditions</label>
+                        <select id="ats-f-pre" class="form-control" @onchange="e => _fields = f with { Preconditions = Enum.Parse<AdoPreconditionsMode>(e.Value!.ToString()!) }" data-testid="ats-f-preconditions">
+                            <option value="MappingReport" selected="@(f.Preconditions == AdoPreconditionsMode.MappingReport)">List them in the mapping report</option>
+                            <option value="FirstStep" selected="@(f.Preconditions == AdoPreconditionsMode.FirstStep)">Add them as the first step</option>
+                        </select></div>
+                    <div class="gar-field gar-narrow"><label for="ats-f-format">File format</label>
+                        <select id="ats-f-format" class="form-control" @onchange="e => _fields = f with { Format = Enum.Parse<AdoExportFormat>(e.Value!.ToString()!) }" data-testid="ats-f-format">
+                            <option value="Xlsx" selected="@(f.Format == AdoExportFormat.Xlsx)">Excel (.xlsx) — recommended</option>
+                            <option value="Csv" selected="@(f.Format == AdoExportFormat.Csv)">CSV</option>
+                        </select></div>
+                </div>
+                <label class="ats-radio"><input type="checkbox" checked="@f.IncludePriority" @onchange="e => _fields = f with { IncludePriority = e.Value is true }" data-testid="ats-f-priority" /> Include priority (Critical/High/Medium/Low → 1/2/3/4)</label>
+                <label class="ats-radio"><input type="checkbox" checked="@f.IncludeSourceReferences" @onchange="e => _fields = f with { IncludeSourceReferences = e.Value is true }" data-testid="ats-f-source-refs" /> Include where each test case comes from (specification, acceptance scenario, requirement) as Description</label>
+                <div class="gar-actions">
+                    <button type="button" class="btn-primary btn-sm" disabled="@(_busy || !_canWrite || f == _fieldsSaved)" title="@(!_canWrite ? "You do not have permission to change these settings." : null)" @onclick="SaveFieldsAsync" data-testid="ats-f-save">Save field defaults</button>
+                    @if (f != _fieldsSaved) { <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => _fields = _fieldsSaved" data-testid="ats-f-revert">Discard changes</button> }
+                </div>
+                @if (_fieldsNotice is { } fn) { <p class="gsx-notice" role="status" data-testid="ats-f-notice">@fn</p> }
+            }
+        </div>
+
         @if (_view.Pending.Count > 0)
         {
             <div class="gsx-panel" data-testid="ats-pending">
@@ -135,7 +184,7 @@
 
         <div class="gsx-panel" data-testid="ats-usage">
             <div class="gsx-panel-head"><h3 class="gsx-panel-title">Use</h3></div>
-            <p class="gsx-muted">Test plans are transferred from <a href="manual-testing/plan?panel=export" data-testid="ats-open-transfer">Manual Testing → Planlegg og klargjør → Overfør testplan</a>.
+            <p class="gsx-muted">Test plans are transferred from <a href="manual-testing/plans" data-testid="ats-open-transfer">Manual Testing → Testplaner → Overfør testplan</a>.
                 Export to file is always the default. Sending directly to Azure DevOps requires confirming that the test lead approved the transfer.
                 These settings are removed only by Reset data → Reset everything.</p>
         </div>
@@ -149,6 +198,8 @@
     private AdoTestPlanDestination? _draft;
     private AdoDestinationScope _scope = AdoDestinationScope.System;
     private string _org = "", _pat = "";
+    private AdoExportProfile? _fields, _fieldsSaved;
+    private string? _fieldsError, _fieldsNotice;
 
     private AzureDevOpsConnectionInfo? DefaultConnection =>
         _view is null ? null
@@ -164,6 +215,28 @@
         }
         catch (Exception e) when (e is InvalidOperationException or HttpRequestException) { }
         await LoadAsync();
+        await LoadFieldsAsync();
+    }
+
+    private async Task LoadFieldsAsync()
+    {
+        if (_projectKey is null || Services.GetService(typeof(IAdoExportApiService)) is not IAdoExportApiService export) return;
+        var (profile, error) = await export.ProfileAsync(_projectKey);
+        if (profile is null) { _fieldsError = "The field defaults could not be read." + (error is null ? "" : $" ({error})"); return; }
+        _fields = _fieldsSaved = profile;
+    }
+
+    private async Task SaveFieldsAsync()
+    {
+        if (_busy || _projectKey is null || _fields is null || Services.GetService(typeof(IAdoExportApiService)) is not IAdoExportApiService export) return;
+        _busy = true; _fieldsNotice = null; _error = null;
+        // Remembered Azure DevOps ids are the export's own record: keep the latest stored ones.
+        var (latest, _) = await export.ProfileAsync(_projectKey);
+        var (saved, error) = await export.SaveProfileAsync(_projectKey, _fields with { KnownTestCaseIds = latest?.KnownTestCaseIds ?? _fields.KnownTestCaseIds });
+        _busy = false;
+        if (saved is null) { _error = error ?? "The field defaults could not be saved."; return; }
+        _fields = _fieldsSaved = saved;
+        _fieldsNotice = $"Field defaults saved for {_projectName ?? "this project"}. Nothing was changed in Azure DevOps.";
     }
 
     private async Task LoadAsync()

@@ -187,8 +187,8 @@ public static class NavigationCatalog
         // page and route, renamed in the menu; the old name stays searchable), so there is one planning interface, not two.
         new("manual-testing-workspace", "Manual Testing",
         [
-            new("manual-testing", "Manual Testing", "nav-icon-workflow", Always, Hint: "the manual tester's home: current project, prepared cases, export to Azure DevOps and the next step",
-                Aliases: ["Manual tester", "Testing workspace"]),
+            new("manual-testing", "Manual Testing", "nav-icon-workflow", Always, Hint: "test plans of the project (Testplaner): create, open, archive, transfer to Azure DevOps and the next step",
+                Aliases: ["Manual tester", "Testing workspace", "Testplaner", "Test plans", "Ny testplan", "Overfør testplan"]),
             new("manual-testing/discover", "Discover & understand", "nav-icon-system-understanding", Always, WrapLabel: true,
                 Hint: "what needs testing: requirements, scenario suggestions, existing tests and what needs clarification", Aliases: ["Requirements to test", "What to test"]),
             new("manual-testing/plan", "Plan & prepare", "nav-icon-workflow", Always, WrapLabel: true,

@@ -352,9 +352,10 @@ public sealed partial class ManualTestingPlanTests : BunitContext
         var cut = Open();
 
         cut.Find("[data-testid=mtp-advanced]").GetAttribute("href").Should().Be($"test-plan-suggestions?draft={PlanId}&advanced=1");
-        cut.Find("[data-testid=mtp-tool][data-tool=export]").Click();
-        cut.Find("[data-testid=adx]").Should().NotBeNull("the existing Azure DevOps export (with its language choice) is part of the plan page");
-        cut.Find("[data-testid=mtp-tool][data-tool=cases]").Click();
+        cut.FindAll("[data-testid=mtp-tool][data-tool=export]").Should().BeEmpty("the transfer lives on the Testplaner tab");
+        cut.Find("[data-testid=mtp-manage-plans]").GetAttribute("href").Should().Be("manual-testing/plans");
+        cut.Find("[data-testid=mtp-transfer]").Click();
+        Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith($"manual-testing/plans?transfer={PlanId}");
         cut.Find("[data-testid=mtp-translate]").Click();
 
         _api.Verify(x => x.TranslateAsync(PlanId, new TranslateScenarioRequest(3, "c1", false, ScenarioPlanning.Norwegian), It.IsAny<CancellationToken>()));
@@ -569,7 +570,7 @@ public sealed partial class ManualTestingPlanTests : BunitContext
     [Theory]
     [InlineData(null, null, null, null, "manual-testing/plan")]
     [InlineData("66666666-6666-6666-6666-666666666666", "prepare", "c1", null, "manual-testing/plan?draft=66666666-6666-6666-6666-666666666666&case=c1")]
-    [InlineData("66666666-6666-6666-6666-666666666666", "export", null, null, "manual-testing/plan?draft=66666666-6666-6666-6666-666666666666&panel=export")]
+    [InlineData("66666666-6666-6666-6666-666666666666", "export", null, null, "manual-testing/plans?transfer=66666666-6666-6666-6666-666666666666")]
     [InlineData(null, "choose", null, null, "manual-testing/discover")]
     [InlineData("66666666-6666-6666-6666-666666666666", "prepare", null, "1", null)]
     public void N_old_plan_links_land_on_the_canonical_page_unless_the_advanced_tools_are_asked_for(string? draft, string? area, string? caseId, string? advanced, string? expected)

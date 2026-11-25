@@ -149,7 +149,7 @@ public sealed class RealM2lbManualTestingTests : IAsyncLifetime
 
             // 8. The home offers the export of the approved case.
             await GoAsync(page, "manual-testing", "mt");
-            await Assertions.Expect(page.GetByTestId("mt-next-action")).ToHaveTextAsync("Export to Azure DevOps");
+            await Assertions.Expect(page.GetByTestId("mt-next-action")).ToHaveTextAsync("Overfør testplan");
             await page.Locator($"[data-testid=mt-plan-export][href*=\"{draftId}\"]").ClickAsync();
 
             // 9. Export an XLSX for Azure DevOps Test Plans; the file carries the Norwegian step.
@@ -157,7 +157,7 @@ public sealed class RealM2lbManualTestingTests : IAsyncLifetime
             await page.GetByTestId("adx-area").FillAsync(@"M2LB\Manuell test");
             await page.GetByTestId("adx-area").DispatchEventAsync("change");
             await ReadyAsync(page, "adx");
-            await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("klar", new() { Timeout = 60000 });
+            await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("Klar for eksport", new() { Timeout = 60000 });
             var download = await page.RunAndWaitForDownloadAsync(() => page.GetByTestId("adx-download-xlsx").ClickAsync());
             var file = Path.Combine(Path.GetTempPath(), $"m2lb-e2e-{Guid.NewGuid():N}.xlsx");
             await download.SaveAsAsync(file);

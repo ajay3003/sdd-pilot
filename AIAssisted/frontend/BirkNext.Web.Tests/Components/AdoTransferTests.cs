@@ -128,9 +128,14 @@ public sealed class AdoTransferTests : BunitContext
         var cut = Panel();
         cut.Find("[data-testid=atp-method-direct]").Click();
 
-        cut.Find(".adt-warning-title").TextContent.Should().Be("GODKJENNING FRA TESTLEDER KREVES");
+        cut.Find(".adt-warning-title").TextContent.Should().Be("Godkjenning fra testleder kreves");
         cut.Find(".adt-warning-icon").Should().NotBeNull();
-        cut.Find("[data-testid=adt-why]").TextContent.Should().Contain("Hvorfor er godkjenning nødvendig?").And.Contain("kan opprette nye").And.Contain("Derfor skal testleder godkjenne");
+        var why = cut.Find("[data-testid=adt-why]");
+        why.TagName.Should().Be("DETAILS");
+        why.HasAttribute("open").Should().BeFalse("the reasons are one click away; the warning and the declaration stay visible");
+        why.QuerySelector("summary")!.TextContent.Should().Be("Hvorfor kreves godkjenning?");
+        why.TextContent.Should().Contain("kan opprette nye").And.Contain("Derfor skal testleder godkjenne");
+        cut.Find("[data-testid=adt-declare]").Closest("details").Should().BeNull("the declaration is never hidden");
         var consequences = cut.Find("[data-testid=adt-consequences]");
         consequences.QuerySelector("summary")!.TextContent.Should().Be("Hva kan skje når du overfører?");
         consequences.QuerySelectorAll("li").Should().HaveCount(8);

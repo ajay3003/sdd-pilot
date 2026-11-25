@@ -68,3 +68,6 @@
     .adt-warning-head { flex-direction: column; }
     .adp-tree li { padding-left: calc(var(--adp-depth, 0) * .75rem); }
 }
+
+/* System Settings → Field defaults (2026-11-25) */
+.ats-fields-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .5rem 1rem; margin: .5rem 0; }

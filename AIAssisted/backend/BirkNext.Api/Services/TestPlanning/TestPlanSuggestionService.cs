@@ -594,6 +594,18 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
     /// </summary>
     public async Task<TestPlanDraft> CreateProjectAsync(CreateProjectTestPlanRequest request, string actor, CancellationToken ct)
     {
+        // Two simultaneous requests for the same «Opprett testplan» draft: one creates, the other is told (never a second plan).
+        if (request.DraftId is not null || string.IsNullOrWhiteSpace(request.CreationRequestId)) return await CreateProjectCoreAsync(request, actor, ct);
+        var guard = $"{TestScenarioDiscoveryService.Key(request.ProjectKey)}|{request.CreationRequestId.Trim()}";
+        if (!CreatingPlans.TryAdd(guard, 0)) throw new TestPlanException(409, "create-running", "Testplanen opprettes allerede. Vent litt.");
+        try { return await CreateProjectCoreAsync(request, actor, ct); }
+        finally { CreatingPlans.TryRemove(guard, out _); }
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> CreatingPlans = new(StringComparer.Ordinal);
+
+    private async Task<TestPlanDraft> CreateProjectCoreAsync(CreateProjectTestPlanRequest request, string actor, CancellationToken ct)
+    {
         var key = TestScenarioDiscoveryService.Key(request.ProjectKey);
         var manualTitle = string.IsNullOrWhiteSpace(request.ManualCaseTitle) ? null : request.ManualCaseTitle.Trim()[..Math.Min(request.ManualCaseTitle.Trim().Length, 300)];
         var discovery = string.IsNullOrWhiteSpace(request.DiscoveryId) ? null
@@ -604,7 +616,11 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             throw new TestPlanException(409, "discovery-missing", "The discovery result is no longer available (BirkNext restarted or the project changed). Discover test scenarios again.");
         var wanted = request.CandidateIds.ToHashSet(StringComparer.Ordinal);
         var chosen = SpecificationOrder(discovery?.Candidates.Where(c => wanted.Contains(c.CandidateId) && c.ProjectKey == key).ToList() ?? []);
-        if (chosen.Count == 0 && manualTitle is null) throw new TestPlanException(400, "no-scenarios", "Select at least one scenario, or write a test case by hand.");
+        var empty = request.AllowEmpty && request.DraftId is null && chosen.Count == 0 && manualTitle is null;
+        if (empty && string.IsNullOrWhiteSpace(request.PlanName)) throw new TestPlanException(400, "name-required", "Gi testplanen et navn.");
+        if (chosen.Count == 0 && manualTitle is null && !empty) throw new TestPlanException(400, "no-scenarios", "Select at least one scenario, or write a test case by hand.");
+        // The same «Opprett testplan» draft again (double-click, retry after a lost answer): the plan already created from it, never a second one.
+        if (request.DraftId is null && !string.IsNullOrWhiteSpace(request.CreationRequestId) && await CreatedFromAsync(key, request.CreationRequestId.Trim(), ct) is { } already) return already;
         if (chosen.Count > MaxCases) throw new TestPlanException(400, "too-many-cases", $"At most {MaxCases} cases per plan.");
         var cases = chosen.Select(c => ProjectCase(key, c, discovery?.Basis)).ToList();
         if (manualTitle is not null) cases.Add(ManualCase(key, manualTitle, null, null));
@@ -632,7 +648,8 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         var projectName = string.IsNullOrWhiteSpace(request.ProjectName) ? discovery?.ProjectName : request.ProjectName.Trim()[..Math.Min(request.ProjectName.Trim().Length, 200)];
         var plan = new TestPlanDraft
         {
-            Id = Guid.NewGuid(), GuideKey = ProjectOwner(key), ProjectKey = key, ProjectName = projectName, SnapshotKey = discovery?.SnapshotKey, DiscoveryId = discovery?.DiscoveryId,
+            Id = Guid.NewGuid(), CreationRequestId = string.IsNullOrWhiteSpace(request.CreationRequestId) ? null : request.CreationRequestId.Trim()[..Math.Min(request.CreationRequestId.Trim().Length, 64)],
+            GuideKey = ProjectOwner(key), ProjectKey = key, ProjectName = projectName, SnapshotKey = discovery?.SnapshotKey, DiscoveryId = discovery?.DiscoveryId,
             ApplicationKey = discovery?.Basis?.ApplicationKey, DiscoveryBasis = discovery?.Basis,
             ScopeIds = [.. request.ScopeIds.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).Distinct(StringComparer.Ordinal).Take(20)],
             PlanName = string.IsNullOrWhiteSpace(request.PlanName) ? $"{projectName ?? key} – test plan" : Name(request.PlanName), DeliveryLabel = Label(request.DeliveryLabel), Revision = 1,
@@ -649,6 +666,14 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         AddRevision(plan, "Created");
         await db.SaveChangesAsync(ct);
         return plan;
+    }
+
+    /// <summary>The project's plan created from this browser draft id, if any (archived and active; never another project's).</summary>
+    private async Task<TestPlanDraft?> CreatedFromAsync(string key, string creationRequestId, CancellationToken ct)
+    {
+        var owner = ProjectOwner(key);
+        var rows = await db.TestPlanDrafts.AsNoTracking().Where(r => r.GuideKey == owner && r.ContentJson.Contains(creationRequestId)).ToListAsync(ct);
+        return rows.Select(Read).FirstOrDefault(p => p.CreationRequestId == creationRequestId && p.ProjectKey == key);
     }
 
     /// <summary>Adds a hand-written case to a project plan (title and purpose only; nothing generated).</summary>

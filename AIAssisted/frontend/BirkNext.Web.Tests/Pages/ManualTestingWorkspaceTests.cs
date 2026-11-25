@@ -76,11 +76,11 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         M.Next(F(project: null)).Label.Should().Be("Velg applikasjon", "projects exist: one has to be chosen");
         M.Next(new M.Facts(null, null, [], null, null, AnyProjectImported: false)).Label.Should().Be("Importer en applikasjon", "nothing to choose from: import first");
         M.Steps(new M.Facts(null, null, [], null, null, AnyProjectImported: false)).Should().OnlyContain(s => s.DisabledReason == "Import a project first.");
-        M.Next(F()).Should().Match<M.NextAction>(n => n.Label == "Oppdag scenarioer" && n.Href == "manual-testing/discover");
+        M.Next(F()).Should().Match<M.NextAction>(n => n.Label == "Finn scenarioer" && n.Href == "manual-testing/discover");
         M.Next(F(d: Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Velg scenarioer" && n.Href == "manual-testing/discover",
             "scenarios are chosen where they are browsed (scenario-first)");
         M.Next(F([Summary(clarify: 1)], Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Avklar testtilfeller" && n.Href.Contains($"draft={PlanId}"));
-        M.Next(F([Summary()], Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Eksporter til Azure DevOps" && n.Href == $"manual-testing/plan?draft={PlanId}&panel=export"
+        M.Next(F([Summary()], Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Overfør testplan" && n.Href == $"manual-testing/plans?transfer={PlanId}"
             && n.Why.Contains("Azure DevOps Test Plans, der manuelle tester kjøres"));
         M.Next(F([Summary(accepted: 0)], Discovery(4))).Label.Should().Be("Fortsett forberedelsen", "nothing approved: nothing to export yet");
     }
@@ -93,14 +93,14 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
 
         M.Next(F()).Should().Match<M.NextAction>(n => n.Label == "Velg spesifikasjon" && n.Href == "manual-testing/discover" && n.Why == choose);
         M.Next(F(d: Discovery(4))).Label.Should().Be("Velg spesifikasjon", "discovery without a specification finds no business scenarios");
-        M.Next(F([Summary()], Discovery(4))).Label.Should().Be("Eksporter til Azure DevOps", "prepared work is never held back by the choice");
+        M.Next(F([Summary()], Discovery(4))).Label.Should().Be("Overfør testplan", "prepared work is never held back by the choice");
         M.Steps(F())[0].Evidence.Should().Contain("Specification not chosen yet");
     }
 
     [Fact]
     public void Two_stages_are_never_all_blocked_and_their_counts_come_from_records()
     {
-        M.Stages.Select(s => s.Id).Should().Equal("discover", "plan");
+        M.Stages.Select(s => s.Id).Should().Equal("discover", "plan", "plans");
         var none = M.Steps(new(null, null, [], null, null));
         none.Should().OnlyContain(s => s.State == GuidedStepState.Waiting && s.DisabledReason != null, "without a project every stage says why");
 
@@ -125,17 +125,18 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         var cut = Open<ManualTesting>("manual-testing");
 
         cut.Find("[data-testid=twh-project]").TextContent.Should().Contain("Library");
-        cut.Find("[data-testid=twh-stage][data-stage=home]").GetAttribute("aria-current").Should().Be("page");
-        cut.FindAll("[data-testid=twh-stage]").Select(a => a.GetAttribute("href")).Should().Equal("manual-testing", "manual-testing/discover", "manual-testing/plan");
-        cut.Find("[data-testid=mt-next-action]").Should().Match<AngleSharp.Dom.IElement>(a => a.TextContent == "Eksporter til Azure DevOps"
-            && a.GetAttribute("href") == $"manual-testing/plan?draft={PlanId}&panel=export");
+        cut.Find("[data-testid=twh-stage][data-stage=plans]").GetAttribute("aria-current").Should().Be("page", "the home is the Testplaner tab");
+        cut.FindAll("[data-testid=twh-stage]").Select(a => a.GetAttribute("href")).Should().Equal("manual-testing", "manual-testing/discover", "manual-testing/plan", "manual-testing/plans");
+        cut.Find("[data-testid=mt-next-action]").Should().Match<AngleSharp.Dom.IElement>(a => a.TextContent == "Overfør testplan"
+            && a.GetAttribute("href") == $"manual-testing/plans?transfer={PlanId}");
         cut.FindAll("[data-testid=mt-stage]").Should().BeEmpty("the stages are navigated once, in the header (no duplicate workflow navigation)");
-        cut.FindAll("[data-testid=twh-stage]").Should().HaveCount(3);
+        cut.FindAll("[data-testid=twh-stage]").Should().HaveCount(4);
         cut.Find("[data-testid=mt-plan]").TextContent.Should().Contain("Library – test plan").And.Contain("2 testtilfeller").And.Contain("1 godkjent");
         cut.Find("[data-testid=mt-count-suggestions]").TextContent.Should().Be("3", "suggestions are counted as suggestions");
         cut.Find("[data-testid=mt-count-cases]").TextContent.Should().Be("2", "and saved test cases as test cases — never one for the other");
         cut.FindAll("[data-testid=mt-runs]").Should().BeEmpty("BirkNext records no manual runs");
-        cut.Markup.Should().Contain("et forberedt, godkjent eller eksportert testtilfelle er ikke en kjørt test").And.NotContain("manual-testing/execute");
+        cut.Find("[data-testid=mt-count-executed]").TextContent.Should().Be("Registreres i Azure DevOps", "a prepared, approved or transferred case is not an executed test");
+        cut.Markup.Should().NotContain("manual-testing/execute");
     }
 
     [Fact]

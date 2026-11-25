@@ -1,29 +1,34 @@
 @page "/manual-testing"
+@page "/manual-testing/plans"
 @using BirkNext.TestPlanning
 @using BirkNext.Web.Services
 @using M = BirkNext.Web.Services.ManualTestingPresentation
+@using P = BirkNext.Web.Services.PlanPreparePresentation
 @implements IDisposable
 @inject IServiceProvider ServiceProvider
+@inject NavigationManager Nav
+@inject IJSRuntime JS
 
-@* Manuell testing (2026-11-23): the tester's work at a glance — the one next step, real counts from saved records (suggestions are never counted
-   as test cases), and the saved plans with their source status. The two stages are in the header only (no second navigation). Test cases are
-   executed in Azure DevOps Test Plans after the export. *@
-<PageTitle>Manuell testing</PageTitle>
+@* «3. Testplaner» (2026-11-25), the last Manual Testing tab: create, open, archive and transfer the project's test plans. The same page as the Manual
+   Testing home (/manual-testing) — no second test plan system: the saved plans, their counts and «Neste steg» come from the same stored records,
+   creation uses the same create call (an explicit empty plan or the scenarios chosen in Finn og forstå), and «Overfør testplan» is the same transfer
+   panel (file export by default, direct transfer opt-in). Project is the scope: plans are never hidden because another module is selected. *@
+<PageTitle>Testplaner — Manuell testing</PageTitle>
 
 <div class="mt msb-page" data-testid="mt" aria-busy="@(_loading ? "true" : "false")">
-    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="@null" Title="Manuell testing"
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="plans" Title="Testplaner"
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
-        Lead="Finn scenarioene som må testes, forbered og gjennomgå testtilfeller, og eksporter dem til Azure DevOps Test Plans.">
+        Lead="Opprett, åpne og overfør testplanene for applikasjonen. Testtilfellene forberedes i Planlegg og klargjør.">
         <Help><BirkNext.Web.Components.HelpLink Topic="manual-testing" Text="Slik fungerer det" /></Help>
     </BirkNext.Web.Components.TestingWorkspaceHeader>
 
     @if (_loading)
     {
-        <div class="msb-skeleton" role="status" data-testid="mt-loading"><span>Laster …</span></div>
+        <InlineLoading Text="Henter testplaner …" Class="msb-skeleton" TestId="mt-loading" />
     }
     else if (_ws is null)
     {
-        <p class="msb-empty" data-testid="mt-error">Manuell testing kunne ikke lastes.</p>
+        <p class="msb-empty" data-testid="mt-error">Manuell testing kunne ikke lastes. <button type="button" class="msb-link" @onclick="LoadAsync">Prøv igjen</button></p>
     }
     else
     {
@@ -33,26 +38,83 @@
         {
             <p class="mt-alert" role="alert" data-testid="mt-error">@error <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync" data-testid="mt-retry">Prøv igjen</button></p>
         }
-        <section class="msb-next" aria-labelledby="mt-next-title" data-testid="mt-next">
-            <div>
-                <h2 id="mt-next-title" class="msb-h">Neste steg</h2>
-                <p class="mt-muted" data-testid="mt-next-why">@next.Why</p>
-            </div>
-            <a class="btn btn-primary" href="@next.Href" data-testid="mt-next-action">@next.Label</a>
-        </section>
 
         @if (facts.ProjectKey is not null)
         {
+            @* 1. Testplan actions *@
+            <div class="mt-plan-actions" data-testid="mt-plan-actions">
+                <button type="button" class="btn btn-primary" disabled="@(!CanWrite || _creating)" title="@(CanWrite ? null : "Du har ikke tilgang til å opprette testplaner.")"
+                        @onclick="StartNew" data-testid="mt-new-plan">+ Ny testplan</button>
+                <button type="button" class="btn btn-outline-primary" disabled="@(Active.Count == 0)" title="@(Active.Count == 0 ? "Det finnes ingen aktiv testplan å overføre." : null)"
+                        @onclick="() => OpenTransfer(Active[0].Id)" data-testid="mt-transfer">Overfør testplan</button>
+                @if (!CanWrite) { <span class="mt-muted msb-small" data-testid="mt-new-plan-why">Du har ikke tilgang til å opprette testplaner.</span> }
+            </div>
+
+            @if (_new is { } draft)
+            {
+                <section class="mt-new-plan" aria-labelledby="mt-new-plan-title" data-testid="mt-new-plan-form">
+                    <h2 id="mt-new-plan-title" class="msb-h">Ny testplan</h2>
+                    <label class="mtp-field" for="mt-new-plan-name"><span>Navn</span></label>
+                    <input id="mt-new-plan-name" class="form-control mt-new-plan-name" maxlength="200" value="@draft.Name" @oninput="e => draft.Name = e.Value?.ToString() ?? string.Empty"
+                           disabled="@_creating" aria-describedby="mt-new-plan-help" data-testid="mt-new-plan-name" />
+                    <span id="mt-new-plan-help" class="mt-muted msb-small">Foreslått navn med dato og klokkeslett. Du kan skrive et eget navn.</span>
+                    @if (_selection.Count > 0 && _ws.Discovery is not null)
+                    {
+                        <label class="adx-check"><input type="checkbox" checked="@draft.WithSelection" disabled="@_creating" @onchange="e => draft.WithSelection = e.Value is true" data-testid="mt-new-plan-selection" />
+                            Ta med @_selection.Count scenario@(_selection.Count == 1 ? "" : "er") valgt i Finn og forstå</label>
+                    }
+                    @if (_createError is { } ce) { <p class="mt-alert" role="alert" data-testid="mt-new-plan-error">@ce</p> }
+                    <div class="mt-new-plan-actions">
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@(_creating || string.IsNullOrWhiteSpace(draft.Name))" @onclick="CreateAsync" data-testid="mt-new-plan-create">@(_creating ? "Oppretter …" : "Opprett testplan")</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_creating" @onclick="() => _new = null" data-testid="mt-new-plan-cancel">Avbryt</button>
+                    </div>
+                </section>
+            }
+            @if (_created is { } created)
+            {
+                <p class="mtp-notice" role="status" data-testid="mt-new-plan-done">Testplan opprettet: «@created.PlanName».
+                    <a href="@($"{M.PlanRoute}?draft={created.Id}")" data-testid="mt-new-plan-open">Åpne i Planlegg og klargjør</a></p>
+            }
+
+            @if (_transfer is { } transferPlan)
+            {
+                <section class="mt-transfer" aria-label="Overfør testplan" data-testid="mt-transfer-panel">
+                    <label class="mtp-field mtp-inline"><span>Testplan</span>
+                        <select @onchange="e => OpenTransfer(Guid.TryParse(e.Value?.ToString(), out var id) ? id : transferPlan.Id)" data-testid="mt-transfer-plan">
+                            @foreach (var p in Active) { <option value="@p.Id" selected="@(p.Id == transferPlan.Id)">@p.PlanName</option> }
+                        </select></label>
+                    <button type="button" class="msb-link" @onclick="CloseTransfer" data-testid="mt-transfer-close">Lukk</button>
+                    @* A new panel per test plan: it always opens on «Eksporter til fil». *@
+                    <BirkNext.Web.Components.ManualTesting.AdoTransferPanel @key="transferPlan.Id" Draft="transferPlan" ProjectKey="@(facts.ProjectKey!)" CanWrite="CanWrite" />
+                </section>
+            }
+            else if (_transferLoading) { <InlineLoading Text="Henter testplanen …" Class="mt-muted" TestId="mt-transfer-loading" /> }
+            else if (_transferError is { } te) { <p class="mt-alert" role="alert" data-testid="mt-transfer-error">@te</p> }
+
+            @* 2. Saved test plans *@
+            @if (_ws.Plans is { } workspace)
+            {
+                <BirkNext.Web.Components.ManualTesting.SavedPlans Workspace="workspace" Api="Api" ShowArchived="@(PlansQuery == "archived")" Changed="LoadAsync" />
+            }
+
+            @* 3. Next step and status *@
+            <section class="msb-next" aria-labelledby="mt-next-title" data-testid="mt-next">
+                <div>
+                    <h2 id="mt-next-title" class="msb-h">Neste steg</h2>
+                    <p class="mt-muted" data-testid="mt-next-why">@next.Why</p>
+                </div>
+                <a class="btn btn-outline-primary" href="@next.Href" data-testid="mt-next-action">@next.Label</a>
+            </section>
             var plans = facts.Plans;
             var cases = plans.Sum(p => p.Cases);
             var approved = plans.Sum(p => p.Accepted);
             var clarify = plans.Sum(p => p.NeedsClarification);
             <dl class="msb-counts msb-counts-wide" data-testid="mt-counts" aria-label="Status for applikasjonen">
-                <div><dt>Forslag</dt><dd data-testid="mt-count-suggestions">@(_ws.Discovery?.Candidates.Count.ToString() ?? "—")</dd></div>
+                <div title="Scenarioer funnet for valgt modul og spesifikasjon — ikke testtilfeller"><dt>Forslag</dt><dd data-testid="mt-count-suggestions">@(_ws.Discovery?.Candidates.Count.ToString() ?? "—")</dd></div>
                 <div><dt>Testtilfeller</dt><dd data-testid="mt-count-cases">@cases</dd></div>
                 <div><dt>Godkjent</dt><dd data-testid="mt-count-approved">@approved</dd></div>
                 <div class="@(clarify > 0 ? "is-warn" : null)"><dt>Trenger avklaring</dt><dd data-testid="mt-count-clarify">@clarify</dd></div>
-                <div><dt>Lagrede planer</dt><dd data-testid="mt-count-plans">@plans.Count</dd></div>
+                <div><dt>Lagrede testplaner</dt><dd data-testid="mt-count-plans">@plans.Count</dd></div>
             </dl>
             @* «Kan testene starte?» (2026-11-25): what is still missing in the prepared cases, from the saved plans' own counts — each with its denominator.
                Readiness, execution and results are separate questions: execution and results live in Azure DevOps Test Plans and are not shown as numbers here. *@
@@ -65,14 +127,19 @@
                     <div class="@(blocked > 0 ? "is-warn" : null)"><dt>Ikke klar til kjøring</dt><dd data-testid="mt-count-blocked">@blocked av @cases</dd></div>
                     <div><dt>Gjennomført / bestått</dt><dd data-testid="mt-count-executed">Registreres i Azure DevOps</dd></div>
                 </dl>
-                <p class="mt-muted msb-small" data-testid="mt-readiness-basis">Av alle testtilfeller i lagrede planer; utelatte testtilfeller telles ikke som mangler. «Uten koblet testdata» gjelder også testtilfeller som ikke trenger testdata.</p>
+                <p class="mt-muted msb-small" data-testid="mt-readiness-basis">Av alle testtilfeller i lagrede testplaner; utelatte testtilfeller telles ikke som mangler. «Uten koblet testdata» gjelder også testtilfeller som ikke trenger testdata.</p>
             }
-
-            @if (_ws.Plans is { } workspace)
-            {
-                <BirkNext.Web.Components.ManualTesting.SavedPlans Workspace="workspace" Api="Api" ShowArchived="@(PlansQuery == "archived")" Changed="LoadAsync" />
-            }
-            <p class="mt-muted msb-small mt-boundary">Tallene kommer fra lagrede data. Et forslag er ikke et testtilfelle, og et forberedt, godkjent eller eksportert testtilfelle er ikke en kjørt test: manuelle tester kjøres, og resultatene registreres, i Azure DevOps Test Plans. BirkNext skriver aldri til Azure DevOps; eksporten er en fil du importerer der.</p>
+            <p class="mt-muted msb-small mt-boundary">Tallene kommer fra lagrede data. Et forslag er ikke et testtilfelle, og et forberedt, godkjent eller overført testtilfelle er ikke en kjørt test: manuelle tester kjøres, og resultatene registreres, i Azure DevOps Test Plans.</p>
+        }
+        else
+        {
+            <section class="msb-next" aria-labelledby="mt-next-title" data-testid="mt-next">
+                <div>
+                    <h2 id="mt-next-title" class="msb-h">Neste steg</h2>
+                    <p class="mt-muted" data-testid="mt-next-why">@next.Why</p>
+                </div>
+                <a class="btn btn-primary" href="@next.Href" data-testid="mt-next-action">@next.Label</a>
+            </section>
         }
     }
 </div>
@@ -80,28 +147,109 @@
 @code {
     /// <summary>"archived": open the saved-plan list on the archived plans.</summary>
     [SupplyParameterFromQuery(Name = "plans")] public string? PlansQuery { get; set; }
+    /// <summary>"1": open «Ny testplan» (from Planlegg og klargjør).</summary>
+    [SupplyParameterFromQuery(Name = "create")] public string? CreateQuery { get; set; }
+    /// <summary>A test plan id: open «Overfør testplan» for it.</summary>
+    [SupplyParameterFromQuery(Name = "transfer")] public string? TransferQuery { get; set; }
 
     private ITestPlanSuggestionsApiService? Api => ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
     private bool _loading = true;
     private ManualTestingWorkspace.Snapshot? _ws;
     private ICurrentWorkspaceProjection? _projection;
+    private bool CanWrite => _ws?.Plans?.CanWrite == true && Api is not null;
+    private IReadOnlyList<TestPlanDraftSummary> Active => _ws?.Plans?.Drafts ?? [];
+
+    /// <summary>«Ny testplan»: a clean draft, created when the tester starts it — its own name (date and time of now) and its own request id. Nothing of
+    /// another plan (cases, revision, approvals, Azure DevOps links) is part of it.</summary>
+    private sealed class NewPlanDraft(string name)
+    {
+        public string Name { get; set; } = name;
+        public bool WithSelection { get; set; }
+        public string RequestId { get; } = Guid.NewGuid().ToString("N");
+    }
+
+    private NewPlanDraft? _new;
+    private bool _creating;
+    private string? _createError;
+    private TestPlanDraft? _created;
+    private List<string> _selection = [];
+
+    private TestPlanDraft? _transfer;
+    private bool _transferLoading;
+    private string? _transferError;
 
     protected override async Task OnInitializedAsync()
     {
         _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
         if (_projection is not null) _projection.Changed += OnProjectChanged;
         await LoadAsync();
+        if (CreateQuery == "1" && CanWrite) StartNew();
+        if (Guid.TryParse(TransferQuery, out var transferId)) await LoadTransferAsync(transferId);
     }
 
     private async Task LoadAsync()
     {
         _loading = true;
-        try { _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(requirements: true); }
+        try
+        {
+            _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(requirements: true);
+            if (_ws.ProjectKey is { } key) _selection = await TabDraftStore.ReadAsync<List<string>>(JS, TabDraftStore.SelectionKey(key)) ?? [];
+        }
         finally { _loading = false; }
     }
 
+    private void StartNew()
+    {
+        // Every start is a new draft: a new suggested name (local time now) and a new request id; the previous draft is never reused.
+        _new = new NewPlanDraft(M.SuggestedPlanName(DateTime.Now));
+        (_createError, _created) = (null, null);
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_new is not { } draft || _creating || _ws?.ProjectKey is not { } key || Api is not { } api) return;
+        if (string.IsNullOrWhiteSpace(draft.Name)) { _createError = "Gi testplanen et navn."; return; }
+        _creating = true; _createError = null;
+        try
+        {
+            var withSelection = draft.WithSelection && _selection.Count > 0 && _ws.Discovery is not null;
+            var (plan, error) = await api.CreateProjectAsync(new CreateProjectTestPlanRequest
+            {
+                ProjectKey = key, ProjectName = _ws.ProjectName, PlanName = draft.Name.Trim(), CreationRequestId = draft.RequestId,
+                DiscoveryId = withSelection ? _ws.Discovery!.DiscoveryId : "", CandidateIds = withSelection ? [.. _selection] : [], AllowEmpty = !withSelection,
+            });
+            // A failed save keeps the draft (same name, same request id: a retry never creates a second test plan).
+            if (plan is null) { _createError = P.Friendly(error, "Kunne ikke opprette testplan."); return; }
+            if (withSelection) { await TabDraftStore.RemoveAsync(JS, TabDraftStore.SelectionKey(key)); _selection = []; }
+            (_new, _created) = (null, plan);
+            await LoadAsync();
+        }
+        finally { _creating = false; }
+    }
+
+    private void OpenTransfer(Guid id)
+    {
+        Nav.NavigateTo(M.TransferRoute(id), replace: true);
+        _ = InvokeAsync(async () => { await LoadTransferAsync(id); StateHasChanged(); });
+    }
+
+    private async Task LoadTransferAsync(Guid id)
+    {
+        if (Api is not { } api) return;
+        (_transferLoading, _transferError, _transfer) = (true, null, null);
+        try
+        {
+            var (draft, error) = await api.DraftAsync(id);
+            if (draft is null || (draft.ProjectKey is { } owner && owner != _ws?.ProjectKey)) { _transferError = error is null ? "Testplanen finnes ikke i denne applikasjonen." : P.Friendly(error, "Testplanen kunne ikke hentes."); return; }
+            _transfer = draft;
+        }
+        finally { _transferLoading = false; }
+    }
+
+    private void CloseTransfer() { _transfer = null; Nav.NavigateTo(M.PlansRoute, replace: true); }
+
     /// <summary>Another project was selected: everything is read again for it (nothing of the previous project stays).</summary>
-    private void OnProjectChanged() => _ = InvokeAsync(async () => { _ws = null; await LoadAsync(); StateHasChanged(); });
+    private void OnProjectChanged() => _ = InvokeAsync(async () => { _ws = null; _new = null; _created = null; _transfer = null; _selection = []; await LoadAsync(); StateHasChanged(); });
 
     public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; }
 }

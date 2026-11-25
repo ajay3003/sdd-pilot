@@ -138,20 +138,38 @@ public sealed class AdoExportWizardTests : BunitContext
     }
 
     [Fact]
-    public void Settings_are_saved_for_the_project_with_write_permission()
+    public void Field_defaults_belong_to_System_Settings_and_a_change_here_is_for_this_export_only()
     {
         var cut = Open(canWrite: true);
+        cut.Find("[data-testid=adx-fields-summary]").TextContent.Should().Contain(@"Area Path: Library\Loans").And.Contain("Excel");
+        cut.Find("[data-testid=adx-settings-link]").GetAttribute("href").Should().Be("admin/system-settings?section=azure-devops-test-plans");
+        cut.Find("[data-testid=adx-fields-edit]").HasAttribute("open").Should().BeFalse("the field editor is closed by default");
+        cut.FindAll("[data-testid=adx-save-profile]").Should().BeEmpty("Manual Testing never saves the project's defaults");
+
         cut.Find("[data-testid=adx-state]").Change("Ready");
-        cut.Find("[data-testid=adx-save-profile]").Click();
-        _api.Verify(x => x.SaveProfileAsync("library", It.Is<AdoExportProfile>(p => p.State == "Ready" && p.AreaPath == "Library\\Loans"), It.IsAny<CancellationToken>()), Times.Once);
+        _previews.Last().Profile.State.Should().Be("Ready", "the changed value is used for this export");
+        cut.Find("[data-testid=adx-fields-summary]").TextContent.Should().Contain("Status: Ready").And.Contain("endret for denne eksporten");
+        _api.Verify(x => x.SaveProfileAsync(It.IsAny<string>(), It.IsAny<AdoExportProfile>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public void Without_write_permission_settings_cannot_be_saved_and_unsaved_plan_edits_are_flagged()
+    public void Unsaved_plan_edits_are_flagged()
     {
         var readOnly = Open(canWrite: false, dirty: true);
-        readOnly.FindAll("[data-testid=adx-save-profile]").Should().BeEmpty();
-        readOnly.Find("[data-testid=adx-dirty]").TextContent.Should().Contain("bruker den lagrede planen");
+        readOnly.Find("[data-testid=adx-dirty]").TextContent.Should().Contain("bruker den lagrede testplanen");
+    }
+
+    [Fact]
+    public void The_check_is_compact_and_the_details_and_import_guide_are_closed()
+    {
+        var cut = Open();
+        cut.Find("[data-testid=adx-can-download]").TextContent.Should().StartWith("Klar for eksport.");
+        cut.Find("[data-testid=adx-check-details]").HasAttribute("open").Should().BeFalse();
+        cut.Find("[data-testid=adx-check-details] [data-testid=adx-fields]").Should().NotBeNull("the field check is inside «Kontroller før overføring»");
+        cut.Find("[data-testid=adx-check-details] summary").TextContent.Should().StartWith("Kontroller før overføring");
+        cut.Find("[data-testid=adx-howto-details]").HasAttribute("open").Should().BeFalse();
+        cut.Find("[data-testid=adx-howto-details] summary").TextContent.Should().Be("Vis importveiledning");
+        cut.Find("[data-testid=adx-howto-details] [data-testid=adx-format-note]").Should().NotBeNull();
     }
 
     [Fact]
@@ -163,14 +181,12 @@ public sealed class AdoExportWizardTests : BunitContext
 
         // In a browser the field's change fires on the click that leaves it: the re-check starts in the same moment as the click.
         cut.Find("[data-testid=adx-area]").Change("Library\\Returns");
-        cut.Find("[data-testid=adx-save-profile]").HasAttribute("disabled").Should().BeFalse("a re-check never disables Save, so the click is not lost");
-        cut.Find("[data-testid=adx-download-xlsx]").HasAttribute("disabled").Should().BeFalse();
-        cut.Find("[data-testid=adx-save-profile]").Click();
-        _api.Verify(x => x.SaveProfileAsync(It.IsAny<string>(), It.IsAny<AdoExportProfile>(), It.IsAny<CancellationToken>()), Times.Never, "saving waits for the running re-check");
+        cut.Find("[data-testid=adx-download-xlsx]").HasAttribute("disabled").Should().BeFalse("a re-check never disables the download, so the click is not lost");
+        cut.Find("[data-testid=adx-download-xlsx]").Click();
+        _api.Verify(x => x.FileAsync(It.IsAny<AdoExportRequest>(), It.IsAny<CancellationToken>()), Times.Never, "the download waits for the running re-check");
 
         pending.SetResult((Preview(true, new AdoExportRequest { Profile = new AdoExportProfile { AreaPath = "Library\\Returns" } }), null));
-        cut.WaitForAssertion(() => _api.Verify(x => x.SaveProfileAsync("library", It.Is<AdoExportProfile>(p => p.AreaPath == "Library\\Returns"), It.IsAny<CancellationToken>()), Times.Once));
-        cut.Find("[data-testid=adx-downloaded]").TextContent.Should().Contain("Eksportinnstillingene er lagret");
+        cut.WaitForAssertion(() => _api.Verify(x => x.FileAsync(It.Is<AdoExportRequest>(r => r.Profile.AreaPath == "Library\\Returns"), It.IsAny<CancellationToken>()), Times.Once));
     }
 
     [Fact]
@@ -222,16 +238,14 @@ public sealed class AdoExportWizardTests : BunitContext
         var cut = Open(profile: remembered);
 
         cut.Find("[data-testid=adx-area]").GetAttribute("value").Should().Be(@"Library\Manual", "the tab kept what the tester typed");
-        cut.Find("[data-testid=adx-settings-unsaved]").TextContent.Should().Contain("tatt vare på fra før siden ble lastet på nytt").And.Contain("ikke prosjektets eksportinnstillinger");
+        cut.Find("[data-testid=adx-settings-unsaved]").TextContent.Should().Contain("tatt vare på fra før siden ble lastet på nytt").And.Contain("gjelder bare denne eksporten");
+        cut.Find("[data-testid=adx-fields-edit]").HasAttribute("open").Should().BeTrue("values changed for this export are shown");
         _previews.Last().Profile.AreaPath.Should().Be(@"Library\Manual");
         _previews.Last().Profile.KnownTestCaseIds.Should().ContainKey($"{PlanId:N}/c1", "remembered Azure DevOps ids always come from the project");
 
         cut.Find("[data-testid=adx-assigned]").Change("lead@example.org");
         cut.WaitForAssertion(() => JSInterop.Invocations["sessionStorage.setItem"].Last().Arguments[1]!.ToString().Should().Contain("lead@example.org"));
-
-        cut.Find("[data-testid=adx-save-profile]").Click();
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=adx-settings-unsaved]").Should().BeEmpty());
-        JSInterop.Invocations["sessionStorage.removeItem"].Should().Contain(i => (string?)i.Arguments[0] == key);
+        _api.Verify(x => x.SaveProfileAsync(It.IsAny<string>(), It.IsAny<AdoExportProfile>(), It.IsAny<CancellationToken>()), Times.Never, "the project's defaults change only in System Settings");
     }
 
     [Fact]
@@ -253,7 +267,7 @@ public sealed class AdoExportWizardTests : BunitContext
         var cut = Open();
         cut.FindAll("[data-testid=adx-settings-unsaved]").Should().BeEmpty();
         cut.Find("[data-testid=adx-area]").Change(@"Library\Other");
-        cut.WaitForAssertion(() => cut.Find("[data-testid=adx-settings-unsaved]").TextContent.Should().Contain("forskjellige fra prosjektets eksportinnstillinger"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=adx-settings-unsaved]").TextContent.Should().Contain("gjelder bare denne eksporten"));
         cut.Find("[data-testid=adx-area]").Change(@"Library\Loans");
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=adx-settings-unsaved]").Should().BeEmpty());
         JSInterop.Invocations["sessionStorage.removeItem"].Should().NotBeEmpty("a value changed back is no longer kept");

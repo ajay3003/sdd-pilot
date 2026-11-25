@@ -46,7 +46,7 @@
         }
         @if (!_loading && _plan is not null && !CanWrite)
         {
-            <p class="mtp-notice" role="status" data-testid="mtp-read-only">Du har lesetilgang til planen. Du kan se alt, men endringer kan ikke lagres.</p>
+            <p class="mtp-notice" role="status" data-testid="mtp-read-only">Du har lesetilgang til testplanen. Du kan se alt, men endringer kan ikke lagres.</p>
         }
         @if (_notice is { } notice)
         {
@@ -66,7 +66,7 @@
                     }
                     @if (CanWrite)
                     {
-                        <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => FromSelectionAsync(notInPlan, false)" data-testid="mtp-selection-new">Lag ny plan</button>
+                        <button type="button" class="btn btn-outline-primary btn-sm" disabled="@_busy" @onclick="() => FromSelectionAsync(notInPlan, false)" data-testid="mtp-selection-new">Ny testplan med disse</button>
                     }
                     <a class="msb-link" href="@M.DiscoverRoute">Endre utvalget</a>
                 </section>
@@ -76,8 +76,8 @@
         @if (_plans.Count == 0 && _plan is null)
         {
             <section class="msb-empty mtp-empty" data-testid="mtp-no-plan">
-                <p>Ingen plan ennå. Velg scenarioer i <a href="@M.DiscoverRoute">Finn og forstå</a>, så lager du testtilfeller for dem her.</p>
-                @if (_archived.Count > 0) { <p class="mt-muted msb-small"><a href="@($"{M.HomeRoute}?plans=archived")">@_archived.Count arkivert@(_archived.Count == 1 ? "" : "e") plan@(_archived.Count == 1 ? "" : "er")</a></p> }
+                <p>Ingen testplan ennå. Velg scenarioer i <a href="@M.DiscoverRoute">Finn og forstå</a>, eller <a href="@($"{M.PlansRoute}?create=1")" data-testid="mtp-create-plan">opprett testplan</a>.</p>
+                @if (_archived.Count > 0) { <p class="mt-muted msb-small"><a href="@($"{M.PlansRoute}?plans=archived")">@_archived.Count arkivert@(_archived.Count == 1 ? "" : "e") testplan@(_archived.Count == 1 ? "" : "er")</a></p> }
             </section>
         }
         else if (_plan is { } plan)
@@ -87,7 +87,7 @@
                 @if (_plans.Count > 1 || ReadOnlyPlan)
                 {
                     <label class="mtp-field mtp-inline">
-                        <span>Plan</span>
+                        <span>Testplan</span>
                         <select value="@plan.Id" @onchange="ChoosePlanAsync" data-testid="mtp-plan-select">
                             @foreach (var p in _plans)
                             {
@@ -103,21 +103,20 @@
                 }
                 <span class="mt-muted msb-small" data-testid="mtp-plan-counts">@P.ScenarioCount(plan) scenario@(P.ScenarioCount(plan) == 1 ? "" : "er") · @ActiveCases(plan) testtilfelle@(ActiveCases(plan) == 1 ? "" : "r") · @plan.Cases.Count(c => c.Review == TestCaseReviewState.Accepted) godkjent · revisjon @plan.Revision</span>
                 <span class="mtp-spacer"></span>
-                @if (_tool != "export")
-                {
-                    <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick='() => SetTool("export")' data-testid="mtp-transfer">Overfør testplan</button>
-                }
+                @* «Overfør testplan» (2026-11-25) lives on the Testplaner tab: the button opens it for this testplan. *@
+                <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => GoTransfer(plan.Id)" data-testid="mtp-transfer">Overfør testplan</button>
+                <a class="msb-link" href="@M.PlansRoute" data-testid="mtp-manage-plans">Administrer testplaner</a>
                 @if (CanWrite && !ReadOnlyPlan)
                 {
                     <button type="button" class="btn btn-secondary btn-sm" disabled="@(_busy || Dirty || !_translationAvailable)" title="@(Dirty ? "Lagre først." : _translationAvailable ? "Oversetter alle testtilfellene til norsk med den valgte tjenesten. Personskrevne og redigerte oversettelser beholdes." : "Oversettelse er ikke satt opp.")"
                             @onclick="TranslateAllAsync" data-testid="mtp-translate-all">Oversett alle</button>
-                    <button type="button" class="msb-link" disabled="@(_busy || Dirty)" @onclick="() => _archiveAsk = true" data-testid="mtp-archive">Arkiver plan</button>
+                    <button type="button" class="msb-link" disabled="@(_busy || Dirty)" @onclick="() => _archiveAsk = true" data-testid="mtp-archive">Arkiver testplan</button>
                 }
             </div>
 
             @if (_archiveAsk)
             {
-                <div class="mtp-confirm" role="group" aria-label="Arkiver plan" data-testid="mtp-archive-confirm">
+                <div class="mtp-confirm" role="group" aria-label="Arkiver testplan" data-testid="mtp-archive-confirm">
                     <span>Arkiver «@plan.PlanName»? Planen blir skrivebeskyttet og vises under arkiverte planer. Ingenting slettes, og du kan gjenopprette den.</span>
                     <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="ArchiveAsync" data-testid="mtp-archive-yes">Arkiver</button>
                     <button type="button" class="msb-link" @onclick="() => _archiveAsk = false" data-testid="mtp-archive-no">Avbryt</button>
@@ -126,7 +125,7 @@
             @if (ReadOnlyPlan)
             {
                 <p class="mtp-source-banner" role="status" data-testid="mtp-archived">
-                    <strong>Planen er arkivert</strong> og kan bare leses.
+                    <strong>Testplanen er arkivert</strong> og kan bare leses.
                     @if (CanWrite) { <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="UnarchiveAsync" data-testid="mtp-unarchive">Gjenopprett</button> }
                 </p>
             }
@@ -143,7 +142,7 @@
                 </p>
             }
 
-            <nav class="mtp-tools" aria-label="Plan" data-testid="mtp-tools">
+            <nav class="mtp-tools" aria-label="Testplan" data-testid="mtp-tools">
                 @foreach (var (key, label) in Tools)
                 {
                     <button type="button" class="mtp-tool" aria-pressed="@(_tool == key ? "true" : "false")" @onclick="() => SetTool(key)" data-testid="mtp-tool" data-tool="@key">@label</button>
@@ -151,12 +150,7 @@
                 <a class="msb-link mtp-tools-advanced" href="@($"{M.LegacyPlanRoute}?draft={plan.Id}&advanced=1")" data-testid="mtp-advanced">Avanserte verktøy</a>
             </nav>
 
-            @if (_tool == "export")
-            {
-                @* «Overfør testplan» (2026-11-25): opens on «Eksporter til fil» every time; «Send direkte til Azure DevOps» is an explicit opt-in. *@
-                <BirkNext.Web.Components.ManualTesting.AdoTransferPanel Draft="plan" ProjectKey="@(plan.ProjectKey ?? _ws.ProjectKey ?? "")" CanWrite="CanWrite" Dirty="Dirty" />
-            }
-            else if (_tool == "versions" && Api is { } versionsApi)
+            @if (_tool == "versions" && Api is { } versionsApi)
             {
                 <BirkNext.Web.Components.ManualTesting.PlanVersionsPanel Draft="plan" Api="versionsApi" CanWrite="CanWrite" ReadOnly="ReadOnlyPlan" Dirty="Dirty" Restored="ReplacedAsync" />
             }
@@ -183,7 +177,7 @@
                         </div>
                         @if (rows.Count == 0)
                         {
-                            <p class="msb-empty" data-testid="mtp-rows-none">@(hidden > 0 && !_showTechnical ? "Alle testtilfellene i planen er tekniske. Slå på «Vis teknisk innhold» for å se dem." : "Ingen treff.")</p>
+                            <p class="msb-empty" data-testid="mtp-rows-none">@(hidden > 0 && !_showTechnical ? "Alle testtilfellene i testplanen er tekniske. Slå på «Vis teknisk innhold» for å se dem." : "Ingen treff.")</p>
                         }
                         <ul class="mtp-scenarios">
                             @foreach (var row in rows)
@@ -228,7 +222,7 @@
                         {
                             <section class="mtp-new" aria-label="Nytt testtilfelle" data-testid="mtp-new" data-scenario="@(nc.ScenarioKey ?? "")">
                                 <h3 class="mtp-new-title">Nytt testtilfelle</h3>
-                                <p class="mt-muted msb-small" data-testid="mtp-new-context">@(nc.ScenarioTitle is { } ncTitle ? $"Under scenarioet «{ncTitle}»." : "Skrives direkte i planen, uten scenario.")</p>
+                                <p class="mt-muted msb-small" data-testid="mtp-new-context">@(nc.ScenarioTitle is { } ncTitle ? $"Under scenarioet «{ncTitle}»." : "Skrives direkte i testplanen, uten scenario.")</p>
                                 <label class="msb-small">Tittel
                                     <input type="text" class="mtp-lcell" value="@nc.Title" @oninput="e => nc.Title = e.Value?.ToString() ?? string.Empty" data-testid="mtp-new-title-input" /></label>
                                 <div class="mtw-kind">
@@ -950,7 +944,7 @@
         Nav.NavigateTo(M.DiscoverRoute);
     }
 
-    private static readonly (string Key, string Label)[] Tools = [("cases", "Testtilfeller"), ("export", "Overfør testplan"), ("versions", "Versjoner"), ("changes", "Kildeendringer")];
+    private static readonly (string Key, string Label)[] Tools = [("cases", "Testtilfeller"), ("versions", "Versjoner"), ("changes", "Kildeendringer")];
 
     private bool _loading = true, _busy, _showTechnical, _archiveAsk, _excludeAsk, _translationAvailable = true;
     /// <summary>The editor's language view; reset to the default (Norsk when a translation exists) for each case.</summary>
@@ -980,6 +974,8 @@
         _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
         if (_projection is not null) _projection.Changed += OnProjectChanged;
         if (PanelParameter is { } panel && Tools.Any(t => t.Key == panel)) _tool = panel;
+        // Old links (?panel=export) open the transfer on the Testplaner tab.
+        if (PanelParameter == "export" && DraftParameter is { } exportDraft) { Nav.NavigateTo(M.TransferRoute(exportDraft), replace: true); return; }
         await LoadAsync();
     }
 
@@ -1011,7 +1007,7 @@
     {
         if (Api is not { } api) return;
         var (draft, error) = await api.DraftAsync(id);
-        if (draft is null) { _error = P.Friendly(error, "Planen kunne ikke lastes."); return; }
+        if (draft is null) { _error = P.Friendly(error, "Testplanen kunne ikke lastes."); return; }
         _plan = draft;
         _archiveAsk = _excludeAsk = false;
         await LoadScenarioKindsAsync();
@@ -1043,6 +1039,13 @@
     }
 
     /// <summary>A tool of the plan (cases, export, versions, source changes). Unsaved edits are kept: the editor is reopened with them.</summary>
+    /// <summary>Opens «Overfør testplan» on the Testplaner tab. Unsaved edits ask first, like any other switch.</summary>
+    private void GoTransfer(Guid planId)
+    {
+        if (Dirty) { _pending = () => { Discard(); Nav.NavigateTo(M.TransferRoute(planId)); return Task.CompletedTask; }; return; }
+        Nav.NavigateTo(M.TransferRoute(planId));
+    }
+
     private void SetTool(string key)
     {
         if (key == _tool) return;
@@ -1100,7 +1103,7 @@
     {
         _plan = draft;
         Open(_selectedId is { } keep && draft.Cases.Any(c => P.IdOf(c) == keep) ? keep : draft.Cases.Select(P.IdOf).FirstOrDefault());
-        _notice = $"Planen er oppdatert (revisjon {draft.Revision}).";
+        _notice = $"Testplanen er oppdatert (revisjon {draft.Revision}).";
         return Task.CompletedTask;
     }
 
@@ -1336,12 +1339,12 @@
         try
         {
             var (summary, error) = await api.ArchiveAsync(_plan.Id, new TestPlanLifecycleRequest(_plan.Revision));
-            if (summary is null) { _error = P.Friendly(error, "Planen kunne ikke arkiveres."); return; }
+            if (summary is null) { _error = P.Friendly(error, "Testplanen kunne ikke arkiveres."); return; }
             _archiveAsk = false;
             _plans.RemoveAll(p => p.Id == summary.Id);
             _archived.Insert(0, summary);
             _plan = _plan with { Revision = summary.Revision };
-            _notice = $"«{summary.PlanName}» er arkivert. Den kan gjenopprettes fra Lagrede planer.";
+            _notice = $"«{summary.PlanName}» er arkivert. Den kan gjenopprettes fra Lagrede testplaner i Testplaner.";
         }
         finally { _busy = false; }
     }
@@ -1353,7 +1356,7 @@
         try
         {
             var (summary, error) = await api.UnarchiveAsync(_plan.Id, new TestPlanLifecycleRequest(_plan.Revision));
-            if (summary is null) { _error = P.Friendly(error, "Planen kunne ikke gjenopprettes."); return; }
+            if (summary is null) { _error = P.Friendly(error, "Testplanen kunne ikke gjenopprettes."); return; }
             _archived.RemoveAll(p => p.Id == summary.Id);
             _plans.Insert(0, summary);
             await OpenPlanAsync(summary.Id);
@@ -1373,10 +1376,10 @@
             var (draft, error) = await api.CreateProjectAsync(new CreateProjectTestPlanRequest
             {
                 ProjectKey = key, ProjectName = _ws.ProjectName, DiscoveryId = discovery.DiscoveryId, CandidateIds = candidateIds,
-                PlanName = intoCurrent ? null : $"Testplan {DateTime.Now:yyyy-MM-dd}",
+                PlanName = intoCurrent ? null : M.SuggestedPlanName(DateTime.Now),
                 DraftId = intoCurrent ? _plan?.Id : null, BaseRevision = intoCurrent ? _plan?.Revision : null,
             });
-            if (draft is null) { _error = P.Friendly(error, "Planen kunne ikke lages."); return; }
+            if (draft is null) { _error = P.Friendly(error, "Kunne ikke opprette testplan."); return; }
             await TabDraftStore.RemoveAsync(JS, TabDraftStore.SelectionKey(key));
             _selection = [];
             _plan = draft;

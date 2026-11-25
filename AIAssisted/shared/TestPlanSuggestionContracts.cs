@@ -383,6 +383,8 @@ public sealed record TestPlanSourceRole(string Role, string Label, Guid? Snapsho
 public sealed record TestPlanDraft
 {
     public Guid Id { get; init; }
+    /// <summary>The browser draft id this plan was created from (<see cref="CreateProjectTestPlanRequest.CreationRequestId"/>); null for older plans.</summary>
+    public string? CreationRequestId { get; init; }
     /// <summary>The owner key stored with the draft: a System Understanding guide key for historical guide plans, or "project:{projectKey}" for a
     /// project plan (see <see cref="ProjectKey"/>).</summary>
     public string GuideKey { get; init; } = "";

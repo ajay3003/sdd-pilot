@@ -113,10 +113,13 @@ public sealed class AzureDevOpsTransferWorkflowTests : IAsyncLifetime
         return json.RootElement.GetProperty("revision").GetInt32();
     }
 
+    // «Overfør testplan» on the plan page opens the transfer on the Testplaner tab (2026-11-25).
     private static async Task OpenTransferAsync(IPage page, string draftId)
     {
         await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/manual-testing/plan?draft={draftId}", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
         await page.GetByTestId("mtp-transfer").ClickAsync(new() { Timeout = 120000 });
+        await page.WaitForURLAsync(new Regex($@"/manual-testing/plans\?transfer={draftId}"), new() { Timeout = 60000 });
+        await Assertions.Expect(page.Locator("[data-testid=twh-stage][data-stage=plans]")).ToHaveAttributeAsync("aria-current", "page");
         await page.GetByTestId("atp").WaitForAsync(new() { Timeout = 60000 });
     }
 
@@ -190,6 +193,14 @@ public sealed class AzureDevOpsTransferWorkflowTests : IAsyncLifetime
             await Assertions.Expect(page.GetByTestId("ats-system-suite")).ToContainTextAsync("Kritiske brukerreiser");
             ado.WriteCount.Should().Be(2, "saving the default destination is local");
             await ShotAsync(page, "05-settings-saved", ats);
+
+            // Field defaults belong to System Settings: Area Path for this project, saved locally.
+            await page.GetByTestId("ats-f-area").FillAsync("M2LB");
+            await page.GetByTestId("ats-f-area").DispatchEventAsync("change");
+            await page.GetByTestId("ats-f-save").ClickAsync();
+            await Assertions.Expect(page.GetByTestId("ats-f-notice")).ToContainTextAsync("Nothing was changed in Azure DevOps.", new() { Timeout = 60000 });
+            ado.WriteCount.Should().Be(2, "saving field defaults is local");
+            await ShotAsync(page, "05b-settings-field-defaults", page.GetByTestId("ats-fields"));
             await page.SetViewportSizeAsync(390, 844);
             (await OverflowsAsync(page)).Should().BeFalse("no horizontal page scroll at 390 px");
             await ShotAsync(page, "06-settings-390");
@@ -201,10 +212,12 @@ public sealed class AzureDevOpsTransferWorkflowTests : IAsyncLifetime
             await Assertions.Expect(page.GetByTestId("atp-file-safe")).ToHaveTextAsync("Ingenting blir endret i Azure DevOps.");
             var wizard = page.Locator("[data-testid=adx][aria-busy=false]");
             await wizard.WaitForAsync(new() { Timeout = 120000 });
+            await Assertions.Expect(page.GetByTestId("adx-fields-summary")).ToContainTextAsync("Area Path: M2LB", new() { Timeout = 60000 });
+            await Assertions.Expect(page.GetByTestId("adx-area")).Not.ToBeVisibleAsync(); // «Endre felter for denne eksporten» is closed
+            await Assertions.Expect(page.GetByTestId("adx-fields")).Not.ToBeVisibleAsync(); // «Kontroller før overføring» is closed
+            await Assertions.Expect(page.GetByTestId("adx-howto")).Not.ToBeVisibleAsync(); // «Vis importveiledning» is closed
             await page.GetByTestId("adx-include-unapproved").CheckAsync();
-            await page.GetByTestId("adx-area").FillAsync("M2LB");
-            await page.GetByTestId("adx-area").DispatchEventAsync("change");
-            try { await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("klar", new() { Timeout = 60000 }); }
+            try { await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("Klar for eksport", new() { Timeout = 60000 }); }
             catch (PlaywrightException) { await ShotAsync(page, "07-failed-file-export"); throw; }
             await ShotAsync(page, "07-transfer-file-default", page.GetByTestId("atp"));
             var download = await page.RunAndWaitForDownloadAsync(() => page.GetByTestId("adx-download-xlsx").ClickAsync());
@@ -212,7 +225,10 @@ public sealed class AzureDevOpsTransferWorkflowTests : IAsyncLifetime
             ado.WriteCount.Should().Be(2, "a file export never writes to Azure DevOps");
 
             await page.GetByTestId("atp-method-direct").ClickAsync();
-            await Assertions.Expect(page.Locator(".adt-warning-title")).ToHaveTextAsync("GODKJENNING FRA TESTLEDER KREVES");
+            await Assertions.Expect(page.Locator(".adt-warning-title")).ToHaveTextAsync("Godkjenning fra testleder kreves");
+            await Assertions.Expect(page.GetByTestId("adt-declare")).ToBeVisibleAsync(); // the declaration is never hidden
+            await page.GetByTestId("adt-why").Locator("summary").ClickAsync();
+            await Assertions.Expect(page.GetByTestId("adt-why")).ToContainTextAsync("Derfor skal testleder godkjenne");
             await page.GetByTestId("adt-consequences").Locator("summary").ClickAsync();
             await page.GetByTestId("adt-not-happen").Locator("summary").ClickAsync();
             await Assertions.Expect(page.GetByTestId("adt-declare")).Not.ToBeCheckedAsync();
@@ -226,10 +242,11 @@ public sealed class AzureDevOpsTransferWorkflowTests : IAsyncLifetime
             await Assertions.Expect(page.GetByTestId("atp-panel")).ToHaveAttributeAsync("data-method", "file");
             ado.WriteCount.Should().Be(2, "cancelling writes nothing");
 
-            // Reopening (another tab and back, then a reload) starts on file again.
-            await page.Locator("[data-testid=mtp-tool][data-tool=cases]").ClickAsync();
-            await page.GetByTestId("mtp-transfer").ClickAsync();
-            await Assertions.Expect(page.GetByTestId("atp-panel")).ToHaveAttributeAsync("data-method", "file");
+            // Reopening (closed and opened again from the saved test plans) starts on file again.
+            await page.GetByTestId("mt-transfer-close").ClickAsync();
+            await Assertions.Expect(page.GetByTestId("atp")).ToHaveCountAsync(0);
+            await page.Locator($"[data-testid=mt-plan-export][href*=\"{draftId}\"]").ClickAsync();
+            await Assertions.Expect(page.GetByTestId("atp-panel")).ToHaveAttributeAsync("data-method", "file", new() { Timeout = 60000 });
 
             // ── 4. Send direkte: declaration → destination and choices → final review → transfer.
             await page.GetByTestId("atp-method-direct").ClickAsync();
@@ -290,7 +307,6 @@ public sealed class AzureDevOpsTransferWorkflowTests : IAsyncLifetime
             await Assertions.Expect(page.GetByTestId("atp-results-summary")).ToContainTextAsync("1 bestått · 1 feilet");
             ado.WriteCount.Should().Be(writes, "fetching results is read-only");
             await ShotAsync(page, "14-history-and-results", page.GetByTestId("atp"));
-            await page.Locator("[data-testid=mtp-tool][data-tool=cases]").ClickAsync();
 
             (await PlanRevisionAsync(page, draftId)).Should().Be(revision, "neither a file export nor a transfer changes the BirkNext plan");
             pageErrors.Should().BeEmpty();

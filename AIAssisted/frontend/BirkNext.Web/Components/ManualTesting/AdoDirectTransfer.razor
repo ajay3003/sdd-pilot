@@ -11,7 +11,9 @@
      duplicates and cases that must be checked shown separately. Only reads from Azure DevOps.
    3 Se over — destination, counts and the concrete changes; «Bekreft og send til Azure DevOps» is the only action that writes.
    4 Resultat — per case, successes apart from problems; a transfer is never a test result.
-   The server enforces the confirmation and the declaration; the declaration is not a verified test lead approval. *@
+   The server enforces the confirmation and the declaration; the declaration is not a verified test lead approval.
+   Simplified (2026-11-25): the short warning «Godkjenning fra testleder kreves» and the declaration are always visible; the reasons are behind
+   «Hvorfor kreves godkjenning?» (closed); the destination is changed with «Endre mål i Azure DevOps»; the concrete changes are closed (counts visible). *@
 <div class="adt" data-testid="adt" aria-busy="@(_busy ? "true" : "false")">
     @if (!CanWrite)
     {
@@ -19,7 +21,7 @@
     }
     else if (Dirty)
     {
-        <p class="gsx-notice" role="status" data-testid="adt-dirty">Planen har endringer som ikke er lagret. Lagre først — overføringen bruker den lagrede planen.</p>
+        <p class="gsx-notice" role="status" data-testid="adt-dirty">Testplanen har endringer som ikke er lagret. Lagre først — overføringen bruker den lagrede testplanen.</p>
     }
     else if (_stage == Stage.Approval)
     {
@@ -31,15 +33,16 @@
                     <path d="M12 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" /><circle cx="12" cy="17.6" r="1.2" fill="currentColor" />
                 </svg>
                 <div>
-                    <h3 id="adt-warning-title" class="adt-warning-title">GODKJENNING FRA TESTLEDER KREVES</h3>
+                    <h3 id="adt-warning-title" class="adt-warning-title">Godkjenning fra testleder kreves</h3>
                     <p class="adt-warning-lead">Du er i ferd med å sende testplanen «@Draft.PlanName» fra BirkNext til Azure DevOps.</p>
                 </div>
             </div>
-            <div class="adt-why" data-testid="adt-why">
-                <p><strong>Hvorfor er godkjenning nødvendig?</strong> Testplanen må være gjennomgått før andre testere tar den i bruk. Overføringen kan opprette nye
-                    testtilfeller eller endre testtilfeller som allerede finnes i Azure DevOps. Hvis planen har feil eller mangler, kan andre teste med feil steg,
+            <details class="adt-more adt-why" data-testid="adt-why">
+                <summary>Hvorfor kreves godkjenning?</summary>
+                <p>Testplanen må være gjennomgått før andre testere tar den i bruk. Overføringen kan opprette nye
+                    testtilfeller eller endre testtilfeller som allerede finnes i Azure DevOps. Hvis testplanen har feil eller mangler, kan andre teste med feil steg,
                     forventede resultater eller testdata. Derfor skal testleder godkjenne overføringen før du fortsetter.</p>
-            </div>
+            </details>
             <details class="adt-more" data-testid="adt-consequences">
                 <summary>Hva kan skje når du overfører?</summary>
                 <ul>
@@ -47,7 +50,7 @@
                     <li><strong>Testtilfeller som allerede finnes</strong>, kan bli oppdatert hvis du velger det.</li>
                     <li><strong>Andre testere</strong> med tilgang til prosjektet i Azure DevOps kan se testtilfellene og begynne å bruke dem.</li>
                     <li><strong>Feil mål:</strong> hvis feil prosjekt eller testgruppe er valgt, kan testene havne feil.</li>
-                    <li><strong>Duplikater:</strong> hvis samme plan sendes på nytt uten riktig kobling, kan det bli duplikater. BirkNext husker koblingen og foreslår oppdatering i stedet.</li>
+                    <li><strong>Duplikater:</strong> hvis samme testplan sendes på nytt uten riktig kobling, kan det bli duplikater. BirkNext husker koblingen og foreslår oppdatering i stedet.</li>
                     <li><strong>Uferdige tester</strong> kan bli tatt i bruk av andre.</li>
                     <li><strong>Endringer gjort i Azure DevOps</strong> kan komme i konflikt med versjonen i BirkNext. BirkNext overskriver dem ikke; de vises som «Må kontrolleres».</li>
                     <li><strong>Delvis overføring:</strong> noen testtilfeller kan bli overført selv om andre feiler. Du ser nøyaktig hvilke.</li>
@@ -96,7 +99,7 @@
             else if (_destination is { } d)
             {
                 @Destination(d)
-                <div class="gar-actions"><button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="StartChangeAsync" data-testid="adt-change-destination">Endre</button></div>
+                <div class="gar-actions"><button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="StartChangeAsync" data-testid="adt-change-destination">Endre mål i Azure DevOps</button></div>
             }
             @if (_preview?.DestinationProblem is { } problem && !_changing) { <p class="gsx-error" role="alert" data-testid="adt-destination-problem">@problem</p> }
         </div>
@@ -110,7 +113,7 @@
             <div class="gsx-panel" data-testid="adt-cases">
                 <div class="gsx-panel-head"><h3 class="gsx-panel-title">Testtilfeller</h3><span class="gsx-pill gsx-pill-neutral" data-testid="adt-ready-count">@(ready.Count + duplicates.Count) klare</span></div>
                 <label class="adx-check"><input type="checkbox" checked="@_includeNotApproved" @onchange="e => SetAsync(() => _includeNotApproved = e.Value is true)" data-testid="adt-include-unapproved" /> Ta med testtilfeller som ikke er godkjent ennå</label>
-                @if (ready.Count == 0 && duplicates.Count == 0) { <p class="gsx-state" data-testid="adt-none-ready">Ingen testtilfeller er klare. Godkjenn testtilfeller i planen, eller ta med de som ikke er godkjent.</p> }
+                @if (ready.Count == 0 && duplicates.Count == 0) { <p class="gsx-state" data-testid="adt-none-ready">Ingen testtilfeller er klare. Godkjenn testtilfeller i testplanen, eller ta med de som ikke er godkjent.</p> }
                 <ul class="adt-list" aria-label="Testtilfeller som kan overføres">@foreach (var c in ready) { @CaseRow(c) }</ul>
                 @if (duplicates.Count > 0)
                 {
@@ -160,7 +163,7 @@
                 <div><dt>Hoppes over</dt><dd data-testid="adt-review-skip">@rp.ToSkip</dd></div>
                 <div><dt>Må kontrolleres først</dt><dd data-testid="adt-review-unresolved">@rp.NeedReview @(rp.NeedReview > 0 ? "(sendes ikke)" : "")</dd></div>
             </dl>
-            <details class="adt-more" open data-testid="adt-review-changes">
+            <details class="adt-more" data-testid="adt-review-changes">
                 <summary>Hvilke endringer blir gjort?</summary>
                 <ul>
                     @foreach (var (c, action) in chosen.Where(x => x.Action != AdoTransferAction.Skip))

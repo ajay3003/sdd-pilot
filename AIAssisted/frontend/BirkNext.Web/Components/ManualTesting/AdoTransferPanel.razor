@@ -12,7 +12,7 @@
     <header class="gsx-header">
         <div>
             <h2 id="atp-title" class="gsx-title">Overfør testplan</h2>
-            <p class="gsx-subtitle">Velg hvordan testtilfellene i «@Draft.PlanName» skal over til Azure DevOps.</p>
+            <p class="gsx-subtitle">«@Draft.PlanName» — velg fil (anbefalt) eller direkte overføring.</p>
         </div>
     </header>
 
@@ -26,14 +26,13 @@
     <div id="atp-method" role="tabpanel" aria-labelledby="@(_direct ? "atp-tab-direct" : "atp-tab-file")" class="gsx-panel" data-testid="atp-panel" data-method="@(_direct ? "direct" : "file")">
         @if (!_direct)
         {
-            <p class="gsx-muted" data-testid="atp-file-intro">Last ned testplanen som en fil. Du kan kontrollere innholdet før du importerer den i Azure DevOps.</p>
-            <p class="gsx-notice" data-testid="atp-file-safe">Ingenting blir endret i Azure DevOps.</p>
-            <p class="gar-help" data-testid="atp-file-reminder">Testplanen bør være godkjent av testleder før den tas i bruk.</p>
+            <p class="gsx-muted" data-testid="atp-file-intro">Last ned testplanen som en fil og importer den i Azure DevOps. <span data-testid="atp-file-safe">Ingenting blir endret i Azure DevOps.</span>
+                <span class="gar-help" data-testid="atp-file-reminder">Testplanen bør være godkjent av testleder før den tas i bruk.</span></p>
             <BirkNext.Web.Components.AdoExportWizard Draft="Draft" ProjectKey="@ProjectKey" CanWrite="CanWrite" Dirty="Dirty" OnExported="LoadHistoryAsync" />
         }
         else
         {
-            <p class="gsx-muted" data-testid="atp-direct-intro">BirkNext kan opprette eller oppdatere testtilfeller i Azure DevOps etter at du har kontrollert og bekreftet overføringen.</p>
+            <p class="gsx-muted" data-testid="atp-direct-intro">Oppretter eller oppdaterer testtilfeller i Azure DevOps — først etter at du har sett over og bekreftet.</p>
             <AdoDirectTransfer Draft="Draft" ProjectKey="@ProjectKey" CanWrite="CanWrite" Dirty="Dirty" OnClose="() => _direct = false" OnTransferred="LoadHistoryAsync" />
         }
     </div>
