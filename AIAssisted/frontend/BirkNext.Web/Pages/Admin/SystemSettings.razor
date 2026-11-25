@@ -284,6 +284,21 @@ else if (_settings is not null)
                                         IsEditMode="@_isEditMode"
                                         OnToggle="@(v => _editShowDiagnostics = v)" />
                         </div>
+                        @* Manual test execution (2026-11-25): where manual tests are executed. Azure DevOps Test Plans is the default; executing in
+                           BirkNext is optional. Applies immediately; recorded runs stay readable when it is switched off. English like the rest of
+                           System settings; the tester-facing texts in Manual Testing are Norwegian. *@
+                        <div class="fv-admin" data-testid="manual-execution-settings">
+                            <div class="settings-card-title">Manual test execution</div>
+                            <FeatureRow Label="Execute manual tests in BirkNext"
+                                        Enabled="@(_isEditMode ? _editManualExecution : _editableSettings.ManualExecution?.BirkNextEnabled == true)"
+                                        IsLocked="false"
+                                        IsEditMode="@_isEditMode"
+                                        OnToggle="@(v => _editManualExecution = v)" />
+                            <p class="settings-card-note" data-testid="manual-execution-note">Off: manual tests are executed in Azure DevOps Test Plans (default). On: testers can also start a test in Plan &amp; prepare and record Passed, Failed or Blocked with evidence and history in BirkNext. Results are kept apart and labelled with where the test was executed. Recorded runs can always be read.</p>
+                            <div class="settings-card-title" style="margin-top:0.6rem">Azure DevOps Test Plans</div>
+                            <p class="settings-card-note" data-testid="ado-export-note">Test plans are transferred from Manual Testing → Overfør testplan: as a file (XLSX or CSV, the default) to import in Azure DevOps Test Plans, or sent directly after the test lead approval is confirmed.
+                                <button type="button" class="msb-link" @onclick='() => SetSection("azure-devops-test-plans")' data-testid="ado-export-settings-link">Azure DevOps – Test Plans settings</button> hold the connection and the default test plan and test suite.</p>
+                        </div>
                     }
                     else
                     {
@@ -556,6 +571,11 @@ else if (_settings is not null)
             @if (_activeSection == "git-sources")
             {
                 <GitSourcesSettingsCard />
+            }
+
+            @if (_activeSection == "azure-devops-test-plans")
+            {
+                <BirkNext.Web.Components.AzureDevOps.AdoTestPlansSettingsCard />
             }
 
             @if (_activeSection == "translation")
@@ -1174,6 +1194,7 @@ else if (_settings is not null)
     private string                  _editLogLevel = "Information";
     private string                  _editSeqUrl = "";
     private bool                    _editShowDiagnostics = true;
+    private bool                    _editManualExecution;
     private Dictionary<string, bool> _editFqe = new();
 
 
@@ -1999,6 +2020,7 @@ else if (_settings is not null)
         _editLogLevel       = _editableSettings.Logging.MinimumLevel;
         _editSeqUrl         = _editableSettings.Logging.SeqUrl ?? "";
         _editShowDiagnostics = _editableSettings.Admin.ShowDiagnostics;
+        _editManualExecution = _editableSettings.ManualExecution?.BirkNextEnabled == true;
 
         _editFqe = new Dictionary<string, bool>();
         if (_editableSettings.FrontendQualityEngines is not null)
@@ -2050,6 +2072,7 @@ else if (_settings is not null)
         var logLevelChanged     = _editLogLevel != _editableSettings.Logging.MinimumLevel;
         var seqUrlChanged       = _editSeqUrl  != (_editableSettings.Logging.SeqUrl ?? "");
         var diagChanged         = _editShowDiagnostics != _editableSettings.Admin.ShowDiagnostics;
+        var executionChanged    = _editManualExecution != (_editableSettings.ManualExecution?.BirkNextEnabled == true);
 
         var fqeChanges = new Dictionary<string, bool?>();
         if (_editableSettings.FrontendQualityEngines is not null)
@@ -2065,7 +2088,7 @@ else if (_settings is not null)
             if (psChanged) fqeChanges["PassiveSecurity"] = _editFqe["PassiveSecurity"];
         }
 
-        if (fvChanges.Count == 0 && !logLevelChanged && !seqUrlChanged && !diagChanged && fqeChanges.Count == 0)
+        if (fvChanges.Count == 0 && !logLevelChanged && !seqUrlChanged && !diagChanged && fqeChanges.Count == 0 && !executionChanged)
         {
             _isEditMode = false;
             _isSaving   = false;
@@ -2081,6 +2104,7 @@ else if (_settings is not null)
                 SeqUrl       = seqUrlChanged   ? _editSeqUrl  : null
             } : null,
             Admin = diagChanged ? new SaveAdminRequest { ShowDiagnostics = _editShowDiagnostics } : null,
+            ManualExecution = executionChanged ? new SaveManualExecutionRequest { BirkNextEnabled = _editManualExecution } : null,
             FrontendQualityEngines = fqeChanges.Count > 0 ? new SaveFrontendQualityEngineRequest
             {
                 BrowserRuntimeEnabled = fqeChanges.ContainsKey("BrowserRuntime") ? fqeChanges["BrowserRuntime"] : null,

@@ -226,6 +226,10 @@ builder.Services.AddScoped(sp => new BirkNext.Api.Services.DeliveryReporting.Azu
     sp.GetRequiredService<BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsConnectionStore>(),
     BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsGitClient.DevelopmentBaseUri(builder.Environment, builder.Configuration)));
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.AzureDevOps.DeliveryAzureDevOpsImportService>();
+// Azure DevOps Test Plans (2026-11-25): the SAME stored connection and client plumbing; writes only on an explicit confirmed request.
+builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsTestPlansClient>();
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsTestPlanSettingsStore(
+    sp.GetRequiredService<BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsConnectionStore>().DirectoryPath));
 // Delivery "Filter by scope": resolves shared Scope Registry membership in-process (approved revisions only) at freeze/report generation time.
 builder.Services.AddScoped(sp => new BirkNext.Api.Services.DeliveryReporting.DeliveryScopeFilterService(sp.GetService<BirkNext.Api.Services.ScopeRegistry.ScopeRegistryService>()));
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.WeeklyReportService>();
@@ -845,9 +849,14 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.RequirementCoverag
 builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.ScenarioDiscoveryCache>();
 // The cache's durable copy: the last discovery per project survives an API restart (read back on demand, never re-run).
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ScenarioDiscoveryStore>();
-// Manual test execution is owned by Azure DevOps Test Plans (2026-11-19): BirkNext prepares and exports cases; it records no manual runs.
+// Manual test execution: Azure DevOps Test Plans is the default; «Testgjennomføring i BirkNext» is optional (2026-11-25, ManualExecution:BirkNextEnabled,
+// default false). The service is always registered so recorded history stays readable; the controller refuses to record while it is off.
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ManualTestRunService>();
 // Plan & prepare → Export to Azure DevOps: offline XLSX/CSV import files from saved test cases (no Azure DevOps connection).
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.AdoTestPlanExportService>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.AdoTestPlanSettingsService>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.AdoTestPlanTransferService>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.AdoTestResultsService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.SpecificationScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.SystemGuideScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.UiSourceScenarioProvider>();

@@ -163,7 +163,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
 
     /// <summary>Removed only by the explicitly typed "Reset everything" scope (user-authored, reviewed data such as shared test areas).</summary>
     public static readonly IReadOnlyList<string> ClearedOnlyWhenResettingEverything =
-        [.. ResettableSchemas.All.Where(s => s.OnlyWhenResettingEverything).Select(s => s.Description)];
+        [.. ResettableSchemas.All.Where(s => s.OnlyWhenResettingEverything).Select(s => s.Description), AzureDevOpsTestPlansRemovedLine];
 
     /// <summary>
     /// System settings "Reset project data, keep settings" keeps (2026-11-22): configuration a tester sets up once per installation or Target
@@ -173,7 +173,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
     [
         typeof(BirkNext.Api.Models.IntegrationPlatformRecord), typeof(BirkNext.Api.Models.IntegrationDefinitionRecord),
         typeof(BirkNext.Api.Models.IntegrationEnvironmentStateRecord), typeof(BirkNext.Api.Models.ExternalIntegrationRecord),
-        typeof(BirkNext.Api.Models.AltinnEnvironmentSettingsRecord), typeof(BirkNext.Api.Models.AdoExportProfileRecord),
+        typeof(BirkNext.Api.Models.AltinnEnvironmentSettingsRecord),
         typeof(BirkNext.Api.Models.ExecutionRetentionSettingsRow), typeof(BirkNext.Api.Models.SetupLibraryItemRecord),
         typeof(BirkNext.Api.Models.SetupLibraryVersionRecord), typeof(BirkNext.Api.Models.ParquetRuleSetRecord),
         typeof(BirkNext.Api.Models.SourceRepositoryAssociationRecord),
@@ -184,9 +184,26 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
     [
         "Target Environments: names, URLs, authentication setup, thresholds, security expectations and feature settings (their link to the deleted project is cleared)",
         "Integrations per Target Environment (platforms, integrations, external systems) and Altinn settings",
-        "Azure DevOps export preferences, the execution evidence retention setting, the Setup Library and approved Parquet rule sets",
+        "The execution evidence retention setting, the Setup Library and approved Parquet rule sets",
         "Remembered \"same repository\" decisions; Git Sources and their cloned copies",
     ];
+
+    /// <summary>
+    /// Azure DevOps – Testplaner (2026-11-25): each project's export settings and default test plan destination. Kept by every reset except Reset
+    /// everything (the user's rule: this setup is removed only by RESET DATA → RESET EVERYTHING). The system default destination and unchecked
+    /// creates (App_Data/azure-devops/test-plans.json) follow the same rule; the Azure DevOps connections themselves are installation state and are
+    /// kept by every reset, like the machine's Azure sign-in.
+    /// </summary>
+    public static readonly IReadOnlyList<Type> ResetEverythingOnlyEntityTypes = [typeof(BirkNext.Api.Models.AdoExportProfileRecord)];
+
+    public const string AzureDevOpsTestPlansKept =
+        "Azure DevOps – Testplaner: the saved test plan destinations (system and per project), unchecked creates and each project's export settings — only Reset everything removes them";
+
+    public const string AzureDevOpsTestPlansRemovedLine =
+        "Azure DevOps – Testplaner: the saved test plan destinations (system and per project), unchecked creates and each project's export settings (nothing is changed in Azure DevOps)";
+
+    public const string AzureDevOpsConnectionsKept =
+        "Azure DevOps connections (organization and the encrypted access token): kept by every reset";
 
     /// <summary>
     /// Manual test plans and everything that belongs to them (2026-11-24): user-authored, reviewed work that is not derived from any import, so
@@ -199,6 +216,10 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         typeof(BirkNext.Api.Models.ManualTestRunRecord), typeof(BirkNext.Api.Models.ManualRunAttachmentRecord),
         // User story grouping and US → FR review decisions (2026-11-24): user-authored review work like the plans.
         typeof(BirkNext.Api.Models.StoryGroupingRecord),
+        // Links to Azure DevOps test cases (2026-11-25): without them a later «Send direkte» would create duplicates.
+        typeof(BirkNext.Api.Models.AdoTestCaseLinkRecord),
+        // Results fetched from Azure DevOps (phase 2): execution history like the manual runs.
+        typeof(BirkNext.Api.Models.ExternalTestResultRecord),
     ];
 
     /// <summary>The preserved line for manual test plans.</summary>
@@ -225,6 +246,8 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Protected Test Data defaults (skolenaervaer-reporter-default, skolenaervaer-child-default) with their current, possibly edited, values; Test Data supplied by backend configuration",
         SharedTestAreasKept,
         TestPlansKept,
+        AzureDevOpsTestPlansKept,
+        AzureDevOpsConnectionsKept,
     ];
 
     public Task<LocalDataResetResult> ResetAsync(CancellationToken ct = default) => ResetAsync(includeProtected: false, ct);
@@ -264,7 +287,8 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
                     return new() { Status = "Refused", Message = $"Reset refused: the backup of {testPlans} manual test plan(s) could not be written ({ex.GetType().Name}). Nothing was deleted.", PreservedDomains = [.. Preserved] };
                 }
             }
-            IReadOnlyCollection<Type> keep = [.. (keepSettings ? SettingsEntityTypes : []), .. (removeTestPlans ? [] : TestPlanEntityTypes)];
+            IReadOnlyCollection<Type> keep = [.. (keepSettings ? SettingsEntityTypes : []), .. (includeProtected ? [] : ResetEverythingOnlyEntityTypes),
+                .. (removeTestPlans ? [] : TestPlanEntityTypes)];
             var (success, message, deleted, at) = await admin.ResetLocalDatabaseAsync(keep);
             if (!success)
                 return new() { Status = message.StartsWith("Reset failed", StringComparison.Ordinal) ? "Failed" : message.StartsWith("Reset blocked", StringComparison.Ordinal) ? "Blocked" : "Refused", Message = message, PreservedDomains = [.. Preserved] };
@@ -296,6 +320,13 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
             await Step(warnings, "browser diagnostic results", () => { services.GetService<BrowserAutomationEvidenceStore>()?.Clear(); return Task.CompletedTask; });
             await Step(warnings, "performance reachability checks", () => { services.GetService<PerformanceTestProviderRegistry>()?.ClearReachability(); return Task.CompletedTask; });
             await Step(warnings, "review caches", () => { (services.GetService<IMemoryCache>() as MemoryCache)?.Compact(1.0); return Task.CompletedTask; });
+            // Reset everything only: the system default test plan destination and unchecked creates (the connections stay).
+            if (includeProtected)
+                await Step(warnings, "Azure DevOps test plan settings", () =>
+                {
+                    services.GetService<BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsTestPlanSettingsStore>()?.Clear();
+                    return Task.CompletedTask;
+                });
             TestDataResetSummary? testData = null;
             await Step(warnings, "Test Data assets", async () =>
             {
@@ -348,7 +379,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
                 TestPlansPreserved = removeTestPlans ? 0 : testPlans, TestPlansRemoved = removeTestPlans ? testPlans : 0, TestPlanBackup = backup,
                 ResetAt = at, ResetEpoch = epoch, DatabaseCleared = true, DeletedRows = deleted, BackendStateCleared = warnings.Count == 0,
                 ClearedDomains = [.. Cleared, .. (includeProtected ? ClearedOnlyWhenResettingEverything : []), .. (removeTestPlans ? new[] { TestPlansRemovedLine } : [])],
-                PreservedDomains = [.. (includeProtected ? Preserved.Where(p => !p.StartsWith("Protected Test Data", StringComparison.Ordinal) && p != SharedTestAreasKept) : Preserved)
+                PreservedDomains = [.. (includeProtected ? Preserved.Where(p => !p.StartsWith("Protected Test Data", StringComparison.Ordinal) && p != SharedTestAreasKept && p != AzureDevOpsTestPlansKept) : Preserved)
                         .Where(p => !removeTestPlans || p != TestPlansKept),
                     .. (keepSettings ? SettingsKept : [])],
                 Warnings = warnings, TestData = testData, Domains = domains,

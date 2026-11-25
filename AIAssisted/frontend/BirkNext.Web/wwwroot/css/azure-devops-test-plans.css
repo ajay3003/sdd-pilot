@@ -1,0 +1,70 @@
+/* Azure DevOps – Test Plans (System Settings) and «Overfør testplan» (Manual Testing), 2026-11-25. Built on the shared Git Sources layer
+   (settings-sections.css: .gsx shell, .gar controls); only what that layer has no pattern for is defined here. Design tokens only. */
+
+/* Destination picker: four steps, each a light group. */
+.adp { display: grid; gap: 1.125rem; min-width: 0; }
+.adp-step { display: grid; gap: .5rem; min-width: 0; }
+.adp-label { font-size: .825rem; font-weight: 600; color: var(--clr-text-heading); }
+.adp-select { max-width: 26rem; border-radius: var(--radius-md); }
+.adp-search { max-width: 28rem; border-radius: var(--radius-md); }
+.adp-chosen { font-weight: 650; color: var(--clr-text-heading); }
+.adp-change, .adp-add { justify-self: start; }
+.adp-create { display: grid; gap: .75rem; padding: 1rem 1.125rem; background: var(--clr-surface, transparent); border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
+.adp-review { display: grid; gap: .75rem; padding: .875rem 1rem; border: 1px solid var(--clr-border); border-left: 4px solid var(--clr-primary); border-radius: var(--radius-md); background: var(--clr-surface-white); }
+.adp-review-title { margin: 0; font-weight: 650; color: var(--clr-text-heading); }
+.adp-warn { background: var(--clr-warning-bg-light); border-color: var(--clr-warning-border); }
+.adp-tree { display: grid; gap: .25rem; list-style: none; margin: 0; padding: 0; max-height: 18rem; overflow-y: auto; }
+.adp-tree li { padding-left: calc(var(--adp-depth, 0) * 1.25rem); }
+.adp-node { grid-template-columns: 1fr auto; align-items: center; }
+.adp-tech summary, .adt-more summary, .ats-add summary { cursor: pointer; font-size: .85rem; font-weight: 600; color: var(--clr-text-muted); }
+.adp-tech summary:focus-visible, .adt-more summary:focus-visible, .ats-add summary:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; border-radius: var(--radius-sm); }
+.adp-tech .gsx-facts { margin-top: .5rem; font-size: .85rem; }
+
+/* System Settings section. */
+.ats-connections { display: grid; gap: .5rem; list-style: none; margin: 0; padding: 0; }
+.ats-connection { display: grid; grid-template-columns: 1fr auto auto; gap: .5rem .875rem; align-items: center; padding: .625rem .875rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
+.ats-sub { display: block; margin-top: .15rem; font-size: .78rem; color: var(--clr-text-muted); }
+.ats-add-form { display: grid; gap: .75rem; padding-top: .75rem; }
+.ats-summary { padding: 1rem 1.125rem; border: 1px solid var(--clr-border); border-left: 4px solid var(--clr-primary); border-radius: var(--radius-md); background: var(--clr-surface, transparent); }
+.ats-scope { display: grid; gap: .35rem; border: 0; margin: 0; padding: 0; }
+.ats-radio { display: flex; gap: .5rem; align-items: center; font-size: .9rem; }
+
+/* Overfør testplan. */
+.atp-methods { margin-top: -.25rem; }
+.atp-history { display: grid; gap: .5rem; list-style: none; margin: 0; padding: 0; }
+.atp-entry { display: grid; grid-template-columns: 9.5rem 1fr; gap: .5rem .875rem; align-items: start; padding: .625rem .875rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
+.atp-entry .gsx-pill { justify-self: start; }
+.atp-entry-main { display: grid; gap: .15rem; min-width: 0; }
+.atp-sub { font-size: .8rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+.atp-reason { color: var(--clr-text-body); }
+
+/* Send direkte: the approval warning (prominent, calm — not a red screen). */
+.adt { display: grid; gap: 1rem; min-width: 0; }
+.adt-warning { display: grid; gap: .875rem; padding: 1.125rem 1.25rem; background: var(--clr-warning-bg-light); border: 1px solid var(--clr-warning-border); border-left: 6px solid var(--clr-warning, var(--clr-warning-border)); border-radius: var(--radius-lg); }
+.adt-warning-head { display: flex; gap: .875rem; align-items: flex-start; }
+.adt-warning-icon { flex: none; color: var(--clr-warning-text, var(--clr-warning, #8a5a00)); }
+.adt-warning-title { margin: 0; font-size: 1.05rem; font-weight: 800; letter-spacing: .04em; color: var(--clr-text-heading); }
+.adt-warning-lead { margin: .25rem 0 0; color: var(--clr-text-body); }
+.adt-why p { margin: 0; line-height: 1.5; }
+.adt-more ul { margin: .5rem 0 0; padding-left: 1.25rem; display: grid; gap: .3rem; font-size: .9rem; }
+.adt-declare { display: flex; gap: .625rem; align-items: flex-start; padding: .75rem .875rem; background: var(--clr-surface-white); border: 1px solid var(--clr-border); border-radius: var(--radius-md); font-weight: 600; cursor: pointer; }
+.adt-declare input { margin-top: .2rem; width: 1.1rem; height: 1.1rem; flex: none; }
+.adt-list { display: grid; gap: .5rem; list-style: none; margin: 0; padding: 0; }
+.adt-plain { margin: .5rem 0 0; padding-left: 1.25rem; font-size: .875rem; }
+.adt-case { display: grid; grid-template-columns: 1fr auto; gap: .5rem .875rem; align-items: center; padding: .625rem .875rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
+.adt-case-main { display: grid; gap: .15rem; min-width: 0; overflow-wrap: anywhere; }
+.adt-note { font-size: .8rem; color: var(--clr-text-muted); }
+.adt-note-warn { color: var(--clr-text-body); }
+.adt-choice .gar-tab { padding: .3rem .625rem; font-size: .8rem; }
+.adt-sub { margin: .5rem 0 0; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--clr-text-muted); }
+.adt-review { display: grid; gap: .875rem; padding: 1.125rem 1.25rem; border: 1px solid var(--clr-border); border-left: 4px solid var(--clr-primary); border-radius: var(--radius-lg); background: var(--clr-surface-white); }
+.adt-review-title { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--clr-text-heading); }
+.adt-counts dd { font-weight: 650; }
+.adt-result { display: grid; gap: .75rem; }
+.adt-result-head { display: flex; flex-wrap: wrap; gap: .5rem .875rem; align-items: center; }
+
+@media (max-width: 48rem) {
+    .ats-connection, .adt-case, .atp-entry { grid-template-columns: 1fr; }
+    .adt-warning-head { flex-direction: column; }
+    .adp-tree li { padding-left: calc(var(--adp-depth, 0) * .75rem); }
+}

@@ -62,6 +62,9 @@ public sealed record AdoExportProfile
     /// <summary>Azure DevOps test case ids the tester confirmed in an earlier update export, by BirkNext case key ("{plan id}/{case id}"): offered
     /// again so an id is entered once. Never guessed; the tester can change or clear one.</summary>
     public Dictionary<string, string> KnownTestCaseIds { get; init; } = [];
+    /// <summary>This project's default Azure DevOps destination (test plan + suite) for «Send direkte»; overrides the system default. Changed only
+    /// through System Settings → Azure DevOps – Testplaner or «Lagre som standard for prosjektet», never by saving the export settings.</summary>
+    public AdoSavedDestination? DefaultDestination { get; init; }
 }
 
 public sealed record AdoExportRequest
@@ -98,7 +101,11 @@ public sealed record AdoFieldStatus(string Field, string? Value, AdoFieldCheck C
 
 /// <summary>One import row (one test step). Exactly what both the XLSX and the CSV file contain.</summary>
 public sealed record AdoExportRow(string Id, string WorkItemType, string Title, int TestStep, string StepAction, string StepExpected, string AreaPath, string AssignedTo,
-    string State, string? Priority, string? Description = null);
+    string State, string? Priority, string? Description = null)
+{
+    /// <summary>The BirkNext case this row belongs to (not a file column; «Send direkte» groups the same rows per case).</summary>
+    public string? CaseId { get; init; }
+}
 
 public sealed record AdoExportCase
 {
@@ -156,7 +163,21 @@ public sealed record AdoExportPreview
 public sealed record AdoExportFile(string FileName, string ContentType, string Base64, int Rows, int Cases);
 
 public sealed record AdoExportHistoryEntry(Guid Id, Guid DraftId, string PlanName, int PlanRevision, string Format, string Mode, int Cases, int Rows, string? Destination,
-    string ExportedBy, DateTimeOffset ExportedAt, List<string> CaseRevisions);
+    string ExportedBy, DateTimeOffset ExportedAt, List<string> CaseRevisions)
+{
+    /// <summary>"File" (a file was created — not an import), or for a direct transfer: "Transferred", "Partial", "Failed" or "NeedsReview".</summary>
+    public string Status { get; init; } = "File";
+    public DateTimeOffset? StartedAt { get; init; }
+    public DateTimeOffset? CompletedAt { get; init; }
+    public int Created { get; init; }
+    public int Updated { get; init; }
+    public int Skipped { get; init; }
+    /// <summary>Failed, needs review, uncertain or not added to the suite.</summary>
+    public int Problems { get; init; }
+    /// <summary>Direct transfer: the person declared the test lead's approval (a declaration, not a verified approval).</summary>
+    public bool LeadApprovalDeclared { get; init; }
+    public string? Reason { get; init; }
+}
 
 public static class AdoExport
 {

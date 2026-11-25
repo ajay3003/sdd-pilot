@@ -1,0 +1,155 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using P = BirkNext.Web.Services.AdoTestPlansPresentation
+@inject IServiceProvider Services
+
+@* Manual Testing → Planlegg og klargjør → «Overfør testplan» (2026-11-25), in Git Sources' design (one .gsx card, a .gar segmented control).
+   Two methods, kept apart:
+   - «Eksporter til fil» — the DEFAULT, every time this panel opens (never remembered): an Azure Test Plans import file; nothing changes in Azure DevOps.
+   - «Send direkte til Azure DevOps» — an explicit opt-in: the test lead approval warning, then destination and choices, then a final review.
+   «Tidligere overføringer» lists both with date and time; a file is never shown as imported and a transfer never as a test result. *@
+<section class="gsx atp" aria-labelledby="atp-title" data-testid="atp">
+    <header class="gsx-header">
+        <div>
+            <h2 id="atp-title" class="gsx-title">Overfør testplan</h2>
+            <p class="gsx-subtitle">Velg hvordan testtilfellene i «@Draft.PlanName» skal over til Azure DevOps.</p>
+        </div>
+    </header>
+
+    <div class="gar-tabs atp-methods" role="tablist" aria-label="Overføringsmåte">
+        <button type="button" role="tab" id="atp-tab-file" aria-controls="atp-method" aria-selected="@(!_direct ? "true" : "false")" class="gar-tab @(!_direct ? "is-active" : "")"
+                @onclick="() => _direct = false" data-testid="atp-method-file">Eksporter til fil</button>
+        <button type="button" role="tab" id="atp-tab-direct" aria-controls="atp-method" aria-selected="@(_direct ? "true" : "false")" class="gar-tab @(_direct ? "is-active" : "")"
+                @onclick="() => _direct = true" data-testid="atp-method-direct">Send direkte til Azure DevOps</button>
+    </div>
+
+    <div id="atp-method" role="tabpanel" aria-labelledby="@(_direct ? "atp-tab-direct" : "atp-tab-file")" class="gsx-panel" data-testid="atp-panel" data-method="@(_direct ? "direct" : "file")">
+        @if (!_direct)
+        {
+            <p class="gsx-muted" data-testid="atp-file-intro">Last ned testplanen som en fil. Du kan kontrollere innholdet før du importerer den i Azure DevOps.</p>
+            <p class="gsx-notice" data-testid="atp-file-safe">Ingenting blir endret i Azure DevOps.</p>
+            <p class="gar-help" data-testid="atp-file-reminder">Testplanen bør være godkjent av testleder før den tas i bruk.</p>
+            <BirkNext.Web.Components.AdoExportWizard Draft="Draft" ProjectKey="@ProjectKey" CanWrite="CanWrite" Dirty="Dirty" OnExported="LoadHistoryAsync" />
+        }
+        else
+        {
+            <p class="gsx-muted" data-testid="atp-direct-intro">BirkNext kan opprette eller oppdatere testtilfeller i Azure DevOps etter at du har kontrollert og bekreftet overføringen.</p>
+            <AdoDirectTransfer Draft="Draft" ProjectKey="@ProjectKey" CanWrite="CanWrite" Dirty="Dirty" OnClose="() => _direct = false" OnTransferred="LoadHistoryAsync" />
+        }
+    </div>
+
+    @* Phase 2: «Hent resultater fra Azure DevOps» — read-only there; results are kept apart from BirkNext runs. *@
+    <div class="gsx-panel" data-testid="atp-results">
+        <div class="gsx-panel-head"><h3 class="gsx-panel-title">Resultater fra Azure DevOps</h3><span class="gsx-pill gsx-pill-neutral" data-testid="atp-results-count">@_results.Count</span></div>
+        @{ var currentResults = _results.Where(r => r.Current).GroupBy(r => r.CaseId).Select(g => g.First()).ToList(); }
+        @if (_results.Count == 0)
+        {
+            <p class="gsx-muted" data-testid="atp-results-empty">Ingen resultater er hentet ennå. Resultater hentes for testtilfeller som er koblet til Azure DevOps (sendt direkte, eller med bekreftet id).</p>
+        }
+        else
+        {
+            <p class="gsx-muted" data-testid="atp-results-summary">Gjeldende versjon: @currentResults.Count(r => r.Outcome == "Passed") bestått · @currentResults.Count(r => r.Outcome == "Failed") feilet · @currentResults.Count(r => r.Outcome == "Blocked") blokkert
+                · @currentResults.Count(r => r.Outcome is not ("Passed" or "Failed" or "Blocked")) annet. @(_results.Count(r => !r.Current)) resultat@(_results.Count(r => !r.Current) == 1 ? "" : "er") gjelder en tidligere versjon og telles ikke.</p>
+            <ul class="atp-history" aria-label="Resultater fra Azure DevOps">
+                @foreach (var r in _results.Take(_showAllResults ? 200 : 8))
+                {
+                    <li class="atp-entry" data-testid="atp-result" data-current="@(r.Current ? "true" : "false")">
+                        <span class="gsx-pill gsx-pill-@(r.Outcome == "Passed" ? "ok" : "pending")">@AdoResultOutcome.Label(r.Outcome)</span>
+                        <div class="atp-entry-main">
+                            <strong>@(Draft.Cases.FirstOrDefault(c => c.Source.ScenarioId == r.CaseId)?.EffectiveTitle ?? r.CaseId)</strong>
+                            <span class="atp-sub">@((r.CompletedAt ?? r.FetchedAt).ToLocalTime().ToString("dd.MM.yyyy HH:mm"))@(r.Tester is { } t ? $" · {t}" : "")@(r.Configuration is { } cfg ? $" · {cfg}" : "") · Gjennomført i Azure DevOps@(r.Current ? "" : " · Fra en tidligere versjon")</span>
+                        </div>
+                    </li>
+                }
+            </ul>
+            @if (_results.Count > 8 && !_showAllResults) { <button type="button" class="msb-link" @onclick="() => _showAllResults = true">Vis alle (@_results.Count)</button> }
+        }
+        @if (_fetch is { } f)
+        {
+            <p class="gsx-notice" role="status" data-testid="atp-fetch-summary">Lest @f.Read testpunkt@(f.Read == 1 ? "" : "er"): @f.New nye resultater, @f.AlreadyKnown allerede hentet, @f.NeverRun ikke kjørt ennå, @f.NotLinked ikke koblet til BirkNext.</p>
+            @foreach (var problem in f.Problems) { <p class="gsx-error" role="alert" data-testid="atp-fetch-problem">@problem</p> }
+        }
+        @if (_fetchError is { } fe) { <p class="gsx-error" role="alert" data-testid="atp-fetch-error">@fe</p> }
+        <div class="gar-actions">
+            <button type="button" class="btn-secondary btn-sm" disabled="@(_fetching || !CanWrite)" title="@(CanWrite ? "Leser resultatene i Azure DevOps. Ingenting endres der." : "Du har ikke tilgang til å hente resultater.")"
+                    @onclick="FetchResultsAsync" data-testid="atp-fetch">@(_fetching ? "Henter …" : "Hent resultater fra Azure DevOps")</button>
+        </div>
+    </div>
+
+    <div class="gsx-panel" data-testid="atp-history">
+        <div class="gsx-panel-head"><h3 class="gsx-panel-title">Tidligere overføringer</h3><span class="gsx-pill gsx-pill-neutral" data-testid="atp-history-count">@_history.Count</span></div>
+        @if (_history.Count == 0)
+        {
+            <p class="gsx-muted" data-testid="atp-history-empty">Ingen filer eller overføringer for dette prosjektet ennå.</p>
+        }
+        else
+        {
+            <ul class="atp-history" aria-label="Tidligere overføringer">
+                @foreach (var h in _history.Take(_showAll ? 100 : 8))
+                {
+                    <li class="atp-entry" data-testid="atp-history-item" data-status="@(h.Format == "Direct" ? h.Status : "File")">
+                        <span class="gsx-pill gsx-pill-@(P.HistoryTone(h) == "bad" ? "pending" : P.HistoryTone(h))" data-testid="atp-history-status">@P.HistoryLabel(h)</span>
+                        <div class="atp-entry-main">
+                            <strong>@P.When(h.ExportedAt)</strong>
+                            <span class="atp-sub">
+                                @if (h.Format == "Direct")
+                                {
+                                    <span>Sendt direkte@(h.Destination is { } d ? $" til {d}" : "") · @h.Created opprettet · @h.Updated oppdatert@(h.Problems > 0 ? $" · {h.Problems} må følges opp" : "")</span>
+                                    @if (h.StartedAt is { } s && h.CompletedAt is { } e) { <span> · @s.ToLocalTime().ToString("HH:mm:ss")–@e.ToLocalTime().ToString("HH:mm:ss")</span> }
+                                }
+                                else
+                                {
+                                    <span>Fil (@h.Format) · @h.Cases testtilfeller / @h.Rows rader@(h.Destination is { } d ? $" · {d}" : "") — en fil er ikke importert før du importerer den i Azure DevOps</span>
+                                }
+                            </span>
+                            <span class="atp-sub">@h.PlanName, revisjon @h.PlanRevision · @h.ExportedBy@(h.LeadApprovalDeclared ? " · bekreftet testleders godkjenning (egen erklæring)" : "")</span>
+                            @if (h.Reason is { } reason) { <span class="atp-sub atp-reason">@reason</span> }
+                        </div>
+                    </li>
+                }
+            </ul>
+            @if (_history.Count > 8 && !_showAll) { <button type="button" class="msb-link" @onclick="() => _showAll = true" data-testid="atp-history-more">Vis alle (@_history.Count)</button> }
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public TestPlanDraft Draft { get; set; } = new();
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+    [Parameter] public bool CanWrite { get; set; }
+    [Parameter] public bool Dirty { get; set; }
+
+    // Every time the panel opens: «Eksporter til fil». Never stored, never taken from an earlier transfer.
+    private bool _direct;
+    private bool _showAll;
+    private List<AdoExportHistoryEntry> _history = [];
+
+    private List<AdoCaseResult> _results = [];
+    private AdoResultsFetchResult? _fetch;
+    private string? _fetchError;
+    private bool _fetching, _showAllResults;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadHistoryAsync();
+        if (Services.GetService(typeof(IAdoTestPlansApiService)) is IAdoTestPlansApiService ado && ProjectKey.Length > 0)
+            _results = (await ado.ResultsAsync(ProjectKey, Draft.Id)).Results ?? [];
+    }
+
+    private async Task FetchResultsAsync()
+    {
+        if (_fetching || Services.GetService(typeof(IAdoTestPlansApiService)) is not IAdoTestPlansApiService ado) return;
+        (_fetching, _fetchError, _fetch) = (true, null, null);
+        var (result, error) = await ado.FetchResultsAsync(new AdoResultsFetchRequest(ProjectKey, Draft.Id));
+        _fetching = false;
+        if (result is null) { _fetchError = error ?? "Kunne ikke hente resultater."; return; }
+        (_fetch, _results) = (result, result.Results);
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        if (Services.GetService(typeof(IAdoExportApiService)) is not IAdoExportApiService api) return;
+        var (history, _) = await api.HistoryAsync(ProjectKey);
+        if (history is not null) _history = history;
+    }
+}

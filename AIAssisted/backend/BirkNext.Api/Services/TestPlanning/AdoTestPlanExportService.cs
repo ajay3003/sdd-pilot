@@ -40,13 +40,30 @@ public sealed class AdoTestPlanExportService(AppDbContext db, TestPlanSuggestion
         };
         var row = await db.AdoExportProfiles.SingleOrDefaultAsync(r => r.ProjectKey == key, ct);
         if (row is null) db.AdoExportProfiles.Add(row = new AdoExportProfileRecord { ProjectKey = key });
-        // Remembered Azure DevOps ids change only through a confirmed update export, never through a profile save from a page that loaded earlier.
-        clean = clean with { KnownTestCaseIds = (row.ProfileJson.Length > 0 ? Deserialize(row.ProfileJson) : null)?.KnownTestCaseIds ?? [] };
+        // Remembered Azure DevOps ids change only through a confirmed update export, never through a profile save from a page that loaded earlier;
+        // the project's default destination changes only through its own save (System Settings or «Lagre som standard for prosjektet»).
+        var stored = row.ProfileJson.Length > 0 ? Deserialize(row.ProfileJson) : null;
+        clean = clean with { KnownTestCaseIds = stored?.KnownTestCaseIds ?? [], DefaultDestination = stored?.DefaultDestination };
         row.ProfileJson = JsonSerializer.Serialize(clean, E.Json);
         row.UpdatedBy = actor.Length <= 200 ? actor : actor[..200];
         row.UpdatedAt = Now;
         await db.SaveChangesAsync(ct);
         return clean;
+    }
+
+    /// <summary>Sets or clears (null) the project's default Azure DevOps destination; every other export setting is kept as stored.</summary>
+    public async Task<AdoSavedDestination?> SaveDefaultDestinationAsync(string projectKey, AdoTestPlanDestination? destination, string actor, CancellationToken ct)
+    {
+        var key = TestScenarioDiscoveryService.Key(projectKey);
+        var row = await db.AdoExportProfiles.SingleOrDefaultAsync(r => r.ProjectKey == key, ct);
+        if (row is null) db.AdoExportProfiles.Add(row = new AdoExportProfileRecord { ProjectKey = key });
+        var stored = (row.ProfileJson.Length > 0 ? Deserialize(row.ProfileJson) : null) ?? new AdoExportProfile();
+        var saved = destination is null ? null : new AdoSavedDestination(destination, actor.Length <= 200 ? actor : actor[..200], Now);
+        row.ProfileJson = JsonSerializer.Serialize(stored with { DefaultDestination = saved }, E.Json);
+        row.UpdatedBy = actor.Length <= 200 ? actor : actor[..200];
+        row.UpdatedAt = Now;
+        await db.SaveChangesAsync(ct);
+        return saved;
     }
 
     public async Task<AdoExportPreview> PreviewAsync(AdoExportRequest request, CancellationToken ct) => AdoTestPlanExporter.Preview(await PlanAsync(request, ct), request);
@@ -100,11 +117,39 @@ public sealed class AdoTestPlanExportService(AppDbContext db, TestPlanSuggestion
     {
         var key = TestScenarioDiscoveryService.Key(projectKey);
         var rows = await db.AdoExports.AsNoTracking().Where(r => r.ProjectKey == key).OrderByDescending(r => r.ExportedAt).Take(100).ToListAsync(ct);
-        return [.. rows.Select(r => new AdoExportHistoryEntry(r.Id, r.DraftId, r.PlanName, r.PlanRevision, r.Format, r.Mode, r.Cases, r.Rows, r.Destination, r.ExportedBy, r.ExportedAt, Cases(r.ContentJson)))];
+        return [.. rows.Select(r => Details(new AdoExportHistoryEntry(r.Id, r.DraftId, r.PlanName, r.PlanRevision, r.Format, r.Mode, r.Cases, r.Rows, r.Destination, r.ExportedBy, r.ExportedAt, Cases(r.ContentJson)), r.ContentJson))];
+    }
+
+    /// <summary>A direct transfer's status, times, counts and declaration (file exports stay "File": a file is not an import).</summary>
+    private static AdoExportHistoryEntry Details(AdoExportHistoryEntry entry, string json)
+    {
+        if (entry.Format != "Direct") return entry with { StartedAt = entry.ExportedAt, CompletedAt = entry.ExportedAt };
+        try
+        {
+            var root = JsonDocument.Parse(json).RootElement;
+            string? S(string name) => root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+            int I(string name) => root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0;
+            DateTimeOffset? T(string name) => root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(v.GetString(), out var t) ? t : null;
+            var declared = root.TryGetProperty("declaration", out var dcl) && dcl.TryGetProperty("declared", out var dv) && dv.ValueKind == JsonValueKind.True;
+            return entry with
+            {
+                Status = S("status") ?? "Failed", StartedAt = T("startedAt"), CompletedAt = T("completedAt"), Created = I("created"), Updated = I("updated"), Skipped = I("skipped"),
+                Problems = I("problems"), LeadApprovalDeclared = declared, Reason = S("reason"),
+            };
+        }
+        catch (JsonException) { return entry with { Status = "Failed" }; }
+    }
+
+    /// <summary>The project's saved plan as it is now (no revision check; for reading results against the current case text).</summary>
+    internal async Task<TestPlanDraft> CurrentPlanAsync(string projectKey, Guid draftId, CancellationToken ct)
+    {
+        var plan = await plans.DraftAsync(draftId, ct);
+        if (plan.ProjectKey != TestScenarioDiscoveryService.Key(projectKey)) throw new TestPlanException(404, "draft-not-found", "No such test plan in this project.");
+        return plan;
     }
 
     /// <summary>The saved plan of the request's project at the reviewed revision (a newer save is refused so the file matches the preview).</summary>
-    private async Task<TestPlanDraft> PlanAsync(AdoExportRequest request, CancellationToken ct)
+    internal async Task<TestPlanDraft> PlanAsync(AdoExportRequest request, CancellationToken ct)
     {
         var key = TestScenarioDiscoveryService.Key(request.ProjectKey);
         var plan = await plans.DraftAsync(request.DraftId, ct);
@@ -114,7 +159,7 @@ public sealed class AdoTestPlanExportService(AppDbContext db, TestPlanSuggestion
         return plan;
     }
 
-    private static Dictionary<string, string> Revisions(TestPlanDraft plan) =>
+    internal static Dictionary<string, string> Revisions(TestPlanDraft plan) =>
         plan.Cases.ToDictionary(c => c.Source.ScenarioId, c => ManualCaseIdentity.Fingerprint(c)[..12], StringComparer.Ordinal);
 
     private static List<string> Cases(string json)

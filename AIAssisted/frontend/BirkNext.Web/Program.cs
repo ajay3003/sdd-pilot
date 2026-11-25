@@ -61,11 +61,14 @@ builder.Services.AddHttpClient<ISystemUnderstandingApiService, SystemUnderstandi
 // One parsed last discovery per project and snapshot for the session, revalidated by ETag (LastDiscoveryCache).
 builder.Services.AddSingleton<LastDiscoveryCache>();
 builder.Services.AddHttpClient<ITestPlanSuggestionsApiService, TestPlanSuggestionsApiService>(client => client.BaseAddress = backendBase);
+// Testgjennomføring i BirkNext (optional, 2026-11-25): records what a tester did in a run; Azure DevOps Test Plans stays the default.
+builder.Services.AddHttpClient<IManualTestRunsApiService, ManualTestRunsApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITranslationSettingsApiService, TranslationSettingsApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITechnicalHistoryApiService, TechnicalHistoryApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISpecificationCatalogApiService, SpecificationCatalogApiService>(client => client.BaseAddress = backendBase);
 // Plan & prepare → Export to Azure DevOps: offline XLSX / CSV import files (no Azure DevOps connection).
 builder.Services.AddHttpClient<IAdoExportApiService, AdoExportApiService>(client => client.BaseAddress = backendBase);
+builder.Services.AddHttpClient<IAdoTestPlansApiService, AdoTestPlansApiService>(client => client.BaseAddress = backendBase);
 
 builder.Services.AddSingleton<FeatureVisibilityService>();
 builder.Services.AddSingleton<SchemaStudioService>();

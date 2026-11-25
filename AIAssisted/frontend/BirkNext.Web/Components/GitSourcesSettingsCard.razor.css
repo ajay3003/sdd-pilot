@@ -1,40 +1,5 @@
-/* Git Sources (Git-only), redesigned 2026-11-23 in the Translation settings' language: one card, light section headings, a rounded repository
-   list, details as a tile, status as a dot + words. Design tokens only, so light and dark themes follow the app. */
-.gsx { display: grid; gap: 1.5rem; max-width: 64rem; padding: 1.5rem; background: var(--clr-surface-white); border: 1px solid var(--clr-border); border-radius: var(--radius-lg); min-width: 0; }
-.gsx-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem 1.25rem; }
-.gsx-title { margin: 0; font-size: 1.375rem; font-weight: 650; letter-spacing: -.01em; color: var(--clr-text-heading); }
-.gsx-subtitle, .gsx-muted { margin: .25rem 0 0; color: var(--clr-text-muted); font-size: .9rem; line-height: 1.45; }
-.gsx-link { background: none; border: 0; padding: 0; color: var(--clr-text-heading); font: inherit; font-weight: 650; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
-.gsx-link:hover { color: var(--clr-primary); text-decoration: underline; }
-.gsx-link:focus-visible { outline: 2px solid var(--clr-focus, var(--clr-primary)); outline-offset: 2px; border-radius: var(--radius-sm); }
-.gsx-wrap { overflow-wrap: anywhere; }
-
-/* Status: a dot and words. */
-.gsx-pill { display: inline-flex; align-items: center; gap: .45rem; padding: .3rem .75rem; border-radius: var(--radius-pill); font-size: .825rem; font-weight: 600; white-space: nowrap;
-    background: var(--clr-surface-alt, var(--clr-surface)); color: var(--clr-text-heading); border: 1px solid var(--clr-border); }
-.gsx-pill::before { content: ""; width: .55rem; height: .55rem; border-radius: 50%; background: var(--clr-text-muted); }
-.gsx-pill-ok { background: var(--clr-success-bg-light); border-color: var(--clr-success-border); }
-.gsx-pill-ok::before { background: var(--clr-success); }
-.gsx-pill-pending { background: var(--clr-warning-bg-light); border-color: var(--clr-warning-border); }
-.gsx-pill-pending::before { background: var(--clr-warning, var(--clr-warning-border)); }
-.gsx-pill-neutral { padding: .1rem .55rem; font-size: .75rem; color: var(--clr-text-muted); }
-.gsx-pill-neutral::before { display: none; }
-
-/* Sections: a light heading instead of boxed panels. */
-.gsx-panel { display: grid; gap: .875rem; min-width: 0; }
-.gsx-panel + .gsx-panel { padding-top: 1.5rem; border-top: 1px solid var(--clr-border); }
-.gsx-panel-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
-.gsx-panel-title { margin: 0; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--clr-text-muted); }
-.gsx-notice, .gsx-error { margin: 0; padding: .625rem .875rem; border-radius: var(--radius-md); font-size: .875rem; overflow-wrap: anywhere; border: 1px solid transparent; }
-.gsx-notice { background: var(--clr-info-bg-light); border-color: var(--clr-info-border, var(--clr-info)); }
-.gsx-error { background: var(--clr-danger-bg-light); border-color: var(--clr-danger); }
-.gsx-state { display: grid; gap: .5rem; justify-items: start; padding: 1rem 1.125rem; background: var(--clr-surface); border: 1px dashed var(--clr-border); border-radius: var(--radius-md); }
-.gsx-state p { margin: 0; }
-.gsx-facts { display: grid; grid-template-columns: max-content 1fr; gap: .5rem 1.5rem; margin: 0; font-size: .9rem; align-items: baseline; }
-.gsx-facts > div { display: contents; }
-.gsx-facts dt { color: var(--clr-text-muted); font-weight: 500; font-size: .85rem; }
-.gsx-facts dd { margin: 0; min-width: 0; color: var(--clr-text-body); }
-
+/* Git Sources: the repository list and details. The section shell (.gsx) and the controls (.gar) are shared with other settings sections in
+   wwwroot/css/settings-sections.css (moved 2026-11-25, unchanged). */
 /* Connected repositories: a rounded list. */
 .gss-search { max-width: 28rem; border-radius: var(--radius-md); }
 .gss-table-wrap { min-width: 0; border: 1px solid var(--clr-border); border-radius: var(--radius-md); overflow: hidden; }
@@ -61,18 +26,16 @@
 .gss-other { font-size: .85rem; }
 .gss-fetch-why { border-color: var(--clr-warning-border); background: var(--clr-warning-bg-light); }
 
-@media (prefers-reduced-motion: reduce) { .gss-table tbody tr { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+    .gss-table tbody tr { transition: none; }
+}
 
-/* Narrow screens: each repository becomes a stacked card (no horizontal page scroll). */
 @media (max-width: 48rem) {
-    .gsx { padding: 1rem; }
     .gss-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     .gss-table, .gss-table tbody, .gss-table tr, .gss-table td { display: block; width: 100%; }
     .gss-table tr { padding: .625rem .875rem; border-bottom: 1px solid var(--clr-border); }
     .gss-table td { border: 0; padding: .125rem 0; }
     .gss-table td::before { content: attr(data-label) ": "; color: var(--clr-text-muted); font-size: .75rem; }
     .gss-table td:first-child::before { content: none; }
-    .gsx-facts { grid-template-columns: 1fr; }
-    .gsx-facts dt { margin-top: .25rem; }
     .gss-remove { margin-left: 0; }
 }

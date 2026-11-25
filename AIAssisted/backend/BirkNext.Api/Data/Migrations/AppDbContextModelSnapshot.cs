@@ -225,6 +225,80 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("ado_export_records", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.AdoTestCaseLinkRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("AdoPlanId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AdoProject")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("AdoSuiteId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("AttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CaseKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("CaseRevision")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Organization")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("PlanRevision")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProjectKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("RemoteRevision")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int?>("TestCaseId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectKey", "CaseKey", "Organization", "AdoProject")
+                        .IsUnique();
+
+                    b.ToTable("ado_test_case_links", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.AiCodeReviewRunRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1363,6 +1437,96 @@ namespace BirkNext.Api.Data.Migrations
                     b.HasIndex("EnvironmentId");
 
                     b.ToTable("external_integrations", (string)null);
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.ExternalTestResultRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AdoProject")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("CaseKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Configuration")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ExportedRevision")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("FetchedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FetchedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Organization")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int>("PlanId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PointId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProjectKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("ResultId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RunId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("SuiteId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TestCaseId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Tester")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectKey", "DraftId");
+
+                    b.HasIndex("Source", "Organization", "AdoProject", "RunId", "ResultId")
+                        .IsUnique();
+
+                    b.ToTable("external_test_results", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.GraphQlSchemaArtifactRecord", b =>

@@ -1,0 +1,375 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using BirkNext.Web.Components.AzureDevOps
+@using P = BirkNext.Web.Services.AdoTestPlansPresentation
+@inject IAdoTestPlansApiService Api
+@inject IServiceProvider Services
+
+@* Manual Testing → Overfør testplan → «Send direkte til Azure DevOps» (2026-11-25). A controlled transfer in four steps, nothing sent before the last:
+   1 GODKJENNING FRA TESTLEDER KREVES — why, what can happen, what does not happen; the declaration starts unchecked every time.
+   2 Mål og testtilfeller — the saved destination (changeable), each case's choice (Opprett nytt / Oppdater eksisterende / Hopp over), possible
+     duplicates and cases that must be checked shown separately. Only reads from Azure DevOps.
+   3 Se over — destination, counts and the concrete changes; «Bekreft og send til Azure DevOps» is the only action that writes.
+   4 Resultat — per case, successes apart from problems; a transfer is never a test result.
+   The server enforces the confirmation and the declaration; the declaration is not a verified test lead approval. *@
+<div class="adt" data-testid="adt" aria-busy="@(_busy ? "true" : "false")">
+    @if (!CanWrite)
+    {
+        <p class="gsx-notice" role="status" data-testid="adt-no-access">Du har ikke tilgang til å sende testtilfeller til Azure DevOps. Bruk «Eksporter til fil».</p>
+    }
+    else if (Dirty)
+    {
+        <p class="gsx-notice" role="status" data-testid="adt-dirty">Planen har endringer som ikke er lagret. Lagre først — overføringen bruker den lagrede planen.</p>
+    }
+    else if (_stage == Stage.Approval)
+    {
+        <div class="adt-warning" role="region" aria-labelledby="adt-warning-title" data-testid="adt-warning">
+            <div class="adt-warning-head">
+                <svg class="adt-warning-icon" viewBox="0 0 24 24" width="40" height="40" aria-hidden="true" focusable="false">
+                    <path d="M12 2.5 1.5 21h21L12 2.5z" fill="currentColor" opacity=".16" />
+                    <path d="M12 2.5 1.5 21h21L12 2.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+                    <path d="M12 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" /><circle cx="12" cy="17.6" r="1.2" fill="currentColor" />
+                </svg>
+                <div>
+                    <h3 id="adt-warning-title" class="adt-warning-title">GODKJENNING FRA TESTLEDER KREVES</h3>
+                    <p class="adt-warning-lead">Du er i ferd med å sende testplanen «@Draft.PlanName» fra BirkNext til Azure DevOps.</p>
+                </div>
+            </div>
+            <div class="adt-why" data-testid="adt-why">
+                <p><strong>Hvorfor er godkjenning nødvendig?</strong> Testplanen må være gjennomgått før andre testere tar den i bruk. Overføringen kan opprette nye
+                    testtilfeller eller endre testtilfeller som allerede finnes i Azure DevOps. Hvis planen har feil eller mangler, kan andre teste med feil steg,
+                    forventede resultater eller testdata. Derfor skal testleder godkjenne overføringen før du fortsetter.</p>
+            </div>
+            <details class="adt-more" data-testid="adt-consequences">
+                <summary>Hva kan skje når du overfører?</summary>
+                <ul>
+                    <li><strong>Nye testtilfeller</strong> kan bli opprettet i Azure DevOps.</li>
+                    <li><strong>Testtilfeller som allerede finnes</strong>, kan bli oppdatert hvis du velger det.</li>
+                    <li><strong>Andre testere</strong> med tilgang til prosjektet i Azure DevOps kan se testtilfellene og begynne å bruke dem.</li>
+                    <li><strong>Feil mål:</strong> hvis feil prosjekt eller testgruppe er valgt, kan testene havne feil.</li>
+                    <li><strong>Duplikater:</strong> hvis samme plan sendes på nytt uten riktig kobling, kan det bli duplikater. BirkNext husker koblingen og foreslår oppdatering i stedet.</li>
+                    <li><strong>Uferdige tester</strong> kan bli tatt i bruk av andre.</li>
+                    <li><strong>Endringer gjort i Azure DevOps</strong> kan komme i konflikt med versjonen i BirkNext. BirkNext overskriver dem ikke; de vises som «Må kontrolleres».</li>
+                    <li><strong>Delvis overføring:</strong> noen testtilfeller kan bli overført selv om andre feiler. Du ser nøyaktig hvilke.</li>
+                </ul>
+                <p class="gar-help">Hva som faktisk gjøres for hvert testtilfelle, ser du før du sender.</p>
+            </details>
+            <details class="adt-more" data-testid="adt-not-happen">
+                <summary>Hva skjer ikke?</summary>
+                <ul>
+                    <li>Testplanen i BirkNext blir ikke slettet eller endret.</li>
+                    <li>Å lagre et testtilfelle i BirkNext sender det aldri til Azure DevOps.</li>
+                    <li>Overføringen kjører ingen tester, og den betyr ikke at testene er bestått.</li>
+                    <li>Ingenting sendes før du velger «Bekreft og send til Azure DevOps» i siste steg.</li>
+                </ul>
+            </details>
+            <label class="adt-declare" data-testid="adt-declare-label">
+                <input type="checkbox" checked="@_declared" @onchange="e => _declared = e.Value is true" data-testid="adt-declare" />
+                <span>@AdoTransferDeclaration.Text</span>
+            </label>
+            <p class="gar-help" data-testid="adt-declare-note">Dette er din bekreftelse. BirkNext lagrer den med navnet ditt, men kan ikke selv kontrollere at testleder har godkjent.</p>
+            <div class="gar-actions">
+                <button type="button" class="btn-primary btn-sm" disabled="@(!_declared)" title="@(_declared ? null : "Bekreft først at testleder har godkjent overføringen.")" @onclick="ContinueAsync" data-testid="adt-continue">Fortsett</button>
+                <button type="button" class="btn-secondary btn-sm" @onclick="CancelAsync" data-testid="adt-cancel">Avbryt</button>
+            </div>
+        </div>
+    }
+    else if (_stage == Stage.Setup)
+    {
+        <div class="gsx-panel" data-testid="adt-setup">
+            <div class="gsx-panel-head"><h3 class="gsx-panel-title">Mål i Azure DevOps</h3>
+                @if (_preview is { } pv && pv.Destination is not null && !_changing) { <span class="gsx-pill gsx-pill-neutral" data-testid="adt-destination-source">@P.SourceLabel(pv.DestinationSource)</span> }</div>
+            @if (_changing || _preview is { Destination: null })
+            {
+                @if (_preview is { Destination: null }) { <p class="gsx-muted" data-testid="adt-no-destination">Ingen standardmål er lagret. Velg mål her, eller lagre et standardmål i Systeminnstillinger → Azure DevOps – Test Plans.</p> }
+                @if (_connections is null) { <p class="gar-help" role="status">Leser tilkoblingene …</p> }
+                else if (_connections.Count == 0) { <p class="gsx-notice" data-testid="adt-no-connection">Ingen tilkobling til Azure DevOps er satt opp. En administrator legger den til i Systeminnstillinger → Azure DevOps – Test Plans.</p> }
+                else
+                {
+                    <AdoDestinationPicker Connections="_connections" Initial="_destination" CanWrite="CanWrite" PlanNamePlaceholder="@Draft.PlanName" OnChanged="d => _picked = d" />
+                    <div class="gar-actions">
+                        <button type="button" class="btn-primary btn-sm" disabled="@(_picked is null || _busy)" @onclick="UsePickedAsync" data-testid="adt-use-destination">Bruk dette målet</button>
+                        @if (_destination is not null) { <button type="button" class="btn-secondary btn-sm" @onclick="() => _changing = false">Avbryt</button> }
+                    </div>
+                }
+            }
+            else if (_destination is { } d)
+            {
+                @Destination(d)
+                <div class="gar-actions"><button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="StartChangeAsync" data-testid="adt-change-destination">Endre</button></div>
+            }
+            @if (_preview?.DestinationProblem is { } problem && !_changing) { <p class="gsx-error" role="alert" data-testid="adt-destination-problem">@problem</p> }
+        </div>
+
+        @if (_preview is { } p && _destination is not null && !_changing)
+        {
+            var ready = p.Cases.Where(c => c.Ready && c.Link.State != AdoLinkState.Uncertain && !Duplicate(c)).ToList();
+            var duplicates = p.Cases.Where(c => c.Ready && Duplicate(c)).ToList();
+            var review = p.Cases.Where(c => c.Ready && c.Link.State == AdoLinkState.Uncertain).ToList();
+            var notReady = p.Cases.Where(c => !c.Ready).ToList();
+            <div class="gsx-panel" data-testid="adt-cases">
+                <div class="gsx-panel-head"><h3 class="gsx-panel-title">Testtilfeller</h3><span class="gsx-pill gsx-pill-neutral" data-testid="adt-ready-count">@(ready.Count + duplicates.Count) klare</span></div>
+                <label class="adx-check"><input type="checkbox" checked="@_includeNotApproved" @onchange="e => SetAsync(() => _includeNotApproved = e.Value is true)" data-testid="adt-include-unapproved" /> Ta med testtilfeller som ikke er godkjent ennå</label>
+                @if (ready.Count == 0 && duplicates.Count == 0) { <p class="gsx-state" data-testid="adt-none-ready">Ingen testtilfeller er klare. Godkjenn testtilfeller i planen, eller ta med de som ikke er godkjent.</p> }
+                <ul class="adt-list" aria-label="Testtilfeller som kan overføres">@foreach (var c in ready) { @CaseRow(c) }</ul>
+                @if (duplicates.Count > 0)
+                {
+                    <h4 class="adt-sub" data-testid="adt-duplicates-title">Mulige duplikater (@duplicates.Count)</h4>
+                    <ul class="adt-list" aria-label="Mulige duplikater">@foreach (var c in duplicates) { @CaseRow(c) }</ul>
+                }
+                @if (review.Count > 0)
+                {
+                    <h4 class="adt-sub" data-testid="adt-review-title">Må kontrolleres (@review.Count)</h4>
+                    <ul class="adt-list" aria-label="Må kontrolleres">
+                        @foreach (var c in review)
+                        {
+                            <li class="adt-case" data-testid="adt-review-case" data-case="@c.CaseId">
+                                <div class="adt-case-main"><strong>@c.Title</strong><span class="adt-note">@c.Note</span></div>
+                                <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => ReconcileAsync(c)" data-testid="adt-reconcile">Kontroller</button>
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (notReady.Count > 0)
+                {
+                    <details class="adt-more" data-testid="adt-not-ready"><summary>Ikke med (@notReady.Count)</summary>
+                        <ul class="adt-plain">@foreach (var c in notReady) { <li>@(c.Title.Length > 0 ? c.Title : "(uten tittel)") — <span class="gar-muted">@c.NotReadyReason</span></li> }</ul>
+                    </details>
+                }
+                @if (_message is { } msg) { <p class="gsx-notice" role="status" data-testid="adt-message">@msg</p> }
+                <div class="gar-actions">
+                    <button type="button" class="btn-primary btn-sm" disabled="@(_busy || !p.CanTransfer)" title="@(p.CanTransfer ? null : "Velg minst ett testtilfelle som skal opprettes eller oppdateres.")"
+                            @onclick="() => _stage = Stage.Review" data-testid="adt-to-review">Se over overføringen</button>
+                    <button type="button" class="btn-secondary btn-sm" @onclick="CancelAsync" data-testid="adt-cancel-setup">Avbryt</button>
+                </div>
+            </div>
+        }
+        else if (_busy) { <p class="gar-help" role="status">Leser testtilfellene og målet …</p> }
+        @if (_error is { } error) { <p class="gsx-error" role="alert" data-testid="adt-error">@error <button type="button" class="msb-link" @onclick="PreviewAsync">Prøv igjen</button></p> }
+    }
+    else if (_stage == Stage.Review && _preview is { } rp && _destination is { } rd)
+    {
+        var chosen = rp.Cases.Where(c => c.Ready && c.Link.State != AdoLinkState.Uncertain).Select(c => (Case: c, Action: Effective(c))).ToList();
+        <div class="adt-review" role="region" aria-labelledby="adt-review-title" data-testid="adt-review">
+            <h3 id="adt-review-title" class="adt-review-title">Se over før du sender</h3>
+            @Destination(rd)
+            <dl class="gsx-facts adt-counts">
+                <div><dt>Valgte testtilfeller</dt><dd data-testid="adt-review-selected">@chosen.Count</dd></div>
+                <div><dt>Opprettes</dt><dd data-testid="adt-review-create">@rp.ToCreate</dd></div>
+                <div><dt>Oppdateres</dt><dd data-testid="adt-review-update">@rp.ToUpdate</dd></div>
+                <div><dt>Hoppes over</dt><dd data-testid="adt-review-skip">@rp.ToSkip</dd></div>
+                <div><dt>Må kontrolleres først</dt><dd data-testid="adt-review-unresolved">@rp.NeedReview @(rp.NeedReview > 0 ? "(sendes ikke)" : "")</dd></div>
+            </dl>
+            <details class="adt-more" open data-testid="adt-review-changes">
+                <summary>Hvilke endringer blir gjort?</summary>
+                <ul>
+                    @foreach (var (c, action) in chosen.Where(x => x.Action != AdoTransferAction.Skip))
+                    {
+                        <li data-testid="adt-review-change">@(action == AdoTransferAction.Create
+                            ? $"«{c.Title}» opprettes som nytt testtilfelle"
+                            : $"Testtilfelle {c.Link.TestCaseId} («{c.Title}») oppdateres — tittel og steg erstattes med versjonen i BirkNext")</li>
+                    }
+                    <li>Testtilfellene legges i testgruppen «@(rd.SuitePath ?? rd.SuiteName)» hvis de ikke ligger der fra før.</li>
+                </ul>
+            </details>
+            @{ var warnings = rp.Issues.Where(i => i.Level == AdoIssueLevel.Warning).ToList(); }
+            @if (warnings.Count > 0)
+            {
+                <details class="adt-more" data-testid="adt-review-warnings"><summary>Advarsler om innhold (@warnings.Count)</summary>
+                    <ul>@foreach (var w in warnings) { <li>@(w.CaseId is { } wc ? $"{rp.Cases.FirstOrDefault(c => c.CaseId == wc)?.Title}: " : "")@w.Message</li> }</ul>
+                </details>
+            }
+            <p class="gar-help" data-testid="adt-review-declared">Du har bekreftet: «@AdoTransferDeclaration.Text»</p>
+            <div class="gar-actions">
+                <button type="button" class="btn-primary" disabled="@(_busy || !_declared || !rp.CanTransfer)" @onclick="TransferAsync" data-testid="adt-send">@(_busy ? "Sender …" : "Bekreft og send til Azure DevOps")</button>
+                <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => _stage = Stage.Setup" data-testid="adt-back">Tilbake</button>
+                <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="CancelAsync" data-testid="adt-cancel-review">Avbryt</button>
+            </div>
+            @if (_error is { } reviewError) { <p class="gsx-error" role="alert" data-testid="adt-error">@reviewError</p> }
+        </div>
+    }
+    else if (_stage == Stage.Result && _result is { } r)
+    {
+        var ok = r.Cases.Where(c => c.Outcome is AdoTransferOutcome.Created or AdoTransferOutcome.Updated).ToList();
+        var problems = r.Cases.Where(c => c.Outcome is not (AdoTransferOutcome.Created or AdoTransferOutcome.Updated or AdoTransferOutcome.Skipped)).ToList();
+        var skipped = r.Cases.Where(c => c.Outcome == AdoTransferOutcome.Skipped).ToList();
+        var headline = problems.Count == 0 ? "Overføring fullført" : ok.Count > 0 ? "Delvis overført" : problems.Any(c => c.Outcome != AdoTransferOutcome.Failed) ? "Må kontrolleres" : "Kunne ikke overføre";
+        <div class="adt-result" role="status" data-testid="adt-result">
+            <div class="adt-result-head">
+                <span class="gsx-pill gsx-pill-@(problems.Count == 0 ? "ok" : "pending")" data-testid="adt-result-status">@headline</span>
+                <span class="gsx-muted">@ok.Count overført · @problems.Count må følges opp · @skipped.Count hoppet over</span>
+            </div>
+            <p class="gar-help" data-testid="adt-not-execution">Overført betyr at testtilfellene finnes i Azure DevOps — ikke at testene er kjørt eller bestått.</p>
+            @if (ok.Count > 0)
+            {
+                <h4 class="adt-sub">Overført (@ok.Count)</h4>
+                <ul class="adt-list">@foreach (var c in ok) { @ResultRow(c) }</ul>
+            }
+            @if (problems.Count > 0)
+            {
+                <h4 class="adt-sub" data-testid="adt-problems-title">Må følges opp (@problems.Count)</h4>
+                <ul class="adt-list">@foreach (var c in problems) { @ResultRow(c) }</ul>
+            }
+            <div class="gar-actions">
+                @if (r.SuiteUrl is { } url) { <a class="btn-secondary btn-sm" href="@url" target="_blank" rel="noopener noreferrer" data-testid="adt-open-suite">Åpne testgruppen i Azure DevOps</a> }
+                <button type="button" class="btn-secondary btn-sm" @onclick="CancelAsync" data-testid="adt-done">Ferdig</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public TestPlanDraft Draft { get; set; } = new();
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+    [Parameter] public bool CanWrite { get; set; }
+    [Parameter] public bool Dirty { get; set; }
+    /// <summary>Back to «Eksporter til fil» (cancel, or done).</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>A transfer finished (the history is reloaded).</summary>
+    [Parameter] public EventCallback OnTransferred { get; set; }
+
+    private enum Stage { Approval, Setup, Review, Result }
+    private Stage _stage = Stage.Approval;
+    // Unchecked every time this panel opens; never remembered.
+    private bool _declared;
+    private bool _busy, _changing, _includeNotApproved;
+    private AdoTransferPreview? _preview;
+    private AdoTransferResult? _result;
+    private AdoTestPlanDestination? _destination, _picked;
+    private List<AzureDevOpsConnectionInfo>? _connections;
+    private AdoExportProfile _profile = new();
+    private readonly Dictionary<string, AdoTransferAction> _actions = new(StringComparer.Ordinal);
+    private string? _error, _message;
+
+    private static bool Duplicate(AdoTransferCase c) => c.Link.State == AdoLinkState.None && c.Note?.StartsWith("Mulig duplikat", StringComparison.Ordinal) == true;
+    private AdoTransferAction Effective(AdoTransferCase c) => _actions.TryGetValue(c.CaseId, out var a) && c.Allowed.Contains(a) ? a : c.Suggested;
+
+    private AdoTransferRequest Request(bool send = false) => new()
+    {
+        ProjectKey = ProjectKey, DraftId = Draft.Id, PlanRevision = Draft.Revision, IncludeNotApproved = _includeNotApproved, Profile = _profile, Destination = _destination,
+        Actions = new(_actions), Confirmed = send, LeadApprovalDeclared = send && _declared,
+    };
+
+    private async Task ContinueAsync()
+    {
+        if (!_declared) return;
+        _stage = Stage.Setup;
+        if (Services.GetService(typeof(IAdoExportApiService)) is IAdoExportApiService export && await export.ProfileAsync(ProjectKey) is ({ } profile, _)) _profile = profile;
+        await PreviewAsync();
+    }
+
+    private async Task PreviewAsync()
+    {
+        (_busy, _error) = (true, null);
+        var (preview, error) = await Api.PreviewAsync(Request());
+        _busy = false;
+        if (preview is null) { _error = error ?? "Kunne ikke lese testtilfellene."; return; }
+        _preview = preview;
+        _destination ??= preview.Destination;
+        if (_destination is null) await LoadConnectionsAsync();
+    }
+
+    private async Task LoadConnectionsAsync()
+    {
+        if (_connections is not null) return;
+        var (view, error) = await Api.SettingsAsync(ProjectKey);
+        _connections = view?.Connections ?? [];
+        if (view is null) _error = error;
+    }
+
+    private async Task SetAsync(Action change) { change(); _message = null; await PreviewAsync(); }
+
+    private async Task StartChangeAsync()
+    {
+        (_changing, _picked) = (true, null);
+        await LoadConnectionsAsync();
+    }
+
+    private async Task UsePickedAsync()
+    {
+        if (_picked is null) return;
+        (_destination, _changing) = (_picked, false);
+        _actions.Clear();
+        await PreviewAsync();
+    }
+
+    private async Task ChooseAsync(AdoTransferCase c, AdoTransferAction action) { _actions[c.CaseId] = action; _message = null; await PreviewAsync(); }
+
+    private async Task ReconcileAsync(AdoTransferCase c)
+    {
+        if (_destination is null) return;
+        _busy = true;
+        var (result, error) = await Api.ReconcileAsync(new AdoReconcileRequest(ProjectKey, Draft.Id, c.CaseId, _destination));
+        _busy = false;
+        _message = result is null ? error : result.Outcome switch
+        {
+            AdoVerifyOutcome.Found => $"«{c.Title}»: fant testtilfelle {result.Link.TestCaseId} i Azure DevOps. Det er nå koblet, og en oppdatering foreslås.",
+            AdoVerifyOutcome.NotFound => $"«{c.Title}» ble ikke opprettet i Azure DevOps. Det kan overføres på nytt.",
+            _ => result.Message,
+        };
+        await PreviewAsync();
+    }
+
+    private async Task TransferAsync()
+    {
+        if (_busy || !_declared || _preview is not { CanTransfer: true }) return;
+        (_busy, _error) = (true, null);
+        var (result, error) = await Api.TransferAsync(Request(send: true));
+        _busy = false;
+        if (result is null) { _error = error ?? "Kunne ikke overføre."; await OnTransferred.InvokeAsync(); return; }
+        (_result, _stage) = (result, Stage.Result);
+        // The declaration covered this transfer only.
+        _declared = false;
+        await OnTransferred.InvokeAsync();
+    }
+
+    private async Task CancelAsync()
+    {
+        (_declared, _stage, _preview, _result, _error, _message) = (false, Stage.Approval, null, null, null, null);
+        _actions.Clear();
+        await OnClose.InvokeAsync();
+    }
+
+    private RenderFragment Destination(AdoTestPlanDestination d) => __builder =>
+    {
+        <dl class="gsx-facts" data-testid="adt-destination">
+            <div><dt>Organisasjon</dt><dd data-testid="adt-destination-org">@d.Organization</dd></div>
+            <div><dt>Prosjekt</dt><dd data-testid="adt-destination-project">@d.Project</dd></div>
+            <div><dt>Testplan</dt><dd data-testid="adt-destination-plan">@d.PlanName</dd></div>
+            <div><dt>Testgruppe</dt><dd data-testid="adt-destination-suite">@(d.SuitePath ?? d.SuiteName)</dd></div>
+        </dl>
+    };
+
+    private RenderFragment CaseRow(AdoTransferCase c) => __builder =>
+    {
+        var action = Effective(c);
+        <li class="adt-case" data-testid="adt-case" data-case="@c.CaseId" data-action="@action">
+            <div class="adt-case-main">
+                <strong>@c.Title</strong>
+                <span class="adt-note">
+                    @if (c.ScenarioTitle is { } s) { <span>Scenario: @s · </span> }
+                    <span>@c.Steps steg</span>
+                    @if (c.Link.State == AdoLinkState.Linked) { <span data-testid="adt-case-linked"> · Koblet til testtilfelle @c.Link.TestCaseId@(c.ChangedSinceTransfer ? " · endret i BirkNext" : "")</span> }
+                    else { <span> · Ikke overført</span> }
+                </span>
+                @if (c.Note is { } note && c.Link.State != AdoLinkState.Linked) { <span class="adt-note adt-note-warn" data-testid="adt-case-note">@note</span> }
+            </div>
+            <div class="gar-tabs adt-choice" role="radiogroup" aria-label="@($"Valg for {c.Title}")">
+                @foreach (var a in c.Allowed)
+                {
+                    <button type="button" role="radio" aria-checked="@(a == action ? "true" : "false")" class="gar-tab @(a == action ? "is-active" : "")" disabled="@_busy"
+                            @onclick="() => ChooseAsync(c, a)" data-testid="adt-case-action" data-value="@a">@P.ActionLabel(a)</button>
+                }
+            </div>
+        </li>
+    };
+
+    private RenderFragment ResultRow(AdoTransferCaseResult c) => __builder =>
+    {
+        <li class="adt-case" data-testid="adt-result-case" data-outcome="@c.Outcome">
+            <div class="adt-case-main"><strong>@c.Title</strong><span class="adt-note">@c.Message</span></div>
+            <span class="gsx-pill gsx-pill-@(P.OutcomeTone(c.Outcome) == "bad" ? "pending" : P.OutcomeTone(c.Outcome))">@P.OutcomeLabel(c.Outcome)</span>
+            @if (c.WebUrl is { } url) { <a class="msb-link" href="@url" target="_blank" rel="noopener noreferrer">Åpne</a> }
+        </li>
+    };
+}

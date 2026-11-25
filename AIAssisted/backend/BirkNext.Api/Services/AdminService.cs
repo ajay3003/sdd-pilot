@@ -388,7 +388,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             {
                 ShowDiagnostics = _config.GetValue("AdminSettings:ShowDiagnostics", true)
             },
-            FrontendQualityEngines = BuildEditableFrontendQualityEngines()
+            FrontendQualityEngines = BuildEditableFrontendQualityEngines(),
+            ManualExecution = new EditableManualExecutionSection { BirkNextEnabled = BirkNext.TestPlanning.ManualExecutionSettings.Enabled(_config[BirkNext.TestPlanning.ManualExecutionSettings.Key]) },
         };
     }
 
@@ -416,6 +417,7 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         if (request.Logging is not null) sections.Add("Logging");
         if (request.Admin?.ShowDiagnostics.HasValue == true) sections.Add("Admin");
         if (request.FrontendQualityEngines is not null) sections.Add("FrontendQualityEngines");
+        if (request.ManualExecution?.BirkNextEnabled is not null) sections.Add("ManualExecution");
         if (request.MicrosoftSignIn is not null) sections.Add("MicrosoftSignIn");
         var record = new JsonObject
         {
@@ -493,7 +495,7 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         if (!valid) return (false, error);
 
         if (request.MicrosoftSignIn is { } signInOnly && request.FeatureVisibility is not { Count: > 0 } && request.Logging is null
-            && request.Admin?.ShowDiagnostics.HasValue != true && request.FrontendQualityEngines is null)
+            && request.Admin?.ShowDiagnostics.HasValue != true && request.FrontendQualityEngines is null && request.ManualExecution?.BirkNextEnabled is null)
         {
             var result = await SaveMicrosoftSignInAsync(signInOnly);
             if (result.Success) await AppendConfigurationAuditAsync(actor, [], request);
@@ -564,6 +566,15 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             if (request.FrontendQualityEngines.PassiveSecurityEnabled.HasValue)
                 fqeNode["PassiveSecurityEnabled"] = JsonValue.Create(request.FrontendQualityEngines.PassiveSecurityEnabled!.Value);
             root["FrontendQualityEnginePreferences"] = fqeNode;
+        }
+
+        if (request.ManualExecution?.BirkNextEnabled is { } executionOn)
+        {
+            // Applies immediately (configuration reload below): «Start test» appears or disappears; recorded runs stay readable either way.
+            var meNode = root.TryGetPropertyValue("ManualExecution", out var meExisting) && meExisting is JsonObject meObj ? meObj : new JsonObject();
+            meNode["BirkNextEnabled"] = JsonValue.Create(executionOn);
+            root["ManualExecution"] = meNode;
+            _logger.LogInformation("Manual execution in BirkNext set to {State} by {Actor}", executionOn ? "on" : "off", actor ?? "not attributed");
         }
 
         var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });

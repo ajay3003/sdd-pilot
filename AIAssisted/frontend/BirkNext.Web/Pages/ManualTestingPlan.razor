@@ -1,4 +1,5 @@
 @page "/manual-testing/plan"
+@using P2 = BirkNext.Web.Services.AdoTestPlansPresentation
 @using BirkNext.TestPlanning
 @using BirkNext.TestCoverage
 @using BirkNext.Web.Services
@@ -6,6 +7,7 @@
 @using P = BirkNext.Web.Services.PlanPreparePresentation
 @using TC = BirkNext.Web.Services.TechnicalCoveragePresentation
 @using SC = BirkNext.Web.Services.SpecContextPresentation
+@using MR = BirkNext.Web.Services.ManualRunPresentation
 @implements IDisposable
 @inject IServiceProvider ServiceProvider
 @inject NavigationManager Nav
@@ -101,6 +103,10 @@
                 }
                 <span class="mt-muted msb-small" data-testid="mtp-plan-counts">@P.ScenarioCount(plan) scenario@(P.ScenarioCount(plan) == 1 ? "" : "er") · @ActiveCases(plan) testtilfelle@(ActiveCases(plan) == 1 ? "" : "r") · @plan.Cases.Count(c => c.Review == TestCaseReviewState.Accepted) godkjent · revisjon @plan.Revision</span>
                 <span class="mtp-spacer"></span>
+                @if (_tool != "export")
+                {
+                    <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick='() => SetTool("export")' data-testid="mtp-transfer">Overfør testplan</button>
+                }
                 @if (CanWrite && !ReadOnlyPlan)
                 {
                     <button type="button" class="btn btn-secondary btn-sm" disabled="@(_busy || Dirty || !_translationAvailable)" title="@(Dirty ? "Lagre først." : _translationAvailable ? "Oversetter alle testtilfellene til norsk med den valgte tjenesten. Personskrevne og redigerte oversettelser beholdes." : "Oversettelse er ikke satt opp.")"
@@ -142,7 +148,8 @@
 
             @if (_tool == "export")
             {
-                <BirkNext.Web.Components.AdoExportWizard Draft="plan" ProjectKey="@(plan.ProjectKey ?? _ws.ProjectKey)" CanWrite="CanWrite" Dirty="Dirty" />
+                @* «Overfør testplan» (2026-11-25): opens on «Eksporter til fil» every time; «Send direkte til Azure DevOps» is an explicit opt-in. *@
+                <BirkNext.Web.Components.ManualTesting.AdoTransferPanel Draft="plan" ProjectKey="@(plan.ProjectKey ?? _ws.ProjectKey ?? "")" CanWrite="CanWrite" Dirty="Dirty" />
             }
             else if (_tool == "versions" && Api is { } versionsApi)
             {
@@ -674,6 +681,63 @@
                             </div>
 
                             @* «Historikk» (2026-11-25): who changed or reviewed this case, when and why — stored on the case, newest first; read-only. *@
+                            @* «Testgjennomføring» (2026-11-25): «Start test» only when execution in BirkNext is switched on (System settings; Azure DevOps Test
+                               Plans is the default). The case's runs are always shown when there are any, each with where it was executed and whether it was
+                               run on the case as it is now — a result from an earlier version never counts for the current one. *@
+                            var caseRuns = _planRuns.Where(r => r.CaseId == current.Source.ScenarioId).OrderByDescending(r => r.StartedAt).ToList();
+                            var adoResults = _adoResults.Where(r => r.CaseId == current.Source.ScenarioId).ToList();
+                            @if (_executionEnabled || caseRuns.Count > 0 || adoResults.Count > 0)
+                            {
+                                var currentFingerprint = ManualRunRules.CaseFingerprint(current);
+                                <section class="mtp-runs" aria-label="Testgjennomføring" data-testid="mtp-runs">
+                                    <div class="mtp-runs-head">
+                                        <span class="mtp-ctx-label">Testgjennomføring</span>
+                                        @if (_executionEnabled && CanWrite && !ReadOnlyPlan && current.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded))
+                                        {
+                                            @if (Dirty) { <span class="mt-muted msb-small" data-testid="mtp-run-save-first">Lagre endringene før du starter testen.</span> }
+                                            else { <a class="btn btn-primary btn-sm" href="@($"{MR.ExecuteRoute}?draft={_plan!.Id}&case={Uri.EscapeDataString(current.Source.ScenarioId)}")" data-testid="mtp-run-start">Start test i BirkNext</a> }
+                                        }
+                                        else if (!_executionEnabled)
+                                        {
+                                            <span class="mt-muted msb-small" data-testid="mtp-run-off">Gjennomføres i Azure DevOps Test Plans.</span>
+                                        }
+                                    </div>
+                                    @if (caseRuns.Count == 0 && (_executionEnabled || adoResults.Count == 0))
+                                    {
+                                        <p class="mt-muted msb-small" data-testid="mtp-runs-none">Ikke gjennomført i BirkNext ennå.</p>
+                                    }
+                                    @* Phase 2: results fetched from Azure DevOps, kept apart from BirkNext runs and never combined into one outcome. *@
+                                    @if (adoResults.Count > 0)
+                                    {
+                                        <ul class="mtp-run-list" aria-label="Gjennomført i Azure DevOps">
+                                            @foreach (var r in adoResults.Take(10))
+                                            {
+                                                <li data-testid="mtp-ado-result" data-current="@(r.Current ? "true" : "false")">
+                                                    <span class="msb-status msb-tone-@P2.ResultTone(r.Outcome)">@AdoResultOutcome.Label(r.Outcome)</span>
+                                                    <span class="msb-small">@((r.CompletedAt ?? r.FetchedAt).ToLocalTime().ToString("dd.MM.yyyy HH:mm"))@(r.Tester is { } t ? $" · {t}" : "")@(r.Configuration is { } cfg ? $" · {cfg}" : "") · Gjennomført i Azure DevOps</span>
+                                                    @if (!r.Current) { <span class="msb-tag" data-testid="mtp-ado-earlier" title="Testtilfellet er endret etter at det ble sendt til Azure DevOps; resultatet gjelder ikke versjonen som er lagret nå.">Fra en tidligere versjon</span> }
+                                                    @if (r.WebUrl is { } url) { <a class="msb-link" href="@url" target="_blank" rel="noopener noreferrer" data-testid="mtp-ado-open">Åpne</a> }
+                                                </li>
+                                            }
+                                        </ul>
+                                    }
+                                    else
+                                    {
+                                        <ul class="mtp-run-list">
+                                            @foreach (var run in caseRuns.Take(10))
+                                            {
+                                                var earlier = run.CaseFingerprint != currentFingerprint;
+                                                <li data-testid="mtp-run" data-current="@(earlier ? "false" : "true")">
+                                                    <span class="msb-status msb-tone-@MR.RunTone(run.State, run.Outcome)">@MR.RunLabel(run.State, run.Outcome)</span>
+                                                    <span class="msb-small">@run.StartedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · @run.Tester · Gjennomført i BirkNext</span>
+                                                    @if (earlier) { <span class="msb-tag" data-testid="mtp-run-earlier" title="Testtilfellet er endret etter kjøringen; resultatet gjelder ikke versjonen som er lagret nå.">Fra en tidligere versjon</span> }
+                                                    <a class="msb-link" href="@($"{MR.ExecuteRoute}?run={run.Id}")" data-testid="mtp-run-open">Åpne</a>
+                                                </li>
+                                            }
+                                        </ul>
+                                    }
+                                </section>
+                            }
                             var history = P.CaseHistory(current);
                             @if (history.Count > 0)
                             {
@@ -870,7 +934,7 @@
         Nav.NavigateTo(M.DiscoverRoute);
     }
 
-    private static readonly (string Key, string Label)[] Tools = [("cases", "Testtilfeller"), ("export", "Eksporter"), ("versions", "Versjoner"), ("changes", "Kildeendringer")];
+    private static readonly (string Key, string Label)[] Tools = [("cases", "Testtilfeller"), ("export", "Overfør testplan"), ("versions", "Versjoner"), ("changes", "Kildeendringer")];
 
     private bool _loading = true, _busy, _showTechnical, _archiveAsk, _excludeAsk, _translationAvailable = true;
     /// <summary>The editor's language view; reset to the default (Norsk when a translation exists) for each case.</summary>
@@ -935,6 +999,7 @@
         _plan = draft;
         _archiveAsk = _excludeAsk = false;
         await LoadScenarioKindsAsync();
+        await LoadPlanRunsAsync();
         var first = P.Rows(draft, _showTechnical).Rows.SelectMany(r => r.Cases).FirstOrDefault() ?? draft.Cases.FirstOrDefault();
         Open(_selectedId is { } keep && draft.Cases.Any(c => P.IdOf(c) == keep) ? keep : first is null ? null : P.IdOf(first));
     }
@@ -1102,6 +1167,29 @@
     }
 
     private NewCaseForm? _newCase;
+    /// <summary>Execution in BirkNext switched on (System settings; off by default) and the plan's recorded runs (read once per plan).</summary>
+    private bool _executionEnabled;
+    private List<ManualRunSummary> _planRuns = [];
+    /// <summary>Results fetched from Azure DevOps for the plan (phase 2), shown apart from BirkNext runs.</summary>
+    private List<AdoCaseResult> _adoResults = [];
+    private IManualTestRunsApiService? RunsApi => ServiceProvider.GetService(typeof(IManualTestRunsApiService)) as IManualTestRunsApiService;
+
+    private async Task LoadPlanRunsAsync()
+    {
+        _planRuns = [];
+        if (_plan?.ProjectKey is not { } key || RunsApi is not { } runs) return;
+        try
+        {
+            _executionEnabled = await runs.AvailabilityAsync();
+            var (list, _) = await runs.ListAsync(key, _plan.Id);
+            _planRuns = list ?? [];
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _planRuns = []; } // no runs shown; nothing is blocked
+        _adoResults = [];
+        if (ServiceProvider.GetService(typeof(IAdoTestPlansApiService)) is IAdoTestPlansApiService ado)
+            try { _adoResults = (await ado.ResultsAsync(key, _plan.Id)).Results ?? []; }
+            catch (Exception e) when (e is not OperationCanceledException) { _adoResults = []; }
+    }
     private readonly Dictionary<string, Dictionary<string, TC.Decision>> _scenarioTests = new(StringComparer.OrdinalIgnoreCase);
     private (string Path, IReadOnlyList<SC.Item> Items)? _planSpec;
 

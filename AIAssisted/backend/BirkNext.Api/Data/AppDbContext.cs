@@ -35,6 +35,8 @@ public class AppDbContext : DbContext
     public DbSet<ScenarioDiscoveryRecord> ScenarioDiscoveryResults => Set<ScenarioDiscoveryRecord>();
     public DbSet<AdoExportProfileRecord> AdoExportProfiles => Set<AdoExportProfileRecord>();
     public DbSet<AdoExportRecord> AdoExports => Set<AdoExportRecord>();
+    public DbSet<AdoTestCaseLinkRecord> AdoTestCaseLinks => Set<AdoTestCaseLinkRecord>();
+    public DbSet<ExternalTestResultRecord> ExternalTestResults => Set<ExternalTestResultRecord>();
     public DbSet<ExecutionEvidenceAuditRow> ExecutionEvidenceAudit => Set<ExecutionEvidenceAuditRow>();
     public DbSet<ExecutionRetentionSettingsRow> ExecutionRetentionSettings => Set<ExecutionRetentionSettingsRow>();
     public DbSet<MessageObservationSetRecord> MessageObservationSets => Set<MessageObservationSetRecord>();
@@ -1414,6 +1416,39 @@ public class AppDbContext : DbContext
             entity.Property(r => r.ContentJson).HasColumnType("text").IsRequired();
             entity.Property(r => r.ExportedBy).HasMaxLength(200).IsRequired();
             entity.HasIndex(r => new { r.ProjectKey, r.ExportedAt });
+        });
+        modelBuilder.Entity<AdoTestCaseLinkRecord>(entity =>
+        {
+            entity.ToTable("ado_test_case_links");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.ProjectKey).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.CaseKey).HasMaxLength(300).IsRequired();
+            entity.Property(r => r.Organization).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.AdoProject).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.State).HasMaxLength(20).IsRequired();
+            entity.Property(r => r.CaseRevision).HasMaxLength(64);
+            entity.Property(r => r.Title).HasMaxLength(300).IsRequired();
+            entity.Property(r => r.UpdatedBy).HasMaxLength(200).IsRequired();
+            // One link per case and destination project: two transfers can never both create the same case.
+            entity.HasIndex(r => new { r.ProjectKey, r.CaseKey, r.Organization, r.AdoProject }).IsUnique();
+        });
+        modelBuilder.Entity<ExternalTestResultRecord>(entity =>
+        {
+            entity.ToTable("external_test_results");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Source).HasMaxLength(20).IsRequired();
+            entity.Property(r => r.ProjectKey).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.CaseKey).HasMaxLength(300).IsRequired();
+            entity.Property(r => r.Organization).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.AdoProject).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Outcome).HasMaxLength(40).IsRequired();
+            entity.Property(r => r.Tester).HasMaxLength(200);
+            entity.Property(r => r.Configuration).HasMaxLength(200);
+            entity.Property(r => r.ExportedRevision).HasMaxLength(64);
+            entity.Property(r => r.FetchedBy).HasMaxLength(200).IsRequired();
+            // One row per Azure DevOps result: fetching again never duplicates.
+            entity.HasIndex(r => new { r.Source, r.Organization, r.AdoProject, r.RunId, r.ResultId }).IsUnique();
+            entity.HasIndex(r => new { r.ProjectKey, r.DraftId });
         });
         modelBuilder.Entity<ParquetInspectionRecord>(entity =>
         {

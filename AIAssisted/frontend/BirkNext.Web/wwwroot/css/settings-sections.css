@@ -1,0 +1,71 @@
+/* Settings sections in the Git Sources design language (moved 2026-11-25 from GitSourcesSettingsCard and GitAddRepositoryForm scoped CSS, unchanged, so
+   System Settings → Git Sources and Azure DevOps – Testplaner share ONE definition): .gsx = section shell (header, status pill, light section
+   headings, notices, empty state, facts); .gar = controls (segmented control, field, help, pick list, actions). Design tokens only. */
+
+/* Git Sources (Git-only), redesigned 2026-11-23 in the Translation settings' language: one card, light section headings, a rounded repository
+   list, details as a tile, status as a dot + words. Design tokens only, so light and dark themes follow the app. */
+.gsx { display: grid; gap: 1.5rem; max-width: 64rem; padding: 1.5rem; background: var(--clr-surface-white); border: 1px solid var(--clr-border); border-radius: var(--radius-lg); min-width: 0; }
+.gsx-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem 1.25rem; }
+.gsx-title { margin: 0; font-size: 1.375rem; font-weight: 650; letter-spacing: -.01em; color: var(--clr-text-heading); }
+.gsx-subtitle, .gsx-muted { margin: .25rem 0 0; color: var(--clr-text-muted); font-size: .9rem; line-height: 1.45; }
+.gsx-link { background: none; border: 0; padding: 0; color: var(--clr-text-heading); font: inherit; font-weight: 650; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.gsx-link:hover { color: var(--clr-primary); text-decoration: underline; }
+.gsx-link:focus-visible { outline: 2px solid var(--clr-focus, var(--clr-primary)); outline-offset: 2px; border-radius: var(--radius-sm); }
+.gsx-wrap { overflow-wrap: anywhere; }
+/* Status: a dot and words. */
+.gsx-pill { display: inline-flex; align-items: center; gap: .45rem; padding: .3rem .75rem; border-radius: var(--radius-pill); font-size: .825rem; font-weight: 600; white-space: nowrap;
+    background: var(--clr-surface-alt, var(--clr-surface)); color: var(--clr-text-heading); border: 1px solid var(--clr-border); }
+.gsx-pill::before { content: ""; width: .55rem; height: .55rem; border-radius: 50%; background: var(--clr-text-muted); }
+.gsx-pill-ok { background: var(--clr-success-bg-light); border-color: var(--clr-success-border); }
+.gsx-pill-ok::before { background: var(--clr-success); }
+.gsx-pill-pending { background: var(--clr-warning-bg-light); border-color: var(--clr-warning-border); }
+.gsx-pill-pending::before { background: var(--clr-warning, var(--clr-warning-border)); }
+.gsx-pill-neutral { padding: .1rem .55rem; font-size: .75rem; color: var(--clr-text-muted); }
+.gsx-pill-neutral::before { display: none; }
+/* Sections: a light heading instead of boxed panels. */
+.gsx-panel { display: grid; gap: .875rem; min-width: 0; }
+.gsx-panel + .gsx-panel { padding-top: 1.5rem; border-top: 1px solid var(--clr-border); }
+.gsx-panel-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.gsx-panel-title { margin: 0; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--clr-text-muted); }
+.gsx-notice, .gsx-error { margin: 0; padding: .625rem .875rem; border-radius: var(--radius-md); font-size: .875rem; overflow-wrap: anywhere; border: 1px solid transparent; }
+.gsx-notice { background: var(--clr-info-bg-light); border-color: var(--clr-info-border, var(--clr-info)); }
+.gsx-error { background: var(--clr-danger-bg-light); border-color: var(--clr-danger); }
+.gsx-state { display: grid; gap: .5rem; justify-items: start; padding: 1rem 1.125rem; background: var(--clr-surface); border: 1px dashed var(--clr-border); border-radius: var(--radius-md); }
+.gsx-state p { margin: 0; }
+.gsx-facts { display: grid; grid-template-columns: max-content 1fr; gap: .5rem 1.5rem; margin: 0; font-size: .9rem; align-items: baseline; }
+.gsx-facts > div { display: contents; }
+.gsx-facts dt { color: var(--clr-text-muted); font-weight: 500; font-size: .85rem; }
+.gsx-facts dd { margin: 0; min-width: 0; color: var(--clr-text-body); }
+@media (max-width: 48rem) {
+    .gsx { padding: 1rem; }
+    .gsx-facts { grid-template-columns: 1fr; }
+    .gsx-facts dt { margin-top: .25rem; }
+}
+
+/* "Clone from Git URL" / "Local repository": a segmented control (redesigned 2026-11-23). */
+.gar-tabs { display: inline-flex; flex-wrap: wrap; gap: .25rem; padding: .25rem; background: var(--clr-surface, var(--clr-surface-alt)); border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md); justify-self: start; }
+.gar-tab { padding: .4rem .875rem; background: none; border: 0; border-radius: calc(var(--radius-md) - 2px); color: var(--clr-text-muted); font: inherit; font-size: .875rem;
+    font-weight: 600; cursor: pointer; transition: background-color .15s, color .15s; }
+.gar-tab:hover { color: var(--clr-text-heading); }
+.gar-tab.is-active { background: var(--clr-surface-white); color: var(--clr-text-heading); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.gar-tab:focus-visible { outline: 2px solid var(--clr-primary-focus, var(--clr-primary)); outline-offset: 2px; }
+.gar-field { display: grid; gap: .25rem; min-width: 0; }
+.gar-field label { font-size: .825rem; font-weight: 600; color: var(--clr-text-heading); }
+.gar-narrow { max-width: 22rem; }
+.gar-inline { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.gar-inline .form-control { flex: 1 1 16rem; min-width: 0; }
+.gar-help, .gar-muted { font-size: .8rem; color: var(--clr-text-muted); margin: 0; }
+.gar-field-error { font-size: .8rem; color: var(--clr-danger); overflow-wrap: anywhere; }
+.gar-error { margin: 0; padding: .625rem .875rem; background: var(--clr-danger-bg-light); border: 1px solid var(--clr-danger); border-radius: var(--radius-md);
+    font-size: .875rem; overflow-wrap: anywhere; }
+.gar-list { display: grid; gap: .25rem; list-style: none; margin: 0; padding: 0; max-height: 16rem; overflow-y: auto; }
+.gar-pick { display: grid; gap: .125rem; width: 100%; padding: .375rem .625rem; text-align: left; background: var(--clr-surface); border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md); color: var(--clr-text-body); font: inherit; font-size: .875rem; cursor: pointer; overflow-wrap: anywhere; }
+.gar-pick:hover:not(:disabled) { border-color: var(--clr-border-hover); }
+.gar-pick.is-picked { border-color: var(--clr-primary); box-shadow: inset 3px 0 0 var(--clr-primary); }
+.gar-pick:disabled { opacity: .6; cursor: not-allowed; }
+.gar-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+@media (prefers-reduced-motion: reduce) {
+    .gar-tab { transition: none; }
+}

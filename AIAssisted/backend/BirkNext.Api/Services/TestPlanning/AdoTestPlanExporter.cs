@@ -112,7 +112,7 @@ public static partial class AdoTestPlanExporter
             if (!included) continue;
             for (var i = 0; i < steps.Count; i++)
                 rows.Add(new AdoExportRow(adoId, AdoExport.WorkItemType, title, i + 1, steps[i].Action, steps[i].Expected, profile.AreaPath?.Trim() ?? "", profile.AssignedTo?.Trim() ?? "",
-                    profile.State?.Trim() ?? "", profile.IncludePriority ? priority ?? "" : null, profile.IncludeSourceReferences ? description : null));
+                    profile.State?.Trim() ?? "", profile.IncludePriority ? priority ?? "" : null, profile.IncludeSourceReferences ? description : null) { CaseId = id });
         }
 
         var exported = cases.Where(c => c.Included && c.Issues.All(i => i.Level != AdoIssueLevel.Blocking)).ToList();

@@ -200,6 +200,13 @@ public class EditableSettingsResponse
     public EditableLoggingSection Logging { get; set; } = new();
     public EditableAdminSection Admin { get; set; } = new();
     public EditableFrontendQualityEnginesSection FrontendQualityEngines { get; set; } = new();
+    /// <summary>«Manuell testgjennomføring» (2026-11-25): whether testers can execute in BirkNext (Azure DevOps Test Plans is the default).</summary>
+    public EditableManualExecutionSection ManualExecution { get; set; } = new();
+}
+
+public class EditableManualExecutionSection
+{
+    public bool BirkNextEnabled { get; set; }
 }
 
 public class EditableFeatureVisibilitySection
@@ -245,6 +252,12 @@ public class SaveSettingsRequest
     public SaveAdminSettings? Admin { get; set; }
     public SaveFrontendQualityEngineSettings? FrontendQualityEngines { get; set; }
     public SaveMicrosoftSignInSettings? MicrosoftSignIn { get; set; }
+    public SaveManualExecutionSettings? ManualExecution { get; set; }
+}
+
+public class SaveManualExecutionSettings
+{
+    public bool? BirkNextEnabled { get; set; }
 }
 
 public class SaveMicrosoftSignInSettings

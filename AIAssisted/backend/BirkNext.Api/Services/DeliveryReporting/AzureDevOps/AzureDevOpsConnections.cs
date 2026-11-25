@@ -49,6 +49,9 @@ public sealed partial class AzureDevOpsConnectionStore
         _protector = provider.CreateProtector(ProtectionPurpose);
     }
 
+    /// <summary>The folder of the stored connections (the Test Plans settings file lives beside it).</summary>
+    public string DirectoryPath => Path.GetDirectoryName(_path)!;
+
     public static string DefaultDirectory(IHostEnvironment environment) => System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "azure-devops");
 
     /// <summary>"Bufdir" or a dev.azure.com organization URL → the organization name; null when not a valid name (no custom hosts).</summary>
@@ -160,9 +163,10 @@ public sealed class AzureDevOpsGitClient(IHttpClientFactory clients, AzureDevOps
         return organization => new Uri(root, $"{Uri.EscapeDataString(organization)}/");
     }
 
-    private Uri Base(string organization) => baseUri?.Invoke(organization) ?? new Uri($"https://dev.azure.com/{Uri.EscapeDataString(organization)}/");
+    internal Uri Base(string organization) => baseUri?.Invoke(organization) ?? new Uri($"https://dev.azure.com/{Uri.EscapeDataString(organization)}/");
 
-    private (HttpClient Client, string Organization) Client(Guid connectionId)
+    /// <summary>An authorized client for the connection (shared with <see cref="AzureDevOpsTestPlansClient"/>: one credential path, one base address).</summary>
+    internal (HttpClient Client, string Organization) Client(Guid connectionId)
     {
         if (connections.Credential(connectionId) is not { } credential) throw new AzureDevOpsException("Configure the Azure DevOps connection (its credential is missing or could not be read).");
         var client = clients.CreateClient(ClientName);
@@ -172,7 +176,7 @@ public sealed class AzureDevOpsGitClient(IHttpClientFactory clients, AzureDevOps
         return (client, credential.Organization);
     }
 
-    private static string WithVersion(string path) => path + (path.Contains('?') ? "&" : "?") + "api-version=" + ApiVersion;
+    internal static string WithVersion(string path) => path + (path.Contains('?') ? "&" : "?") + "api-version=" + ApiVersion;
 
     private static async Task<HttpResponseMessage> SendAsync(HttpClient client, string path, CancellationToken ct, string what)
     {
@@ -188,7 +192,13 @@ public sealed class AzureDevOpsGitClient(IHttpClientFactory clients, AzureDevOps
         if (response.IsSuccessStatusCode) return response;
         var status = response.StatusCode;
         response.Dispose();
-        throw status switch
+        throw Refusal(status, what);
+    }
+
+    /// <summary>The safe message for a refused request (shared by reads and the Test Plans writes).</summary>
+    internal static AzureDevOpsException Refusal(HttpStatusCode status, string what)
+    {
+        return status switch
         {
             HttpStatusCode.Unauthorized => new AzureDevOpsException("Authentication failed: the personal access token was not accepted.", status),
             HttpStatusCode.Forbidden => new AzureDevOpsException($"The connection is valid, but access to {what} is denied.", status),
@@ -198,7 +208,7 @@ public sealed class AzureDevOpsGitClient(IHttpClientFactory clients, AzureDevOps
         };
     }
 
-    private static async Task<(JsonNode? Body, string? Continuation)> JsonAsync(HttpClient client, string path, CancellationToken ct, string what)
+    internal static async Task<(JsonNode? Body, string? Continuation)> JsonAsync(HttpClient client, string path, CancellationToken ct, string what)
     {
         using var response = await SendAsync(client, path, ct, what);
         var continuation = response.Headers.TryGetValues("x-ms-continuationtoken", out var values) ? values.FirstOrDefault() : null;

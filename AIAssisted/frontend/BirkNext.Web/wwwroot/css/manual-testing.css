@@ -749,3 +749,9 @@
 .mtw-spec-title { font-weight: 600; overflow-wrap: anywhere; }
 .mtw-spec-text { overflow-wrap: anywhere; }
 .mtp-before { display: grid; gap: 0.45rem; margin: 0.6rem 0; padding: 0.6rem 0.75rem; border: 1px dashed var(--clr-border, #e2e8f0); border-radius: 10px; }
+
+/* Testgjennomføring per case (2026-11-25). */
+.mtp-runs { border: 1px solid var(--clr-border, #e2e8f0); border-radius: 10px; padding: 0.55rem 0.75rem; margin: 0.6rem 0; display: grid; gap: 0.4rem; }
+.mtp-runs-head { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; justify-content: space-between; }
+.mtp-run-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+.mtp-run-list li { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; align-items: center; }

@@ -271,4 +271,45 @@ public sealed class AdoTestPlanExporterTests
         AdoTestPlanExporter.Csv(preview.Rows, preview.Headers, true);
         System.Text.Json.JsonSerializer.Serialize(plan, TestPlanSuggestionEngine.Json).Should().Be(before);
     }
+
+    /// <summary>
+    /// Evidence (2026-11-25): a Norwegian export as Azure DevOps Test Plans imports it — the documented header row (Azure DevOps's own English field
+    /// names), one row per step, the translated case in Norwegian in every cell, the untranslated case in its original language with a file-level
+    /// warning. Writes the CSV and XLSX to BIRKNEXT_EXPORT_EVIDENCE_DIR when that is set, so a person can open and import the very files tested.
+    /// </summary>
+    [Fact]
+    public void Evidence_a_norwegian_export_has_the_azure_devops_import_columns_and_norwegian_text_per_translated_case()
+    {
+        var original = Case("c9", "Submit a valid attendance report", ["Open the report form", "Submit the report"], ["The form opens", "The report is stored"]);
+        var norwegian = original.WithTranslation(ScenarioPlanning.Norwegian, new TestCaseTranslation
+        {
+            Title = "Send inn en gyldig fraværsrapport", Steps = ["Åpne rapportskjemaet", "Send inn rapporten"], StepExpected = ["Skjemaet vises", "Rapporten lagres"],
+            SourceFingerprint = ScenarioPlanning.SourceFingerprint(original), Origin = TranslationOrigin.MachineEdited, Provider = "offline",
+        });
+        var plan = Plan(norwegian, Return);
+        var preview = AdoTestPlanExporter.Preview(plan, Request() with { Language = ScenarioPlanning.Norwegian, Profile = Request().Profile with { IncludeSourceReferences = false } });
+
+        preview.CanDownload.Should().BeTrue();
+        preview.Headers.Should().Equal(["ID", "Work Item Type", "Title", "Test Step", "Step Action", "Step Expected", "Area Path", "Assigned To", "State"],
+            "Azure DevOps bulk import columns, under Azure DevOps's own (English) field names");
+        preview.Rows.Select(r => (r.WorkItemType, r.Title, r.TestStep, r.StepAction, r.StepExpected)).Should().Equal(
+            ("Test Case", "Send inn en gyldig fraværsrapport", 1, "Åpne rapportskjemaet", "Skjemaet vises"),
+            ("Test Case", "Send inn en gyldig fraværsrapport", 2, "Send inn rapporten", "Rapporten lagres"),
+            ("Test Case", "Return a book", 1, "Return the book", "The book is available"));
+        preview.Cases.Single(c => c.Title == "Send inn en gyldig fraværsrapport").Language.Should().Be(ScenarioPlanning.Norwegian);
+        preview.Cases.Single(c => c.Title == "Return a book").Language.Should().Be(AdoExportCase.OriginalLanguage, "no Norwegian text exists for it; nothing is translated on export");
+        preview.Issues.Should().Contain(i => i.Message.StartsWith("The file is not fully in Norwegian", StringComparison.Ordinal));
+
+        var csv = AdoTestPlanExporter.Csv(preview.Rows, preview.Headers, spreadsheetSafe: true);
+        var xlsx = AdoTestPlanExporter.Xlsx(preview.Rows, preview.Headers);
+        ReadCsv(csv)[0].Should().Equal(preview.Headers);
+        var (sheet, zip) = ReadXlsx(xlsx);
+        using (zip) sheet[1].Values.Select(v => v.Text).Should().Contain("Send inn en gyldig fraværsrapport");
+        if (Environment.GetEnvironmentVariable("BIRKNEXT_EXPORT_EVIDENCE_DIR") is { Length: > 0 } dir)
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllBytes(Path.Combine(dir, "birknext-ado-export-nb.csv"), csv);
+            File.WriteAllBytes(Path.Combine(dir, "birknext-ado-export-nb.xlsx"), xlsx);
+        }
+    }
 }

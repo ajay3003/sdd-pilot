@@ -3,68 +3,67 @@
 @inject IServiceProvider ServiceProvider
 @inject IJSRuntime JS
 
-@* Export to Azure DevOps (offline): select saved test cases → configure the destination fields → validate → preview → download an Azure Test
-   Plans import file (Excel by default, CSV as alternative) and a mapping report. One shared component (Plan & prepare). Nothing is sent to
-   Azure DevOps; destination values are checked for form only. *@
+@* «Eksporter til fil» (offline, the default method of Overfør testplan): select saved test cases → the fields Azure DevOps needs → check → preview →
+   download an Azure Test Plans import file (Excel by default, CSV as alternative) and a mapping report. Tester-facing text in Norwegian (2026-11-25).
+   Nothing is sent to Azure DevOps; destination values are checked for form only. The history of files and transfers is shown by the panel. *@
 
-<section class="adx" data-testid="adx" aria-labelledby="adx-title" aria-busy="@(_busy || _working ? "true" : "false")">
-    <h2 id="adx-title" class="adx-h2">Export to Azure DevOps</h2>
-    <p class="adx-muted">Creates a file for <strong>Azure Test Plans → Import test cases</strong> from the saved test cases of this plan: one row per step with its action and expected result. BirkNext does not connect to Azure DevOps — you import the file there.</p>
+<section class="adx" data-testid="adx" aria-label="Eksporter til fil" aria-busy="@(_busy || _working ? "true" : "false")">
+    <p class="adx-muted" data-testid="adx-format-note">Filen er i formatet til <strong>Azure Test Plans → Import test cases</strong> (Microsoft: «Bulk import or export test cases»): én rad per steg med handling og forventet resultat. Den importeres i en testgruppe som finnes fra før — filen oppretter ikke testplanen eller testgruppen.</p>
 
     @if (_api is null)
     {
-        <p class="adx-muted" data-testid="adx-unavailable">The Azure DevOps export is not available in this host.</p>
+        <p class="adx-muted" data-testid="adx-unavailable">Eksport til Azure DevOps er ikke tilgjengelig her.</p>
     }
     else
     {
-        @if (Dirty) { <p class="adx-alert" role="alert" data-testid="adx-dirty">The plan has unsaved changes. The export uses the saved plan — save first to include them.</p> }
-        @if (_error is not null) { <p class="adx-alert" role="alert" data-testid="adx-error">@_error <button type="button" class="adx-btn adx-btn-quiet" @onclick="PreviewAsync" data-testid="adx-retry">Try again</button></p> }
+        @if (Dirty) { <p class="adx-alert" role="alert" data-testid="adx-dirty">Planen har endringer som ikke er lagret. Eksporten bruker den lagrede planen — lagre først for å ta dem med.</p> }
+        @if (_error is not null) { <p class="adx-alert" role="alert" data-testid="adx-error">@_error <button type="button" class="adx-btn adx-btn-quiet" @onclick="PreviewAsync" data-testid="adx-retry">Prøv igjen</button></p> }
 
         @* 1 · Select test cases *@
         <fieldset class="adx-step" data-testid="adx-select">
-            <legend class="adx-legend"><span class="adx-n">1</span> Select test cases</legend>
+            <legend class="adx-legend"><span class="adx-n">1</span> Velg testtilfeller</legend>
             @if (_preview is { } pv)
             {
                 <p class="adx-counts" data-testid="adx-counts" role="status">
-                    <span>@pv.TotalCases in the plan</span> · <span data-testid="adx-selected">@pv.SelectedCases selected</span> · <span data-testid="adx-ready">@pv.ReadyCases ready</span>
-                    @if (pv.CasesNeedingAttention > 0) { <span> · </span><span class="adx-bad" data-testid="adx-attention">@pv.CasesNeedingAttention need attention</span> }
+                    <span>@pv.TotalCases i planen</span> · <span data-testid="adx-selected">@pv.SelectedCases valgt</span> · <span data-testid="adx-ready">@pv.ReadyCases klare</span>
+                    @if (pv.CasesNeedingAttention > 0) { <span> · </span><span class="adx-bad" data-testid="adx-attention">@pv.CasesNeedingAttention må rettes</span> }
                 </p>
             }
-            <label class="adx-check"><input type="checkbox" checked="@_includeNotApproved" @onchange="e => Set(() => _includeNotApproved = e.Value is true)" data-testid="adx-include-unapproved" /> Include cases that are not approved yet</label>
-            @if (_includeNotApproved) { <p class="adx-muted adx-small" data-testid="adx-unapproved-note">Cases that are not approved are exported as drafts: their review state is listed in the mapping report; importing them approves nothing.</p> }
+            <label class="adx-check"><input type="checkbox" checked="@_includeNotApproved" @onchange="e => Set(() => _includeNotApproved = e.Value is true)" data-testid="adx-include-unapproved" /> Ta med testtilfeller som ikke er godkjent ennå</label>
+            @if (_includeNotApproved) { <p class="adx-muted adx-small" data-testid="adx-unapproved-note">Testtilfeller som ikke er godkjent, eksporteres som utkast. Gjennomgangsstatusen står i koblingsrapporten, og en import godkjenner ingenting.</p> }
             @{ var exportLanguages = Draft.Cases.SelectMany(c => c.TranslatedLanguages).Distinct(StringComparer.OrdinalIgnoreCase).ToList(); }
             @if (exportLanguages.Count > 0 || _language is not null)
             {
-                <label class="adx-field" data-testid="adx-language-field"><span>Export language</span>
+                <label class="adx-field" data-testid="adx-language-field"><span>Språk i filen</span>
                     <select @onchange="e => Set(() => _language = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())" data-testid="adx-language">
-                        <option value="" selected="@(_language is null)">Original language</option>
-                        @foreach (var l in exportLanguages) { <option value="@l" selected="@(_language == l)">@TranslationLanguages.Name(l) (cases with a complete @TranslationLanguages.Name(l) text)</option> }
+                        <option value="" selected="@(_language is null)">Originalspråk</option>
+                        @foreach (var l in exportLanguages) { <option value="@l" selected="@(_language == l)">@TranslationLanguages.Name(l) (testtilfeller med fullstendig tekst på @TranslationLanguages.Name(l))</option> }
                     </select></label>
             }
-            else { <p class="adx-muted adx-small" data-testid="adx-language-none">Exported in the original language: no case of this plan has a translation yet (Plan &amp; prepare → language icon on a scenario).</p> }
-            @if (_language is { } chosen && _preview is { } lp) { <p class="adx-muted adx-small" data-testid="adx-language-summary">@lp.Cases.Count(c => c.Included && c.Language == chosen) in @TranslationLanguages.Name(chosen) · @lp.Cases.Count(c => c.Included && c.Language != chosen) in the original language (no complete @TranslationLanguages.Name(chosen) text). Each case is in one language only.</p> }
+            else { <p class="adx-muted adx-small" data-testid="adx-language-none">Eksporteres på originalspråket: ingen testtilfeller i planen er oversatt ennå (Planlegg og klargjør → språkikonet på et scenario).</p> }
+            @if (_language is { } chosen && _preview is { } lp) { <p class="adx-muted adx-small" data-testid="adx-language-summary">@lp.Cases.Count(c => c.Included && c.Language == chosen) på @TranslationLanguages.Name(chosen) · @lp.Cases.Count(c => c.Included && c.Language != chosen) på originalspråket (uten fullstendig tekst på @TranslationLanguages.Name(chosen)). Hvert testtilfelle er på ett språk.</p> }
             <div class="adx-bar">
-                <button type="button" class="adx-btn adx-btn-quiet" @onclick="() => Set(() => _selected.Clear())" data-testid="adx-select-eligible">Select all eligible</button>
-                <button type="button" class="adx-btn adx-btn-quiet" @onclick="SelectNone" data-testid="adx-select-none">Select none</button>
+                <button type="button" class="adx-btn adx-btn-quiet" @onclick="() => Set(() => _selected.Clear())" data-testid="adx-select-eligible">Velg alle som kan eksporteres</button>
+                <button type="button" class="adx-btn adx-btn-quiet" @onclick="SelectNone" data-testid="adx-select-none">Velg ingen</button>
             </div>
-            <ul class="adx-cases" aria-label="Test cases">
+            <ul class="adx-cases" aria-label="Testtilfeller">
                 @foreach (var c in _preview?.Cases ?? [])
                 {
                     var blocked = c.Issues.Any(i => i.Level == AdoIssueLevel.Blocking);
                     var state = c.ExcludedReason is not null ? "excluded" : blocked ? "attention" : "ready";
                     var id = c.CaseId;
                     <li class="adx-case" data-testid="adx-case" data-case="@id" data-state="@state">
-                        <label class="adx-check"><input type="checkbox" checked="@(IsChecked(c))" disabled="@(c.Review is "Excluded" or "Superseded")" aria-label="@($"Export {c.Title}")"
+                        <label class="adx-check"><input type="checkbox" checked="@(IsChecked(c))" disabled="@(c.Review is "Excluded" or "Superseded")" aria-label="@($"Eksporter {c.Title}")"
                                 @onchange="e => Toggle(id, e.Value is true)" data-testid="adx-case-select" />
-                            <span class="adx-case-title">@(c.Title.Length > 0 ? c.Title : "(no title)")</span></label>
+                            <span class="adx-case-title">@(c.Title.Length > 0 ? c.Title : "(uten tittel)")</span></label>
                         <span class="adx-chip">@c.Review</span>
-                        <span class="adx-chip">@c.Steps step@(c.Steps == 1 ? "" : "s")</span>
+                        <span class="adx-chip">@c.Steps steg</span>
                         @if (c.ScenarioTitle is { } scenarioTitle) { <span class="adx-muted adx-small" data-testid="adx-case-scenario">Scenario: @scenarioTitle</span> }
                         @if (_language is not null) { <span class="adx-chip" data-testid="adx-case-language">@(c.Language == AdoExportCase.OriginalLanguage ? "Original" : TranslationLanguages.Name(c.Language))</span> }
-                        <span class="adx-muted adx-small" data-testid="adx-case-ado">@(c.AzureDevOpsId is { } adoId ? $"Azure DevOps id {adoId}" : "New in Azure DevOps (no id)")</span>
-                        <span class="adx-chip adx-chip-@state" data-testid="adx-case-state">@(state switch { "ready" => "Ready", "attention" => "Needs attention", _ => "Not exported" })</span>
+                        <span class="adx-muted adx-small" data-testid="adx-case-ado">@(c.AzureDevOpsId is { } adoId ? $"Azure DevOps-id {adoId}" : "Nytt i Azure DevOps (uten id)")</span>
+                        <span class="adx-chip adx-chip-@state" data-testid="adx-case-state">@(state switch { "ready" => "Klar", "attention" => "Må rettes", _ => "Eksporteres ikke" })</span>
                         @if (c.ExcludedReason is { } why) { <span class="adx-muted adx-small" data-testid="adx-case-why">@why</span> }
-                        @if (blocked) { <a class="adx-small" href="@($"test-plan-suggestions?draft={Draft.Id}&area=prepare&case={Uri.EscapeDataString(id)}")" data-testid="adx-case-open">Open the test case</a> }
+                        @if (blocked) { <a class="adx-small" href="@($"test-plan-suggestions?draft={Draft.Id}&area=prepare&case={Uri.EscapeDataString(id)}")" data-testid="adx-case-open">Åpne testtilfellet</a> }
                     </li>
                 }
             </ul>
@@ -72,81 +71,81 @@
 
         @* 2 · Configure Azure DevOps *@
         <fieldset class="adx-step" data-testid="adx-configure">
-            <legend class="adx-legend"><span class="adx-n">2</span> Configure Azure DevOps</legend>
+            <legend class="adx-legend"><span class="adx-n">2</span> Felter i Azure DevOps</legend>
             <div class="adx-grid">
-                <label class="adx-field"><span>Azure DevOps version</span>
+                <label class="adx-field"><span>Azure DevOps-versjon</span>
                     <select @onchange="e => Set(() => _profile = _profile with { Target = Enum.Parse<AdoTarget>(e.Value!.ToString()!) })" data-testid="adx-target">
                         <option value="Services" selected="@(_profile.Target == AdoTarget.Services)">Azure DevOps Services</option>
-                        <option value="Server" selected="@(_profile.Target == AdoTarget.Server)">Azure DevOps Server 2022 or later</option>
+                        <option value="Server" selected="@(_profile.Target == AdoTarget.Server)">Azure DevOps Server 2022 eller nyere</option>
                     </select></label>
-                <label class="adx-field"><span>Area Path @(_profile.Target == AdoTarget.Services ? "(required)" : "(optional)")</span>
+                <label class="adx-field"><span>Area Path @(_profile.Target == AdoTarget.Services ? "(må fylles ut)" : "(valgfritt)")</span>
                     <input value="@_profile.AreaPath" placeholder="Project\Area" maxlength="4000" @onchange="e => Set(() => _profile = _profile with { AreaPath = e.Value?.ToString() })" data-testid="adx-area" /></label>
-                <label class="adx-field"><span>Assigned To (optional)</span>
-                    <input value="@_profile.AssignedTo" placeholder="name@organization.com" maxlength="256" @onchange="e => Set(() => _profile = _profile with { AssignedTo = e.Value?.ToString() })" data-testid="adx-assigned" /></label>
-                <label class="adx-field"><span>Initial state</span>
+                <label class="adx-field"><span>Assigned To (valgfritt)</span>
+                    <input value="@_profile.AssignedTo" placeholder="navn@organisasjon.no" maxlength="256" @onchange="e => Set(() => _profile = _profile with { AssignedTo = e.Value?.ToString() })" data-testid="adx-assigned" /></label>
+                <label class="adx-field"><span>Startstatus (State)</span>
                     <input value="@_profile.State" maxlength="128" @onchange="e => Set(() => _profile = _profile with { State = e.Value?.ToString() ?? string.Empty })" data-testid="adx-state" /></label>
-                <label class="adx-field"><span>Preconditions</span>
+                <label class="adx-field"><span>Forutsetninger</span>
                     <select @onchange="e => Set(() => _profile = _profile with { Preconditions = Enum.Parse<AdoPreconditionsMode>(e.Value!.ToString()!) })" data-testid="adx-preconditions">
-                        <option value="MappingReport" selected="@(_profile.Preconditions == AdoPreconditionsMode.MappingReport)">List them in the mapping report</option>
-                        <option value="FirstStep" selected="@(_profile.Preconditions == AdoPreconditionsMode.FirstStep)">Add them as a first step</option>
+                        <option value="MappingReport" selected="@(_profile.Preconditions == AdoPreconditionsMode.MappingReport)">List dem i koblingsrapporten</option>
+                        <option value="FirstStep" selected="@(_profile.Preconditions == AdoPreconditionsMode.FirstStep)">Legg dem inn som første steg</option>
                     </select></label>
             </div>
             <fieldset class="adx-inline" data-testid="adx-format">
-                <legend>File format</legend>
-                <label class="adx-check"><input type="radio" name="adx-format" checked="@(_profile.Format == AdoExportFormat.Xlsx)" @onchange="() => Set(() => _profile = _profile with { Format = AdoExportFormat.Xlsx })" data-testid="adx-format-xlsx" /> Excel (.xlsx) — recommended</label>
+                <legend>Filformat</legend>
+                <label class="adx-check"><input type="radio" name="adx-format" checked="@(_profile.Format == AdoExportFormat.Xlsx)" @onchange="() => Set(() => _profile = _profile with { Format = AdoExportFormat.Xlsx })" data-testid="adx-format-xlsx" /> Excel (.xlsx) — anbefalt</label>
                 <label class="adx-check"><input type="radio" name="adx-format" checked="@(_profile.Format == AdoExportFormat.Csv)" @onchange="() => Set(() => _profile = _profile with { Format = AdoExportFormat.Csv })" data-testid="adx-format-csv" /> CSV</label>
             </fieldset>
-            <label class="adx-check"><input type="checkbox" checked="@_profile.IncludePriority" @onchange="e => Set(() => _profile = _profile with { IncludePriority = e.Value is true })" data-testid="adx-priority" /> Add a Priority column (Critical/High/Medium/Low → 1/2/3/4; map it in the import wizard)</label>
-            <label class="adx-check"><input type="checkbox" checked="@_profile.IncludeSourceReferences" @onchange="e => Set(() => _profile = _profile with { IncludeSourceReferences = e.Value is true })" data-testid="adx-source-refs" /> Add where each test case came from (specification, acceptance scenario, requirements) as a Description column — map it to Description in the import wizard</label>
+            <label class="adx-check"><input type="checkbox" checked="@_profile.IncludePriority" @onchange="e => Set(() => _profile = _profile with { IncludePriority = e.Value is true })" data-testid="adx-priority" /> Ta med prioritet (Kritisk/Høy/Middels/Lav → 1/2/3/4; koble kolonnen i importveiviseren)</label>
+            <label class="adx-check"><input type="checkbox" checked="@_profile.IncludeSourceReferences" @onchange="e => Set(() => _profile = _profile with { IncludeSourceReferences = e.Value is true })" data-testid="adx-source-refs" /> Ta med hvor hvert testtilfelle kommer fra (spesifikasjon, akseptansescenario, krav) som Description — koble den til Description i importveiviseren</label>
             @* Rarely needed: a label for your own records, updating test cases that already exist in Azure DevOps, CSV formula protection. *@
             <details class="adx-advanced" data-testid="adx-advanced" open="@(_mode == AdoExportMode.UpdateExisting)">
-            <summary>Advanced</summary>
-            <label class="adx-field"><span>Destination (label for your records)</span>
-                <input value="@_profile.DestinationLabel" placeholder="For example contoso / LibraryProject" maxlength="300" @onchange="e => Set(() => _profile = _profile with { DestinationLabel = e.Value?.ToString() })" data-testid="adx-destination" /></label>
+            <summary>Avansert</summary>
+            <label class="adx-field"><span>Mål (merkelapp for egen oversikt)</span>
+                <input value="@_profile.DestinationLabel" placeholder="For eksempel organisasjon / prosjekt" maxlength="300" @onchange="e => Set(() => _profile = _profile with { DestinationLabel = e.Value?.ToString() })" data-testid="adx-destination" /></label>
             @if (_profile.Format == AdoExportFormat.Csv)
             {
-                <label class="adx-check"><input type="checkbox" checked="@_profile.CsvSpreadsheetSafe" @onchange="e => Set(() => _profile = _profile with { CsvSpreadsheetSafe = e.Value is true })" data-testid="adx-csv-safe" /> Protect cells that start with = + - @@ when the CSV is opened in a spreadsheet program</label>
+                <label class="adx-check"><input type="checkbox" checked="@_profile.CsvSpreadsheetSafe" @onchange="e => Set(() => _profile = _profile with { CsvSpreadsheetSafe = e.Value is true })" data-testid="adx-csv-safe" /> Beskytt celler som starter med = + - @@ når CSV-filen åpnes i et regneark</label>
             }
             <fieldset class="adx-inline" data-testid="adx-mode">
-                <legend>Create or update</legend>
-                <label class="adx-check"><input type="radio" name="adx-mode" checked="@(_mode == AdoExportMode.CreateNew)" @onchange="() => Set(() => _mode = AdoExportMode.CreateNew)" data-testid="adx-mode-create" /> Create new test cases (recommended)</label>
-                <label class="adx-check"><input type="radio" name="adx-mode" checked="@(_mode == AdoExportMode.UpdateExisting)" @onchange="() => Set(() => _mode = AdoExportMode.UpdateExisting)" data-testid="adx-mode-update" /> Update existing Azure DevOps test cases</label>
+                <legend>Opprett eller oppdater</legend>
+                <label class="adx-check"><input type="radio" name="adx-mode" checked="@(_mode == AdoExportMode.CreateNew)" @onchange="() => Set(() => _mode = AdoExportMode.CreateNew)" data-testid="adx-mode-create" /> Opprett nye testtilfeller (anbefalt)</label>
+                <label class="adx-check"><input type="radio" name="adx-mode" checked="@(_mode == AdoExportMode.UpdateExisting)" @onchange="() => Set(() => _mode = AdoExportMode.UpdateExisting)" data-testid="adx-mode-update" /> Oppdater eksisterende testtilfeller i Azure DevOps</label>
             </fieldset>
             @if (_mode == AdoExportMode.UpdateExisting)
             {
                 <div class="adx-update" data-testid="adx-update">
-                    <p class="adx-alert">Importing an update replaces ALL steps of each Azure DevOps test case with the steps in this file. Enter the id shown in Azure DevOps for each case once — BirkNext never guesses it, and remembers ids you confirm here for the next export.</p>
+                    <p class="adx-alert">En import som oppdaterer, erstatter ALLE steg i hvert testtilfelle i Azure DevOps med stegene i filen. Skriv inn id-en fra Azure DevOps for hvert testtilfelle én gang — BirkNext gjetter den aldri, og husker id-er du bekrefter her til neste eksport.</p>
                     @foreach (var c in (_preview?.Cases ?? []).Where(c => c.ExcludedReason is null))
                     {
                         var id = c.CaseId;
                         var remembered = _profile.KnownTestCaseIds.GetValueOrDefault(c.CaseKey);
                         var typed = _existing.TryGetValue(id, out var t) && t.Length > 0 ? t : null;
                         <label class="adx-field"><span>@c.Title</span><input inputmode="numeric" value="@(typed ?? remembered)" @onchange="e => Set(() => _existing[id] = e.Value?.ToString() ?? string.Empty)" data-testid="adx-existing-id" />
-                            @if (typed is null && remembered is not null) { <span class="adx-muted" data-testid="adx-existing-id-remembered">Remembered from an earlier export — change it if the test case moved.</span> }</label>
+                            @if (typed is null && remembered is not null) { <span class="adx-muted" data-testid="adx-existing-id-remembered">Husket fra en tidligere eksport — endre den hvis testtilfellet er flyttet.</span> }</label>
                     }
-                    <label class="adx-check"><input type="checkbox" checked="@_confirmed" @onchange="e => Set(() => _confirmed = e.Value is true)" data-testid="adx-confirm-ids" /> I checked these ids in Azure DevOps and their steps may be replaced.</label>
+                    <label class="adx-check"><input type="checkbox" checked="@_confirmed" @onchange="e => Set(() => _confirmed = e.Value is true)" data-testid="adx-confirm-ids" /> Jeg har kontrollert disse id-ene i Azure DevOps, og stegene deres kan erstattes.</label>
                 </div>
             }
             </details>
             @if (Unsaved)
             {
                 <p class="adx-muted adx-small" role="status" data-testid="adx-settings-unsaved">@(_restored
-                    ? "These settings were kept from before the page was reloaded. They are not this project's export settings yet: only this browser tab has them."
-                    : "These settings differ from this project's export settings. This browser tab keeps them across a reload; save them to use them for every export.")</p>
+                    ? "Disse innstillingene er tatt vare på fra før siden ble lastet på nytt. De er ikke prosjektets eksportinnstillinger ennå: bare denne fanen har dem."
+                    : "Disse innstillingene er forskjellige fra prosjektets eksportinnstillinger. Fanen husker dem ved ny innlasting; lagre dem for å bruke dem ved hver eksport.")</p>
             }
             @if (CanWrite)
             {
-                <button type="button" class="adx-btn adx-btn-quiet" disabled="@_working" @onclick="SaveProfileAsync" data-testid="adx-save-profile">Save as this project's export settings</button>
+                <button type="button" class="adx-btn adx-btn-quiet" disabled="@_working" @onclick="SaveProfileAsync" data-testid="adx-save-profile">Lagre som prosjektets eksportinnstillinger</button>
             }
         </fieldset>
 
         @* 3 · Validate *@
         <fieldset class="adx-step" data-testid="adx-validate">
-            <legend class="adx-legend"><span class="adx-n">3</span> Check</legend>
+            <legend class="adx-legend"><span class="adx-n">3</span> Kontroll</legend>
             @if (_preview is { } p)
             {
                 <table class="adx-table" data-testid="adx-fields">
-                    <thead><tr><th scope="col">Field</th><th scope="col">Value</th><th scope="col">Check</th></tr></thead>
+                    <thead><tr><th scope="col">Felt</th><th scope="col">Verdi</th><th scope="col">Kontroll</th></tr></thead>
                     <tbody>
                         @foreach (var f in p.Fields)
                         {
@@ -157,7 +156,7 @@
                         }
                     </tbody>
                 </table>
-                @foreach (var (level, title) in new[] { (AdoIssueLevel.Blocking, "Must be fixed before download"), (AdoIssueLevel.Warning, "Warnings"), (AdoIssueLevel.Info, "Good to know") })
+                @foreach (var (level, title) in new[] { (AdoIssueLevel.Blocking, "Må rettes før nedlasting"), (AdoIssueLevel.Warning, "Advarsler"), (AdoIssueLevel.Info, "Greit å vite") })
                 {
                     var list = p.Issues.Where(i => i.Level == level).ToList();
                     if (list.Count == 0) continue;
@@ -168,26 +167,26 @@
                             {
                                 var title2 = i.CaseId is { } cid ? p.Cases.FirstOrDefault(c => c.CaseId == cid)?.Title : null;
                                 <li data-testid="adx-issue">@(title2 is not null ? $"{title2}: " : "")@i.Message
-                                    @if (i.CaseId is { } ic) { <a href="@($"test-plan-suggestions?draft={Draft.Id}&area=prepare&case={Uri.EscapeDataString(ic)}")">Open</a> }</li>
+                                    @if (i.CaseId is { } ic) { <a href="@($"test-plan-suggestions?draft={Draft.Id}&area=prepare&case={Uri.EscapeDataString(ic)}")">Åpne</a> }</li>
                             }
                         </ul>
                     </div>
                 }
-                @if (p.CanDownload) { <p class="adx-ok" role="status" data-testid="adx-can-download">@p.ReadyCases test case@(p.ReadyCases == 1 ? " is" : "s are") ready for export (@p.Rows.Count rows).</p> }
+                @if (p.CanDownload) { <p class="adx-ok" role="status" data-testid="adx-can-download">@p.ReadyCases testtilfelle@(p.ReadyCases == 1 ? " er" : "r er") klar@(p.ReadyCases == 1 ? "" : "e") for eksport (@p.Rows.Count rader).</p> }
             }
-            else if (_busy) { <p class="adx-muted" role="status">Checking…</p> }
+            else if (_busy) { <p class="adx-muted" role="status">Kontrollerer …</p> }
         </fieldset>
 
         @* 4 · Preview and download *@
         <fieldset class="adx-step" data-testid="adx-download">
-            <legend class="adx-legend"><span class="adx-n">4</span> Preview and download</legend>
+            <legend class="adx-legend"><span class="adx-n">4</span> Forhåndsvis og last ned</legend>
             @if (_preview is { Rows.Count: > 0 } pr)
             {
                 <details class="adx-preview" data-testid="adx-preview">
-                    <summary>Preview the file (@pr.Rows.Count rows, columns: @string.Join(", ", pr.Headers))</summary>
+                    <summary>Forhåndsvis filen (@pr.Rows.Count rader, kolonner: @string.Join(", ", pr.Headers))</summary>
                     <div class="adx-preview-scroll">
                         <table class="adx-table adx-rows">
-                            <thead><tr><th scope="col">Title</th><th scope="col">Step</th><th scope="col">Action</th><th scope="col">Expected</th></tr></thead>
+                            <thead><tr><th scope="col">Tittel</th><th scope="col">Steg</th><th scope="col">Handling</th><th scope="col">Forventet</th></tr></thead>
                             <tbody>
                                 @foreach (var r in pr.Rows.Take(200))
                                 {
@@ -199,25 +198,19 @@
                 </details>
             }
             <div class="adx-bar">
-                <button type="button" class="adx-btn" disabled="@(_working || _preview is not { CanDownload: true })" @onclick="() => DownloadAsync(AdoExportFormat.Xlsx)" data-testid="adx-download-xlsx">Download Excel (.xlsx)</button>
-                <button type="button" class="adx-btn adx-btn-quiet" disabled="@(_working || _preview is not { CanDownload: true })" @onclick="() => DownloadAsync(AdoExportFormat.Csv)" data-testid="adx-download-csv">Download CSV</button>
-                <button type="button" class="adx-btn adx-btn-quiet" disabled="@(_working || _preview is null)" @onclick="ReportAsync" data-testid="adx-download-report">Download mapping report</button>
+                <button type="button" class="adx-btn" disabled="@(_working || _preview is not { CanDownload: true })" @onclick="() => DownloadAsync(AdoExportFormat.Xlsx)" data-testid="adx-download-xlsx">Last ned Excel (.xlsx)</button>
+                <button type="button" class="adx-btn adx-btn-quiet" disabled="@(_working || _preview is not { CanDownload: true })" @onclick="() => DownloadAsync(AdoExportFormat.Csv)" data-testid="adx-download-csv">Last ned CSV</button>
+                <button type="button" class="adx-btn adx-btn-quiet" disabled="@(_working || _preview is null)" @onclick="ReportAsync" data-testid="adx-download-report">Last ned koblingsrapport</button>
             </div>
             @if (_downloaded is not null) { <p class="adx-ok" role="status" data-testid="adx-downloaded">@_downloaded</p> }
+            <h3 class="adx-h3">Slik importerer du filen</h3>
             <ol class="adx-howto" data-testid="adx-howto">
-                <li>In Azure DevOps open <strong>Test Plans</strong>, select the test plan and then the test suite.</li>
-                <li>Choose <strong>Import test cases from CSV/XLSX</strong> and select the downloaded file.</li>
-                <li>Azure DevOps Services shows the field mapping: check it (map Priority if you added it) and choose <strong>Import</strong>.</li>
-                <li>Link the requirements listed in the mapping report in Azure DevOps — the file does not create links.</li>
+                <li>Åpne <strong>Test Plans</strong> i Azure DevOps, og velg testplanen og deretter testgruppen. Finnes de ikke, oppretter du dem først (eller i Systeminnstillinger → Azure DevOps – Test Plans).</li>
+                <li>Velg <strong>Import test cases from CSV/XLSX</strong> og velg filen du lastet ned.</li>
+                <li>Azure DevOps viser hvordan kolonnene kobles til feltene. Kontroller dem (koble Priority og Description hvis du tok dem med) og velg <strong>Import</strong>.</li>
+                <li>Koble kravene i koblingsrapporten til testtilfellene i Azure DevOps — filen lager ikke slike koblinger.</li>
             </ol>
-            <p class="adx-muted adx-small" data-testid="adx-boundary">@AdoExport.Boundary</p>
-            @if (_history.Count > 0)
-            {
-                <details data-testid="adx-history"><summary>Files created for this project (@_history.Count)</summary>
-                    <ul class="adx-cases">@foreach (var h in _history.Take(10)) { <li data-testid="adx-history-item">@h.ExportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @h.PlanName revision @h.PlanRevision · @h.Format · @h.Cases cases / @h.Rows rows@(h.Destination is { } d ? $" · {d}" : "") · @h.ExportedBy</li> }</ul>
-                    <p class="adx-muted adx-small">A file created here is not an import: only Azure DevOps knows what was imported.</p>
-                </details>
-            }
+            <p class="adx-muted adx-small" data-testid="adx-boundary">BirkNext lager bare filen. Å laste ned er ikke å importere, og BirkNext kan ikke kontrollere at Area Path, bruker eller status finnes i organisasjonen deres.</p>
         </fieldset>
     }
 </section>
@@ -229,6 +222,8 @@
     [Parameter] public bool CanWrite { get; set; }
     /// <summary>The page has unsaved plan edits (the export uses the saved plan).</summary>
     [Parameter] public bool Dirty { get; set; }
+    /// <summary>A file was created (the panel reloads «Tidligere overføringer»).</summary>
+    [Parameter] public EventCallback OnExported { get; set; }
 
     private IAdoExportApiService? _api;
     private AdoExportProfile _profile = new();
@@ -236,7 +231,6 @@
     private AdoExportProfile _saved = new();
     private bool _restored;
     private AdoExportPreview? _preview;
-    private List<AdoExportHistoryEntry> _history = [];
     // Explicit selection; empty = every eligible case.
     private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
     private bool _noneSelected;
@@ -271,8 +265,6 @@
                 _restored = Unsaved;
                 if (!_restored) await TabDraftStore.RemoveAsync(JS, TabDraftStore.ExportSettingsKey(ProjectKey));
             }
-            var (history, _) = await _api.HistoryAsync(ProjectKey);
-            _history = history ?? [];
         }
         await PreviewAsync();
     }
@@ -327,7 +319,7 @@
         _busy = true; _error = null;
         var (preview, error) = await _api.PreviewAsync(Request());
         _busy = false;
-        if (preview is null) { _error = error ?? "The export could not be checked."; return; }
+        if (preview is null) { _error = error ?? "Eksporten kunne ikke kontrolleres."; return; }
         _preview = preview;
     }
 
@@ -341,14 +333,13 @@
     {
         _working = true; _error = null; _downloaded = null;
         await SettledAsync();
-        if (_preview is not { CanDownload: true }) { _working = false; _error = "The export needs attention before download — see Check."; return; }
+        if (_preview is not { CanDownload: true }) { _working = false; _error = "Eksporten må rettes før nedlasting — se Kontroll."; return; }
         var (file, error) = await _api!.FileAsync(Request(format));
         _working = false;
-        if (file is null) { _error = error ?? "The file could not be created."; return; }
+        if (file is null) { _error = error ?? "Filen kunne ikke lages."; return; }
         await JS.InvokeVoidAsync("downloadBase64File", file.FileName, file.Base64, file.ContentType);
-        _downloaded = $"{file.FileName} downloaded: {file.Cases} test case{(file.Cases == 1 ? "" : "s")}, {file.Rows} rows. Import it in Azure DevOps (steps below).";
-        var (history, _) = await _api.HistoryAsync(ProjectKey);
-        _history = history ?? _history;
+        _downloaded = $"{file.FileName} er lastet ned: {file.Cases} testtilfelle{(file.Cases == 1 ? "" : "r")}, {file.Rows} rader. Importer den i Azure DevOps (se under). Ingenting er endret i Azure DevOps.";
+        await OnExported.InvokeAsync();
     }
 
     private async Task ReportAsync()
@@ -357,9 +348,9 @@
         await SettledAsync();
         var (file, error) = await _api!.ReportAsync(Request());
         _working = false;
-        if (file is null) { _error = error ?? "The mapping report could not be created."; return; }
+        if (file is null) { _error = error ?? "Koblingsrapporten kunne ikke lages."; return; }
         await JS.InvokeVoidAsync("downloadBase64File", file.FileName, file.Base64, file.ContentType);
-        _downloaded = $"{file.FileName} downloaded.";
+        _downloaded = $"{file.FileName} er lastet ned.";
     }
 
     private async Task SaveProfileAsync()
@@ -368,16 +359,16 @@
         await SettledAsync();
         var (profile, error) = await _api!.SaveProfileAsync(ProjectKey, _profile);
         _working = false;
-        if (profile is null) { _error = error ?? "The settings could not be saved."; return; }
+        if (profile is null) { _error = error ?? "Innstillingene kunne ikke lagres."; return; }
         _profile = _saved = profile;
         _restored = false;
         await TabDraftStore.RemoveAsync(JS, TabDraftStore.ExportSettingsKey(ProjectKey));
-        _downloaded = "Export settings saved for this project.";
+        _downloaded = "Eksportinnstillingene er lagret for prosjektet.";
     }
 
     private static string CheckLabel(AdoFieldCheck check) => check switch
     {
-        AdoFieldCheck.LocallyValid => "Valid", AdoFieldCheck.NeedsConfirmationInAzureDevOps => "Confirm in Azure DevOps", AdoFieldCheck.Invalid => "Invalid",
-        AdoFieldCheck.Missing => "Missing", _ => "Not required",
+        AdoFieldCheck.LocallyValid => "Gyldig", AdoFieldCheck.NeedsConfirmationInAzureDevOps => "Bekreft i Azure DevOps", AdoFieldCheck.Invalid => "Ugyldig",
+        AdoFieldCheck.Missing => "Mangler", _ => "Ikke påkrevd",
     };
 }

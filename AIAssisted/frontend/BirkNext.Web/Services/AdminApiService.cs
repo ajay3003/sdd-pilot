@@ -381,6 +381,12 @@ public class EditableSettingsDto
     [JsonPropertyName("logging")]           public EditableLoggingDto           Logging           { get; set; } = new();
     [JsonPropertyName("admin")]             public EditableAdminDto             Admin             { get; set; } = new();
     [JsonPropertyName("frontendQualityEngines")] public EditableFrontendQualityEnginesDto? FrontendQualityEngines { get; set; }
+    [JsonPropertyName("manualExecution")] public EditableManualExecutionDto? ManualExecution { get; set; }
+}
+
+public class EditableManualExecutionDto
+{
+    [JsonPropertyName("birkNextEnabled")] public bool BirkNextEnabled { get; set; }
 }
 
 public class EditableFeatureVisibilityDto
@@ -424,6 +430,12 @@ public class SaveSettingsRequest
     [JsonPropertyName("admin")]             public SaveAdminRequest?          Admin             { get; set; }
     [JsonPropertyName("frontendQualityEngines")] public SaveFrontendQualityEngineRequest? FrontendQualityEngines { get; set; }
     [JsonPropertyName("microsoftSignIn")] public SaveMicrosoftSignInRequest? MicrosoftSignIn { get; set; }
+    [JsonPropertyName("manualExecution")] public SaveManualExecutionRequest? ManualExecution { get; set; }
+}
+
+public class SaveManualExecutionRequest
+{
+    [JsonPropertyName("birkNextEnabled")] public bool? BirkNextEnabled { get; set; }
 }
 
 public class SaveMicrosoftSignInRequest

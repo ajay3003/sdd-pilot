@@ -1,0 +1,496 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using P = BirkNext.Web.Services.AdoTestPlansPresentation
+@inject IAdoTestPlansApiService Api
+
+@* Where manual test cases go in Azure DevOps: organization (a stored connection) → project → test plan → test suite. Shared by System Settings →
+   Azure DevOps – Test Plans (English) and Manual Testing → Overfør testplan → Send direkte (Norwegian): <see cref="English"/> picks the language.
+   Choosing reads from Azure DevOps; creating a test plan or a suite is a separate, reviewed action (Review → Create in Azure DevOps) and never happens
+   by changing a selection. Nothing is preselected that the user did not choose (no example plan); changing the organization, project or plan clears
+   what depended on it. Ids only under the technical details. Git Sources' controls (.gar) and notices (.gsx). *@
+<div class="adp" data-testid="adp" aria-busy="@(_loading is not null ? "true" : "false")">
+
+    @* 1 · Organization *@
+    <div class="adp-step" data-testid="adp-organization">
+        <div class="gar-field">
+            <label for="@($"adp-conn-{_id}")">@L("Organisasjon", "Organization")</label>
+            <div class="gar-inline">
+                <select id="@($"adp-conn-{_id}")" class="form-select adp-select" value="@(_connection?.ToString() ?? "")" disabled="@Busy" @onchange="e => ConnectionChangedAsync(e.Value?.ToString())" data-testid="adp-connection">
+                    <option value="" selected="@(_connection is null)">@L("Velg organisasjon …", "Choose an organization …")</option>
+                    @foreach (var c in Connections)
+                    {
+                        <option value="@c.Id" selected="@(_connection == c.Id)">@c.Organization@(c.DisplayName != c.Organization ? $" ({c.DisplayName})" : "")</option>
+                    }
+                </select>
+                @if (Current is { } current)
+                {
+                    <span class="gsx-pill gsx-pill-@P.ConnectionTone(current)" role="status" data-testid="adp-connection-state">@P.ConnectionState(current, English)</span>
+                    <button type="button" class="btn-secondary btn-sm" disabled="@Busy" @onclick="CheckAsync" data-testid="adp-check">@L("Kontroller tilkobling", "Check connection")</button>
+                }
+            </div>
+            @if (_checkMessage is { } check) { <p class="@(_checkOk ? "gsx-notice" : "gsx-error")" role="status" data-testid="adp-check-result">@check</p> }
+        </div>
+    </div>
+
+    @* 2 · Project *@
+    @if (_connection is not null)
+    {
+        <div class="adp-step" data-testid="adp-project">
+            <div class="gar-field">
+                <label for="@($"adp-psearch-{_id}")">@L("Prosjekt", "Project")</label>
+                @if (_project is { } chosenProject && !_changingProject)
+                {
+                    <div class="gar-inline">
+                        <span class="adp-chosen" data-testid="adp-project-chosen">@chosenProject</span>
+                        <button type="button" class="msb-link adp-change" disabled="@Busy" @onclick="ChangeProjectAsync" data-testid="adp-project-change">@L("Velg et annet prosjekt", "Choose another project")</button>
+                    </div>
+                }
+                else
+                {
+                    <input id="@($"adp-psearch-{_id}")" type="search" class="form-control adp-search" placeholder="@L("Søk etter prosjekt", "Search projects")" @bind="_projectSearch" @bind:event="oninput" data-testid="adp-project-search" />
+                    @if (_loading == "projects") { <p class="gar-help" role="status">@L("Henter prosjekter …", "Loading projects …")</p> }
+                    else if (_projectError is { } pe) { <p class="gar-error" role="alert" data-testid="adp-project-error">@pe <button type="button" class="msb-link" @onclick="LoadProjectsAsync">@L("Prøv igjen", "Retry")</button></p> }
+                    else
+                    {
+                        var shown = _projects.Where(p => Matches(p.Name, _projectSearch)).ToList();
+                        if (shown.Count == 0) { <p class="gar-help" data-testid="adp-project-none">@(_projects.Count == 0 ? L("Fant ingen prosjekter du har tilgang til.", "No projects you have access to were found.") : L("Ingen treff.", "No matches."))</p> }
+                        <ul class="gar-list" aria-label="@L("Prosjekter", "Projects")">
+                            @foreach (var p in shown)
+                            {
+                                <li><button type="button" class="gar-pick @(p.Name == _project ? "is-picked" : "")" aria-pressed="@(p.Name == _project ? "true" : "false")" disabled="@Busy"
+                                            @onclick="() => ProjectChosenAsync(p.Name)" data-testid="adp-project-option">@p.Name</button></li>
+                            }
+                        </ul>
+                    }
+                }
+            </div>
+        </div>
+    }
+
+    @* 3 · Test plan *@
+    @if (_project is not null && !_changingProject)
+    {
+        <div class="adp-step" data-testid="adp-plan">
+            <span class="adp-label" id="@($"adp-plan-label-{_id}")">@L("Testplan", "Test plan")</span>
+            <div class="gar-tabs" role="tablist" aria-labelledby="@($"adp-plan-label-{_id}")">
+                <button type="button" role="tab" aria-selected="@(!_newPlan ? "true" : "false")" class="gar-tab @(!_newPlan ? "is-active" : "")" @onclick="() => PlanMode(false)" data-testid="adp-plan-existing">@L("Bruk eksisterende", "Use existing")</button>
+                <button type="button" role="tab" aria-selected="@(_newPlan ? "true" : "false")" class="gar-tab @(_newPlan ? "is-active" : "")" disabled="@(!CanWrite)"
+                        title="@(CanWrite ? null : L("Du har ikke tilgang til å opprette testplaner.", "You do not have permission to create test plans."))" @onclick="() => PlanMode(true)" data-testid="adp-plan-new">@L("Opprett ny testplan", "Create new test plan")</button>
+            </div>
+            @if (!_newPlan)
+            {
+                @if (_loading == "plans") { <p class="gar-help" role="status">@L("Henter testplaner …", "Loading test plans …")</p> }
+                else if (_planError is { } ple) { <p class="gar-error" role="alert" data-testid="adp-plan-error">@ple <button type="button" class="msb-link" @onclick="LoadPlansAsync">@L("Prøv igjen", "Retry")</button></p> }
+                else if (_plans.Count == 0)
+                {
+                    <div class="gsx-state" data-testid="adp-plans-empty">
+                        <p><strong>@L("Fant ingen testplaner i prosjektet.", "No test plans were found in this project.")</strong></p>
+                        @if (CanWrite) { <button type="button" class="btn-secondary btn-sm" @onclick="() => PlanMode(true)" data-testid="adp-plans-empty-create">@L("Opprett ny testplan", "Create new test plan")</button> }
+                    </div>
+                }
+                else
+                {
+                    @if (_plans.Count > 6) { <input type="search" class="form-control adp-search" placeholder="@L("Søk etter testplan", "Search test plans")" aria-label="@L("Søk etter testplan", "Search test plans")" @bind="_planSearch" @bind:event="oninput" data-testid="adp-plan-search" /> }
+                    var plans = _plans.Where(p => Matches(p.Name, _planSearch)).ToList();
+                    @if (plans.Count == 0) { <p class="gar-help">@L("Ingen treff.", "No matches.")</p> }
+                    <ul class="gar-list" aria-label="@L("Testplaner", "Test plans")">
+                        @foreach (var p in plans)
+                        {
+                            <li><button type="button" class="gar-pick @(_plan?.Id == p.Id ? "is-picked" : "")" aria-pressed="@(_plan?.Id == p.Id ? "true" : "false")" disabled="@Busy"
+                                        @onclick="() => PlanChosenAsync(p)" data-testid="adp-plan-option">
+                                    <strong>@p.Name</strong>@if (p.State is { Length: > 0 } st) { <span class="gar-muted">@PlanState(st)</span> }</button></li>
+                        }
+                    </ul>
+                }
+            }
+            else
+            {
+                <div class="adp-create" data-testid="adp-plan-create">
+                    <div class="gar-field">
+                        <label for="@($"adp-pname-{_id}")">@L("Navn på testplan", "Test plan name")</label>
+                        <input id="@($"adp-pname-{_id}")" class="form-control" maxlength="256" placeholder="@(PlanNamePlaceholder ?? "M2LB – Skolenærvær – Testplan")" @bind="_planName" @bind:event="oninput"
+                               disabled="@(_reviewPlan || Busy)" data-testid="adp-plan-name" />
+                    </div>
+                    <div class="gar-field">
+                        <label for="@($"adp-pdesc-{_id}")">@L("Beskrivelse", "Description") <span class="gar-muted">(@L("valgfritt", "optional"))</span></label>
+                        <input id="@($"adp-pdesc-{_id}")" class="form-control" maxlength="1000" @bind="_planDescription" @bind:event="oninput" disabled="@(_reviewPlan || Busy)" data-testid="adp-plan-description" />
+                    </div>
+                    @if (SamePlan is { } same)
+                    {
+                        <p class="gsx-notice adp-warn" role="status" data-testid="adp-plan-duplicate">@L($"Det finnes allerede en testplan med navnet «{same.Name}» i {_project}. Ingen ny plan opprettes med samme navn.",
+                            $"A test plan named \"{same.Name}\" already exists in {_project}. A second plan with the same name is never created.")
+                            <button type="button" class="msb-link" @onclick="() => UseExistingPlanAsync(same)" data-testid="adp-plan-use-existing">@L("Bruk den eksisterende", "Use the existing plan")</button></p>
+                    }
+                    @if (!_reviewPlan)
+                    {
+                        <div class="gar-actions">
+                            <button type="button" class="btn-secondary btn-sm" disabled="@(Busy || string.IsNullOrWhiteSpace(_planName) || SamePlan is not null)" @onclick="() => _reviewPlan = true" data-testid="adp-plan-review">@L("Se over", "Review")</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="adp-review" role="group" aria-label="@L("Opprett testplan i Azure DevOps", "Create test plan in Azure DevOps")" data-testid="adp-plan-confirm">
+                            <p class="adp-review-title">@L("Dette oppretter en ny testplan i Azure DevOps", "This creates a new test plan in Azure DevOps")</p>
+                            <dl class="gsx-facts">
+                                <div><dt>@L("Organisasjon", "Organization")</dt><dd>@Current?.Organization</dd></div>
+                                <div><dt>@L("Prosjekt", "Project")</dt><dd>@_project</dd></div>
+                                <div><dt>@L("Testplan som opprettes", "Test plan to create")</dt><dd data-testid="adp-plan-confirm-name">@_planName.Trim()</dd></div>
+                            </dl>
+                            <p class="gar-help">@L("Testgrupper opprettes etterpå, hver for seg. Ingenting annet endres.", "Test suites are created afterwards, one at a time. Nothing else is changed.")</p>
+                            <div class="gar-actions">
+                                <button type="button" class="btn-primary btn-sm" disabled="@Busy" @onclick="CreatePlanAsync" data-testid="adp-plan-create-confirm">@(_loading == "create-plan" ? L("Oppretter …", "Creating …") : L("Opprett i Azure DevOps", "Create in Azure DevOps"))</button>
+                                <button type="button" class="btn-secondary btn-sm" disabled="@Busy" @onclick="() => _reviewPlan = false" data-testid="adp-plan-create-cancel">@L("Avbryt", "Cancel")</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @* 4 · Test suite *@
+    @if (_plan is not null && !_newPlan && !_changingProject)
+    {
+        <div class="adp-step" data-testid="adp-suite">
+            <span class="adp-label">@L("Testgruppe", "Test suite")</span>
+            @if (_loading == "suites") { <p class="gar-help" role="status">@L("Henter testgrupper …", "Loading test suites …")</p> }
+            else if (_suiteError is { } se) { <p class="gar-error" role="alert" data-testid="adp-suite-error">@se <button type="button" class="msb-link" @onclick="LoadSuitesAsync">@L("Prøv igjen", "Retry")</button></p> }
+            else
+            {
+                <ul class="adp-tree" aria-label="@L($"Testgrupper i {_plan.Name}", $"Test suites in {_plan.Name}")" data-testid="adp-suite-tree">
+                    @foreach (var (s, depth) in P.Tree(_suites))
+                    {
+                        <li style="--adp-depth:@depth"><button type="button" class="gar-pick adp-node @(_suite?.Id == s.Id ? "is-picked" : "")" aria-pressed="@(_suite?.Id == s.Id ? "true" : "false")"
+                                    disabled="@Busy" @onclick="() => SuiteChosenAsync(s)" data-testid="adp-suite-option" data-depth="@depth">
+                                <span>@s.Name</span>@if (s.ParentId is null) { <span class="gar-muted">@L("Hele testplanen", "Whole test plan")</span> }</button></li>
+                    }
+                </ul>
+                @if (CanWrite)
+                {
+                    @if (!_newSuite)
+                    {
+                        <button type="button" class="msb-link adp-add" disabled="@Busy" @onclick="StartSuite" data-testid="adp-suite-new">+ @L("Opprett ny testgruppe", "Create new test suite")</button>
+                    }
+                    else
+                    {
+                        <div class="adp-create" data-testid="adp-suite-create">
+                            <div class="gar-field">
+                                <label for="@($"adp-sname-{_id}")">@L("Navn på testgruppe", "Test suite name")</label>
+                                <input id="@($"adp-sname-{_id}")" class="form-control" maxlength="256" placeholder="@L("For eksempel Kritiske brukerreiser", "For example Critical user journeys")" @bind="_suiteName" @bind:event="oninput"
+                                       disabled="@(_reviewSuite || Busy)" data-testid="adp-suite-name" />
+                            </div>
+                            <div class="gar-field">
+                                <label for="@($"adp-sparent-{_id}")">@L("Plasser under", "Place under")</label>
+                                <select id="@($"adp-sparent-{_id}")" class="form-select adp-select" value="@_parent" disabled="@(_reviewSuite || Busy)" @onchange="e => _parent = int.TryParse(e.Value?.ToString(), out var v) ? v : _parent" data-testid="adp-suite-parent">
+                                    @foreach (var (s, depth) in P.Tree(_suites))
+                                    {
+                                        <option value="@s.Id" selected="@(_parent == s.Id)">@(new string(' ', depth * 3))@s.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            @if (SameSuite is { } sameSuite)
+                            {
+                                <p class="gsx-notice adp-warn" role="status" data-testid="adp-suite-duplicate">@L($"Det finnes allerede en testgruppe med navnet «{sameSuite.Name}» her.", $"A test suite named \"{sameSuite.Name}\" already exists here.")
+                                    <button type="button" class="msb-link" @onclick="() => SuiteChosenAsync(sameSuite)" data-testid="adp-suite-use-existing">@L("Bruk den eksisterende", "Use the existing suite")</button></p>
+                            }
+                            @if (!_reviewSuite)
+                            {
+                                <div class="gar-actions">
+                                    <button type="button" class="btn-secondary btn-sm" disabled="@(Busy || string.IsNullOrWhiteSpace(_suiteName) || SameSuite is not null)" @onclick="() => _reviewSuite = true" data-testid="adp-suite-review">@L("Se over", "Review")</button>
+                                    <button type="button" class="msb-link" @onclick="() => _newSuite = false">@L("Avbryt", "Cancel")</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="adp-review" role="group" aria-label="@L("Opprett testgruppe i Azure DevOps", "Create test suite in Azure DevOps")" data-testid="adp-suite-confirm">
+                                    <p class="adp-review-title">@L("Dette oppretter en ny testgruppe i Azure DevOps", "This creates a new test suite in Azure DevOps")</p>
+                                    <dl class="gsx-facts">
+                                        <div><dt>@L("Organisasjon", "Organization")</dt><dd>@Current?.Organization</dd></div>
+                                        <div><dt>@L("Prosjekt", "Project")</dt><dd>@_project</dd></div>
+                                        <div><dt>@L("Testplan", "Test plan")</dt><dd>@_plan.Name</dd></div>
+                                        <div><dt>@L("Testgruppe som opprettes", "Test suite to create")</dt><dd data-testid="adp-suite-confirm-name">@P.SuitePath(_suites, _parent) › @_suiteName.Trim()</dd></div>
+                                    </dl>
+                                    <div class="gar-actions">
+                                        <button type="button" class="btn-primary btn-sm" disabled="@Busy" @onclick="CreateSuiteAsync" data-testid="adp-suite-create-confirm">@(_loading == "create-suite" ? L("Oppretter …", "Creating …") : L("Opprett i Azure DevOps", "Create in Azure DevOps"))</button>
+                                        <button type="button" class="btn-secondary btn-sm" disabled="@Busy" @onclick="() => _reviewSuite = false" data-testid="adp-suite-create-cancel">@L("Avbryt", "Cancel")</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            }
+        </div>
+    }
+
+    @if (_pending is { } pending)
+    {
+        <div class="gsx-notice adp-warn" role="alert" data-testid="adp-pending">
+            <p class="adp-review-title">@_pendingMessage</p>
+            <button type="button" class="btn-secondary btn-sm" disabled="@Busy" @onclick="() => VerifyAsync(pending)" data-testid="adp-pending-verify">@L("Kontroller i Azure DevOps", "Check in Azure DevOps")</button>
+        </div>
+    }
+    @if (_error is { } error) { <p class="gsx-error" role="alert" data-testid="adp-error">@error</p> }
+    @if (_notice is { } notice) { <p class="gsx-notice" role="status" data-testid="adp-notice">@notice</p> }
+
+    @if (_plan is not null || _suite is not null)
+    {
+        <details class="adp-tech" data-testid="adp-tech">
+            <summary>@L("Tekniske detaljer", "Technical details")</summary>
+            <dl class="gsx-facts">
+                @if (_plan is { } tp) { <div><dt>@L("Testplan-id", "Test plan id")</dt><dd>@tp.Id</dd></div> }
+                @if (_suite is { } ts) { <div><dt>@L("Testgruppe-id", "Test suite id")</dt><dd>@ts.Id</dd></div> }
+                @if (_plan?.WebUrl is { } url) { <div><dt>@L("Adresse", "Address")</dt><dd class="gsx-wrap"><a href="@url" target="_blank" rel="noopener noreferrer">@L("Åpne testplanen i Azure DevOps", "Open the test plan in Azure DevOps")</a></dd></div> }
+            </dl>
+        </details>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<AzureDevOpsConnectionInfo> Connections { get; set; } = [];
+    /// <summary>The destination to start from (a saved default); its plan and suite are looked up again in Azure DevOps.</summary>
+    [Parameter] public AdoTestPlanDestination? Initial { get; set; }
+    [Parameter] public bool CanWrite { get; set; }
+    [Parameter] public string? PlanNamePlaceholder { get; set; }
+    /// <summary>English in System Settings; Norwegian (default) in Manual Testing.</summary>
+    [Parameter] public bool English { get; set; }
+    /// <summary>A complete destination when a suite is chosen; null whenever the choice becomes incomplete.</summary>
+    [Parameter] public EventCallback<AdoTestPlanDestination?> OnChanged { get; set; }
+    /// <summary>A create became pending or was checked (the settings section refreshes its list).</summary>
+    [Parameter] public EventCallback OnPendingChanged { get; set; }
+
+    private readonly string _id = Guid.NewGuid().ToString("N")[..6];
+    private Guid? _connection;
+    private string? _project;
+    private List<AdoProjectInfo> _projects = [];
+    private List<AdoTestPlanInfo> _plans = [];
+    private List<AdoTestSuiteInfo> _suites = [];
+    private AdoTestPlanInfo? _plan;
+    private AdoTestSuiteInfo? _suite;
+    private string _projectSearch = "", _planSearch = "", _planName = "", _planDescription = "", _suiteName = "";
+    private string? _loading, _error, _notice, _projectError, _planError, _suiteError, _checkMessage, _pendingMessage;
+    private bool _checkOk, _newPlan, _reviewPlan, _newSuite, _reviewSuite, _changingProject;
+    private int _parent;
+    private AdoPendingCreation? _pending;
+    private bool _initialized;
+
+    private string L(string norwegian, string english) => English ? english : norwegian;
+    private string PlanState(string state) => state switch { "Active" => L("Aktiv", "Active"), "Inactive" => L("Inaktiv", "Inactive"), _ => state };
+    private bool Busy => _loading is not null;
+    private AzureDevOpsConnectionInfo? Current => Connections.FirstOrDefault(c => c.Id == _connection);
+    private static bool Matches(string name, string search) => search.Trim().Length == 0 || name.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase);
+    private AdoTestPlanInfo? SamePlan => _newPlan && _planName.Trim().Length > 0 ? _plans.FirstOrDefault(p => string.Equals(p.Name.Trim(), _planName.Trim(), StringComparison.OrdinalIgnoreCase)) : null;
+    private AdoTestSuiteInfo? SameSuite => _newSuite && _suiteName.Trim().Length > 0
+        ? _suites.FirstOrDefault(s => s.ParentId == _parent && string.Equals(s.Name.Trim(), _suiteName.Trim(), StringComparison.OrdinalIgnoreCase)) : null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_initialized) return;
+        _initialized = true;
+        if (Initial is { } d && Connections.Any(c => c.Id == d.ConnectionId))
+        {
+            _connection = d.ConnectionId;
+            _project = d.Project;
+            await LoadPlansAsync();
+            if (_plans.FirstOrDefault(p => p.Id == d.PlanId) is { } plan)
+            {
+                _plan = plan;
+                await LoadSuitesAsync();
+                _suite = _suites.FirstOrDefault(s => s.Id == d.SuiteId);
+                if (_suite is null && _suiteError is null)
+                    _error = L($"Testgruppen «{d.SuiteName}» finnes ikke lenger i testplanen. Velg en annen.", $"The test suite \"{d.SuiteName}\" no longer exists in the test plan. Choose another.");
+                else await Emit();
+            }
+            else if (_planError is null)
+                _error = L($"Testplanen «{d.PlanName}» finnes ikke lenger i {d.Project}. Velg en annen.", $"The test plan \"{d.PlanName}\" no longer exists in {d.Project}. Choose another.");
+        }
+        else if (Connections.Count == 1)
+        {
+            await ConnectionChangedAsync(Connections[0].Id.ToString());
+        }
+    }
+
+    private async Task Emit()
+    {
+        var c = Current;
+        AdoTestPlanDestination? d = c is not null && _project is not null && _plan is not null && _suite is not null ? new AdoTestPlanDestination
+        {
+            ConnectionId = c.Id, Organization = c.Organization, Project = _project, PlanId = _plan.Id, PlanName = _plan.Name, SuiteId = _suite.Id, SuiteName = _suite.Name,
+            SuitePath = P.SuitePath(_suites, _suite.Id),
+        } : null;
+        await OnChanged.InvokeAsync(d);
+    }
+
+    private async Task ConnectionChangedAsync(string? value)
+    {
+        _connection = Guid.TryParse(value, out var id) ? id : null;
+        (_project, _plan, _suite, _plans, _suites, _projects, _checkMessage, _error, _notice, _changingProject) = (null, null, null, [], [], [], null, null, null, false);
+        await Emit();
+        if (_connection is not null) await LoadProjectsAsync();
+    }
+
+    private async Task ChangeProjectAsync()
+    {
+        _changingProject = true;
+        if (_projects.Count == 0) await LoadProjectsAsync();
+    }
+
+    private async Task LoadProjectsAsync()
+    {
+        if (_connection is not { } c) return;
+        (_loading, _projectError) = ("projects", null);
+        var result = await Api.ProjectsAsync(c);
+        (_projects, _projectError, _loading) = (result.Items, result.Error, null);
+    }
+
+    private async Task CheckAsync()
+    {
+        if (_connection is not { } c) return;
+        _loading = "check";
+        var (result, error) = await Api.CheckAsync(c, _project);
+        _loading = null;
+        (_checkOk, _checkMessage) = result is { } r ? (r.Success, r.Success ? L("Tilkoblet.", "Connected.") + " " + r.Message : r.Message) : (false, error);
+    }
+
+    private async Task ProjectChosenAsync(string project)
+    {
+        (_project, _plan, _suite, _plans, _suites, _changingProject, _newPlan, _reviewPlan, _error, _notice) = (project, null, null, [], [], false, false, false, null, null);
+        await Emit();
+        await LoadPlansAsync();
+    }
+
+    private async Task LoadPlansAsync()
+    {
+        if (_connection is not { } c || _project is not { } p) return;
+        (_loading, _planError) = ("plans", null);
+        var result = await Api.PlansAsync(c, p);
+        (_plans, _planError, _loading) = (result.Items, result.Error, null);
+    }
+
+    private void PlanMode(bool create) => (_newPlan, _reviewPlan, _error, _notice) = (create, false, null, null);
+
+    private async Task PlanChosenAsync(AdoTestPlanInfo plan)
+    {
+        (_plan, _suite, _suites, _newSuite, _error, _notice) = (plan, null, [], false, null, null);
+        await Emit();
+        await LoadSuitesAsync();
+    }
+
+    private Task UseExistingPlanAsync(AdoTestPlanInfo plan)
+    {
+        (_newPlan, _reviewPlan, _planName) = (false, false, "");
+        return PlanChosenAsync(plan);
+    }
+
+    private async Task LoadSuitesAsync()
+    {
+        if (_connection is not { } c || _project is not { } p || _plan is not { } plan) return;
+        (_loading, _suiteError) = ("suites", null);
+        var result = await Api.SuitesAsync(c, p, plan.Id);
+        (_suites, _suiteError, _loading) = (result.Items, result.Error, null);
+    }
+
+    private async Task SuiteChosenAsync(AdoTestSuiteInfo suite)
+    {
+        (_suite, _newSuite, _reviewSuite, _suiteName) = (suite, false, false, "");
+        await Emit();
+    }
+
+    private void StartSuite()
+    {
+        (_newSuite, _reviewSuite) = (true, false);
+        _parent = _suite?.Id ?? _suites.FirstOrDefault(s => s.ParentId is null)?.Id ?? _plan?.RootSuiteId ?? 0;
+    }
+
+    /// <summary>The outcome in this component's language (the server's own text is used for refusals, which carry Azure DevOps' reason).</summary>
+    private string Outcome(AdoCreateResult r, bool plan, string name) => r.Outcome switch
+    {
+        AdoCreateOutcome.Created => plan ? L($"Testplanen «{name}» ble opprettet.", $"The test plan \"{name}\" was created.") : L($"Testgruppen «{name}» ble opprettet.", $"The test suite \"{name}\" was created."),
+        AdoCreateOutcome.AlreadyExists => plan
+            ? L($"Det finnes allerede en testplan med navnet «{name}». Ingenting ble opprettet — den eksisterende er valgt.", $"A test plan named \"{name}\" already exists. Nothing was created — the existing plan is selected.")
+            : L($"Det finnes allerede en testgruppe med navnet «{name}» her. Ingenting ble opprettet — den eksisterende er valgt.", $"A test suite named \"{name}\" already exists here. Nothing was created — the existing suite is selected."),
+        AdoCreateOutcome.Uncertain => plan
+            ? L("Vi vet ikke om testplanen ble opprettet. Kontroller Azure DevOps før du prøver igjen.", "We do not know whether the test plan was created. Check Azure DevOps before you try again.")
+            : L("Vi vet ikke om testgruppen ble opprettet. Kontroller Azure DevOps før du prøver igjen.", "We do not know whether the test suite was created. Check Azure DevOps before you try again."),
+        AdoCreateOutcome.Blocked when r.Pending is not null => L($"«{name}» ble kanskje opprettet tidligere. Kontroller Azure DevOps før du prøver igjen.", $"\"{name}\" may have been created earlier. Check Azure DevOps before you try again."),
+        _ => r.Message,
+    };
+
+    private async Task CreatePlanAsync()
+    {
+        if (_connection is not { } c || _project is not { } p || Busy) return;
+        (_loading, _error, _notice) = ("create-plan", null, null);
+        var name = _planName.Trim();
+        var (result, error) = await Api.CreatePlanAsync(new AdoCreatePlanRequest(c, p, name, string.IsNullOrWhiteSpace(_planDescription) ? null : _planDescription.Trim(), Confirmed: true));
+        (_loading, _reviewPlan) = (null, false);
+        if (result is null) { _error = error; return; }
+        switch (result.Outcome)
+        {
+            case AdoCreateOutcome.Created or AdoCreateOutcome.AlreadyExists when result.Plan is { } plan:
+                _plans = [.. _plans.Where(x => x.Id != plan.Id), plan];
+                (_newPlan, _planName, _planDescription) = (false, "", "");
+                await PlanChosenAsync(plan);
+                if (result.Outcome == AdoCreateOutcome.Created) _notice = Outcome(result, true, plan.Name); else _error = Outcome(result, true, plan.Name);
+                break;
+            case AdoCreateOutcome.Uncertain or AdoCreateOutcome.Blocked when result.Pending is { } pending:
+                (_pending, _pendingMessage) = (pending, Outcome(result, true, name));
+                await OnPendingChanged.InvokeAsync();
+                break;
+            default:
+                _error = result.Message;
+                break;
+        }
+    }
+
+    private async Task CreateSuiteAsync()
+    {
+        if (_connection is not { } c || _project is not { } p || _plan is not { } plan || Busy) return;
+        (_loading, _error, _notice) = ("create-suite", null, null);
+        var name = _suiteName.Trim();
+        var (result, error) = await Api.CreateSuiteAsync(new AdoCreateSuiteRequest(c, p, plan.Id, _parent, name, Confirmed: true));
+        (_loading, _reviewSuite) = (null, false);
+        if (result is null) { _error = error; return; }
+        switch (result.Outcome)
+        {
+            case AdoCreateOutcome.Created or AdoCreateOutcome.AlreadyExists when result.Suite is { } suite:
+                _suites = [.. _suites.Where(x => x.Id != suite.Id), suite];
+                await SuiteChosenAsync(suite);
+                if (result.Outcome == AdoCreateOutcome.Created) _notice = Outcome(result, false, suite.Name); else _error = Outcome(result, false, suite.Name);
+                break;
+            case AdoCreateOutcome.Uncertain or AdoCreateOutcome.Blocked when result.Pending is { } pending:
+                (_pending, _pendingMessage) = (pending, Outcome(result, false, name));
+                await OnPendingChanged.InvokeAsync();
+                break;
+            default:
+                _error = result.Message;
+                break;
+        }
+    }
+
+    private async Task VerifyAsync(AdoPendingCreation pending)
+    {
+        _loading = "verify";
+        var (result, error) = await Api.VerifyAsync(pending.Id);
+        _loading = null;
+        if (result is null) { _error = error; return; }
+        if (result.Outcome != AdoVerifyOutcome.StillUnknown) { _pending = null; await OnPendingChanged.InvokeAsync(); }
+        if (result.Plan is { } plan)
+        {
+            _plans = [.. _plans.Where(x => x.Id != plan.Id), plan];
+            (_newPlan, _planName) = (false, "");
+            await PlanChosenAsync(plan);
+        }
+        if (result.Suite is { } suite)
+        {
+            _suites = [.. _suites.Where(x => x.Id != suite.Id), suite];
+            await SuiteChosenAsync(suite);
+        }
+        var message = result.Outcome switch
+        {
+            AdoVerifyOutcome.Found => L($"«{pending.Name}» finnes i Azure DevOps og er valgt.", $"\"{pending.Name}\" exists in Azure DevOps and is selected."),
+            AdoVerifyOutcome.NotFound => L($"«{pending.Name}» ble ikke opprettet. Du kan opprette den på nytt.", $"\"{pending.Name}\" was not created. You can create it again."),
+            _ => result.Message,
+        };
+        if (result.Outcome == AdoVerifyOutcome.StillUnknown) _pendingMessage = message; else _notice = message;
+    }
+}

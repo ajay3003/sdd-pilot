@@ -1,0 +1,254 @@
+@using BirkNext.DeliveryReporting
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using P = BirkNext.Web.Services.AdoTestPlansPresentation
+@inject IAdoTestPlansApiService Api
+@inject IServiceProvider Services
+
+@* System Settings → Azure DevOps – Test Plans (2026-11-25), in English like every System Settings section and in Git Sources' design (one .gsx card,
+   light section headings, status as dot + words): the Azure DevOps connection (the stored connection BirkNext already uses — no second login; the
+   access token is stored encrypted and never shown), the default destination for manual test cases (organization → project → test plan → test suite),
+   a new test plan or test suite created only after Review → Create in Azure DevOps, and creates whose answer was lost (Check in Azure DevOps).
+   Opening the section reads only BirkNext's own settings; Azure DevOps is contacted when the user chooses or checks something. Saving a default is
+   local and never creates anything. Only Reset data → Reset everything removes these settings. *@
+<section class="gsx ats" aria-labelledby="ats-title" data-testid="ats">
+    <header class="gsx-header">
+        <div>
+            <h2 id="ats-title" class="gsx-title">Azure DevOps – Test Plans</h2>
+            <p class="gsx-subtitle">Choose where manual test cases go in Azure DevOps. You can create a new test plan and new test suites here. Saving a default destination changes nothing in Azure DevOps.</p>
+        </div>
+        @if (_view is not null)
+        {
+            var c = DefaultConnection;
+            <span class="gsx-pill gsx-pill-@P.ConnectionTone(c)" role="status" data-testid="ats-overall">@P.ConnectionState(c, english: true)</span>
+        }
+    </header>
+
+    @if (_view is null)
+    {
+        <p class="gsx-muted" role="status" data-testid="ats-loading">@(_loadError ?? "Reading the settings…")</p>
+        @if (_loadError is not null) { <button type="button" class="btn-secondary btn-sm" @onclick="LoadAsync" data-testid="ats-retry">Retry</button> }
+    }
+    else
+    {
+        @* Connection *@
+        <div class="gsx-panel" data-testid="ats-connection">
+            <div class="gsx-panel-head"><h3 class="gsx-panel-title">Connection</h3><span class="gsx-pill gsx-pill-neutral">@_view.Connections.Count</span></div>
+            @if (_view.Connections.Count == 0)
+            {
+                <div class="gsx-state" data-testid="ats-no-connection">
+                    <p><strong>No Azure DevOps connection yet.</strong></p>
+                    <p class="gsx-muted">Add the organization and a personal access token (PAT) once. Delivery Reporting uses the same connection.</p>
+                </div>
+            }
+            else
+            {
+                <ul class="ats-connections" aria-label="Connections">
+                    @foreach (var c in _view.Connections)
+                    {
+                        <li class="ats-connection" data-testid="ats-connection-row">
+                            <div>
+                                <strong>@c.Organization</strong>@if (c.DisplayName != c.Organization) { <span class="gsx-muted"> · @c.DisplayName</span> }
+                                <span class="ats-sub">@(c.LastValidatedAt is { } at ? $"Last checked {P.WhenEnglish(at)}" : "Not checked yet")</span>
+                            </div>
+                            <span class="gsx-pill gsx-pill-@P.ConnectionTone(c)" data-testid="ats-connection-state">@P.ConnectionState(c, english: true)</span>
+                            <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => CheckAsync(c)" data-testid="ats-check">Check connection</button>
+                        </li>
+                    }
+                </ul>
+                @if (_checkMessage is { } check) { <p class="@(_checkOk ? "gsx-notice" : "gsx-error")" role="status" data-testid="ats-check-result">@check</p> }
+            }
+            @if (_canWrite)
+            {
+                <details class="ats-add" open="@(_view.Connections.Count == 0)" data-testid="ats-add">
+                    <summary>@(_view.Connections.Count == 0 ? "Add a connection" : "Add another organization")</summary>
+                    <div class="ats-add-form">
+                        <div class="gar-field gar-narrow">
+                            <label for="ats-org">Organization</label>
+                            <input id="ats-org" class="form-control" @bind="_org" @bind:event="oninput" placeholder="myorganization" spellcheck="false" aria-describedby="ats-org-help" data-testid="ats-org" />
+                            <span id="ats-org-help" class="gar-help">The name in https://dev.azure.com/<em>organization</em>, or the whole address.</span>
+                        </div>
+                        <div class="gar-field gar-narrow">
+                            <label for="ats-pat">Personal access token (PAT)</label>
+                            <input id="ats-pat" type="password" class="form-control" @bind="_pat" @bind:event="oninput" autocomplete="off" aria-describedby="ats-pat-help" data-testid="ats-pat" />
+                            <span id="ats-pat-help" class="gar-help">Stored encrypted on this machine and never shown again. Needs read and write access to Test Management and Work Items.</span>
+                        </div>
+                        <div class="gar-actions">
+                            <button type="button" class="btn-primary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_org) || string.IsNullOrWhiteSpace(_pat))" @onclick="AddConnectionAsync" data-testid="ats-add-save">Add connection</button>
+                        </div>
+                    </div>
+                </details>
+            }
+        </div>
+
+        @* Default destination *@
+        <div class="gsx-panel" data-testid="ats-destination">
+            <div class="gsx-panel-head"><h3 class="gsx-panel-title">Default destination</h3></div>
+            @if (!_editing)
+            {
+                @Summary(_view.SystemDefault, "All projects", "ats-system")
+                @if (_projectKey is not null && _view.ProjectDefault is not null) { @Summary(_view.ProjectDefault, $"Only {_projectName ?? "this project"}", "ats-project") }
+                <div class="gar-actions">
+                    <button type="button" class="btn-secondary btn-sm" disabled="@(_busy || _view.Connections.Count == 0 || !_canWrite)"
+                            title="@(_view.Connections.Count == 0 ? "Add a connection first." : !_canWrite ? "You do not have permission to change these settings." : null)"
+                            @onclick="StartEdit" data-testid="ats-edit">@(_view.SystemDefault is null && _view.ProjectDefault is null ? "Choose destination" : "Change")</button>
+                </div>
+            }
+            else
+            {
+                <AdoDestinationPicker Connections="_view.Connections" Initial="(_view.ProjectDefault ?? _view.SystemDefault)?.Destination" CanWrite="_canWrite" English="true"
+                                      OnChanged="d => _draft = d" OnPendingChanged="LoadAsync" />
+                <fieldset class="ats-scope" data-testid="ats-scope">
+                    <legend class="adp-label">Applies to</legend>
+                    <label class="ats-radio"><input type="radio" name="ats-scope" checked="@(_scope == AdoDestinationScope.System)" @onchange="() => _scope = AdoDestinationScope.System" data-testid="ats-scope-system" /> All projects (system default)</label>
+                    @if (_projectKey is not null)
+                    {
+                        <label class="ats-radio"><input type="radio" name="ats-scope" checked="@(_scope == AdoDestinationScope.Project)" @onchange="() => _scope = AdoDestinationScope.Project" data-testid="ats-scope-project" /> Only @(_projectName ?? "this project")</label>
+                    }
+                </fieldset>
+                <p class="gar-help" data-testid="ats-local-note">Saving is local: nothing is created or changed in Azure DevOps.</p>
+                <div class="gar-actions">
+                    <button type="button" class="btn-primary btn-sm" disabled="@(_busy || _draft is null)" title="@(_draft is null ? "Choose a test plan and a test suite first." : null)" @onclick="SaveAsync" data-testid="ats-save">Save as default</button>
+                    <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => _editing = false" data-testid="ats-cancel">Cancel</button>
+                </div>
+            }
+            @if (_notice is { } notice) { <p class="gsx-notice" role="status" data-testid="ats-notice">@notice</p> }
+            @if (_error is { } error) { <p class="gsx-error" role="alert" data-testid="ats-error">@error</p> }
+        </div>
+
+        @if (_view.Pending.Count > 0)
+        {
+            <div class="gsx-panel" data-testid="ats-pending">
+                <div class="gsx-panel-head"><h3 class="gsx-panel-title">Needs checking</h3><span class="gsx-pill gsx-pill-pending">@_view.Pending.Count</span></div>
+                <p class="gsx-muted">Azure DevOps did not answer. We do not know whether these were created, so they are not created again until they are checked.</p>
+                <ul class="ats-connections">
+                    @foreach (var p in _view.Pending)
+                    {
+                        <li class="ats-connection" data-testid="ats-pending-row">
+                            <div><strong>@(p.Kind == AdoPendingKind.Plan ? "Test plan" : "Test suite") "@p.Name"</strong><span class="ats-sub">@p.Organization / @p.Project · tried @P.WhenEnglish(p.AttemptedAt)</span></div>
+                            <button type="button" class="btn-secondary btn-sm" disabled="@(_busy || !_canWrite)" @onclick="() => VerifyAsync(p)" data-testid="ats-pending-verify">Check in Azure DevOps</button>
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
+
+        <div class="gsx-panel" data-testid="ats-usage">
+            <div class="gsx-panel-head"><h3 class="gsx-panel-title">Use</h3></div>
+            <p class="gsx-muted">Test plans are transferred from <a href="manual-testing/plan?panel=export" data-testid="ats-open-transfer">Manual Testing → Planlegg og klargjør → Overfør testplan</a>.
+                Export to file is always the default. Sending directly to Azure DevOps requires confirming that the test lead approved the transfer.
+                These settings are removed only by Reset data → Reset everything.</p>
+        </div>
+    }
+</section>
+
+@code {
+    private AdoTestPlanSettingsView? _view;
+    private string? _loadError, _error, _notice, _checkMessage, _projectKey, _projectName;
+    private bool _busy, _editing, _checkOk, _canWrite = true;
+    private AdoTestPlanDestination? _draft;
+    private AdoDestinationScope _scope = AdoDestinationScope.System;
+    private string _org = "", _pat = "";
+
+    private AzureDevOpsConnectionInfo? DefaultConnection =>
+        _view is null ? null
+        : _view.Connections.FirstOrDefault(c => c.Id == (_view.ProjectDefault ?? _view.SystemDefault)?.Destination.ConnectionId) ?? _view.Connections.FirstOrDefault();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var ws = await new ManualTestingWorkspace(Services).LoadAsync(discovery: false, requirements: false);
+            (_projectKey, _projectName) = (ws.ProjectKey, ws.ProjectName);
+            if (ws.Plans is { } plans) _canWrite = plans.CanWrite;
+        }
+        catch (Exception e) when (e is InvalidOperationException or HttpRequestException) { }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var (view, error) = await Api.SettingsAsync(_projectKey);
+        (_view, _loadError) = (view ?? _view, view is null && _view is null ? "The settings could not be read." + (error is null ? "" : $" ({error})") : null);
+    }
+
+    private RenderFragment Summary(AdoSavedDestination? saved, string scope, string testId) => __builder =>
+    {
+        if (saved is null)
+        {
+            <div class="gsx-state" data-testid="@($"{testId}-none")"><p><strong>Not configured.</strong> Choose an organization, project, test plan and test suite.</p></div>
+            return;
+        }
+        var d = saved.Destination;
+        var connection = _view!.Connections.FirstOrDefault(c => c.Id == d.ConnectionId);
+        <div class="ats-summary" data-testid="@testId">
+            <dl class="gsx-facts">
+                <div><dt>Applies to</dt><dd>@scope</dd></div>
+                <div><dt>Organization</dt><dd data-testid="@($"{testId}-org")">@d.Organization</dd></div>
+                <div><dt>Project</dt><dd data-testid="@($"{testId}-project")">@d.Project</dd></div>
+                <div><dt>Test plan</dt><dd data-testid="@($"{testId}-plan")">@d.PlanName</dd></div>
+                <div><dt>Test suite</dt><dd data-testid="@($"{testId}-suite")">@(d.SuitePath ?? d.SuiteName)</dd></div>
+                <div><dt>Status</dt><dd><span class="gsx-pill gsx-pill-@(connection is null ? "pending" : "ok")" data-testid="@($"{testId}-status")">@(connection is null ? "Needs review" : "Configured")</span>
+                    @if (connection is null) { <span class="gsx-muted"> The connection no longer exists.</span> }</dd></div>
+                <div><dt>Saved</dt><dd class="gsx-muted">@P.WhenEnglish(saved.SavedAt) by @saved.SavedBy</dd></div>
+            </dl>
+        </div>
+    };
+
+    private void StartEdit()
+    {
+        (_editing, _draft, _error, _notice) = (true, null, null, null);
+        _scope = _view?.ProjectDefault is not null && _projectKey is not null ? AdoDestinationScope.Project : AdoDestinationScope.System;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_draft is null || _busy) return;
+        _busy = true;
+        var (saved, error) = await Api.SaveDefaultAsync(new AdoSaveDestinationRequest(_scope, _scope == AdoDestinationScope.Project ? _projectKey : null, _draft));
+        _busy = false;
+        if (saved is null) { _error = error ?? "The destination could not be saved."; return; }
+        _editing = false;
+        _notice = $"Saved as the default for {(_scope == AdoDestinationScope.Project ? _projectName ?? "this project" : "all projects")}. Nothing was changed in Azure DevOps.";
+        await LoadAsync();
+    }
+
+    private async Task CheckAsync(AzureDevOpsConnectionInfo connection)
+    {
+        _busy = true;
+        var (result, error) = await Api.CheckAsync(connection.Id, null);
+        _busy = false;
+        (_checkOk, _checkMessage) = result is { } r ? (r.Success, r.Success ? $"Connected to {connection.Organization}." : r.Status switch
+        {
+            "AuthenticationFailed" => "Azure DevOps did not accept the personal access token. The connection needs checking.",
+            "AccessDenied" => "The token is valid, but access is missing. It needs Test Management and Work Items (read and write).",
+            _ => "Azure DevOps could not be reached. Check the network and retry.",
+        }) : (false, error);
+        await LoadAsync();
+    }
+
+    private async Task AddConnectionAsync()
+    {
+        _busy = true;
+        var organization = _org.Trim();
+        var (connection, error) = await Api.AddConnectionAsync(new AzureDevOpsConnectionRequest(organization.Length <= 100 ? organization : organization[..100], organization, _pat.Trim()));
+        _busy = false;
+        _pat = "";
+        if (connection is null) { _error = error; return; }
+        _org = "";
+        _notice = $"The connection to {connection.Organization} was saved. Choose Check connection to try it.";
+        await LoadAsync();
+    }
+
+    private async Task VerifyAsync(AdoPendingCreation pending)
+    {
+        _busy = true;
+        var (result, error) = await Api.VerifyAsync(pending.Id);
+        _busy = false;
+        if (result is null) { _error = error; return; }
+        var what = pending.Kind == AdoPendingKind.Plan ? "test plan" : "test suite";
+        if (result.Outcome == AdoVerifyOutcome.StillUnknown) _error = result.Message;
+        else _notice = result.Outcome == AdoVerifyOutcome.Found ? $"The {what} \"{pending.Name}\" exists in Azure DevOps." : $"The {what} \"{pending.Name}\" was not created. You can create it again.";
+        await LoadAsync();
+    }
+}

@@ -197,6 +197,19 @@ public sealed record ManualDefectListItem(Guid RunId, string RunTitle, string Ca
 public sealed record AbandonManualRunRequest(int BaseRevision, string Reason);
 
 /// <summary>The rules every consumer (runner, history, Test Coverage, Requirements Traceability) shares.</summary>
+/// <summary>Whether testers can execute manual tests in BirkNext (2026-11-25). Optional: off unless the setting is true; Azure DevOps Test Plans
+/// stays the default place to execute.</summary>
+public sealed record ManualExecutionAvailability(bool Enabled);
+
+public static class ManualExecutionSettings
+{
+    public const string Key = "ManualExecution:BirkNextEnabled";
+    public const string OffMessage = "Testgjennomføring i BirkNext er ikke slått på. Testene gjennomføres i Azure DevOps Test Plans (Systeminnstillinger: " + Key + ").";
+
+    /// <summary>The setting's value: only an explicit true turns it on.</summary>
+    public static bool Enabled(string? value) => bool.TryParse(value, out var on) && on;
+}
+
 public static class ManualRunRules
 {
     public static readonly IReadOnlyList<string> Severities = ["Critical", "High", "Medium", "Low"];
