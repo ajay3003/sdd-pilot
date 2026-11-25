@@ -297,11 +297,11 @@
                             {
                                 var objectives = W.Objectives(us, scope);
                                 <div class="mtw-story-details" data-testid="mtd-story-details">
-                                    @if (us.WhyThisPriority is { Length: > 0 } why) { <div class="mtw-block"><span class="mtp-ctx-label">Hvorfor denne prioriteten</span><p data-testid="mtd-story-why">@why</p></div> }
+                                    @if (us.WhyThisPriority is { Length: > 0 } why) { <div class="mtw-block"><span class="mtp-ctx-label">Begrunnelse for prioriteten</span><p data-testid="mtd-story-why">@why</p></div> }
                                     @if (us.IndependentTest is { Length: > 0 } independent)
                                     {
                                         <div class="mtw-block" data-testid="mtd-story-independent">
-                                            <span class="mtp-ctx-label">Uavhengig test</span>
+                                            <span class="mtp-ctx-label">Slik testes brukerhistorien alene</span>
                                             @if (objectives.Count > 0)
                                             {
                                                 <ul class="mtw-objectives" title="Treff på ord i scenarioene — et hint, ikke en vurdering.">
@@ -309,7 +309,7 @@
                                                     {
                                                         <li data-covered="@(o.Covered ? "true" : "false")" data-testid="mtd-story-objective"
                                                             title="@(o.Covered ? "Ser ut til å dekkes av " + string.Join(", ", o.CaseTitles.Take(3)) : "Ingen scenario ser ut til å dekke dette")">
-                                                            <span class="tdp-mark" aria-hidden="true">@(o.Covered ? "✓" : "?")</span><span>@o.Objective.Text</span></li>
+                                                            <span>@o.Objective.Text</span> <span class="msb-status msb-tone-@(o.Covered ? "ok" : "muted")" data-testid="mtd-objective-state">@(o.Covered ? "Dekket" : "Ikke dekket ennå")</span></li>
                                                     }
                                                 </ul>
                                             }
@@ -438,7 +438,7 @@
                     }
                     else if (_tab == W.Tabs.Coverage)
                     {
-                        <section class="mtw-panel" aria-label="Testdekning" data-testid="mtd-coverage">
+                        <section class="mtw-panel" aria-label="Krav og dekning" data-testid="mtd-coverage">
                             @{ var rows = W.Coverage(currentStory?.Story, scope, _ws.Requirements, _trace); }
                             @if (rows.Count == 0)
                             {
@@ -625,6 +625,8 @@
                                             </span>
                                             @if (i.Prepared is { Cases: > 0 } prep) { <span class="msb-count" title="Testtilfeller i lagrede planer">@prep.Cases</span> }
                                             <span class="msb-status msb-tone-@i.Status.Tone" data-testid="mtd-scenario-status">@i.Status.Text</span>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm mtw-details-btn" @onclick:stopPropagation="true" @onclick="() => OpenDetails(i.Id)"
+                                                    aria-controls="mtd-drawer" aria-expanded="@(_drawerOpen && i.Id == _active ? "true" : "false")" data-testid="mtd-show-details">Vis detaljer</button>
                                         </li>
                                     }
                                 </ul>
@@ -639,7 +641,14 @@
                 </div>
 
                 @* 4. The open scenario: source, requirements, readiness, test cases — then design advice and everything else on demand. *@
-                <aside class="msb-detail mtw-detail" aria-label="Scenariodetaljer" data-testid="mtd-detail">
+                @* On-demand detail drawer (2026-11-25): closed by default; «Vis detaljer» opens it for that scenario; selecting another scenario while it is
+                   open updates it, while closed it stays closed; Escape or «Lukk» closes it and keeps the selection. It takes no column in the grid. *@
+                <aside id="mtd-drawer" class="msb-detail mtw-detail mtw-drawer @(_drawerOpen ? "is-open" : null)" hidden="@(!_drawerOpen)" role="dialog" aria-modal="false"
+                       aria-label="Scenariodetaljer" data-testid="mtd-detail" data-open="@(_drawerOpen ? "true" : "false")" @onkeydown="DrawerKey" tabindex="-1" @ref="_drawer">
+                    <div class="mtw-drawer-head">
+                        <span class="mtw-drawer-title">Scenariodetaljer</span>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CloseDetailsAsync" data-testid="mtd-drawer-close" aria-label="Lukk detaljer">Lukk</button>
+                    </div>
                     @if (active is null)
                     {
                         <p class="mt-muted" data-testid="mtd-detail-empty">@(_missingScenario is { } gone ? $"Scenarioet du sist hadde åpent («{gone}») finnes ikke i gjeldende oppdagelse. Velg et scenario i listen." : "Velg et scenario for å se hva som skal testes.")</p>
@@ -1609,7 +1618,7 @@
         return view;
     }
 
-    private static readonly (string Tab, string Label)[] TabLabels = [(W.Tabs.Scenarios, "Scenarioer"), (W.Tabs.Cases, "Testtilfeller"), (W.Tabs.Coverage, "Testdekning")];
+    private static readonly (string Tab, string Label)[] TabLabels = [(W.Tabs.Scenarios, "Scenarioer"), (W.Tabs.Cases, "Testtilfeller"), (W.Tabs.Coverage, "Krav og dekning")];
     private string _tab = W.Tabs.Scenarios;
     private bool _storyDetails, _designOpen, _contextRestored, _showWeak;
     private string? _openRequirement, _focusRequirement, _missingScenario, _activeTitle;
@@ -1628,6 +1637,22 @@
     private void SetTab(string tab) { _tab = tab; _ = SaveContextAsync(); }
 
     /// <summary>Opens a scenario in the detail panel (from the list, a breadcrumb, a requirement or the case tab).</summary>
+    private bool _drawerOpen;
+    private ElementReference _drawer;
+
+    /// <summary>«Vis detaljer»: select the scenario and open the drawer on it.</summary>
+    private async Task OpenDetails(string id)
+    {
+        Open(id);
+        _drawerOpen = true;
+        StateHasChanged();
+        try { await Task.Yield(); await _drawer.FocusAsync(); } catch (Exception e) when (e is InvalidOperationException or JSException or TaskCanceledException) { }
+    }
+
+    private Task CloseDetailsAsync() { _drawerOpen = false; return Task.CompletedTask; }
+
+    private Task DrawerKey(KeyboardEventArgs e) { if (e.Key == "Escape") _drawerOpen = false; return Task.CompletedTask; }
+
     private void Open(string id)
     {
         _active = id;

@@ -325,4 +325,50 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         css.Should().Contain(".mtw-story-list .mtw-story:not(.is-current):not(.is-all) { background: var(--msb-surface);", "unselected stories are neutral");
         css.Should().Contain(".mtw-story-card.is-story, .mtp-us.is-story {\n    background: var(--clr-success-bg-light", "the same green token as the middle column's story card");
     }
+
+    // ── Two columns + on-demand detail drawer (2026-11-25) ──
+
+    [Fact]
+    public void The_detail_drawer_is_closed_by_default_opens_on_Vis_detaljer_follows_the_selection_and_closes_without_losing_it()
+    {
+        var cut = Open();
+        var drawer = cut.Find("[data-testid=mtd-detail]");
+        drawer.GetAttribute("data-open").Should().Be("false", "closed on first load");
+        drawer.HasAttribute("hidden").Should().BeTrue("no reserved third column");
+
+        cut.FindAll("[data-testid=mtd-scenario]")[0].Click();
+        cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("false", "selecting a scenario does not open the drawer");
+
+        cut.FindAll("[data-testid=mtd-show-details]")[1].Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true"));
+        cut.Find("[data-testid=mtd-detail-title]").TextContent.Should().Contain("Attendance above plan", "the drawer shows the scenario it was opened for");
+
+        cut.FindAll("[data-testid=mtd-scenario]")[0].Click();
+        cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true", "while open it follows the selection");
+        cut.Find("[data-testid=mtd-detail-title]").TextContent.Should().Contain("Valid report accepted");
+
+        cut.Find("[data-testid=mtd-detail]").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Escape" });
+        cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("false");
+        cut.Find("[data-testid=mtd-scenario][data-id='US1-AS1']").ClassList.Should().Contain("is-active", "closing keeps the selected scenario");
+
+        cut.FindAll("[data-testid=mtd-scenario]")[1].Click();
+        cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("false", "while closed it stays closed");
+        cut.FindAll("[data-testid=mtd-show-details]")[0].Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true"));
+        cut.Find("[data-testid=mtd-drawer-close]").Click();
+        cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("false");
+    }
+
+    [Fact]
+    public void Story_objectives_and_readiness_use_words_never_a_bare_question_mark()
+    {
+        var cut = Open();
+        cut.Find($"[data-testid=mtd-story][data-story='{Us1.Key}']").Click();
+        cut.Find("[data-testid=mtd-story-toggle]").Click();
+
+        cut.FindAll("[data-testid=mtd-objective-state]").Select(e => e.TextContent).Should().OnlyContain(t => t == "Dekket" || t == "Ikke dekket ennå");
+        cut.FindAll("[data-testid=mtd-story-objective]").Should().OnlyContain(li => !li.TextContent.TrimStart().StartsWith("?"));
+        W.Mark(Tri.Unknown).Should().NotBe("?");
+        W.StateText(Tri.Unknown).Should().Be("Ikke vurdert");
+    }
 }

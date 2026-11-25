@@ -333,8 +333,9 @@ public static class ScenarioWorkspacePresentation
             new(key, question, c?.Satisfied ?? Tri.Unknown, c?.Detail ?? "Ikke vurdert.", owner);
     }
 
-    public static string Mark(Tri t) => t switch { Tri.Yes => "✓", Tri.No => "✕", _ => "?" };
-    public static string StateText(Tri t) => t switch { Tri.Yes => "Oppfylt", Tri.No => "Mangler", _ => "Ukjent" };
+    /// <summary>The check's mark, always shown next to <see cref="StateText"/> (2026-11-25: no bare «?»; unknown is a neutral dot + «Ikke vurdert»).</summary>
+    public static string Mark(Tri t) => t switch { Tri.Yes => "✓", Tri.No => "✕", _ => "○" };
+    public static string StateText(Tri t) => t switch { Tri.Yes => "Oppfylt", Tri.No => "Mangler", _ => "Ikke vurdert" };
 
     // ── Remembered working context ───────────────────────────────────────────────────────────────────────────────
 

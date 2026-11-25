@@ -521,15 +521,15 @@
 .mtw-story-list { display: none; list-style: none; margin: 0; padding: 0; gap: 0.25rem; }
 .mtw-detail { min-width: 0; }
 @container mtd (min-width: 52rem) {
-    .mtw { grid-template-columns: minmax(0, 1.1fr) minmax(22rem, 0.9fr); }
+    .mtw { grid-template-columns: minmax(0, 1fr); }
     .mtw-stories { grid-column: 1 / -1; }
     .mtw-story-select { display: none; }
     .mtw-story-list { display: flex; overflow-x: auto; padding-bottom: 0.2rem; }
     .mtw-story-list > li { flex: 0 0 14.5rem; }
-    .mtw-detail { position: sticky; top: 3.4rem; max-height: calc(100vh - 4.5rem); overflow: auto; }
+
 }
 @container mtd (min-width: 80rem) {
-    .mtw { grid-template-columns: 15rem minmax(0, 1.05fr) minmax(24rem, 0.95fr); }
+    .mtw { grid-template-columns: 15rem minmax(0, 1fr); }
     .mtw-stories { grid-column: auto; position: sticky; top: 3.4rem; max-height: calc(100vh - 4.5rem); overflow: auto; }
     .mtw-story-list { display: grid; overflow: visible; }
 }
@@ -796,3 +796,13 @@
 .mt-status > summary .msb-h { display: inline; margin: 0; font-size: 1rem; }
 .mtp-before > summary .mtp-ctx-label, .tdp-more > summary .mtp-ctx-label { display: inline; }
 .mtp-before[open] > summary, .tdp-more[open] > summary { margin-bottom: 0.4rem; }
+
+/* Finn og forstå (2026-11-25): two columns; the scenario detail is an on-demand drawer over the page, never a reserved third column. */
+.mtw-drawer { position: fixed; top: 0; right: 0; z-index: 60; width: min(38rem, 100vw); height: 100vh; max-height: 100vh; overflow: auto; margin: 0;
+    background: var(--msb-surface, #fff); border-left: 1px solid var(--msb-border); box-shadow: -8px 0 24px rgba(15, 23, 42, 0.12); padding: 0.9rem 1.1rem 1.5rem; }
+.mtw-drawer[hidden] { display: none; }
+.mtw-drawer:focus { outline: none; }
+.mtw-drawer-head { position: sticky; top: -0.9rem; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+    margin: -0.9rem -1.1rem 0.6rem; padding: 0.6rem 1.1rem; background: var(--msb-surface, #fff); border-bottom: 1px solid var(--msb-border); }
+.mtw-drawer-title { font-weight: 600; }
+.mtw-details-btn { flex: 0 0 auto; white-space: nowrap; }
