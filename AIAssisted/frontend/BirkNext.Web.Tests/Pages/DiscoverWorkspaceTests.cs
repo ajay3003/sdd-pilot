@@ -295,4 +295,34 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         cut.Find("[data-testid=mtd-detail-title]").TextContent.Should().StartWith("AC 2", "opening a related scenario shows it; both keep their own identity");
         Ids(cut).Should().Contain("US1-AS1").And.Contain("US1-AS2");
     }
+    // ── Functional areas vs user stories (2026-11-25) ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Only_the_chosen_user_story_is_marked_current_and_the_others_stay_neutral()
+    {
+        var cut = Open();
+        cut.Find($"[data-testid=mtd-story][data-story='{Us1.Key}']").Click();
+        var stories = cut.FindAll("[data-testid=mtd-story]");
+        stories.Where(s => s.ClassList.Contains("is-current")).Select(s => s.GetAttribute("data-story")).Should().Equal([Us1.Key], "one selected story");
+        stories.Single(s => s.GetAttribute("data-story") == Us1.Key).GetAttribute("aria-pressed").Should().Be("true");
+        stories.Where(s => s.GetAttribute("data-story") != Us1.Key).Should().OnlyContain(s => s.GetAttribute("aria-pressed") == "false");
+        stories.Should().OnlyContain(s => s.TagName == "BUTTON", "keyboard: every story is a button");
+
+        cut.Find($"[data-testid=mtd-story][data-story='{Us2.Key}']").Click();
+        cut.FindAll("[data-testid=mtd-story].is-current").Select(s => s.GetAttribute("data-story")).Should().Equal([Us2.Key], "the selection moves; it never spreads");
+    }
+
+    [Fact]
+    public void Functional_areas_share_one_neutral_surface_and_only_the_selected_story_is_green()
+    {
+        var css = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "BirkNext.Web", "wwwroot", "css", "manual-testing.css"));
+        css.Should().Contain(".mtw-group > .mtw-group-head, .mtw-group > .mtw-group-head[aria-expanded=true] { background: var(--msb-subtle);",
+            "every area header, open or closed, has the same neutral token");
+        css.Should().NotMatchRegex(@"\.mtw-group[^{]*:has\(", "an area is never coloured by the story it contains");
+        css.Should().NotMatchRegex(@"\.mtw-group-head[^{]*\{[^}]*success", "areas are never green");
+        css.Should().MatchRegex(@"\.mtw-story\.is-current:not\(\.is-all\) \{ background: var\(--clr-success-bg-light[^}]*border-color: var\(--msb-accent\)[^}]*inset 3px 0 0 var\(--msb-accent\)",
+            "the selected story: the middle column's soft green with the blue selection bar");
+        css.Should().Contain(".mtw-story-list .mtw-story:not(.is-current):not(.is-all) { background: var(--msb-surface);", "unselected stories are neutral");
+        css.Should().Contain(".mtw-story-card.is-story, .mtp-us.is-story {\n    background: var(--clr-success-bg-light", "the same green token as the middle column's story card");
+    }
 }

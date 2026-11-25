@@ -143,9 +143,9 @@ Other guarantees:
 
 ## L. Frontend test results
 
-- `AdoTransferTests` (new, 13 tests) passes. It covers the English settings, the empty state, saving locally with nothing preselected, plan creation only after review with a duplicate name refused, the empty-project create action, the Norwegian picker in Manual Testing, and the transfer panel cases (see the companion report).
+- `AdoTransferTests` (new, 12 tests) passes. It covers the English settings, the empty state, saving locally with nothing preselected, plan creation only after review with a duplicate name refused, the empty-project create action, the Norwegian picker in Manual Testing, and the transfer panel cases (see the companion report).
 - `AdoExportWizardTests` (10 tests, assertions moved to the Norwegian text) passes.
-- **Full bUnit suite: 9685 passed, 0 failed** (`BirkNext.Web.Tests`).
+- **Full bUnit suite: 9693 passed, 0 failed** (latest run, after all of today's changes) (`BirkNext.Web.Tests`).
 
 ## M. Backend test results
 
@@ -184,7 +184,7 @@ The test is `frontend/BirkNext.Web.PlaywrightTests/Tests/Workflows/AzureDevOpsTr
 3. The test timed out waiting for «klar for eksport» in the file wizard.
 4. **Passed** (59 s).
 5. The timeout from run 3 came back. The cause was a real race in the file wizard (an older check's answer replaced a newer one). It is fixed, with a regression test.
-6. After the fix: **passed** (32 s). See the companion report, section R.
+6. After the fix: **passed** (32 s), and passed again on a later fresh publish. See the companion report, section R.
 
 Settings steps proven in run 4:
 
@@ -260,7 +260,7 @@ Screenshots are in `scratchpad/adoverify/shots/ado-01…ado-14*.png` (desktop an
 - Several plans or suites at once in one review: one at a time.
 - A connection cannot be removed or rotated from this section; the Delivery Reporting connection management still does that.
 - Contrast is not measured; the full backend suite was not run (memory).
-- The file wizard's check race (see N) is fixed; the walkthrough passed once after the fix, and repeated stability runs were not completed.
+- The file wizard's check race (see N) is fixed; the walkthrough passed twice after the fix.
 
 ## R. Acceptance criteria (this brief)
 

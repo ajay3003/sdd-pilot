@@ -198,9 +198,15 @@ public sealed class AdoTransferTests : BunitContext
         cut.Find("[data-testid=adt-continue]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=adt-to-review]"));
         cut.Find("[data-testid=adt-to-review]").Click();
-        var send = cut.Find("[data-testid=adt-send]");
-        send.Click();
+        // The transfer stays open until the test releases it, so the busy state is checked deterministically (not against a timer).
+        var answer = new TaskCompletionSource<(AdoTransferResult?, string?)>();
+        _ado.Setup(x => x.TransferAsync(It.IsAny<AdoTransferRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<AdoTransferRequest, CancellationToken>((r, _) => _transfers.Add(r)).Returns(answer.Task);
+        cut.Find("[data-testid=adt-send]").Click();
         cut.Find("[data-testid=adt-send]").HasAttribute("disabled").Should().BeTrue("busy while the first click is sending");
+        cut.Find("[data-testid=adt-send]").TextContent.Should().Be("Sender …");
+        _transfers.Should().HaveCount(1, "the second click cannot reach a disabled button");
+        cut.InvokeAsync(() => answer.SetResult((new AdoTransferResult { Destination = Destination(), Cases = [new("c1", "Send rapport", AdoTransferOutcome.Created, "Opprettet.")] }, null)));
         cut.WaitForAssertion(() => cut.Find("[data-testid=adt-result]"));
         _transfers.Should().HaveCount(1);
     }

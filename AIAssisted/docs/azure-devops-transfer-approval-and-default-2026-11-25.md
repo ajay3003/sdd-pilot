@@ -197,7 +197,7 @@ See the companion report, sections B–C (shared `.gsx/.gar` stylesheet moved ou
 
 ## P. Frontend tests
 
-`AdoTransferTests` (bUnit) passes 13/13. The transfer-panel tests, keyed to the brief's numbers:
+`AdoTransferTests` (bUnit) passes 12/12. The transfer-panel tests, keyed to the brief's numbers:
 
 - T01–T04: always opens on file, also after a direct transfer.
 - T05–T07: file mode has no checkbox and no remote call, and states what the file is.
@@ -209,7 +209,7 @@ See the companion report, sections B–C (shared `.gsx/.gar` stylesheet moved ou
 
 The other new tests (settings and picker) are in the companion report.
 
-Full suite: **9685/0**.
+Full suite: **9693/0** (latest run).
 
 ## Q. Backend tests
 
@@ -261,6 +261,7 @@ The setup is isolated, as in the companion report (section N): a fresh Release p
 - **Regression test:** `An_older_check_that_answers_last_never_replaces_the_newer_one` sends the answers in reverse order. It fails without the fix and passes with it.
 - **After the fix**, a fresh publish ran the walkthrough again: **passed** (32 s).
 - The run after that never reached its tests: its test build compiled while the plan page was mid-edit in the same working tree (a compile error fixed minutes later). That is not a walkthrough failure.
+- A later fresh publish (including the US + AC badge and «Kildegrunnlag» changes) **passed again**. That makes two clean passes after the fix.
 
 ## S. Modified files
 
@@ -274,7 +275,7 @@ See the companion report, section P.
 - **Phase 2:** importing results from an Azure DevOps file is not implemented (API fetch only). Results are fetched from the suites the plan was sent to, plus ids confirmed in an update export (default destination only). The last result per test point is stored at each fetch, so history builds up from repeated fetches.
 - **Uncertain create:** reconciliation by tag + title + time is a heuristic. Several matches are listed, never guessed.
 - **Not verified:** a real Azure DevOps organization (intended); the full backend suite (memory); keyboard-only and contrast checks.
-- **Walkthrough evidence:** one pass before the wizard race fix and one after; repeated stability runs were not completed.
+- **Walkthrough evidence:** one pass before the wizard race fix and two after (separate fresh publishes).
 - **Pre-existing, not changed:** `ScenarioCentricManualTestingWorkflowTests` opens `/test-plan-suggestions` without `?advanced=1`, so it would be redirected (only its wizard text assertions were updated here).
 
 ## U. Acceptance criteria (this brief)
@@ -318,7 +319,7 @@ See the companion report, section P.
 - **Switch:** System Settings → Feature Visibility → «Manual test execution» → «Execute manual tests in BirkNext» (`ManualExecution:BirkNextEnabled`, off by default). It applies at once.
 - **While off:** every recording endpoint answers 409 `manual-execution-off` (`ManualExecutionGateTests`); recorded runs stay readable.
 - **The run page** (`/manual-testing/run`) is now Norwegian throughout, including step and outcome labels. Its runs are labelled «Gjennomført i BirkNext»; a run of an earlier case version is «Fra en tidligere versjon».
-- **Tests:** backend run, persistence and gate tests pass; frontend 9685/0.
+- **Tests:** backend run, persistence and gate tests pass; frontend 9693/0.
 - **NOT VERIFIED:** browser verification of the run page with execution on. Turning it on would change your local settings, and the isolated walkthrough covered Azure DevOps only.
 
 ## Phase 2 — results fetched from Azure DevOps

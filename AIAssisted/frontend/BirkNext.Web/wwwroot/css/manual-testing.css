@@ -619,6 +619,19 @@
 .mtw-group-meta { display: block; font-size: 0.72rem; color: var(--clr-text-muted, #57606a); margin: 0 0 0.25rem 1.45rem; }
 .mtw-story-list.is-nested { display: grid; gap: 0.2rem; margin: 0 0 0.4rem 0.9rem; padding: 0; list-style: none; }
 @container mtd (min-width: 52rem) and (max-width: 79.99rem) { .mtw-group { flex: 0 0 auto; } .mtw-story-list.is-nested { display: flex; } }
+
+/* Functional areas and user stories are two levels (2026-11-25):
+   - every functional area header (and «Uten gruppe») has the SAME neutral surface — open or closed, with or without the selected story inside;
+   - user stories beneath are neutral; only the SELECTED story has the middle column's soft-green story tint with the blue selection bar.
+   Tokens only (light and dark themes follow); no per-area colours. */
+.mtw-group { margin-bottom: 0.25rem; }
+.mtw-group > .mtw-group-head, .mtw-group > .mtw-group-head[aria-expanded=true] { background: var(--msb-subtle); border: 1px solid var(--msb-border); }
+.mtw-group > .mtw-group-head:hover { border-color: var(--clr-border-hover, var(--msb-border)); }
+.mtw-story-list .mtw-story:not(.is-current):not(.is-all) { background: var(--msb-surface); border-color: var(--msb-border); }
+.mtw-story-list .mtw-story:not(.is-current):hover { background: var(--msb-subtle); }
+.mtw-story-list .mtw-story.is-current:not(.is-all) { background: var(--clr-success-bg-light, #f0fdf4); border-color: var(--msb-accent); box-shadow: inset 3px 0 0 var(--msb-accent); }
+.mtw-story-list .mtw-story.is-current:not(.is-all) .mtw-story-title { color: var(--clr-text-heading, inherit); }
+.mtw-story-list .mtw-story.is-all.is-current { background: var(--msb-subtle); border-color: var(--msb-accent); box-shadow: inset 3px 0 0 var(--msb-accent); }
 .mtw-manage { margin: 0.5rem 0.2rem 0; }
 .mtw-grouping { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: baseline; margin-top: 0.35rem; font-size: 0.85rem; }
 .mtw-grouping > details, .mtw-grouping > .msb-callout { flex-basis: 100%; }

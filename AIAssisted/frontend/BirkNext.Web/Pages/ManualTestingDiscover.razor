@@ -139,7 +139,7 @@
                                 var n = node;
                                 var open = IsOpen(n);
                                 <li class="mtw-group @(n.Kind == "system" ? "is-system" : null)" data-testid="mtd-group" data-group="@n.Key" data-kind="@n.Kind">
-                                    <button type="button" class="mtw-group-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleGroup(n.Key)" data-testid="mtd-group-toggle">
+                                    <button type="button" class="mtw-group-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleGroup(n.Key, open)" data-testid="mtd-group-toggle">
                                         <span class="mtw-caret" aria-hidden="true">@(open ? "▾" : "▸")</span><span class="mtw-group-title">@n.Title</span><span class="mtw-group-count">@n.Stories.Count</span></button>
                                     <span class="mtw-group-meta" data-testid="mtd-group-stats">@(n.Kind == "system" ? $"{n.Stories.Count} brukerhistorie{(n.Stories.Count == 1 ? "" : "r")}" + (n.Stories.Count > 0 ? " · " + GroupStats(n) : " · alle er gruppert") : GroupStats(n))</span>
                                     @if (open)
@@ -1428,8 +1428,14 @@
         ? p.GroupId is { } g && _groupDoc?.Groups.Any(x => x.Id == g) == true ? g : G.UngroupedKey
         : p.PrimaryArea is { } a ? "area:" + a : G.UngroupedKey;
 
-    private bool IsOpen(G.GroupNode n) => _openGroups.Contains(n.Key) || n.Stories.Any(s => s.StoryKey == _filter.Story);
-    private void ToggleGroup(string key) { if (!_openGroups.Remove(key)) _openGroups.Add(key); }
+    // An area opens by itself when it holds the selected story, but the tester can still collapse it (2026-11-25: its toggle used to do nothing then).
+    private readonly HashSet<string> _closedGroups = new(StringComparer.Ordinal);
+    private bool IsOpen(G.GroupNode n) => !_closedGroups.Contains(n.Key) && (_openGroups.Contains(n.Key) || n.Stories.Any(s => s.StoryKey == _filter.Story));
+    private void ToggleGroup(string key, bool open)
+    {
+        if (open) { _openGroups.Remove(key); _closedGroups.Add(key); }
+        else { _closedGroups.Remove(key); _openGroups.Add(key); }
+    }
 
     private void SetMode(string? value)
     {
@@ -1568,6 +1574,8 @@
     private void SelectStory(string? key)
     {
         _storyDetails = false;
+        // The area of a newly chosen story is shown open again (it may have been collapsed earlier).
+        if (key is not null && _profiles.FirstOrDefault(p => p.StoryKey == key) is { } chosen) _closedGroups.Remove(NodeKeyOf(chosen));
         Set(_filter with { Story = key, Queue = key is null ? _filter.Queue : null });
     }
 
