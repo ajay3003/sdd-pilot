@@ -164,8 +164,11 @@
                             @foreach (var i in blocking)
                             {
                                 var caseTitle = i.CaseId is { } cid ? p.Cases.FirstOrDefault(c => c.CaseId == cid)?.Title : null;
-                                <li data-testid="adx-issue">@(caseTitle is not null ? $"{caseTitle}: " : "")@i.Message
-                                    @if (i.CaseId is { } ic) { <a href="@($"test-plan-suggestions?draft={Draft.Id}&area=prepare&case={Uri.EscapeDataString(ic)}")">Åpne</a> }</li>
+                                var said = AdoIssueText.Explain(i.Message);
+                                <li data-testid="adx-issue">@(caseTitle is not null ? $"{caseTitle}: " : "")@said.Text
+                                    @if (said.FixInSettings) { <a href="@AdoIssueText.SettingsLink" data-testid="adx-issue-settings">Åpne Azure DevOps-innstillinger</a> }
+                                    @if (i.CaseId is { } ic) { <a href="@($"{BirkNext.Web.Services.ManualTestingPresentation.PlanRoute}?draft={Draft.Id}&case={Uri.EscapeDataString(ic)}")">Åpne</a> }
+                                    @if (said.Translated) { <span class="adx-tech" title="@i.Message" data-testid="adx-issue-technical"> (teknisk melding)</span> }</li>
                             }
                         </ul>
                     </div>

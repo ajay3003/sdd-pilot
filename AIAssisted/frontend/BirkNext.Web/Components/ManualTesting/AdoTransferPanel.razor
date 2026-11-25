@@ -38,8 +38,9 @@
     </div>
 
     @* Phase 2: «Hent resultater fra Azure DevOps» — read-only there; results are kept apart from BirkNext runs. *@
-    <div class="gsx-panel" data-testid="atp-results">
-        <div class="gsx-panel-head"><h3 class="gsx-panel-title">Resultater fra Azure DevOps</h3><span class="gsx-pill gsx-pill-neutral" data-testid="atp-results-count">@_results.Count</span></div>
+    @* Collapsed when there is nothing to show (2026-11-25): empty panels no longer take the page. *@
+    <details class="gsx-panel atp-fold" open="@(_results.Count > 0)" data-testid="atp-results">
+        <summary class="gsx-panel-head"><h3 class="gsx-panel-title">Resultater fra Azure DevOps</h3><span class="gsx-pill gsx-pill-neutral" data-testid="atp-results-count">@_results.Count</span></summary>
         @{ var currentResults = _results.Where(r => r.Current).GroupBy(r => r.CaseId).Select(g => g.First()).ToList(); }
         @if (_results.Count == 0)
         {
@@ -73,10 +74,10 @@
             <button type="button" class="btn-secondary btn-sm" disabled="@(_fetching || !CanWrite)" title="@(CanWrite ? "Leser resultatene i Azure DevOps. Ingenting endres der." : "Du har ikke tilgang til å hente resultater.")"
                     @onclick="FetchResultsAsync" data-testid="atp-fetch">@(_fetching ? "Henter …" : "Hent resultater fra Azure DevOps")</button>
         </div>
-    </div>
+    </details>
 
-    <div class="gsx-panel" data-testid="atp-history">
-        <div class="gsx-panel-head"><h3 class="gsx-panel-title">Tidligere overføringer</h3><span class="gsx-pill gsx-pill-neutral" data-testid="atp-history-count">@_history.Count</span></div>
+    <details class="gsx-panel atp-fold" open="@(_history.Count > 0)" data-testid="atp-history">
+        <summary class="gsx-panel-head"><h3 class="gsx-panel-title">Tidligere overføringer</h3><span class="gsx-pill gsx-pill-neutral" data-testid="atp-history-count">@_history.Count</span></summary>
         @if (_history.Count == 0)
         {
             <p class="gsx-muted" data-testid="atp-history-empty">Ingen filer eller overføringer for dette prosjektet ennå.</p>
@@ -109,7 +110,7 @@
             </ul>
             @if (_history.Count > 8 && !_showAll) { <button type="button" class="msb-link" @onclick="() => _showAll = true" data-testid="atp-history-more">Vis alle (@_history.Count)</button> }
         }
-    </div>
+    </details>
 </section>
 
 @code {

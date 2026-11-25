@@ -845,3 +845,8 @@ a.mto-kpi:hover, a.mto-kpi:focus-visible { border-color: var(--msb-accent); }
 .mtds-switch input { margin-top: 0.2rem; }
 .mtds-desc { display: block; font-size: 0.82rem; }
 .mtds-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.8rem; }
+.atp-fold > summary { cursor: pointer; list-style: none; }
+.atp-fold > summary::-webkit-details-marker { display: none; }
+.atp-fold > summary .gsx-panel-title::before { content: "▸ "; }
+.atp-fold[open] > summary .gsx-panel-title::before { content: "▾ "; }
+.adx-tech { font-size: 0.78rem; color: var(--clr-text-muted, #57606a); cursor: help; }
