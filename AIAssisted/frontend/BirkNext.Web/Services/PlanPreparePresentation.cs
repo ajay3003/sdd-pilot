@@ -174,7 +174,8 @@ public static partial class PlanPreparePresentation
             .OfType<string>().Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)];
 
     private static string? SpecificationPathOfEvidence(TestCaseDraft c) =>
-        c.Generated.Evidence.FirstOrDefault()?.Reference is { } r && r.IndexOf('#') is var hash and > 0 && r[..hash].EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? r[..hash] : null;
+        c.Generated.Evidence.Select(e => e.Reference).FirstOrDefault(r => r.IndexOf('#') > 0 && r[..r.IndexOf('#')].EndsWith(".md", StringComparison.OrdinalIgnoreCase)) is { } r
+            ? r[..r.IndexOf('#')] : null;
 
     /// <summary>One neutral line about where the plan's cases come from (2026-11-25): never a warning — a saved plan is independent of the
     /// specification selected in Finn og forstå.</summary>

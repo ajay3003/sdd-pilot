@@ -120,10 +120,10 @@ public sealed partial class TestPlanSuggestionService
     /// <summary>The specification file a specification scenario was read from: its user story's file, else the path part of its first evidence
     /// reference ("spec.md#scenario-1"). Null when neither is recorded.</summary>
     internal static string? SpecificationPathOf(TestCaseDraft c) =>
-        c.Generated.Story?.SpecificationPath is { Length: > 0 } path ? path : PathPart(c.Generated.Evidence.FirstOrDefault()?.Reference);
+        c.Generated.Story?.SpecificationPath is { Length: > 0 } path ? path : c.Generated.Evidence.Select(e => PathPart(e.Reference)).FirstOrDefault(x => x is not null);
 
     internal static string? SpecificationPathOf(DiscoveredScenario s) =>
-        s.Story?.SpecificationPath is { Length: > 0 } path ? path : PathPart(s.Evidence.FirstOrDefault()?.Reference);
+        s.Story?.SpecificationPath is { Length: > 0 } path ? path : s.Evidence.Select(e => PathPart(e.Reference)).FirstOrDefault(x => x is not null);
 
     private static string? PathPart(string? reference) =>
         reference is { Length: > 0 } r && r.IndexOf('#') is var hash and > 0 ? r[..hash] : null;

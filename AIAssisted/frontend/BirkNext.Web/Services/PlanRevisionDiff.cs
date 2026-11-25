@@ -28,6 +28,10 @@ public static class PlanRevisionDiff
             if (!o.EffectiveStepExpected.Select(x => x ?? "").SequenceEqual(n.EffectiveStepExpected.Select(x => x ?? ""))) fields.Add("forventet resultat per steg");
             if ((o.EffectiveExpected ?? "") != (n.EffectiveExpected ?? "")) fields.Add("samlet forventet resultat");
             if (!o.TestData.Select(d => d.AssetId).Order(StringComparer.Ordinal).SequenceEqual(n.TestData.Select(d => d.AssetId).Order(StringComparer.Ordinal))) fields.Add("testdata");
+            if ((o.EffectivePurpose ?? "") != (n.EffectivePurpose ?? "")) fields.Add("formål");
+            if ((o.EffectiveObservation ?? "") != (n.EffectiveObservation ?? "")) fields.Add("slik ser du resultatet");
+            if ((o.EffectiveEnvironment ?? "") != (n.EffectiveEnvironment ?? "")) fields.Add("tilgang og miljø");
+            if ((o.Edits.BlockedBy ?? "") != (n.Edits.BlockedBy ?? "")) fields.Add("hindring");
             if (o.Edits.TestKind != n.Edits.TestKind) fields.Add("testtype");
             if (!SameTranslation(o.Translation(ScenarioPlanning.Norwegian), n.Translation(ScenarioPlanning.Norwegian))) fields.Add("norsk tekst");
             if (fields.Count > 0) list.Add(new(n.EffectiveTitle, "Endret: " + string.Join(", ", fields) + "."));

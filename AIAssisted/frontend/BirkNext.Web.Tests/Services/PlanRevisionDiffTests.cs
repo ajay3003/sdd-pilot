@@ -28,4 +28,16 @@ public sealed class PlanRevisionDiffTests
         changes.Should().Contain(c => c.CaseTitle == "Valid report" && c.Text.StartsWith("Status: "));
         PlanRevisionDiff.Compare(old, old).Should().BeEmpty();
     }
+
+    [Fact]
+    public void A_change_to_the_before_you_start_fields_is_named_and_the_plan_source_is_found_in_any_evidence_reference()
+    {
+        var a = Case("a", "Barnet finnes ikke");
+        var b = a with { Edits = new TestCaseEdits { ObservationMethod = "I oversikten", BlockedBy = "Venter på data" } };
+        PlanRevisionDiff.Compare(new TestPlanDraft { Cases = [a] }, new TestPlanDraft { Cases = [b] }).Single().Text.Should().Be("Endret: slik ser du resultatet, hindring.");
+
+        // A scenario without a user story whose first evidence is a requirement id (the real «Barnet finnes ikke»).
+        var noStory = a with { Generated = a.Generated with { Evidence = [new("requirement", "r-ukjent-barn"), new("specification", "SkoleService/specs/001-skoleservice/spec.md#ukjent-barn")] } };
+        PlanPreparePresentation.PlanSourceLine(new TestPlanDraft { Cases = [noStory] }).Should().Be("Inneholder testtilfeller fra SkoleService (001-skoleservice).");
+    }
 }
