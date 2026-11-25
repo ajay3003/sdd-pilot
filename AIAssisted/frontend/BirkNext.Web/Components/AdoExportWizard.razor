@@ -313,11 +313,17 @@
 
     private Task PreviewAsync() => _pendingPreview = CheckAsync();
 
+    // Each check is numbered; only the newest one's answer is shown (found 2026-11-25 in the browser: ticking «Ta med … ikke godkjent» and then typing
+    // the Area Path started two checks, the older answer arrived last and the page showed «Area Path mangler» with the path filled in).
+    private int _checkNumber;
+
     private async Task CheckAsync()
     {
         if (_api is null) return;
+        var number = ++_checkNumber;
         _busy = true; _error = null;
         var (preview, error) = await _api.PreviewAsync(Request());
+        if (number != _checkNumber) return; // a newer check is running: its answer is the one that counts
         _busy = false;
         if (preview is null) { _error = error ?? "Eksporten kunne ikke kontrolleres."; return; }
         _preview = preview;

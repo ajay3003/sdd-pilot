@@ -157,7 +157,7 @@ public sealed class RealM2lbManualTestingTests : IAsyncLifetime
             await page.GetByTestId("adx-area").FillAsync(@"M2LB\Manuell test");
             await page.GetByTestId("adx-area").DispatchEventAsync("change");
             await ReadyAsync(page, "adx");
-            await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("ready", new() { Timeout = 60000 });
+            await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("klar", new() { Timeout = 60000 });
             var download = await page.RunAndWaitForDownloadAsync(() => page.GetByTestId("adx-download-xlsx").ClickAsync());
             var file = Path.Combine(Path.GetTempPath(), $"m2lb-e2e-{Guid.NewGuid():N}.xlsx");
             await download.SaveAsAsync(file);

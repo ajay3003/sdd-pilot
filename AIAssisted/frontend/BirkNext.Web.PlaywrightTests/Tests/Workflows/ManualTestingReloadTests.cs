@@ -53,7 +53,7 @@ public sealed class ManualTestingReloadTests : IAsyncLifetime
             await page.ReloadAsync();
             await ReadyAsync(page, "tps");
             await Assertions.Expect(page.GetByTestId($"tps-select-{id}")).ToBeCheckedAsync(new() { Timeout = 60000 });
-            await Assertions.Expect(page.GetByTestId("tps-message")).ToContainTextAsync("kept from before the page was reloaded");
+            await Assertions.Expect(page.GetByTestId("tps-message")).ToContainTextAsync("tatt vare på fra før siden ble lastet på nytt");
             await page.GetByTestId("tps-clear-selection").ClickAsync();
 
             // 2. A hand-written case opens at its first step; the step is added with its expected result.
@@ -92,7 +92,7 @@ public sealed class ManualTestingReloadTests : IAsyncLifetime
             await page.ReloadAsync();
             await ReadyAsync(page, "adx");
             await Assertions.Expect(page.GetByTestId("adx-area")).ToHaveValueAsync(area, new() { Timeout = 60000 });
-            await Assertions.Expect(page.GetByTestId("adx-settings-unsaved")).ToContainTextAsync("kept from before the page was reloaded");
+            await Assertions.Expect(page.GetByTestId("adx-settings-unsaved")).ToContainTextAsync("tatt vare på fra før siden ble lastet på nytt");
             await page.GetByTestId("adx-save-profile").ClickAsync();
             await Assertions.Expect(page.GetByTestId("adx-settings-unsaved")).ToHaveCountAsync(0, new() { Timeout = 30000 });
             await page.ReloadAsync();

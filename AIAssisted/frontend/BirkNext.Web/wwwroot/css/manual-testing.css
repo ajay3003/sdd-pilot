@@ -252,6 +252,10 @@
 .mtp-scenario-head { display: flex; gap: 0.4rem; align-items: baseline; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.2rem; min-width: 0; }
 .mtp-scenario-title { overflow-wrap: anywhere; }
 .mtp-story { flex: none; font-size: 0.75rem; font-weight: 700; padding: 0 0.35rem; border-radius: 4px; background: var(--msb-subtle); border: 1px solid var(--msb-border); }
+/* The acceptance scenario next to the story: the detail heading's accent, the story badge's size. */
+.mtp-ac { flex: none; font-size: 0.75rem; font-weight: 700; padding: 0 0.35rem; border-radius: 4px; white-space: nowrap;
+    background: var(--clr-accent-bg, #ede9fe); border: 1px solid var(--clr-accent-border, #ddd6fe); color: var(--clr-accent-text, var(--clr-text-heading)); }
+.mtp-ac.is-unclear { background: var(--msb-subtle); border-style: dashed; border-color: var(--msb-border); color: var(--clr-text-muted); }
 .mtp-case { display: flex; flex-wrap: wrap; gap: 0.25rem 0.4rem; align-items: center; width: 100%; text-align: left; padding: 0.35rem 0.5rem; margin: 0.1rem 0; border: 1px solid transparent; border-radius: 6px;
     background: transparent; color: inherit; font: inherit; font-size: 0.88rem; cursor: pointer; }
 .mtp-case:hover { background: var(--msb-subtle); }
@@ -284,6 +288,17 @@
 .mtp-problems { margin: 0.4rem 0 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--clr-text-muted, #57606a); }
 .mtp-context { margin-top: 1rem; padding: 0.6rem 0.8rem; border-radius: var(--msb-radius); background: var(--msb-subtle); display: grid; gap: 0.45rem; font-size: 0.88rem; }
 .mtp-context .msb-h { margin: 0; font-size: 0.95rem; }
+.mtp-context[data-open=false] { gap: 0; }
+/* «Kildegrunnlag» collapsed by default: the header is the toggle (accordion: a button in the heading, a rotating chevron). */
+.mtp-context-toggle { display: flex; align-items: center; gap: 0.45rem; width: 100%; padding: 0; background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer;
+    border-radius: var(--radius-sm, 4px); }
+.mtp-context-toggle::before { content: ""; width: 0.45rem; height: 0.45rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg);
+    transition: transform .15s; color: var(--clr-text-muted, #57606a); flex: none; }
+.mtp-context-toggle[aria-expanded=true]::before { transform: rotate(45deg); }
+.mtp-context-toggle:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+.mtp-context-body { display: grid; gap: 0.45rem; min-width: 0; }
+.mtp-context-body[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .mtp-context-toggle::before { transition: none; } }
 .mtp-ctx { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 0.2rem 0.6rem; align-items: baseline; overflow-wrap: anywhere; }
 @media (max-width: 720px) { .mtp-ctx { grid-template-columns: minmax(0, 1fr); } }
 .mtp-ctx ul { margin: 0; padding-left: 1rem; }

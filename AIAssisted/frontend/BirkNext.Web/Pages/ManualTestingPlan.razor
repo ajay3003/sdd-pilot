@@ -185,7 +185,11 @@
                             {
                                 <li class="mtp-scenario" data-testid="mtp-scenario" data-key="@row.Key">
                                     <div class="mtp-scenario-head">
-                                        @if (row.StoryId is { } sid) { <span class="mtp-story" title="@row.StoryTitle">@sid</span> }
+                                        @if (row.StoryId is { } sid) { <span class="mtp-story" title="@row.StoryTitle" data-testid="mtp-row-story">@sid</span> }
+                                        @* The acceptance scenario next to the story (2026-11-25): the saved source identity the detail heading uses, never a list position.
+                                           Static text: «Vis scenarioet i Finn og forstå» in the detail opens the scenario. *@
+                                        @if (row.Ac is { } ac) { <span class="mtp-ac" title="@($"Akseptansescenario {ac}{(row.StoryId is { } acStory ? $" i {acStory}" : "")}")" data-testid="mtp-row-ac">@ac</span> }
+                                        else if (row.AcAmbiguous) { <span class="mtp-ac is-unclear" title="Testtilfellene her viser til flere akseptansescenarioer, så ingen er valgt. Åpne et testtilfelle for å se hvilket det gjelder." data-testid="mtp-row-ac" data-state="ambiguous">AC ?</span> }
                                         <span class="mtp-scenario-title">@row.Title</span>
                                     </div>
                                     <ul class="mtp-cases">
@@ -806,8 +810,14 @@
                                 }
                             </details>
 
-                            <aside class="mtp-context" aria-label="Kildegrunnlag" data-testid="mtp-context">
-                                <h3 class="msb-h">Kildegrunnlag</h3>
+                            @* «Kildegrunnlag» is collapsed by default (2026-11-25): an accordion header (a button in the heading, aria-expanded/aria-controls).
+                               It is open only for the case it was opened on, so another case or scenario always starts collapsed. The content and its actions
+                               are unchanged and stay in the page (hidden while collapsed). *@
+                            var contextOpen = _contextOpenFor == current.Source.ScenarioId;
+                            <aside class="mtp-context" aria-label="Kildegrunnlag" data-testid="mtp-context" data-open="@(contextOpen ? "true" : "false")">
+                                <h3 class="msb-h mtp-context-head"><button type="button" class="mtp-context-toggle" aria-expanded="@(contextOpen ? "true" : "false")" aria-controls="mtp-context-body"
+                                        @onclick="() => _contextOpenFor = contextOpen ? null : current.Source.ScenarioId" data-testid="mtp-context-toggle">Kildegrunnlag</button></h3>
+                                <div id="mtp-context-body" class="mtp-context-body" hidden="@(!contextOpen)" data-testid="mtp-context-body">
                                 @if (current.Generated.Story is { } story)
                                 {
                                     <div class="mtp-ctx" data-testid="mtp-ctx-story">
@@ -901,6 +911,7 @@
                                     {
                                         <button type="button" class="btn btn-secondary btn-sm" disabled="@(Dirty || _busy || !_translationAvailable)" title="@(Dirty ? "Lagre først." : _translationAvailable ? null : "Oversettelse er ikke satt opp.")" @onclick="() => TranslateAsync(scenarioKey)" data-testid="mtp-translate">Oversett</button>
                                     }
+                                </div>
                                 </div>
                             </aside>
                         }
@@ -1170,6 +1181,8 @@
     /// <summary>Execution in BirkNext switched on (System settings; off by default) and the plan's recorded runs (read once per plan).</summary>
     private bool _executionEnabled;
     private List<ManualRunSummary> _planRuns = [];
+    /// <summary>The case whose «Kildegrunnlag» is open (null = collapsed); any other case shows it collapsed.</summary>
+    private string? _contextOpenFor;
     /// <summary>Results fetched from Azure DevOps for the plan (phase 2), shown apart from BirkNext runs.</summary>
     private List<AdoCaseResult> _adoResults = [];
     private IManualTestRunsApiService? RunsApi => ServiceProvider.GetService(typeof(IManualTestRunsApiService)) as IManualTestRunsApiService;

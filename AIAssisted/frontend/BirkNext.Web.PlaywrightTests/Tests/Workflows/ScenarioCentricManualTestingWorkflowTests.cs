@@ -258,13 +258,13 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
             await Assertions.Expect(page.GetByTestId("adx-unapproved-note")).ToBeVisibleAsync();
             await page.GetByTestId("adx-language").SelectOptionAsync("nb");
             await wizard.WaitForAsync(new() { Timeout = 60000 });
-            await Assertions.Expect(page.GetByTestId("adx-language-summary")).ToContainTextAsync("1 in Norwegian", new() { Timeout = 60000 });
+            await Assertions.Expect(page.GetByTestId("adx-language-summary")).ToContainTextAsync(new Regex("^1 på "), new() { Timeout = 60000 });
             await Assertions.Expect(page.Locator($"[data-testid=adx-case][data-case=\"{addedId}\"] [data-testid=adx-case-scenario]")).ToContainTextAsync("child past compulsory school age");
-            await Assertions.Expect(page.Locator($"[data-testid=adx-case][data-case=\"{addedId}\"] [data-testid=adx-case-ado]")).ToHaveTextAsync("New in Azure DevOps (no id)");
+            await Assertions.Expect(page.Locator($"[data-testid=adx-case][data-case=\"{addedId}\"] [data-testid=adx-case-ado]")).ToHaveTextAsync("Nytt i Azure DevOps (uten id)");
             await page.GetByTestId("adx-area").FillAsync($@"{project}\Manual");
             await page.GetByTestId("adx-area").DispatchEventAsync("change");
             await wizard.WaitForAsync(new() { Timeout = 60000 });
-            await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("ready", new() { Timeout = 60000 });
+            await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("klar", new() { Timeout = 60000 });
             var download = await page.RunAndWaitForDownloadAsync(() => page.GetByTestId("adx-download-xlsx").ClickAsync());
             var file = Path.Combine(Path.GetTempPath(), $"{project}-{download.SuggestedFilename}");
             await download.SaveAsAsync(file);

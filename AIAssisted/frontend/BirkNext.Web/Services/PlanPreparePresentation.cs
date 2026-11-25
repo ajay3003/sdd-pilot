@@ -100,7 +100,31 @@ public static partial class PlanPreparePresentation
     }
 
     /// <summary>One scenario of the plan as the master list shows it.</summary>
-    public sealed record ScenarioRow(string Key, string Title, string? StoryId, string? StoryTitle, List<TestCaseDraft> Cases, bool Technical);
+    public sealed record ScenarioRow(string Key, string Title, string? StoryId, string? StoryTitle, List<TestCaseDraft> Cases, bool Technical)
+    {
+        /// <summary>The acceptance scenario badge («AC 2»), from the same saved identity the detail heading uses; null when there is none.</summary>
+        public string? Ac { get; init; }
+        /// <summary>The scenario's cases name more than one acceptance scenario: no number is chosen (shown as «AC ?»).</summary>
+        public bool AcAmbiguous { get; init; }
+    }
+
+    /// <summary>
+    /// The acceptance scenario of a scenario row (2026-11-25), grounded in the saved source identity — the same <c>Generated.Story</c> +
+    /// <c>Generated.NumberInStory</c> that <see cref="CaseEditorPresentation.ScenarioHeading"/> shows in the detail: the scenario's own source case
+    /// first, otherwise its other source cases. Exactly one (story, number) that belongs to the row's story → «AC n». None (hand-written cases, a
+    /// scenario without a number) → no badge. More than one, or a number under another story → ambiguous, never a guess. Never from list position,
+    /// ordering, titles or requirement numbers.
+    /// </summary>
+    public static (string? Label, bool Ambiguous) AcOf(TestCaseDraft? primary, IEnumerable<TestCaseDraft> cases, CoverageUserStory? story)
+    {
+        var sources = (primary is not null ? new[] { primary } : []).Concat(cases)
+            .Where(c => c.Source.Kind != ScenarioSourceKind.Manual && c.Generated.Story is not null && c.Generated.NumberInStory is not null)
+            .Select(c => (StoryKey: c.Generated.Story!.Key, Number: c.Generated.NumberInStory!.Value))
+            .Distinct().ToList();
+        if (sources.Count == 0) return (null, false);
+        if (sources.Count > 1 || story is null || sources[0].StoryKey != story.Key) return (null, true);
+        return (ScenarioWorkspacePresentation.AcLabel(sources[0].Number), false);
+    }
 
     /// <summary>The plan's scenarios with their visible cases (technical ones only when <paramref name="showTechnical"/>), filtered by
     /// <paramref name="query"/> (title, story, requirement id); and how many cases are hidden as technical.</summary>
@@ -118,11 +142,14 @@ public static partial class PlanPreparePresentation
             if (visible.Count == 0) continue;
             var story = group.Primary?.Generated.Story ?? cases.Select(c => c.Generated.Story).FirstOrDefault(s => s is not null);
             var title = group.Unresolved ? "Uten scenario" : ScenarioBrowserPresentation.Concise(group.Title);
-            if (q.Length > 0 && !Matches(q, title, story?.StoryId, story?.Title, visible)) continue;
-            rows.Add(new(group.Key, title, story?.StoryId, story?.Title, visible, technical.Count == cases.Count && cases.Count > 0));
+            var (ac, acAmbiguous) = group.Unresolved ? (null, false) : AcOf(group.Primary, cases, story);
+            if (q.Length > 0 && !Matches(q, title, story?.StoryId, story?.Title, visible) && !(ac is not null && Compact(ac).Contains(Compact(q), StringComparison.OrdinalIgnoreCase))) continue;
+            rows.Add(new(group.Key, title, story?.StoryId, story?.Title, visible, technical.Count == cases.Count && cases.Count > 0) { Ac = ac, AcAmbiguous = acAmbiguous });
         }
         return (rows, hidden);
     }
+
+    private static string Compact(string s) => s.Replace(" ", "", StringComparison.Ordinal);
 
     private static bool Matches(string q, string title, string? storyId, string? storyTitle, IEnumerable<TestCaseDraft> cases) =>
         title.Contains(q, StringComparison.OrdinalIgnoreCase) || (storyId ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)

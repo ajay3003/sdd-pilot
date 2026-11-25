@@ -122,7 +122,7 @@ public sealed class ManualTestingWorkflowTests : IAsyncLifetime
             await page.GetByTestId("adx-area").FillAsync($@"{project}\Manual");
             await page.GetByTestId("adx-area").DispatchEventAsync("change");
             await wizard.WaitForAsync(new() { Timeout = 60000 });
-            await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("ready", new() { Timeout = 60000 });
+            await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("klar", new() { Timeout = 60000 });
             var download = await page.RunAndWaitForDownloadAsync(() => page.GetByTestId("adx-download-xlsx").ClickAsync());
             download.SuggestedFilename.Should().MatchRegex(@"-azure-test-plans-r\d+\.xlsx$");
             var file = Path.Combine(Path.GetTempPath(), $"{project}-{download.SuggestedFilename}");

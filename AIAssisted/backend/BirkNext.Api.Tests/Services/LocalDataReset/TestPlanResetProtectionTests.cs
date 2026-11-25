@@ -221,12 +221,56 @@ public sealed class TestPlanResetProtectionTests : IDisposable
     }
 
     [Fact]
+    public async Task Azure_devops_test_plan_settings_are_kept_by_every_reset_except_reset_everything()
+    {
+        // The user's rule (2026-11-25): the Azure DevOps setup for test plans is removed only by Reset data → Reset everything.
+        foreach (var (includeProtected, keepSettings) in new[] { (false, false), (false, true), (true, false) })
+        {
+            var (coordinator, database, _) = Build();
+            var result = await coordinator.ResetAsync(includeProtected, keepSettings);
+            if (includeProtected)
+            {
+                database.Kept.Should().NotContain(typeof(AdoExportProfileRecord));
+                result.ClearedDomains.Should().Contain(LocalDataResetCoordinator.AzureDevOpsTestPlansRemovedLine);
+                result.PreservedDomains.Should().NotContain(LocalDataResetCoordinator.AzureDevOpsTestPlansKept);
+            }
+            else
+            {
+                database.Kept.Should().Contain(typeof(AdoExportProfileRecord), $"keepSettings={keepSettings}");
+                result.PreservedDomains.Should().Contain(LocalDataResetCoordinator.AzureDevOpsTestPlansKept);
+            }
+            result.PreservedDomains.Should().Contain(LocalDataResetCoordinator.AzureDevOpsConnectionsKept, "connections are kept by every reset");
+        }
+        LocalDataResetCoordinator.SettingsEntityTypes.Should().NotContain(typeof(AdoExportProfileRecord), "an ordinary reset of settings must not reach it");
+    }
+
+    [Fact]
+    public async Task Reset_everything_removes_the_system_destination_but_an_ordinary_reset_and_the_connections_stay()
+    {
+        var directory = Path.Combine(_dir, "azure-devops");
+        var connections = new BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsConnectionStore(directory);
+        connections.Save(null, new("Bufdir", "bufdir", "fakepat-reset-0000000000000000000000000000000000000000"));
+        var store = new BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsTestPlanSettingsStore(directory);
+        store.SaveSystemDefault(new BirkNext.TestPlanning.AdoTestPlanDestination { Organization = "bufdir", Project = "M2LB", PlanId = 1, SuiteId = 2 }, "tester", DateTimeOffset.UtcNow);
+        var services = new ServiceCollection().AddSingleton(store).BuildServiceProvider();
+        LocalDataResetCoordinator Coordinator() =>
+            new(new RecordingDatabaseReset(), _db, new LocalDataResetState(Path.Combine(_dir, "local-data-reset.json")), services, NullLogger<LocalDataResetCoordinator>.Instance);
+
+        await Coordinator().ResetAsync(includeProtected: false, keepSettings: false);
+        store.SystemDefault().Should().NotBeNull("an ordinary reset keeps the Azure DevOps test plan destination");
+
+        await Coordinator().ResetAsync(includeProtected: true, keepSettings: false);
+        store.SystemDefault().Should().BeNull("Reset everything removes it");
+        connections.List().Should().ContainSingle("the connection itself is kept by every reset");
+    }
+
+    [Fact]
     public void Plan_tables_have_no_foreign_key_to_a_table_the_reset_empties()
     {
         // AdminService refuses a keep-tables reset when a kept table depends on an emptied one; this keeps the default (keep plans) runnable.
         using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql("Host=localhost;Database=none").Options);
         var planTables = LocalDataResetCoordinator.TestPlanEntityTypes.Select(t => db.Model.FindEntityType(t)!.GetTableName()).ToHashSet();
-        planTables.Should().HaveCount(6, "plans, revisions, snapshots, runs, attachments and the story grouping decisions");
+        planTables.Should().HaveCount(8, "plans, revisions, snapshots, runs, attachments, the story grouping decisions, the Azure DevOps test case links and the results fetched from Azure DevOps");
         var fks = db.Model.GetRelationalModel().Tables.Where(t => planTables.Contains(t.Name)).SelectMany(t => t.ForeignKeyConstraints);
         fks.Where(fk => !planTables.Contains(fk.PrincipalTable.Name)).Should().BeEmpty();
     }

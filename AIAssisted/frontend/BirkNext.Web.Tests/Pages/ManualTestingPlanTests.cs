@@ -577,4 +577,115 @@ public sealed partial class ManualTestingPlanTests : BunitContext
         ManualTestingPresentation.CanonicalRoute(null, draft, area, caseId, advanced).Should().Be(expected);
         ManualTestingPresentation.CanonicalRoute("skolenaervaer", draft, area, caseId, null).Should().BeNull("guide-mode plans stay on the full page");
     }
+
+    // ── O: US + AC badges in the left list (2026-11-25) ─────────────────────────────────────────────────────────
+
+    private static readonly CoverageUserStory Story1 = new() { Key = "s1", StoryId = "US1", Title = "User Story 1 - Accept a report (Priority: P1)" };
+    private static readonly CoverageUserStory Story2 = new() { Key = "s2", StoryId = "US2", Title = "User Story 2 - Protect a Kode 6/7 child (Priority: P1)" };
+
+    /// <summary>The saved acceptance scenario number of a case (as parsed into the case when it was prepared).</summary>
+    private static TestCaseDraft Numbered(TestCaseDraft c, int? n) => c with { Generated = c.Generated with { NumberInStory = n } };
+
+    [Fact]
+    public void O01_O05_each_scenario_row_shows_its_own_story_and_acceptance_scenario_from_the_saved_identity()
+    {
+        var plan = Plan(
+            Numbered(Case("a1", "Valid report is accepted", story: Story1), 1),
+            Numbered(Case("a2", "Stored data for a Kode 6/7 child is protected", story: Story2), 2),
+            Numbered(Case("b2", "Kode 6/7 address is never shown", story: Story1), 2),   // AC 2 under US1: another scenario than US2/AC 2
+            Numbered(Case("a3", "Report for a closed period is rejected", story: Story1), 3),
+            Case("m1", "Accepted report twice", kind: ScenarioSourceKind.Manual, scenarioKey: "a1"));
+        var rows = P.Rows(plan, true).Rows.ToDictionary(r => r.Key);
+        (rows["a1"].StoryId, rows["a1"].Ac).Should().Be(("US1", "AC 1"));
+        (rows["a2"].StoryId, rows["a2"].Ac).Should().Be(("US2", "AC 2"));
+        (rows["b2"].StoryId, rows["b2"].Ac).Should().Be(("US1", "AC 2"), "the same AC number under another story is its own scenario");
+        rows["a3"].Ac.Should().Be("AC 3", "different scenarios of one story keep their own numbers");
+        rows["a1"].Cases.Should().HaveCount(2, "a case written under the scenario shares the scenario's US/AC row");
+        rows.Values.Should().OnlyContain(r => !r.AcAmbiguous);
+    }
+
+    [Fact]
+    public void O06_O09_no_number_is_ever_guessed_for_handwritten_missing_or_ambiguous_scenarios()
+    {
+        var plan = Plan(
+            Case("h1", "Hand-written check", kind: ScenarioSourceKind.Manual),
+            Case("n1", "Scenario without a number", story: Story1),
+            Numbered(Case("x1", "Number under another story", story: Story1), 4) with { },
+            Numbered(Case("p1", "Scenario with a number", story: Story2), 1));
+        var x1 = plan.Cases.Single(c => c.Source.ScenarioId == "x1");
+        plan = plan with { Cases = [.. plan.Cases.Where(c => c.Source.ScenarioId != "x1"), x1 with { Generated = x1.Generated with { Story = Story2 } }] };
+        var rows = P.Rows(plan, true).Rows;
+        rows.Single(r => r.Title == "Uten scenario" || r.Cases.Any(c => c.Source.ScenarioId == "h1")).Ac.Should().BeNull("a hand-written case has no acceptance scenario");
+        rows.Single(r => r.Key == "n1").Should().Match<P.ScenarioRow>(r => r.Ac == null && !r.AcAmbiguous, "no number saved → no badge");
+        rows.Single(r => r.Key == "p1").Ac.Should().Be("AC 1");
+        // A row is one scenario (grouping by the source scenario id), so two numbers can only meet through inconsistent saved data: never chosen.
+        var p1 = Numbered(Case("p1", "p1", story: Story2), 1);
+        P.AcOf(p1, [p1, Numbered(Case("p1", "same scenario, other saved number", story: Story2), 3)], Story2).Should().Be(((string?)null, true),
+            "two acceptance scenarios for one row: none is chosen");
+        P.AcOf(Numbered(Case("q", "q", story: Story1), 2), [], Story2).Should().Be(((string?)null, true), "a number of another story is never shown under this one");
+        P.AcOf(null, [Case("m", "m", kind: ScenarioSourceKind.Manual)], Story1).Should().Be(((string?)null, false));
+    }
+
+    [Fact]
+    public void O10_O11_O18_the_badge_follows_the_saved_identity_through_reimport_translation_and_edits()
+    {
+        var original = Numbered(Case("a2", "Stored data for a Kode 6/7 child is protected", story: Story2), 2);
+        var reimported = original with { Generated = original.Generated with { Title = "Stored data for a Kode 6/7 child stays protected" } };
+        var edited = reimported with { Edits = reimported.Edits with { Title = "Eget navn på testtilfellet" } };
+        foreach (var c in new[] { original, reimported, edited })
+            P.Rows(Plan(c), true).Rows.Single().Ac.Should().Be("AC 2", "a new title, a translation or a manual edit never changes the acceptance scenario");
+        P.Rows(Plan(original, Numbered(Case("new", "Inserted scenario", story: Story2), 1)), true).Rows.Single(r => r.Key == "a2").Ac
+            .Should().Be("AC 2", "a scenario inserted before it does not shift its number");
+        P.Rows(Plan(original, edited with { Source = original.Source with { ScenarioId = "copy" } }), true).Rows.Should().HaveCount(2, "rows are never merged or created");
+    }
+
+    [Fact]
+    public void O12_O16_the_page_shows_US_and_AC_together_static_and_compact_and_search_still_works()
+    {
+        Setup(Plan(
+            Numbered(Case("a1", "Valid report is accepted", story: Story1), 1),
+            Numbered(Case("a2", "Stored data for a Kode 6/7 child is protected from everyone who has no need to know, also after a correction and a period lock", story: Story2), 2)));
+        var cut = Open();
+        var rows = cut.FindAll("[data-testid=mtp-scenario]");
+        rows.Select(r => (r.QuerySelector("[data-testid=mtp-row-story]")!.TextContent, r.QuerySelector("[data-testid=mtp-row-ac]")!.TextContent))
+            .Should().Equal(("US1", "AC 1"), ("US2", "AC 2"));
+        var ac = cut.FindAll("[data-testid=mtp-row-ac]")[1];
+        ac.TagName.Should().Be("SPAN", "a static label: «Vis scenarioet i Finn og forstå» in the detail opens the scenario");
+        ac.GetAttribute("title").Should().Be("Akseptansescenario AC 2 i US2");
+        ac.PreviousElementSibling!.GetAttribute("data-testid").Should().Be("mtp-row-story", "AC sits right after US");
+        ac.NextElementSibling!.ClassList.Should().Contain("mtp-scenario-title", "no extra row for the badges");
+        cut.Find("[data-testid=mtp-case][aria-current=true]").ClassList.Should().Contain("is-selected", "the selected case keeps its styling");
+        cut.Find("[data-testid=mtp-scenario-heading]").TextContent.Should().StartWith("AC 1 —", "the list and the detail name the same acceptance scenario");
+
+        P.Rows(Plan(Numbered(Case("a2", "x", story: Story2), 2)), true, "ac2").Rows.Should().ContainSingle("the badge text is searchable");
+        P.Rows(Plan(Numbered(Case("a2", "x", story: Story2), 2)), true, "US2").Rows.Should().ContainSingle();
+    }
+
+    // ── P: «Kildegrunnlag» collapsed by default (2026-11-25) ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void P_kildegrunnlag_starts_collapsed_expands_and_collapses_and_is_collapsed_again_for_another_case()
+    {
+        Setup();
+        var cut = Open();
+        var toggle = cut.Find("[data-testid=mtp-context-toggle]");
+        toggle.GetAttribute("aria-expanded").Should().Be("false");
+        toggle.GetAttribute("aria-controls").Should().Be("mtp-context-body");
+        toggle.TextContent.Should().Be("Kildegrunnlag");
+        cut.Find("[data-testid=mtp-context-body]").HasAttribute("hidden").Should().BeTrue("collapsed by default");
+        cut.Find("[data-testid=mtp-ctx-requirements]").TextContent.Should().Contain("FR-001", "the content is unchanged, only hidden");
+
+        toggle.Click();
+        cut.Find("[data-testid=mtp-context-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        cut.Find("[data-testid=mtp-context-body]").HasAttribute("hidden").Should().BeFalse();
+        cut.Find("[data-testid=mtp-context-toggle]").Click();
+        cut.Find("[data-testid=mtp-context-body]").HasAttribute("hidden").Should().BeTrue("a second click collapses it");
+
+        cut.Find("[data-testid=mtp-context-toggle]").Click();
+        cut.Find("[data-testid=mtp-technical]").Change(true);
+        cut.FindAll("[data-testid=mtp-case]").Single(b => b.GetAttribute("data-case") == "t1").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtp-title]").GetAttribute("value").Should().Be("Identifiers are English"));
+        cut.Find("[data-testid=mtp-context-toggle]").GetAttribute("aria-expanded").Should().Be("false", "another case or scenario starts collapsed");
+        cut.Find("[data-testid=mtp-context-body]").HasAttribute("hidden").Should().BeTrue();
+    }
 }

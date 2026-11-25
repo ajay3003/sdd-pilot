@@ -53,6 +53,8 @@ public sealed class AdoTestPlanTransferTests : IAsyncLifetime, IDisposable
         public readonly List<(int Id, string Name, int? Parent, int Plan)> Suites = [(70002, "Eksisterende plan", null, 70001)];
         public readonly Dictionary<int, (int Rev, string Title, string Type, string Project, string Steps)> Items = [];
         public readonly Dictionary<int, List<int>> SuiteCases = [];
+        /// <summary>Last result per test case id: outcome, run, result, completed, tester.</summary>
+        public readonly Dictionary<int, (string Outcome, int Run, int Result, DateTimeOffset At, string By)> LastResults = [];
         public readonly List<string> Writes = [];
         public readonly List<string> Calls = [];
         private int _next = 80000;
@@ -107,6 +109,18 @@ public sealed class AdoTestPlanTransferTests : IAsyncLifetime, IDisposable
                 var id = _next++;
                 Suites.Add((id, node["name"]!.ToString(), node["parentSuite"]!["id"]!.GetValue<int>(), plan));
                 return Json(new { id, name = node["name"]!.ToString(), suiteType = "staticTestSuite", parentSuite = new { id = node["parentSuite"]!["id"]!.GetValue<int>() } });
+            }
+            if (parts.Length == 9 && parts[6] == "Suites" && parts[8] == "TestPoint" && method == "GET")
+            {
+                var suite = int.Parse(parts[7]);
+                var cases = SuiteCases.TryGetValue(suite, out var l) ? l : [];
+                return Json(new { value = cases.Select((id, i) => new
+                {
+                    id = 60000 + suite % 100 * 100 + i, testCaseReference = new { id, name = Items.TryGetValue(id, out var w) ? w.Title : "" }, configuration = new { name = "Windows 11" },
+                    results = LastResults.TryGetValue(id, out var r)
+                        ? (object)new { outcome = r.Outcome, lastTestRunId = r.Run, lastResultId = r.Result, lastResultDetails = new { dateCompleted = r.At, runBy = new { displayName = r.By } } }
+                        : new { outcome = "Unspecified" },
+                }) });
             }
             if (parts.Length == 9 && parts[6] == "Suites" && parts[8] == "TestCase")
             {
@@ -212,7 +226,10 @@ public sealed class AdoTestPlanTransferTests : IAsyncLifetime, IDisposable
             Array.Empty<IIntegrationJourneyPack>(), new CriticalE2EStore(Path.Combine(_dir, "e2e"), NullLogger<CriticalE2EStore>.Instance), discoveries: _discoveries);
     }
 
-    private sealed record Sut(AdoTestPlanSettingsService Settings, AdoTestPlanTransferService Transfer, AdoTestPlanExportService Export, AzureDevOpsTestPlanSettingsStore Store);
+    private sealed record Sut(AdoTestPlanSettingsService Settings, AdoTestPlanTransferService Transfer, AdoTestPlanExportService Export, AzureDevOpsTestPlanSettingsStore Store)
+    {
+        public AdoTestResultsService Results { get; init; } = null!;
+    }
 
     private Sut Build(AppDbContext db)
     {
@@ -221,7 +238,10 @@ public sealed class AdoTestPlanTransferTests : IAsyncLifetime, IDisposable
         var export = new AdoTestPlanExportService(db, Plans(db));
         var store = new AzureDevOpsTestPlanSettingsStore(_connections.DirectoryPath);
         var settings = new AdoTestPlanSettingsService(_connections, client, store, export, TimeProvider.System, new Logger<AdoTestPlanSettingsService>(_log));
-        return new(settings, new AdoTestPlanTransferService(db, export, client, _connections, settings, TimeProvider.System, new Logger<AdoTestPlanTransferService>(_log)), export, store);
+        return new(settings, new AdoTestPlanTransferService(db, export, client, _connections, settings, TimeProvider.System, new Logger<AdoTestPlanTransferService>(_log)), export, store)
+        {
+            Results = new AdoTestResultsService(db, export, client, _connections, settings, TimeProvider.System, new Logger<AdoTestResultsService>(_log)),
+        };
     }
 
     /// <summary>A saved plan with two scenario cases («Child past compulsory school age», «Valid report»), each with steps and expected results.</summary>
@@ -527,7 +547,8 @@ public sealed class AdoTestPlanTransferTests : IAsyncLifetime, IDisposable
         retry.Cases.Single(c => c.CaseId == failedId).Outcome.Should().Be(AdoTransferOutcome.Updated);
         _ado.Items.Count.Should().Be(items);
         _ado.SuiteCases[70002].Should().Contain(notInSuite.TestCaseId!.Value);
-        (await sut.Export.HistoryAsync(Project, default)).Select(h => h.Status).Should().Equal("Transferred", "Partial", "Partial");
+        (await sut.Export.HistoryAsync(Project, default)).Select(h => h.Status).Should().Equal(["Transferred", "NeedsReview", "Partial"],
+            "newest first; nothing fully succeeded in the second transfer (created, but not in the suite), so it is never reported as transferred");
     }
 
     [Fact]
@@ -585,6 +606,70 @@ public sealed class AdoTestPlanTransferTests : IAsyncLifetime, IDisposable
             + string.Join("", (await db.AdoExports.AsNoTracking().ToListAsync()).Select(r => r.ContentJson));
         everything.Should().NotContain(Pat).And.NotContain(Convert.ToBase64String(Encoding.ASCII.GetBytes(":" + Pat)));
         _log.Lines.Should().Contain(l => l.Contains("Direct Azure DevOps transfer"));
+    }
+
+    // ── Phase 2: results fetched back from Azure DevOps ─────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Results_are_read_only_mapped_by_verified_link_stored_once_and_count_only_for_the_text_that_was_sent()
+    {
+        await using var db = Context();
+        var plan = await PlanAsync(db);
+        var sut = Build(db);
+        var sent = await sut.Transfer.TransferAsync(Request(plan), "tester", default);
+        var (a, b) = (sent.Cases[0], sent.Cases[1]);
+        _ado.Items[90002] = (1, a.Title, "Test Case", "M2LB", "");             // same title, NOT linked: never mapped by title
+        _ado.SuiteCases[70002].Add(90002);
+        var done = DateTimeOffset.UtcNow.AddMinutes(-5);
+        _ado.LastResults[a.TestCaseId!.Value] = ("Passed", 501, 100000, done, "Kari Tester");
+        _ado.LastResults[b.TestCaseId!.Value] = ("NotApplicable", 501, 100001, done, "Kari Tester");
+        _ado.LastResults[90002] = ("Passed", 501, 100002, done, "Kari Tester");
+        var writes = _ado.Writes.Count;
+
+        var fetched = await sut.Results.FetchAsync(new(Project, plan.Id), "tester", default);
+
+        _ado.Writes.Count.Should().Be(writes, "fetching results never writes to Azure DevOps");
+        fetched.New.Should().Be(2);
+        fetched.NotLinked.Should().Be(1, "a test case with the same title that BirkNext did not send is not mapped");
+        fetched.Results.Should().HaveCount(2).And.OnlyContain(r => r.Current && r.WebUrl!.Contains("runId=501"));
+        var notApplicable = fetched.Results.Single(r => r.CaseId == b.CaseId);
+        notApplicable.Outcome.Should().Be("NotApplicable");
+        AdoResultOutcome.Label(notApplicable.Outcome).Should().Be("Ikke relevant", "an outcome that is not Passed is never shown as Bestått");
+        (await db.ManualTestRuns.CountAsync()).Should().Be(0, "Azure DevOps results are kept apart from BirkNext runs");
+
+        var again = await sut.Results.FetchAsync(new(Project, plan.Id), "tester", default);
+        again.New.Should().Be(0);
+        again.AlreadyKnown.Should().Be(2);
+        (await db.ExternalTestResults.CountAsync()).Should().Be(2, "fetching again never duplicates a result");
+
+        // The tester edits case A in BirkNext: its Azure DevOps result belongs to the text that was sent.
+        var plans = Plans(db);
+        var current = await plans.DraftAsync(plan.Id, default);
+        await plans.SaveAsync(plan.Id, new SaveTestPlanDraftRequest
+        {
+            BaseRevision = current.Revision, PlanName = current.PlanName, ScenarioIds = [.. current.Cases.Select(c => c.Source.ScenarioId)], Suites = current.Suites,
+            Cases = [.. current.Cases.Select(c => new TestCaseHumanPart
+            {
+                ScenarioId = c.Source.ScenarioId, SuiteId = c.SuiteId, Risk = c.Risk, RequirementLinks = [.. c.RequirementLinks], RejectedSuggestions = c.RejectedSuggestions,
+                Translations = c.TranslatedLanguages.ToDictionary(l => l, l => c.Translation(l)!),
+                Edits = c.Source.ScenarioId == a.CaseId ? c.Edits with { Steps = ["Lock the period", "Open the report"], StepExpected = ["The period is locked", "The child is not listed"] } : c.Edits,
+            })],
+            RequirementCatalog = new ProjectRequirementCatalog { ProjectKey = current.ProjectKey!, Requirements = [new("FR-001", "The service MUST accept a valid report.", Spec)] },
+        }, "anna", default);
+        var after = await sut.Results.ListAsync(Project, plan.Id, default);
+        after.Single(r => r.CaseId == a.CaseId).Current.Should().BeFalse("the case changed after it was sent: «Fra en tidligere versjon»");
+        after.Single(r => r.CaseId == b.CaseId).Current.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Without_any_link_nothing_is_fetched_and_the_reason_is_plain_norwegian()
+    {
+        await using var db = Context();
+        var plan = await PlanAsync(db);
+        var sut = Build(db);
+        var fetched = await sut.Results.FetchAsync(new(Project, plan.Id), "tester", default);
+        fetched.Problems.Should().ContainSingle().Which.Should().StartWith("Ingen testtilfeller i planen er koblet til Azure DevOps ennå.");
+        _ado.Calls.Should().BeEmpty();
     }
 
     [Fact]

@@ -77,9 +77,9 @@ public sealed class AdoExportWizardTests : BunitContext
             && r.Mode == AdoExportMode.CreateNew && r.CaseIds.Count == 0);
         cut.FindAll("[data-testid=adx-case]").Select(c => (c.GetAttribute("data-case"), c.GetAttribute("data-state"))).Should().Equal(("c1", "ready"), ("c2", "excluded"));
         cut.Find("[data-case=c2] [data-testid=adx-case-why]").TextContent.Should().StartWith("Not approved yet");
-        cut.Find("[data-testid=adx-ready]").TextContent.Should().Be("1 ready");
-        cut.Find("[data-field='Area Path']").TextContent.Should().Contain("Confirm in Azure DevOps", "an offline export never claims the path exists");
-        cut.Find("[data-testid=adx-boundary]").TextContent.Should().Contain("Downloading is not importing");
+        cut.Find("[data-testid=adx-ready]").TextContent.Should().Be("1 klare");
+        cut.Find("[data-field='Area Path']").TextContent.Should().Contain("Bekreft i Azure DevOps", "an offline export never claims the path exists");
+        cut.Find("[data-testid=adx-boundary]").TextContent.Should().Contain("Å laste ned er ikke å importere");
         cut.Find("[data-testid=adx-howto]").TextContent.Should().Contain("Import test cases from CSV/XLSX");
     }
 
@@ -92,7 +92,7 @@ public sealed class AdoExportWizardTests : BunitContext
         cut.Find("[data-testid=adx-download-csv]").HasAttribute("disabled").Should().BeTrue();
         cut.Find("[data-testid=adx-issues-blocking]").TextContent.Should().Contain("Borrow: 1 step needs an expected result.");
         cut.Find("[data-testid=adx-case-open]").GetAttribute("href").Should().Be($"test-plan-suggestions?draft={PlanId}&area=prepare&case=c1");
-        cut.Find("[data-testid=adx-attention]").TextContent.Should().Be("1 need attention");
+        cut.Find("[data-testid=adx-attention]").TextContent.Should().Be("1 må rettes");
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public sealed class AdoExportWizardTests : BunitContext
 
         cut.WaitForAssertion(() => _file.Should().NotBeNull());
         _file!.Profile.Format.Should().Be(AdoExportFormat.Csv);
-        cut.WaitForAssertion(() => cut.Find("[data-testid=adx-downloaded]").TextContent.Should().Contain("1 test case, 2 rows").And.Contain("Import it in Azure DevOps"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=adx-downloaded]").TextContent.Should().Contain("1 testtilfelle, 2 rader").And.Contain("Importer den i Azure DevOps").And.Contain("Ingenting er endret i Azure DevOps"));
         download.Invocations.Single().Arguments.Should().Equal("library-plan-azure-test-plans-r4.csv", "QUJD", "x");
     }
 
@@ -131,7 +131,7 @@ public sealed class AdoExportWizardTests : BunitContext
         cut.FindAll("[data-testid=adx-update]").Should().BeEmpty("creating new test cases is the default");
 
         cut.Find("[data-testid=adx-mode-update]").Change(true);
-        cut.Find("[data-testid=adx-update]").TextContent.Should().Contain("replaces ALL steps").And.Contain("never guesses");
+        cut.Find("[data-testid=adx-update]").TextContent.Should().Contain("erstatter ALLE steg").And.Contain("gjetter den aldri");
         cut.Find("[data-testid=adx-existing-id]").Change("4711");
         cut.Find("[data-testid=adx-confirm-ids]").Change(true);
         _previews.Last().Should().Match<AdoExportRequest>(r => r.Mode == AdoExportMode.UpdateExisting && r.ExistingIdsConfirmed && r.ExistingIds["c1"] == "4711");
@@ -151,7 +151,7 @@ public sealed class AdoExportWizardTests : BunitContext
     {
         var readOnly = Open(canWrite: false, dirty: true);
         readOnly.FindAll("[data-testid=adx-save-profile]").Should().BeEmpty();
-        readOnly.Find("[data-testid=adx-dirty]").TextContent.Should().Contain("uses the saved plan");
+        readOnly.Find("[data-testid=adx-dirty]").TextContent.Should().Contain("bruker den lagrede planen");
     }
 
     [Fact]
@@ -170,7 +170,7 @@ public sealed class AdoExportWizardTests : BunitContext
 
         pending.SetResult((Preview(true, new AdoExportRequest { Profile = new AdoExportProfile { AreaPath = "Library\\Returns" } }), null));
         cut.WaitForAssertion(() => _api.Verify(x => x.SaveProfileAsync("library", It.Is<AdoExportProfile>(p => p.AreaPath == "Library\\Returns"), It.IsAny<CancellationToken>()), Times.Once));
-        cut.Find("[data-testid=adx-downloaded]").TextContent.Should().Contain("settings saved");
+        cut.Find("[data-testid=adx-downloaded]").TextContent.Should().Contain("Eksportinnstillingene er lagret");
     }
 
     [Fact]
@@ -185,7 +185,7 @@ public sealed class AdoExportWizardTests : BunitContext
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=adx-error]").TextContent.Should().Contain("revision 5"));
         cut.Find("[data-testid=adx-retry]");
-        cut.FindAll("fieldset.adx-step > legend").Select(l => l.TextContent.Trim()).Should().Equal("1 Select test cases", "2 Configure Azure DevOps", "3 Check", "4 Preview and download");
+        cut.FindAll("fieldset.adx-step > legend").Select(l => l.TextContent.Trim()).Should().Equal("1 Velg testtilfeller", "2 Felter i Azure DevOps", "3 Kontroll", "4 Forhåndsvis og last ned");
         cut.FindAll("[data-testid=adx-configure] input:not([type=radio]):not([type=checkbox])").Should().OnlyContain(i => i.Closest("label") != null, "every field has a visible label");
     }
 
@@ -196,7 +196,7 @@ public sealed class AdoExportWizardTests : BunitContext
 
         cut.Find("[data-testid=adx-mode-update]").Change(true);
         cut.Find("[data-testid=adx-existing-id]").GetAttribute("value").Should().Be("4711", "the id confirmed in an earlier export is not asked for again");
-        cut.Find("[data-testid=adx-existing-id-remembered]").TextContent.Should().Contain("Remembered from an earlier export");
+        cut.Find("[data-testid=adx-existing-id-remembered]").TextContent.Should().Contain("Husket fra en tidligere eksport");
         cut.Find("[data-testid=adx-existing-id]").Change("4800");
         cut.FindAll("[data-testid=adx-existing-id-remembered]").Should().BeEmpty();
         _previews.Last().ExistingIds["c1"].Should().Be("4800");
@@ -222,7 +222,7 @@ public sealed class AdoExportWizardTests : BunitContext
         var cut = Open(profile: remembered);
 
         cut.Find("[data-testid=adx-area]").GetAttribute("value").Should().Be(@"Library\Manual", "the tab kept what the tester typed");
-        cut.Find("[data-testid=adx-settings-unsaved]").TextContent.Should().Contain("kept from before the page was reloaded").And.Contain("not this project's export settings");
+        cut.Find("[data-testid=adx-settings-unsaved]").TextContent.Should().Contain("tatt vare på fra før siden ble lastet på nytt").And.Contain("ikke prosjektets eksportinnstillinger");
         _previews.Last().Profile.AreaPath.Should().Be(@"Library\Manual");
         _previews.Last().Profile.KnownTestCaseIds.Should().ContainKey($"{PlanId:N}/c1", "remembered Azure DevOps ids always come from the project");
 
@@ -253,9 +253,29 @@ public sealed class AdoExportWizardTests : BunitContext
         var cut = Open();
         cut.FindAll("[data-testid=adx-settings-unsaved]").Should().BeEmpty();
         cut.Find("[data-testid=adx-area]").Change(@"Library\Other");
-        cut.WaitForAssertion(() => cut.Find("[data-testid=adx-settings-unsaved]").TextContent.Should().Contain("differ from this project's export settings"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=adx-settings-unsaved]").TextContent.Should().Contain("forskjellige fra prosjektets eksportinnstillinger"));
         cut.Find("[data-testid=adx-area]").Change(@"Library\Loans");
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=adx-settings-unsaved]").Should().BeEmpty());
         JSInterop.Invocations["sessionStorage.removeItem"].Should().NotBeEmpty("a value changed back is no longer kept");
+    }
+
+    [Fact]
+    public void An_older_check_that_answers_last_never_replaces_the_newer_one()
+    {
+        // Seen in the browser 2026-11-25: two checks overlapped and the older answer (no Area Path) arrived last.
+        var cut = Open();
+        var answers = new Queue<TaskCompletionSource<(AdoExportPreview?, string?)>>();
+        var requests = new List<AdoExportRequest>();
+        _api.Setup(x => x.PreviewAsync(It.IsAny<AdoExportRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((AdoExportRequest r, CancellationToken _) => { requests.Add(r); var t = new TaskCompletionSource<(AdoExportPreview?, string?)>(); answers.Enqueue(t); return t.Task; });
+        cut.Find("[data-testid=adx-area]").Change("");
+        cut.Find("[data-testid=adx-area]").Change(@"Library\Newer");
+        answers.Should().HaveCount(2);
+        var (older, newer) = (answers.Dequeue(), answers.Dequeue());
+        cut.InvokeAsync(() => newer.SetResult((Preview(true, requests[1]), null)));
+        cut.InvokeAsync(() => older.SetResult((Preview(false, requests[0]), null)));
+        cut.WaitForAssertion(() => cut.Find("[data-field='Area Path']").TextContent.Should().Contain(@"Library\Newer"));
+        cut.FindAll("[data-testid=adx-issues-blocking]").Should().BeEmpty("the older answer is ignored");
+        cut.Find("[data-testid=adx-download-xlsx]").HasAttribute("disabled").Should().BeFalse();
     }
 }
