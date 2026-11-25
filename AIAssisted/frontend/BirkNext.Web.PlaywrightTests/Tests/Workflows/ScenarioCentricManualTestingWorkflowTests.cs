@@ -249,7 +249,7 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
             // 28–29. Export in Norwegian: each case in one language; the untranslated case in its original language.
             var draftId = Regex.Match(page.Url, @"[?&]draft=([^&]+)").Groups[1].Value;
             draftId.Should().NotBeNullOrEmpty();
-            await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/manual-testing", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+            await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/manual-testing/plans", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
             await ReadyAsync(page, "mt");
             await page.Locator($"[data-testid=mt-plan-export][href*=\"{draftId}\"]").ClickAsync();
             var wizard = page.Locator("[data-testid=adx][aria-busy=false]");

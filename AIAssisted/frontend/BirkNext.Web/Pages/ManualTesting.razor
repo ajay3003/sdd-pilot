@@ -13,12 +13,15 @@
    Testing home (/manual-testing) — no second test plan system: the saved plans, their counts and «Neste steg» come from the same stored records,
    creation uses the same create call (an explicit empty plan or the scenarios chosen in Finn og forstå), and «Overfør testplan» is the same transfer
    panel (file export by default, direct transfer opt-in). Project is the scope: plans are never hidden because another module is selected. *@
-<PageTitle>Testplaner — Manuell testing</PageTitle>
+@* UX pass (2026-11-25): /manual-testing is the workspace OVERVIEW («Manuell testing»: one next step, the three steps with their status, the
+   counts collapsed); /manual-testing/plans is «3. Testplaner» (create, list, transfer). Before, both addresses showed the Testplaner page, so the
+   «Manuell testing» tab led to «Testplaner» and was never marked as the current page. *@
+<PageTitle>@(IsHome ? "Manuell testing" : "Testplaner — Manuell testing")</PageTitle>
 
 <div class="mt msb-page" data-testid="mt" aria-busy="@(_loading ? "true" : "false")">
-    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="plans" Title="Testplaner"
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="@(IsHome ? null : "plans")" Title="@(IsHome ? "Manuell testing" : "Testplaner")"
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
-        Lead="Opprett, åpne og overfør testplanene for applikasjonen. Testtilfellene forberedes i Planlegg og klargjør.">
+        Lead="@(IsHome ? "Oversikt: hva er neste steg, og hvor står testarbeidet? Arbeidet gjøres i de tre stegene under." : "Opprett, åpne og overfør testplanene for applikasjonen. Testtilfellene forberedes i Planlegg og klargjør.")">
         <Help><BirkNext.Web.Components.HelpLink Topic="manual-testing" Text="Slik fungerer det" /></Help>
     </BirkNext.Web.Components.TestingWorkspaceHeader>
 
@@ -39,7 +42,53 @@
             <p class="mt-alert" role="alert" data-testid="mt-error">@error <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync" data-testid="mt-retry">Prøv igjen</button></p>
         }
 
-        @if (facts.ProjectKey is not null)
+        @if (facts.ProjectKey is not null && IsHome)
+        {
+            var plans = facts.Plans;
+            var cases = plans.Sum(p => p.Cases);
+            var approved = plans.Sum(p => p.Accepted);
+            var clarify = plans.Sum(p => p.NeedsClarification);
+            var notReady = plans.Sum(p => p.Blocked);
+            <section class="msb-next" aria-labelledby="mt-next-title" data-testid="mt-next">
+                <div>
+                    <h2 id="mt-next-title" class="msb-h">Neste steg</h2>
+                    <p class="mt-muted" data-testid="mt-next-why">@next.Why</p>
+                </div>
+                <a class="btn btn-primary" href="@next.Href" data-testid="mt-next-action">@next.Label</a>
+            </section>
+            @* The three steps as destinations, each with one line of status from the stored records. *@
+            <nav class="mt-steps" aria-label="Stegene i manuell testing" data-testid="mt-steps">
+                <a class="mt-step-card" href="@M.DiscoverRoute" data-testid="mt-step" data-stage="discover"><span class="twh-n" aria-hidden="true">1</span>
+                    <strong>Finn og forstå</strong><span class="mt-muted msb-small">@DiscoverStatus(facts)</span></a>
+                <a class="mt-step-card" href="@M.PlanRoute" data-testid="mt-step" data-stage="plan"><span class="twh-n" aria-hidden="true">2</span>
+                    <strong>Planlegg og klargjør</strong><span class="mt-muted msb-small">@(cases == 0 ? "Ingen testtilfeller ennå" : $"{cases} testtilfelle{(cases == 1 ? "" : "r")} · {approved} godkjent")</span></a>
+                <a class="mt-step-card" href="@M.PlansRoute" data-testid="mt-step" data-stage="plans"><span class="twh-n" aria-hidden="true">3</span>
+                    <strong>Testplaner</strong><span class="mt-muted msb-small">@(plans.Count == 0 ? "Ingen testplaner ennå" : $"{plans.Count} testplan{(plans.Count == 1 ? "" : "er")} · overfør til Azure DevOps")</span></a>
+            </nav>
+            <details class="mt-status" data-testid="mt-status">
+                <summary><span class="msb-h">Status for testarbeidet</span> <span class="mt-muted msb-small" data-testid="mt-status-summary">@StatusSummary(cases, approved, notReady)</span></summary>
+            <dl class="msb-counts msb-counts-wide" data-testid="mt-counts" aria-label="Status for applikasjonen">
+                <div title="Scenarioer funnet for valgt modul og spesifikasjon — ikke testtilfeller"><dt>Forslag</dt><dd data-testid="mt-count-suggestions">@(_ws.Discovery?.Candidates.Count.ToString() ?? "—")</dd></div>
+                <div><dt>Testtilfeller</dt><dd data-testid="mt-count-cases">@cases</dd></div>
+                <div><dt>Godkjent</dt><dd data-testid="mt-count-approved">@approved</dd></div>
+                <div class="@(clarify > 0 ? "is-warn" : null)"><dt>Trenger avklaring</dt><dd data-testid="mt-count-clarify">@clarify</dd></div>
+                <div><dt>Lagrede testplaner</dt><dd data-testid="mt-count-plans">@plans.Count</dd></div>
+            </dl>
+            @if (cases > 0)
+            {
+                var missingExpected = plans.Sum(p => p.MissingExpected); var missingData = plans.Sum(p => p.MissingTestData);
+                <dl class="msb-counts msb-counts-wide" data-testid="mt-readiness-counts" aria-label="Hva mangler før testene kan starte">
+                    <div class="@(missingExpected > 0 ? "is-warn" : null)"><dt>Mangler forventet resultat</dt><dd data-testid="mt-count-missing-expected">@missingExpected av @cases</dd></div>
+                    <div class="@(missingData > 0 ? "is-warn" : null)"><dt>Uten koblet testdata</dt><dd data-testid="mt-count-missing-data">@missingData av @cases</dd></div>
+                    <div class="@(notReady > 0 ? "is-warn" : null)"><dt>Ikke klar til kjøring</dt><dd data-testid="mt-count-blocked">@notReady av @cases</dd></div>
+                    <div><dt>Gjennomført / bestått</dt><dd data-testid="mt-count-executed">@if (_executionEnabled) { <text>Registreres i Azure DevOps og i BirkNext · </text><a href="manual-testing/run" data-testid="mt-run-history">Se kjøringshistorikk</a> } else { <text>Registreres i Azure DevOps</text> }</dd></div>
+                </dl>
+                <p class="mt-muted msb-small" data-testid="mt-readiness-basis">Av alle testtilfeller i lagrede testplaner; utelatte testtilfeller telles ikke som mangler. «Uten koblet testdata» gjelder også testtilfeller som ikke trenger testdata.</p>
+            }
+            <p class="mt-muted msb-small mt-boundary">Tallene kommer fra lagrede data. Et forslag er ikke et testtilfelle, og et forberedt, godkjent eller overført testtilfelle er ikke en kjørt test: manuelle tester kjøres, og resultatene registreres, i Azure DevOps Test Plans@(_executionEnabled ? " eller i BirkNext (Testgjennomføring er slått på)" : "").</p>
+            </details>
+        }
+        else if (facts.ProjectKey is not null)
         {
             @* 1. Testplan actions *@
             <div class="mt-plan-actions" data-testid="mt-plan-actions">
@@ -97,39 +146,6 @@
                 <BirkNext.Web.Components.ManualTesting.SavedPlans Workspace="workspace" Api="Api" ShowArchived="@(PlansQuery == "archived")" Changed="LoadAsync" />
             }
 
-            @* 3. Next step and status *@
-            <section class="msb-next" aria-labelledby="mt-next-title" data-testid="mt-next">
-                <div>
-                    <h2 id="mt-next-title" class="msb-h">Neste steg</h2>
-                    <p class="mt-muted" data-testid="mt-next-why">@next.Why</p>
-                </div>
-                <a class="btn btn-outline-primary" href="@next.Href" data-testid="mt-next-action">@next.Label</a>
-            </section>
-            var plans = facts.Plans;
-            var cases = plans.Sum(p => p.Cases);
-            var approved = plans.Sum(p => p.Accepted);
-            var clarify = plans.Sum(p => p.NeedsClarification);
-            <dl class="msb-counts msb-counts-wide" data-testid="mt-counts" aria-label="Status for applikasjonen">
-                <div title="Scenarioer funnet for valgt modul og spesifikasjon — ikke testtilfeller"><dt>Forslag</dt><dd data-testid="mt-count-suggestions">@(_ws.Discovery?.Candidates.Count.ToString() ?? "—")</dd></div>
-                <div><dt>Testtilfeller</dt><dd data-testid="mt-count-cases">@cases</dd></div>
-                <div><dt>Godkjent</dt><dd data-testid="mt-count-approved">@approved</dd></div>
-                <div class="@(clarify > 0 ? "is-warn" : null)"><dt>Trenger avklaring</dt><dd data-testid="mt-count-clarify">@clarify</dd></div>
-                <div><dt>Lagrede testplaner</dt><dd data-testid="mt-count-plans">@plans.Count</dd></div>
-            </dl>
-            @* «Kan testene starte?» (2026-11-25): what is still missing in the prepared cases, from the saved plans' own counts — each with its denominator.
-               Readiness, execution and results are separate questions: execution and results live in Azure DevOps Test Plans and are not shown as numbers here. *@
-            @if (cases > 0)
-            {
-                var missingExpected = plans.Sum(p => p.MissingExpected); var missingData = plans.Sum(p => p.MissingTestData); var blocked = plans.Sum(p => p.Blocked);
-                <dl class="msb-counts msb-counts-wide" data-testid="mt-readiness-counts" aria-label="Hva mangler før testene kan starte">
-                    <div class="@(missingExpected > 0 ? "is-warn" : null)"><dt>Mangler forventet resultat</dt><dd data-testid="mt-count-missing-expected">@missingExpected av @cases</dd></div>
-                    <div class="@(missingData > 0 ? "is-warn" : null)"><dt>Uten koblet testdata</dt><dd data-testid="mt-count-missing-data">@missingData av @cases</dd></div>
-                    <div class="@(blocked > 0 ? "is-warn" : null)"><dt>Ikke klar til kjøring</dt><dd data-testid="mt-count-blocked">@blocked av @cases</dd></div>
-                    <div><dt>Gjennomført / bestått</dt><dd data-testid="mt-count-executed">@if (_executionEnabled) { <text>Registreres i Azure DevOps og i BirkNext · </text><a href="manual-testing/run" data-testid="mt-run-history">Se kjøringshistorikk</a> } else { <text>Registreres i Azure DevOps</text> }</dd></div>
-                </dl>
-                <p class="mt-muted msb-small" data-testid="mt-readiness-basis">Av alle testtilfeller i lagrede testplaner; utelatte testtilfeller telles ikke som mangler. «Uten koblet testdata» gjelder også testtilfeller som ikke trenger testdata.</p>
-            }
-            <p class="mt-muted msb-small mt-boundary">Tallene kommer fra lagrede data. Et forslag er ikke et testtilfelle, og et forberedt, godkjent eller overført testtilfelle er ikke en kjørt test: manuelle tester kjøres, og resultatene registreres, i Azure DevOps Test Plans@(_executionEnabled ? " eller i BirkNext (Testgjennomføring er slått på)" : "").</p>
         }
         else
         {
@@ -154,6 +170,16 @@
 
     /// <summary>Execution in BirkNext is switched on (System settings; off by default): results are then recorded in BirkNext too.</summary>
     private bool _executionEnabled;
+    /// <summary>The workspace overview (/manual-testing) rather than «3. Testplaner» (/manual-testing/plans).</summary>
+    private bool IsHome => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/').Equals(M.HomeRoute, StringComparison.OrdinalIgnoreCase);
+
+    private string DiscoverStatus(ManualTestingPresentation.Facts facts) =>
+        facts.SpecificationChoice is not null ? "Velg modul og spesifikasjon"
+        : _ws?.Discovery is { } d ? $"{d.Candidates.Count} forslag · {d.Candidates.Count(c => c.NeedsClarification)} trenger avklaring"
+        : "Ingen scenarioer funnet ennå";
+
+    private static string StatusSummary(int cases, int approved, int notReady) =>
+        $"{cases} testtilfelle{(cases == 1 ? "" : "r")} · {approved} godkjent" + (cases > 0 ? $" · {notReady} ikke klar til kjøring" : "");
     private ITestPlanSuggestionsApiService? Api =>ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
     private bool _loading = true;
     private ManualTestingWorkspace.Snapshot? _ws;
@@ -182,6 +208,12 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // An older link to the overview with a Testplaner action (?transfer=, ?create=, ?plans=) belongs on «3. Testplaner».
+        if (IsHome && (TransferQuery is not null || CreateQuery is not null || PlansQuery is not null))
+        {
+            var query = Nav.Uri[Nav.Uri.IndexOf('?')..];
+            Nav.NavigateTo(M.PlansRoute + query, replace: true); // same component: loading continues below with the same query
+        }
         _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
         if (_projection is not null) _projection.Changed += OnProjectChanged;
         await LoadAsync();

@@ -8,13 +8,17 @@
    Nothing is chosen automatically: an empty dropdown says what still has to be chosen. *@
 @if (_state is { } s && (s.HasModules || s.HasPacks || s.Artifacts.Count > 1 || s.Status == ExplorerArtifactStatus.Loaded))
 {
-    <section class="ssp" data-testid="ssp" aria-label="Specification used for manual testing" aria-busy="@(_busy ? "true" : "false")">
+    var chosen = s.Status == ExplorerArtifactStatus.Loaded && s.Selected is not null;
+    <section class="ssp" data-testid="ssp" aria-label="Spesifikasjonen manuell testing bruker" aria-busy="@(_busy ? "true" : "false")">
+        @* UX pass (2026-11-25): once a specification is in use the picker is one line; the dropdowns open under «Endre». *@
+        <details class="ssp-choose" open="@(!chosen || _busy)" data-testid="ssp-choose">
+        <summary class="ssp-summary">@(chosen ? "Endre modul eller spesifikasjon" : "Velg modul og spesifikasjon")</summary>
         <div class="ssp-row">
             @if (s.HasModules)
             {
-                <label class="ssp-field"><span class="ssp-k">Module</span>
+                <label class="ssp-field"><span class="ssp-k">Modul</span>
                     <select class="ssp-select" data-testid="ssp-module" disabled="@_busy" value="@(s.Module is { } current ? ModuleValue(current) : "")" @onchange="OnModule">
-                        @if (s.Module is null) { <option value="">Choose a module…</option> }
+                        @if (s.Module is null) { <option value="">Velg modul …</option> }
                         @foreach (var m in s.Modules!.Where(m => m.Candidates > 0))
                         {
                             <option value="@ModuleValue(m.Module)">@ModuleText(m)</option>
@@ -23,9 +27,9 @@
             }
             @if (s.HasPacks && !s.ModuleRequired)
             {
-                <label class="ssp-field"><span class="ssp-k">Feature</span>
+                <label class="ssp-field"><span class="ssp-k">Funksjon</span>
                     <select class="ssp-select" data-testid="ssp-feature" disabled="@_busy" value="@(s.PackRequired ? "" : s.Pack ?? "")" @onchange="OnFeature">
-                        @if (s.PackRequired || s.Pack is null) { <option value="">Choose a feature…</option> }
+                        @if (s.PackRequired || s.Pack is null) { <option value="">Velg funksjon …</option> }
                         @foreach (var p in s.Packs!)
                         {
                             <option value="@p.Pack">@(p.DisplayName == p.Pack ? p.Pack : $"{p.DisplayName} ({p.Pack})")</option>
@@ -34,9 +38,9 @@
             }
             @if (!s.ModuleRequired && !s.PackRequired && SpecificationChoices(s) is { Count: > 1 } choices)
             {
-                <label class="ssp-field"><span class="ssp-k">Specification</span>
+                <label class="ssp-field"><span class="ssp-k">Spesifikasjon</span>
                     <select @key="_renderKey" class="ssp-select" data-testid="ssp-specification" disabled="@_busy" value="@(s.Selected?.Id ?? "")" @onchange="OnSpecification">
-                        @if (s.Selected is null) { <option value="">Choose a specification…</option> }
+                        @if (s.Selected is null) { <option value="">Velg spesifikasjon …</option> }
                         @foreach (var a in choices)
                         {
                             <option value="@a.Id">@(a.DisplayName == a.FileName ? a.FileName : $"{a.DisplayName} ({a.SourcePath ?? a.FileName})")</option>
@@ -46,45 +50,46 @@
             @* A module / feature / specification change rebuilds the review context before the new choice is shown (2026-11-25: it could take seconds
                on a large workspace with no sign of life): say what is happening beside the dropdowns. *@
             @if (_busy) { <InlineLoading Text="Henter spesifikasjoner …" Class="ssp-busy" TestId="ssp-busy" /> }
-            @if (Actions is not null) { <div class="ssp-actions" data-testid="ssp-actions">@Actions</div> }
         </div>
+        </details>
+        @if (Actions is not null) { <div class="ssp-actions" data-testid="ssp-actions">@Actions</div> }
         <p class="ssp-current" role="status" data-testid="ssp-current" data-state="@CurrentState(s)">
             @if (s.Status == ExplorerArtifactStatus.Loaded && s.Selected is { } selected)
             {
-                <span>Requirements and scenarios come from <strong>@selected.DisplayName</strong> <span class="ssp-path">@(selected.SourcePath ?? selected.FileName)</span>.</span>
+                <span>Krav og scenarioer hentes fra <strong>@selected.DisplayName</strong> <span class="ssp-path">@(selected.SourcePath ?? selected.FileName)</span>.</span>
             }
             else if (s.ModuleRequired)
             {
-                <span>Choose the module you are testing.</span>
+                <span>Velg modulen du tester.</span>
             }
             else if (s.PackRequired)
             {
-                <span>Choose the feature you are testing in @(s.ModuleLabel ?? "this module").</span>
+                <span>Velg funksjonen du tester i @(s.ModuleLabel ?? "denne modulen").</span>
             }
             else if (s.Status == ExplorerArtifactStatus.SelectionRequired)
             {
-                <span>Several specifications are available; choose the one you are testing.</span>
+                <span>Det finnes flere spesifikasjoner; velg den du tester.</span>
             }
             else if (s.Status == ExplorerArtifactStatus.Empty && s.PackSummary is { } pack)
             {
-                <span>@pack.DisplayName has no specification of its own. Choose another feature, or <a href="specification-explorer">open the Specification Explorer</a> to use a shared document for it.</span>
+                <span>@pack.DisplayName har ingen egen spesifikasjon. Velg en annen funksjon, eller <a href="specification-explorer">åpne Specification Explorer</a> for å bruke et felles dokument.</span>
             }
             else
             {
-                <span>No specification is available here.</span>
+                <span>Ingen spesifikasjon er tilgjengelig her.</span>
             }
-            <a class="ssp-link" href="specification-explorer" data-testid="ssp-open-explorer">Open in the Specification Explorer</a>
+            <a class="ssp-link" href="specification-explorer" data-testid="ssp-open-explorer">Åpne i Specification Explorer</a>
         </p>
         @if (_changed && ShowDiscoverLink && s.Status == ExplorerArtifactStatus.Loaded)
         {
-            <p class="ssp-note" role="status" data-testid="ssp-changed">The specification changed. Scenarios found earlier came from the previous one; test cases already prepared stay in the plan.
+            <p class="ssp-note" role="status" data-testid="ssp-changed">Spesifikasjonen er endret. Scenarioer funnet tidligere kom fra den forrige; testtilfeller som allerede er forberedt, blir i testplanen.
                 @if (Discover.HasDelegate)
                 {
-                    <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" data-testid="ssp-discover" @onclick="DiscoverNowAsync">Discover now</button>
+                    <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" data-testid="ssp-discover" @onclick="DiscoverNowAsync">Finn scenarioer nå</button>
                 }
                 else
                 {
-                    <a class="btn btn-primary btn-sm" href="test-plan-suggestions?area=choose&discover=now" data-testid="ssp-discover">Discover now</a>
+                    <a class="btn btn-primary btn-sm" href="test-plan-suggestions?area=choose&discover=now" data-testid="ssp-discover">Finn scenarioer nå</a>
                 }
             </p>
         }
@@ -147,7 +152,7 @@ else if (Actions is not null)
         s.Status == ExplorerArtifactStatus.Loaded ? "chosen" : s.ModuleRequired ? "module" : s.PackRequired ? "feature" : s.Status == ExplorerArtifactStatus.SelectionRequired ? "specification" : "none";
 
     private static string ModuleText(ArtifactModuleRoleState m) =>
-        m.Packs > 1 ? $"{m.Label} — {m.Packs} features" : $"{m.Label} — {m.Candidates} specification{(m.Candidates == 1 ? "" : "s")}";
+        m.Packs > 1 ? $"{m.Label} — {m.Packs} funksjoner" : $"{m.Label} — {m.Candidates} spesifikasjon{(m.Candidates == 1 ? "" : "er")}";
 
     /// <summary>The project-level module's key is "" — the same as "nothing chosen" — so it has its own option value.</summary>
     private const string ProjectLevelValue = "(project-level)";
@@ -200,7 +205,7 @@ else if (Actions is not null)
         {
             // Flush, not a second full save: the auto-save already saves the change; this waits for it (or saves what is still unsaved) and
             // reports a failure. Two full saves took 4-5 s each of the browser's thread on a large workspace.
-            _saveWarning = await autoSave.FlushAsync() ? null : "The choice is used in this session but could not be saved to the workspace, so it will be lost on reload.";
+            _saveWarning = await autoSave.FlushAsync() ? null : "Valget brukes i denne økten, men kunne ikke lagres i arbeidsområdet og forsvinner ved ny innlasting.";
             StateHasChanged();
         }
     }

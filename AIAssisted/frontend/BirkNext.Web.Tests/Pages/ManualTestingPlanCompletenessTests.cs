@@ -58,6 +58,34 @@ public sealed partial class ManualTestingPlanTests
     }
 
     [Fact]
+    public void UX_secondary_sections_are_collapsed_but_a_hindrance_and_a_blocked_readiness_are_never_hidden()
+    {
+        // UX pass (2026-11-25): «Før du starter» and the readiness checklist are collapsed with a summary; a blocked case keeps both open.
+        Setup(Plan(Case("c1", "Submit a valid report")));
+        var cut = Open();
+        var before = cut.Find("[data-testid=mtp-before]");
+        before.HasAttribute("open").Should().BeFalse();
+        cut.Find("[data-testid=mtp-before-summary]").TextContent.Should().Be("0 av 2 fylt ut · ingen hindring");
+        cut.Find("[data-testid=tdp-readiness-details]").HasAttribute("open").Should().BeFalse();
+        cut.Find("[data-testid=tdp-readiness-count]").Should().NotBeNull("«Klar til kjøring?» and its count stay visible");
+
+        cut.Find("[data-testid=mtp-blocked-by]").Input("Venter på testdata fra Person-teamet");
+        cut.Find("[data-testid=mtp-before]").HasAttribute("open").Should().BeTrue("a recorded hindrance is shown");
+        cut.Find("[data-testid=mtp-before-summary]").TextContent.Should().StartWith("Hindring registrert");
+    }
+
+    [Fact]
+    public void UX_a_saved_hindrance_opens_the_readiness_checklist_so_Blokkert_shows_its_reason()
+    {
+        // Readiness reflects the SAVED case: a saved hindrance makes it «Blokkert», and the collapsed checklist then opens by itself.
+        Setup(Plan(Case("c1", "Submit a valid report") with { Edits = new TestCaseEdits { BlockedBy = "Venter på testdata fra Person-teamet" } }));
+        var cut = Open();
+        cut.Find("[data-testid=tdp-readiness-details]").HasAttribute("open").Should().BeTrue("a blocked case shows why");
+        cut.Find("[data-testid=tdp-check]").TextContent.Should().Contain("Venter på testdata fra Person-teamet");
+        cut.Find("[data-testid=mtp-before]").HasAttribute("open").Should().BeTrue();
+    }
+
+    [Fact]
     public void W03_test_data_shows_approval_and_environment_as_recorded_and_points_to_registration_when_there_is_none()
     {
         P.TestDataOptionLabel(new TestDataOption("a1", "barn-ukjent", "Barn som ikke finnes i Person", "Json", "Approved", "Valid", null, null, null, "QA"))

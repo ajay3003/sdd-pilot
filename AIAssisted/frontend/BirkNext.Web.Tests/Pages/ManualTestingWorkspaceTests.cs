@@ -119,24 +119,57 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
     // ── Home ─────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void The_home_names_the_project_the_next_step_the_stages_and_plans_and_never_runs()
+    public void The_home_is_the_Manuell_testing_overview_with_one_next_step_three_step_cards_and_the_counts_collapsed()
     {
+        // UX pass (2026-11-25): «Manuell testing» was the Testplaner page with «3. Testplaner» marked — the tab never showed as current.
         Setup([Summary()], Discovery(3));
         var cut = Open<ManualTesting>("manual-testing");
 
         cut.Find("[data-testid=twh-project]").TextContent.Should().Contain("Library");
-        cut.Find("[data-testid=twh-stage][data-stage=plans]").GetAttribute("aria-current").Should().Be("page", "the home is the Testplaner tab");
+        cut.Find("[data-testid=twh-stage][data-stage=home]").GetAttribute("aria-current").Should().Be("page", "the overview is its own page");
+        cut.Find("[data-testid=twh-stage][data-stage=plans]").GetAttribute("aria-current").Should().BeNull();
+        cut.Find("[data-testid=twh-title]").TextContent.Should().Be("Manuell testing");
         cut.FindAll("[data-testid=twh-stage]").Select(a => a.GetAttribute("href")).Should().Equal("manual-testing", "manual-testing/discover", "manual-testing/plan", "manual-testing/plans");
         cut.Find("[data-testid=mt-next-action]").Should().Match<AngleSharp.Dom.IElement>(a => a.TextContent == "Overfør testplan"
             && a.GetAttribute("href") == $"manual-testing/plans?transfer={PlanId}");
-        cut.FindAll("[data-testid=mt-stage]").Should().BeEmpty("the stages are navigated once, in the header (no duplicate workflow navigation)");
-        cut.FindAll("[data-testid=twh-stage]").Should().HaveCount(4);
-        cut.Find("[data-testid=mt-plan]").TextContent.Should().Contain("Library – test plan").And.Contain("2 testtilfeller").And.Contain("1 godkjent");
+        cut.FindAll("[data-testid=mt-step]").Select(a => (a.GetAttribute("data-stage"), a.GetAttribute("href"))).Should().Equal(
+            ("discover", "manual-testing/discover"), ("plan", "manual-testing/plan"), ("plans", "manual-testing/plans"));
+        cut.Find("[data-testid=mt-step][data-stage=plan]").TextContent.Should().Contain("2 testtilfeller · 1 godkjent");
+        cut.FindAll("[data-testid=mt-plan]").Should().BeEmpty("the saved test plans are on «3. Testplaner»");
+        cut.FindAll("[data-testid=mt-new-plan]").Should().BeEmpty();
+
+        var status = cut.Find("[data-testid=mt-status]");
+        status.HasAttribute("open").Should().BeFalse("the counts are collapsed; the summary says the essentials");
+        cut.Find("[data-testid=mt-status-summary]").TextContent.Should().StartWith("2 testtilfeller · 1 godkjent");
         cut.Find("[data-testid=mt-count-suggestions]").TextContent.Should().Be("3", "suggestions are counted as suggestions");
         cut.Find("[data-testid=mt-count-cases]").TextContent.Should().Be("2", "and saved test cases as test cases — never one for the other");
         cut.FindAll("[data-testid=mt-runs]").Should().BeEmpty("BirkNext records no manual runs");
         cut.Find("[data-testid=mt-count-executed]").TextContent.Should().Be("Registreres i Azure DevOps", "a prepared, approved or transferred case is not an executed test");
         cut.Markup.Should().NotContain("manual-testing/execute");
+    }
+
+    [Fact]
+    public void Testplaner_lists_creates_and_transfers_test_plans_and_leaves_the_status_to_the_overview()
+    {
+        Setup([Summary()], Discovery(3));
+        var cut = Open<ManualTesting>("manual-testing/plans");
+
+        cut.Find("[data-testid=twh-stage][data-stage=plans]").GetAttribute("aria-current").Should().Be("page");
+        cut.Find("[data-testid=twh-title]").TextContent.Should().Be("Testplaner");
+        cut.Find("[data-testid=mt-new-plan]").Should().NotBeNull();
+        cut.Find("[data-testid=mt-plan]").TextContent.Should().Contain("Library – test plan").And.Contain("2 testtilfeller").And.Contain("1 godkjent");
+        cut.FindAll("[data-testid=mt-counts]").Should().BeEmpty("one place for the status: the overview");
+        cut.FindAll("[data-testid=mt-steps]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void An_older_overview_link_with_a_transfer_lands_on_Testplaner()
+    {
+        Setup([Summary()], Discovery(3));
+        var navigation = Services.GetRequiredService<NavigationManager>();
+        var cut = Open<ManualTesting>($"manual-testing?transfer={PlanId}");
+
+        cut.WaitForAssertion(() => navigation.Uri.Should().Be(navigation.BaseUri + $"manual-testing/plans?transfer={PlanId}"));
     }
 
     [Fact]

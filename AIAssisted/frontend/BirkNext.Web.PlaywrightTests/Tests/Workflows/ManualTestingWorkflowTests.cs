@@ -111,7 +111,7 @@ public sealed class ManualTestingWorkflowTests : IAsyncLifetime
             draftId.Should().NotBeNullOrEmpty("the saved plan has its own address");
 
             // Manual Testing home: the saved plan with its approved case, and the way to export it.
-            await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/manual-testing", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+            await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/manual-testing/plans", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
             await ReadyAsync(page, "mt");
             await Assertions.Expect(page.GetByTestId("mt-plan").First).ToContainTextAsync("1 approved", new() { Timeout = 60000 });
             await page.Locator($"[data-testid=mt-plan-export][href*=\"{draftId}\"]").ClickAsync();

@@ -9,3 +9,9 @@
 .ssp-note { margin: 0.5rem 0 0; font-size: 0.9rem; }
 .ssp-actions { display: flex; align-items: flex-end; gap: 0.5rem; flex: 0 0 auto; }
 .ssp-bare { padding: 0.5rem 0.9rem; }
+
+/* UX pass (2026-11-25): compact once chosen — the status line first, the dropdowns under «Endre modul eller spesifikasjon». */
+.ssp { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.5rem 0.9rem; }
+.ssp-current { order: -1; margin: 0; }
+.ssp-choose > .ssp-summary { cursor: pointer; font-size: 0.88rem; color: var(--clr-link, #0969da); }
+.ssp-choose[open] > .ssp-summary { margin-bottom: 0.5rem; }

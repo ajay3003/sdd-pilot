@@ -52,7 +52,7 @@ public sealed class SpecificationScopePickerTests : BunitContext
         var changed = 0;
         var cut = Open(State(ExplorerArtifactStatus.SelectionRequired), () => changed++);
         cut.Find("[data-testid=ssp-current]").GetAttribute("data-state").Should().Be("module");
-        cut.FindAll("[data-testid=ssp-module] option").Select(o => o.TextContent).Should().Equal("Choose a module…", "HendelseAdapter — 4 features", "SkoleService — 2 specifications");
+        cut.FindAll("[data-testid=ssp-module] option").Select(o => o.TextContent).Should().Equal("Velg modul …", "HendelseAdapter — 4 funksjoner", "SkoleService — 2 spesifikasjoner");
         cut.FindAll("[data-testid=ssp-feature]").Should().BeEmpty("a feature list waits for the module");
 
         _state = State(ExplorerArtifactStatus.SelectionRequired, module: "HendelseAdapter", packRequired: true, packs: true);
@@ -63,7 +63,7 @@ public sealed class SpecificationScopePickerTests : BunitContext
         _save.Verify(x => x.SaveNowAsync(), Times.Never, "the auto-save already saves the change: no second full save");
         changed.Should().Be(1);
         cut.Find("[data-testid=ssp-current]").GetAttribute("data-state").Should().Be("feature");
-        cut.FindAll("[data-testid=ssp-feature] option").Select(o => o.TextContent).Should().Equal("Choose a feature…", "BiRK Hendelsesadapter (001-adapter)", "Translate HendelseAdapter (004-translate)");
+        cut.FindAll("[data-testid=ssp-feature] option").Select(o => o.TextContent).Should().Equal("Velg funksjon …", "BiRK Hendelsesadapter (001-adapter)", "Translate HendelseAdapter (004-translate)");
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public sealed class SpecificationScopePickerTests : BunitContext
         cut.Find("[data-testid=ssp-current]").TextContent.Should().Contain("Translate HendelseAdapter").And.Contain("HendelseAdapter/specs/004-translate/spec.md");
         cut.Find("[data-testid=ssp-feature]").GetAttribute("value").Should().Be("004-translate");
         cut.FindAll("[data-testid=ssp-specification]").Should().BeEmpty("one specification needs no third list");
-        cut.Find("[data-testid=ssp-changed]").TextContent.Should().Contain("came from the previous one");
+        cut.Find("[data-testid=ssp-changed]").TextContent.Should().Contain("kom fra den forrige");
         cut.Find("[data-testid=ssp-discover]").GetAttribute("href").Should().Be("test-plan-suggestions?area=choose&discover=now", "Discover now runs it on arrival");
     }
 
@@ -132,7 +132,7 @@ public sealed class SpecificationScopePickerTests : BunitContext
     {
         var cut = Open(State(ExplorerArtifactStatus.Empty, module: "HendelseAdapter", pack: "001-adapter", packs: true));
         cut.Find("[data-testid=ssp-current]").GetAttribute("data-state").Should().Be("none");
-        cut.Find("[data-testid=ssp-current]").TextContent.Should().Contain("BiRK Hendelsesadapter has no specification of its own");
+        cut.Find("[data-testid=ssp-current]").TextContent.Should().Contain("BiRK Hendelsesadapter har ingen egen spesifikasjon");
     }
 
     // ── 2026-11-24: choosing the second specification of SkoleService ───────────────────────────────────────
@@ -185,12 +185,12 @@ public sealed class SpecificationScopePickerTests : BunitContext
 
         cut.Find("[data-testid=ssp-specification]").Change("s2");
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=ssp-save-warning]").TextContent.Should().Contain("could not be saved"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ssp-save-warning]").TextContent.Should().Contain("kunne ikke lagres"));
         cut.Find("[data-testid=ssp-specification]").GetAttribute("value").Should().Be("s2", "the choice is still used in this session");
     }
 
     [Fact]
-    public void The_pages_actions_sit_in_the_same_row_as_the_dropdowns()
+    public void Once_chosen_the_dropdowns_are_collapsed_under_Endre_and_the_pages_actions_stay_visible()
     {
         _state = Skole(Main);
         _explorer.Setup(x => x.GetStateAsync(WorkspaceArtifactType.Specification, It.IsAny<CancellationToken>())).ReturnsAsync(() => _state);
@@ -201,10 +201,15 @@ public sealed class SpecificationScopePickerTests : BunitContext
             b.OpenElement(0, "button"); b.AddAttribute(1, "data-testid", "page-action"); b.AddContent(2, "Oppdag på nytt"); b.CloseElement();
         })));
 
-        var row = cut.Find(".ssp-row");
-        row.QuerySelector("[data-testid=ssp-module]").Should().NotBeNull();
-        row.QuerySelector("[data-testid=ssp-specification]").Should().NotBeNull();
-        row.QuerySelector("[data-testid=ssp-actions] [data-testid=page-action]")!.TextContent.Should().Be("Oppdag på nytt");
+        // UX pass (2026-11-25): a chosen specification is one status line; the dropdowns are under a closed «Endre modul eller spesifikasjon».
+        var choose = cut.Find("[data-testid=ssp-choose]");
+        choose.HasAttribute("open").Should().BeFalse("a specification is in use");
+        choose.QuerySelector("summary")!.TextContent.Should().Be("Endre modul eller spesifikasjon");
+        choose.QuerySelector("[data-testid=ssp-module]").Should().NotBeNull();
+        choose.QuerySelector("[data-testid=ssp-specification]").Should().NotBeNull();
+        cut.Find("[data-testid=ssp-current]").TextContent.Should().StartWith("Krav og scenarioer hentes fra");
+        choose.QuerySelector("[data-testid=ssp-actions]").Should().BeNull("the page's actions are not hidden with the dropdowns");
+        cut.Find("[data-testid=ssp-actions] [data-testid=page-action]").TextContent.Should().Be("Oppdag på nytt");
     }
 
     [Fact]

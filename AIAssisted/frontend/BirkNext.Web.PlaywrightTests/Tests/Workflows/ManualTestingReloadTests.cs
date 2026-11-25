@@ -81,7 +81,7 @@ public sealed class ManualTestingReloadTests : IAsyncLifetime
             draftId.Should().NotBeNullOrEmpty();
 
             // 3. An export field changed for this export only survives a reload, and says so (the project's defaults live in System Settings).
-            await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/manual-testing", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+            await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/manual-testing/plans", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
             await ReadyAsync(page, "mt");
             await page.Locator($"[data-testid=mt-plan-export][href*=\"{draftId}\"]").ClickAsync();
             await ReadyAsync(page, "adx");

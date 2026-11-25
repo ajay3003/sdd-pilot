@@ -57,7 +57,7 @@ public sealed class RealM2lbManualTestingTests : IAsyncLifetime
 
             // 2. A monorepo: the home asks for the specification first, and Discover says why (counts, no silent choice).
             await GoAsync(page, "manual-testing", "mt");
-            await Assertions.Expect(page.GetByTestId("mt-next-action")).ToHaveTextAsync("Choose the specification");
+            await Assertions.Expect(page.GetByTestId("mt-next-action")).ToHaveTextAsync("Velg spesifikasjon");
             await page.GetByTestId("mt-next-action").ClickAsync();
             await ReadyAsync(page, "mtd");
             await Assertions.Expect(page.GetByTestId("mtd-req-none")).ToHaveAttributeAsync("data-reason", "choose-specification");
@@ -150,7 +150,7 @@ public sealed class RealM2lbManualTestingTests : IAsyncLifetime
             // 8. The home offers the export of the approved case.
             await GoAsync(page, "manual-testing", "mt");
             await Assertions.Expect(page.GetByTestId("mt-next-action")).ToHaveTextAsync("Overfør testplan");
-            await page.Locator($"[data-testid=mt-plan-export][href*=\"{draftId}\"]").ClickAsync();
+            await page.GetByTestId("mt-next-action").ClickAsync(); // the overview's next step opens «3. Testplaner» on this plan's transfer
 
             // 9. Export an XLSX for Azure DevOps Test Plans; the file carries the Norwegian step.
             await ReadyAsync(page, "adx");

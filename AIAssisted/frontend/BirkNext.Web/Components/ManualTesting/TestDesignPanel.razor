@@ -22,6 +22,9 @@
             <span class="msb-status msb-tone-@(r.Level switch { ReadinessLevel.ReadyToRun => "ok", ReadinessLevel.Blocked => "bad", ReadinessLevel.ReadyForReview => "info", _ => "warn" })" data-testid="tdp-readiness-level">@TestDesignAdvisor.ReadinessLabel(r.Level)</span>
             @{ var checklist = ScenarioWorkspacePresentation.Checklist(r); }
             <span class="mtw-met" data-testid="tdp-readiness-count">@checklist.Count(x => x.State == Tri.Yes) / @checklist.Count</span>
+            @* Collapsed by default (UX pass 2026-11-25); opens by itself when the case is blocked, so the reason is never hidden. *@
+            <details class="tdp-more" open="@(r.Level == ReadinessLevel.Blocked)" data-testid="tdp-readiness-details">
+            <summary>@(checklist.Count(x => x.State != Tri.Yes) is var open && open > 0 ? $"Vis hva som mangler ({open})" : "Vis sjekklisten")</summary>
             <ul class="tdp-checks mtw-checklist">
                 @foreach (var check in checklist)
                 {
@@ -31,13 +34,14 @@
                 }
             </ul>
             <span class="mt-muted msb-small">Klar til kjøring betyr ikke at testen er kjørt eller bestått. Ukjent teller aldri som oppfylt. Lagring er alltid mulig.</span>
+            </details>
         </div>
     }
 
     @if (_points.Count > 0)
     {
-        <div class="tdp-verify" data-testid="tdp-verification">
-            <span class="mtp-ctx-label">Slik verifiseres det</span>
+        <details class="tdp-verify tdp-more" data-testid="tdp-verification">
+            <summary><span class="mtp-ctx-label">Slik verifiseres det</span> <span class="mt-muted msb-small">(@_points.Count)</span></summary>
             <ul>
                 @foreach (var p in _points)
                 {
@@ -48,22 +52,22 @@
                     </li>
                 }
             </ul>
-        </div>
+        </details>
     }
 
     @if (TestData is { Count: > 0 } data)
     {
-        <div class="tdp-data" data-testid="tdp-testdata">
-            <span class="mtp-ctx-label">Testdata: krav og tilgjengelighet</span>
+        <details class="tdp-data tdp-more" data-testid="tdp-testdata">
+            <summary><span class="mtp-ctx-label">Testdata: krav og tilgjengelighet</span> <span class="mt-muted msb-small">(@data.Count)</span></summary>
             <ul>@foreach (var d in data) { <li data-availability="@d.Availability" data-testid="tdp-data-item"><span>@d.Requirement</span> <span class="msb-status msb-tone-@(d.Availability switch { DataAvailability.Confirmed => "ok", DataAvailability.Blocked => "bad", _ => "warn" })">@AvailabilityLabel(d.Availability)</span></li> }</ul>
             <span class="mt-muted msb-small">@data[0].Note</span>
-        </div>
+        </details>
     }
 
     @if (_proposals.Count > 0 || _hidden > 0)
     {
-        <div class="tdp-proposals" data-testid="tdp-proposals">
-            <span class="mtp-ctx-label">Forslag til flere tester (@_proposals.Count)</span>
+        <details class="tdp-proposals tdp-more" data-testid="tdp-proposals">
+            <summary><span class="mtp-ctx-label">Forslag til flere tester (@_proposals.Count)</span></summary>
             <ul>
                 @foreach (var v in _proposals)
                 {
@@ -88,7 +92,7 @@
             </ul>
             @if (!CanAct) { <span class="mt-muted msb-small">Forslagene legges til i Planlegg og klargjør etter at scenarioet er forberedt.</span> }
             @if (_hidden > 0) { <span class="mt-muted msb-small" data-testid="tdp-proposals-rejected">@_hidden avviste forslag er skjult.</span> }
-        </div>
+        </details>
     }
 
     @if (_e2e is not null || _matrix.Rows.Count > 0 || _states.Count >= 2 || Table is { Rows.Count: > 1 })

@@ -586,8 +586,10 @@
 
                                 @* «Hva trenger du før du starter?» (2026-11-25): what the existing readiness needs from a person — how the result is observed, access and
                                    environment, and anything that stops the test now. Saved with the case like every other field; nothing is filled in for the tester. *@
-                                <div class="mtp-before" data-testid="mtp-before">
-                                    <span class="mtp-ctx-label">Før du starter</span>
+                                @{ var beforeFilled = new[] { _form.ObservationMethod, _form.EnvironmentPrerequisites }.Count(v => !string.IsNullOrWhiteSpace(v)); var hindered = !string.IsNullOrWhiteSpace(_form.BlockedBy); }
+                                @* Collapsed by default (UX pass 2026-11-25); the summary says what is filled in, and a recorded hindrance keeps it open. *@
+                                <details class="mtp-before" open="@hindered" data-testid="mtp-before">
+                                    <summary><span class="mtp-ctx-label">Før du starter</span> <span class="mt-muted msb-small" data-testid="mtp-before-summary">@(hindered ? "Hindring registrert — testen kan ikke starte" : $"{beforeFilled} av 2 fylt ut · ingen hindring")</span></summary>
                                     <label class="mtp-field">
                                         <span>Slik ser du resultatet</span>
                                         <textarea class="mtp-lcell mtp-auto" rows="2" value="@_form.ObservationMethod" @oninput="e => _form.ObservationMethod = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase"
@@ -603,7 +605,7 @@
                                         <textarea class="mtp-lcell mtp-auto" rows="2" value="@_form.BlockedBy" @oninput="e => _form.BlockedBy = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase"
                                                   placeholder="Tom = ingen kjent hindring. Skriv hva som mangler, hvem som eier det og eventuelt dato." data-testid="mtp-blocked-by"></textarea>
                                     </label>
-                                </div>
+                                </details>
 
                                 @if (showO || showN)
                                 {
