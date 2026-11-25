@@ -477,3 +477,54 @@ All original source relationships are kept: no link was removed or replaced, and
 - **Story language:** the story follows the editor language. Norsk shows the plan's stored translation, Original shows the source, and Sammenlign shows title, description, «Hvorfor denne prioriteten» and «Uavhengig test» side by side. Untranslated and stale states are labelled.
 - **Scenario titles:** a scenario is named «AC n — …», never «US1 — …».
 - **Drill-down:** groups → user stories → AC, with one colour per level.
+
+### FV9. Follow-up (10:00–10:40): CI_DEF_3 cause, and Manuell / Teknisk
+
+#### CI_DEF_3: the cause, and the fix
+
+The FV1 diagnostics caught a failure in run final5. That run took 12 m 43 s, with stalls of up to 9.7 s. The diagnostics showed:
+
+- 65.7 s elapsed, ending in `TaskCanceledException`;
+- **the test's loopback server had accepted a connection and answered it**;
+- no proxy was involved.
+
+So the server answered *some* client, but not this test's request. That one waited in the listener's backlog until the 20 s fetch timeout, and the timeout itself fired late because of the stalls.
+
+- **Probable source of the stray connection:** `ManagedEdgePreflightTests.FreePort()`. It binds port 0, releases the port, and then the code under test makes an HTTP GET to `127.0.0.1:<that port>/json/version`, expecting nothing to be there. Windows can hand that just-released port straight to CI_DEF_3's listener.
+- **What is and isn't proven:** CI_DEF_3's single-accept server answered a connection that was not its own request. That fits only a stray client on the same port. Which test the stray came from was not observed.
+- **Fix, in the test only:** the loopback server now keeps accepting connections until its own `GET /openapi.yaml` arrives. It answers any other connection with 404 and counts it, and it reads the whole request head rather than a single read. The assertion is exactly as strict as before, and the failure message now lists any stray connections. No production code changed.
+- **Results:** 3/3 passes together with the Edge preflight tests. **Full backend run final6: 7,433 passed / 0 failed / 19 skipped** in 7 m 40 s, peak 7.0 GB, 3.1 GB free at minimum, no processes left over. Across all full runs today, CI_DEF_3 failed in final3 and final5 (before the fix) and passed in final4 and final6. One green run after the fix is strong evidence, not proof.
+- **Remaining risk:** `FreePort()` in `ManagedEdgePreflightTests` can still reach any other test's loopback listener. It is documented here and not changed.
+
+#### Manuell | Teknisk | Alle
+
+Every scenario already got an automatic manual/technical suggestion. A person can now see that suggestion and override it:
+
+- **A three-way switch,** «Manuell | Teknisk | Alle» with counts, replaces the «Vis teknisk innhold» checkbox. It appears both on the group overview and in the scenario toolbar, and «Nullstill filtre» keeps the chosen view.
+- **Manual and technical counts** appear on group and user story cards.
+- **«Testtype» in the scenario details** offers Manuell or Teknisk. It shows the automatic suggestion and its reason, who chose and when, and «Tilbake til forslaget». The list row is marked «(valgt)».
+- **Storage:** a choice is a reviewer decision in the specification's existing grouping document. It is a new operation (`SetScenarioTestKind`) recorded in the history, with a revision check and request-id idempotency. No migration is needed, and older documents read without the new field.
+  - It never changes the scenario, its cases or the source.
+  - The automatic suggestion stays visible beside the choice.
+  - A decision applies only to scenarios of that specification. A scenario with the same id in another specification is never matched by id alone.
+- **Grouping stays navigation only:** `ScenarioBrowserPresentation` takes a plain map of scenario id to kind, never grouping types. The existing architecture test enforces this, and it caught the first draft.
+
+#### Tests
+
+- **Frontend: 9,644 passed / 0 failed.** The five new tests cover a decision's revision and history, returning to the suggestion, the refusal of a missing scenario, scope and idempotency, the three views, and the reason texts.
+- **Backend:** the grouping tests pass 62/62, including a save-and-reload round trip (enum stored by name, older documents without the field). The full run final6 above includes them.
+
+#### Browser check (read-only; `scratchpad/kind_walk.py`)
+
+Eight checks; **seven pass**:
+
+- the switch shows Manuell 218 / Teknisk 437 / Alle 655, with Manuell as the default;
+- the cards show their manual and technical counts;
+- Teknisk lists only technical scenarios, and Manuell only manual ones;
+- the details pane shows the suggestion and its reason;
+- the SkoleService 001 grouping (revision 5, which holds the US4/US5/US8 decisions) was not written;
+- there were no API errors.
+
+**The write path was not exercised in the browser.** The project's only other specification is a docs file without user stories, so there was no disposable place to save a choice. Writing into the SkoleService 001 grouping would add entries to the person's own decision history, so it was not done without asking. The write path is covered by the engine, service and page tests above.
+
+The page's own workspace auto-save ran when the specification changed and was restored. Plan fingerprints are unchanged (`e20566b3…`).

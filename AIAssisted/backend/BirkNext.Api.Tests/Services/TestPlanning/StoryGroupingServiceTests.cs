@@ -43,6 +43,25 @@ public sealed class StoryGroupingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task V_kind_a_scenarios_manual_or_technical_choice_round_trips_and_older_documents_read_without_it()
+    {
+        // 2026-11-25: a reviewer's test kind per scenario is stored in the specification's grouping document, revisioned, with history.
+        var saved = await Service().ApplyAsync("m2lb", Spec, new StoryGroupingChangeRequest { ExpectedRevision = 0, RequirementCatalog = Catalog(),
+            Operations = [new StoryGroupingOperation { Kind = StoryGroupingOperationKind.SetScenarioTestKind, ScenarioId = "US1-AS2", StoryKey = "us1", TestKind = ScenarioTestKind.Technical, DisplayId = "AC 2" }] }, "anna", default);
+        saved.Revision.Should().Be(1);
+        var read = await Service().GetAsync("m2lb", Spec, default);
+        StoryGroupingEngine.TestKindDecision(read, "US1-AS2").Should().Match<ScenarioTestKindDecision>(d => d.Kind == ScenarioTestKind.Technical && d.By == "anna");
+        read.History.Should().ContainSingle(h => h.Action == "Endret testtype" && h.Detail.StartsWith("AC 2: Teknisk"));
+        _db.StoryGroupings.Single().ContentJson.Should().Contain("\"Technical\"", "stored by name, not by number");
+
+        // A document saved before test kinds existed reads with none.
+        var row = _db.StoryGroupings.Single();
+        row.ContentJson = "{\"projectKey\":\"m2lb\",\"specificationPath\":\"" + Spec + "\",\"revision\":1}";
+        await _db.SaveChangesAsync();
+        (await Service().GetAsync("m2lb", Spec, default)).TestKinds.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task V02_a_stale_revision_is_refused_and_nothing_is_saved()
     {
         await Service().ApplyAsync("m2lb", Spec, Change(0, Add("FR-001")), "anna", default);

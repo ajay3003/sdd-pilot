@@ -334,6 +334,8 @@
                     {
                         var groupsNow = G.Tree(_groupMode, _profiles, _groupDoc, _sections);
                         var entries = railStories.Where(e => e.Story is not null).ToDictionary(e => e.Key);
+                        var kindCounts = _items.Where(i => i.Candidate.Story is not null).GroupBy(i => i.Candidate.Story!.Key)
+                            .ToDictionary(g => g.Key, g => (Manual: g.Count(i => i.Relevance == S.Relevance.Manual), Technical: g.Count(i => i.Relevance == S.Relevance.Technical)));
                         var drilled = _drillGroup is null ? null : groupsNow.FirstOrDefault(n => n.Key == _drillGroup);
                         <section class="mtw-overview" aria-label="Oversikt" data-testid="mtd-overview">
                             <div class="mtw-overview-head">
@@ -347,6 +349,7 @@
                                 </nav>
                                 <input type="search" class="msb-search mtw-overview-search" placeholder="Søk i scenarioer" aria-label="Søk i scenarioer" value="@_filter.Query"
                                        @oninput="e => Set(_filter with { Query = e.Value?.ToString() ?? string.Empty })" data-testid="mtd-overview-search" />
+                                @KindViewSwitch()
                                 <button type="button" class="msb-link" @onclick="() => _showAll = true" data-testid="mtd-show-all">Alle scenarioer (@allView.Shown.Count)</button>
                             </div>
                             @if (drilled is null)
@@ -357,9 +360,12 @@
                                         var n = node;
                                         var acs = n.Stories.Sum(p => entries.TryGetValue(p.StoryKey, out var e) ? e.Shown : 0);
                                         var prepared = n.Stories.Sum(p => entries.TryGetValue(p.StoryKey, out var e) ? e.WithCases : 0);
+                                        var gm = n.Stories.Sum(p => kindCounts.TryGetValue(p.StoryKey, out var kc) ? kc.Manual : 0);
+                                        var gt = n.Stories.Sum(p => kindCounts.TryGetValue(p.StoryKey, out var kc) ? kc.Technical : 0);
                                         <li><button type="button" class="mtw-card @(n.Kind == "system" ? "is-system" : "is-group")" @onclick="() => _drillGroup = n.Key" data-testid="mtd-group-card" data-group="@n.Key">
                                             <span class="mtw-card-title">@n.Title</span>
                                             <span class="mtw-card-stats"><b>@n.Stories.Count</b> @(n.Stories.Count == 1 ? "historie" : "historier") · <b>@acs</b> AC</span>
+                                            @KindCounts(gm, gt)
                                             @if (acs > 0) { <span class="mtw-card-bar" title="@prepared av @acs AC har testtilfeller"><span style="width:@(Math.Round(100.0 * prepared / acs))%"></span></span> }
                                         </button></li>
                                     }
@@ -373,10 +379,12 @@
                                         if (!entries.TryGetValue(p.StoryKey, out var entry)) { continue; }
                                         var e = entry;
                                         var reason = drilled.Kind == "system" ? G.UngroupedReason(p, _groupMode, _groupDoc) : null;
+                                        kindCounts.TryGetValue(e.Key, out var skc);
                                         <li><button type="button" class="mtw-card is-story" @onclick="() => SelectStory(e.Key)" data-testid="mtd-story-card" data-story="@e.Key">
                                             <span class="mtw-card-top"><span class="mtw-us">@e.Label</span>@if (e.Priority is { Length: > 0 } pr) { <span class="mtw-prio">@pr</span> }</span>
                                             <span class="mtw-card-title">@e.Title</span>
                                             <span class="mtw-card-stats"><b>@e.Shown</b> AC@(e.WithCases > 0 ? $" · {e.WithCases} med testtilfeller" : "")</span>
+                                            @KindCounts(skc.Manual, skc.Technical)
                                             @if (reason is not null) { <span class="mtw-card-reason" data-testid="mtd-story-card-reason">@reason</span> }
                                         </button></li>
                                     }
@@ -515,8 +523,7 @@
                             @{ var advanced = S.AdvancedFilterCount(_filter with { Story = null }); }
                             <button type="button" class="msb-more-filters @(advanced > 0 ? "is-active" : null)" aria-expanded="@(_moreFilters ? "true" : "false")" aria-controls="mtd-more-filters"
                                     @onclick="() => _moreFilters = !_moreFilters" data-testid="mtd-more-filters"><span>Flere filtre</span>@if (advanced > 0) { <span class="msb-queue-n" data-testid="mtd-active-filters">@advanced</span> }</button>
-                            <label class="msb-toggle" data-testid="mtd-show-technical"><input type="checkbox" checked="@(_filter.Technical || _filter.All)" @onchange="e => Set(_filter with { Technical = e.Value is true, All = false })" />
-                                Vis teknisk innhold</label>
+                            @KindViewSwitch()
                             @if (S.HasFilters(_filter with { Story = null }))
                             {
                                 <button type="button" class="msb-link" @onclick="() => Set(S.ResetFilters(_filter) with { Story = _filter.Story })" data-testid="mtd-reset-filters">Nullstill filtre</button>
@@ -594,7 +601,7 @@
                                                     <span class="mtw-row-label" data-testid="mtd-scenario-label">@W.ScenarioLabel(i)@(_filter.Story is null ? $" · {W.StoryLabel(rs)}" : "")</span>
                                                 }
                                                 <span class="msb-row-title" data-testid="mtd-scenario-title">@W.RowTitle(i)</span>
-                                                <span class="msb-row-meta">@i.Area@(i.Candidate.Story?.Priority is { } pri ? $" · {pri}" : "")@(i.Relevance == S.Relevance.Technical ? " · teknisk" : "")<span class="msb-approach" title="@string.Join(" ", i.Suitability.Approaches.Select(a => a.Reason))" data-testid="mtd-scenario-approach"> · @string.Join(" · ", i.Suitability.Approaches.Take(2).Select(a => TestDesignAdvisor.ApproachLabel(a.Approach)))</span></span>
+                                                <span class="msb-row-meta">@i.Area@(i.Candidate.Story?.Priority is { } pri ? $" · {pri}" : "")@(i.Relevance == S.Relevance.Technical ? " · teknisk" : i.KindDecided ? " · manuell" : "")@(i.KindDecided ? " (valgt)" : "")<span class="msb-approach" title="@string.Join(" ", i.Suitability.Approaches.Select(a => a.Reason))" data-testid="mtd-scenario-approach"> · @string.Join(" · ", i.Suitability.Approaches.Take(2).Select(a => TestDesignAdvisor.ApproachLabel(a.Approach)))</span></span>
                                                 @if (i.Candidate.RequirementIds.Count > 0)
                                                 {
                                                     <span class="mtw-row-reqs" data-testid="mtd-scenario-reqs">@foreach (var r in i.Candidate.RequirementIds.Take(4)) { <span class="mtw-fr">@r</span> }@if (i.Candidate.RequirementIds.Count > 4) { <span class="mtw-fr is-more">+@(i.Candidate.RequirementIds.Count - 4)</span> }</span>
@@ -648,6 +655,34 @@
                         </div>
                         @if (!string.Equals(W.RowTitle(active), c.Title, StringComparison.Ordinal) && !string.Equals(active.Title, c.Title, StringComparison.Ordinal)) { <p class="msb-original" data-testid="mtd-detail-original">Opprinnelig tittel: @c.Title</p> }
                         <p class="msb-chips"><span>@active.TypeLabel</span><span>@active.Area</span>@if (active.Relevance == S.Relevance.Technical) { <span>Teknisk</span> }</p>
+                        var kindDecision = StoryGroupingEngine.TestKindDecision(_groupDoc, active.Id); var canSetKind = CanSetKind(active);
+                        <div class="mtw-kind" data-testid="mtd-kind" data-kind="@active.Relevance" data-decided="@(active.KindDecided ? "true" : "false")">
+                            <span class="mtp-ctx-label">Testtype</span>
+                            <div class="mtw-seg" role="radiogroup" aria-label="Testtype for scenarioet">
+                                @foreach (var (k, label) in new[] { (ScenarioTestKind.Manual, "Manuell"), (ScenarioTestKind.Technical, "Teknisk") })
+                                {
+                                    var kind = k; var on = (active.Relevance == S.Relevance.Technical) == (kind == ScenarioTestKind.Technical);
+                                    <button type="button" role="radio" class="mtw-seg-btn is-@kind.ToString().ToLowerInvariant()" aria-checked="@(on ? "true" : "false")" disabled="@(!canSetKind || _kindSaving)"
+                                            title="@(canSetKind ? null : "Kan bare endres for scenarioer i valgt spesifikasjon, med skrivetilgang.")"
+                                            @onclick="() => SetKindAsync(active, on && !active.KindDecided ? kind : on ? null : kind)" data-testid="mtd-kind-option" data-kind="@kind">@label</button>
+                                }
+                            </div>
+                            <span class="msb-small mt-muted" data-testid="mtd-kind-basis">
+                                @if (kindDecision is not null)
+                                {
+                                    @($"Valgt av {kindDecision.By} {kindDecision.At.ToLocalTime():dd.MM.yyyy HH:mm} · forslaget var {S.KindLabel(active.Suggested).ToLowerInvariant()}.")
+                                }
+                                else
+                                {
+                                    @($"Automatisk forslag: {S.SuggestionReason(active)}")
+                                }
+                            </span>
+                            @if (kindDecision is not null && canSetKind)
+                            {
+                                <button type="button" class="msb-link" disabled="@_kindSaving" @onclick="() => SetKindAsync(active, null)" data-testid="mtd-kind-reset">Tilbake til forslaget</button>
+                            }
+                            @if (_kindError is not null) { <span class="msb-small msb-tone-warn" role="alert" data-testid="mtd-kind-error">@_kindError</span> }
+                        </div>
                         @if (!string.IsNullOrWhiteSpace(c.Purpose)) { <p data-testid="mtd-detail-purpose">@c.Purpose</p> }
                         @if (c.Conflicts.Count > 0)
                         {
@@ -1152,8 +1187,53 @@
     }
 
     /// <summary>Profiles from the inputs and the decisions. A failure here is «Gruppering feilet» (the plain story list stays), never a lost story.</summary>
+    private bool _kindSaving;
+    private string? _kindError;
+
+    /// <summary>A scenario's kind can be chosen when it belongs to the selected specification's stories (its decision is stored with that
+    /// specification's grouping) and the person may edit grouping.</summary>
+    private bool CanSetKind(S.Item i) => CanEditGrouping && _groupDoc is not null && _groupSpecPath is { } spec
+        && i.Candidate.Story?.SpecificationPath is { } p && BirkNext.Specifications.SpecificationCatalogRules.SamePath(p, spec);
+
+    /// <summary>Stores the reviewer's manual/technical choice (null = back to the suggestion) as one grouping change; nothing else changes.</summary>
+    private async Task SetKindAsync(S.Item i, ScenarioTestKind? kind)
+    {
+        if (!CanSetKind(i)) return;
+        _kindSaving = true; _kindError = null;
+        try
+        {
+            _kindError = await ApplyGroupingAsync([new StoryGroupingOperation { Kind = StoryGroupingOperationKind.SetScenarioTestKind, ScenarioId = i.Id,
+                StoryKey = i.Candidate.Story?.Key, TestKind = kind, DisplayId = $"{W.OtherScenarioLabel(i)}" }]);
+        }
+        finally { _kindSaving = false; }
+    }
+
+    /// <summary>«Manuell | Teknisk | Alle» with counts (the overview and the scenario toolbar show the same switch; one is visible at a time).</summary>
+    private RenderFragment KindViewSwitch() => __builder =>
+    {
+        var current = S.ViewOf(_filter); var manualN = _items.Count(i => i.Relevance == S.Relevance.Manual);
+        <div class="mtw-seg" role="radiogroup" aria-label="Testtype" data-testid="mtd-kind-view">
+            @foreach (var (v, label, n) in new[] { (S.KindView.Manual, "Manuell", manualN), (S.KindView.Technical, "Teknisk", _items.Count - manualN), (S.KindView.All, "Alle", _items.Count) })
+            {
+                var kv = v;
+                <button type="button" role="radio" class="mtw-seg-btn is-@kv.ToString().ToLowerInvariant()" aria-checked="@(current == kv ? "true" : "false")"
+                        @onclick="() => Set(S.WithView(_filter, kv))" data-testid="mtd-kind-view-option" data-view="@kv">@label <span class="mtw-seg-n">@n</span></button>
+            }
+        </div>
+    };
+
+    private static RenderFragment KindCounts(int manual, int technical) => __builder =>
+    {
+        <span class="mtw-card-kinds" data-testid="mtd-card-kinds" data-manual="@manual" data-technical="@technical">
+            <span class="mtw-kind-tag is-manual">@manual manuelle</span>@if (technical > 0) { <span class="mtw-kind-tag is-technical">@technical tekniske</span> }
+        </span>
+    };
+
     private void Recompute()
     {
+        // Reviewers' manual/technical decisions are part of the grouping document: applied (idempotently) whenever it changes.
+        _items = S.WithTestKinds(_items, StoryGroupingEngine.TestKindDecisions(_groupDoc), _groupSpecPath);
+        (_queueCounts, _allCount) = S.QueueCounts(_items, _filter);
         try
         {
             _profiles = _groupInputs.Count == 0 ? [] : StoryGroupingEngine.Profiles(_groupInputs, _sections, _groupDoc);

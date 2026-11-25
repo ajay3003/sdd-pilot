@@ -152,10 +152,10 @@ public sealed class ScenarioBrowserTests : BunitContext
 
         cut.Find("[data-testid=mtd-show-all]").Click();
         cut.FindAll("[data-testid=mtd-scenario]").Should().HaveCount(5);
-        cut.Find("[data-testid=mtd-show-technical] input").HasAttribute("checked").Should().BeTrue("the toggle says what is shown: technical scenarios are visible");
-        cut.Find("[data-testid=mtd-show-technical] input").Change(false);
+        cut.Find("[data-testid=mtd-kind-view-option][data-view=All]").GetAttribute("aria-checked").Should().Be("true", "the toggle says what is shown: technical scenarios are visible");
+        cut.Find("[data-testid=mtd-kind-view-option][data-view=Manual]").Click();
         cut.FindAll("[data-testid=mtd-scenario]").Should().HaveCount(3, "unticking hides them again");
-        cut.Find("[data-testid=mtd-show-technical] input").Change(true);
+        cut.Find("[data-testid=mtd-kind-view-option][data-view=All]").Click();
         cut.FindAll("[data-testid=mtd-scenario]").Should().HaveCount(5);
         cut.Find("[data-testid=mtd-visible]").TextContent.Should().Contain("Viser 5 av 5");
         cut.FindAll("[data-testid=mtd-scenario]").Single(e => e.GetAttribute("data-id") == "c-api").GetAttribute("data-relevance").Should().Be("Technical");

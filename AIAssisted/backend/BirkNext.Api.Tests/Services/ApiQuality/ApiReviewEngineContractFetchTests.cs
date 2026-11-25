@@ -95,15 +95,28 @@ public sealed partial class ApiReviewEngineTests
         using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        // The listener's port can be one another parallel test just released and still probes (e.g. a "free port" expected to refuse): such a stray
+        // connection is answered 404 and the server keeps accepting until this test's own request arrives (2026-11-25; the earlier one-accept
+        // server answered a stray client and left this request unanswered in the backlog until the 20 s timeout).
+        var strays = new System.Collections.Concurrent.ConcurrentQueue<string>();
         var serve = Task.Run(async () =>
         {
-            using var client = await listener.AcceptTcpClientAsync();
-            var stream = client.GetStream();
-            var buffer = new byte[4096];
-            _ = await stream.ReadAsync(buffer);
-            var body = "openapi: 3.0.3"u8.ToArray();
-            await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/yaml\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n"));
-            await stream.WriteAsync(body);
+            while (true)
+            {
+                using var client = await listener.AcceptTcpClientAsync();
+                var stream = client.GetStream();
+                var head = await ReadHeadAsync(stream);
+                var requestLine = head.Split("\r\n", 2)[0];
+                if (requestLine.StartsWith("GET /openapi.yaml ", StringComparison.Ordinal))
+                {
+                    var body = "openapi: 3.0.3"u8.ToArray();
+                    await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/yaml\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n"));
+                    await stream.WriteAsync(body);
+                    return;
+                }
+                strays.Enqueue(requestLine.Length > 0 ? requestLine : "(no request)");
+                await stream.WriteAsync("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray());
+            }
         });
         using var http = new HttpClient(ContractSourcePolicy.CreateHandler());
         var clock = System.Diagnostics.Stopwatch.StartNew();
@@ -111,12 +124,26 @@ public sealed partial class ApiReviewEngineTests
         var elapsed = clock.Elapsed;
         var served = await Task.WhenAny(serve, Task.Delay(TimeSpan.FromSeconds(5))) == serve;
 
-        // Diagnostics (2026-11-25): this fails only inside the full parallel suite (20 s fetch timeout → Unreachable); name the cause when it does.
+        // Diagnostics (2026-11-25): name the cause if this ever fails inside the full parallel suite again.
         Assert.True(result.Status == ContractFetchStatus.Fetched,
-            $"Expected Fetched, got {result.Status} after {elapsed.TotalSeconds:F1}s; problem: {result.Problem}; server accepted+answered: {served} ({serve.Status}{(serve.Exception is { } sx ? ": " + sx.GetBaseException().Message : "")}); "
-            + $"threadpool threads={System.Threading.ThreadPool.ThreadCount} pending={System.Threading.ThreadPool.PendingWorkItemCount}; UseProxy default proxy for target: {HttpClient.DefaultProxy.GetProxy(new Uri($"http://127.0.0.1:{port}/"))?.ToString() ?? "none"}");
+            $"Expected Fetched, got {result.Status} after {elapsed.TotalSeconds:F1}s; problem: {result.Problem}; own request answered: {served} ({serve.Status}{(serve.Exception is { } sx ? ": " + sx.GetBaseException().Message : "")}); "
+            + $"stray connections: {strays.Count} [{string.Join(" | ", strays)}]; threadpool threads={System.Threading.ThreadPool.ThreadCount} pending={System.Threading.ThreadPool.PendingWorkItemCount}");
         await serve;
         Assert.Equal("openapi: 3.0.3", result.Text);
         Assert.Equal(64, result.Sha256!.Length);
+    }
+
+    /// <summary>The request head up to the blank line (a request can arrive in more than one read).</summary>
+    private static async Task<string> ReadHeadAsync(System.Net.Sockets.NetworkStream stream)
+    {
+        var buffer = new byte[8192]; var length = 0;
+        while (length < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(length));
+            if (read == 0) break;
+            length += read;
+            if (System.Text.Encoding.ASCII.GetString(buffer, 0, length).Contains("\r\n\r\n", StringComparison.Ordinal)) break;
+        }
+        return System.Text.Encoding.ASCII.GetString(buffer, 0, length);
     }
 }

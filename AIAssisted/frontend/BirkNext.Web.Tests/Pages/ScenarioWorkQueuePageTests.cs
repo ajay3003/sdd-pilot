@@ -111,7 +111,7 @@ public sealed class ScenarioWorkQueuePageTests : BunitContext
     {
         var cut = Open(View());
 
-        cut.Find("[data-testid=mtd-show-technical] input").Change(true);
+        cut.Find("[data-testid=mtd-kind-view-option][data-view=All]").Click();
         Rows(cut).Should().Equal(["c-first", "c-second", "c-auth", "c-smoke"]);
         Count(cut, "Recommended").Should().Be("4");
 

@@ -80,6 +80,24 @@ public sealed record StoryGroupingDocument
     public List<string> AppliedRequests { get; init; } = [];
     /// <summary>Reviewers' role decisions per story → requirement (2026-11-25). A role never changes the link itself or its source evidence.</summary>
     public List<StoryLinkRoleDecision> Roles { get; init; } = [];
+    /// <summary>Reviewers' manual/technical decisions per scenario (2026-11-25), newest last; a decision without a kind returns the scenario to
+    /// the automatic suggestion. Never changes the scenario, its cases or its source.</summary>
+    public List<ScenarioTestKindDecision> TestKinds { get; init; } = [];
+}
+
+/// <summary>Whether a scenario is tested by a person (manual) or belongs with technical testing (2026-11-25).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ScenarioTestKind { Manual, Technical }
+
+/// <summary>A reviewer's manual/technical decision for one scenario of this specification; <see cref="Kind"/> null = back to the suggestion.</summary>
+public sealed record ScenarioTestKindDecision
+{
+    public string ScenarioId { get; init; } = "";
+    public string? StoryKey { get; init; }
+    public ScenarioTestKind? Kind { get; init; }
+    public string? Reason { get; init; }
+    public string By { get; init; } = "";
+    public DateTimeOffset At { get; init; }
 }
 
 /// <summary>
@@ -123,6 +141,9 @@ public enum StoryGroupingOperationKind
     LeaveUngrouped,
     /// <summary>Sets the reviewed role of a story → requirement relationship (<see cref="StoryGroupingOperation.Role"/>); Unknown = unresolved.</summary>
     SetLinkRole,
+    /// <summary>Sets a scenario's manual/technical kind (<see cref="StoryGroupingOperation.ScenarioId"/>, <see cref="StoryGroupingOperation.TestKind"/>;
+    /// null = back to the automatic suggestion). 2026-11-25.</summary>
+    SetScenarioTestKind,
 }
 
 /// <summary>One change to the grouping document. Unused fields are null. Applied together and atomically (all or nothing).</summary>
@@ -149,6 +170,9 @@ public sealed record StoryGroupingOperation
     public bool ReleaseMembers { get; init; }
     /// <summary>SetLinkRole: the role a reviewer gives the relationship.</summary>
     public StoryLinkRole? Role { get; init; }
+    /// <summary>SetScenarioTestKind: the scenario (its candidate id in this specification) and the chosen kind (null = automatic).</summary>
+    public string? ScenarioId { get; init; }
+    public ScenarioTestKind? TestKind { get; init; }
 }
 
 public sealed record StoryGroupingChangeRequest
@@ -483,6 +507,7 @@ public static class StoryGroupingEngine
         var decisions = doc.Decisions.ToList();
         var history = doc.History.ToList();
         var roles = doc.Roles.ToList();
+        var kinds = (doc.TestKinds ?? []).ToList();
         void Log(string action, string detail) => history.Add(new(now, actor, action, detail));
         StoryLinkDecision? Current(string story, string req) =>
             decisions.LastOrDefault(d => d.StoryKey == story && string.Equals(d.RequirementId, req, StringComparison.OrdinalIgnoreCase));
@@ -613,6 +638,14 @@ public static class StoryGroupingEngine
                     Log("Endret kravrolle", $"{s} → {op.DisplayId ?? r}: {RoleLabel(role)} (koblingen og kildebeviset er uendret)");
                     break;
                 }
+                case StoryGroupingOperationKind.SetScenarioTestKind:
+                {
+                    var id = string.IsNullOrWhiteSpace(op.ScenarioId) ? throw new GroupingRefusal("missing-scenario", "Mangler scenario.") : op.ScenarioId.Trim();
+                    kinds.Add(new ScenarioTestKindDecision { ScenarioId = id, StoryKey = string.IsNullOrWhiteSpace(op.StoryKey) ? null : op.StoryKey,
+                        Kind = op.TestKind, Reason = string.IsNullOrWhiteSpace(op.Reason) ? null : op.Reason.Trim(), By = actor, At = now });
+                    Log("Endret testtype", $"{op.DisplayId ?? id}: {TestKindLabel(op.TestKind)} (scenarioet, testtilfellene og kilden er uendret)");
+                    break;
+                }
                 case StoryGroupingOperationKind.LeaveUngrouped:
                 {
                     var s = Story(op.StoryKey);
@@ -725,6 +758,22 @@ public static class StoryGroupingEngine
                 }
             }
         }
-        return doc with { Revision = doc.Revision + 1, Groups = groups, Placements = placements, Decisions = decisions, History = history, Roles = roles };
+        return doc with { Revision = doc.Revision + 1, Groups = groups, Placements = placements, Decisions = decisions, History = history, Roles = roles, TestKinds = kinds };
     }
+
+    /// <summary>The reviewer's current manual/technical decision for a scenario (null = none, or returned to the suggestion).</summary>
+    public static ScenarioTestKindDecision? TestKindDecision(StoryGroupingDocument? doc, string scenarioId) =>
+        doc?.TestKinds?.LastOrDefault(k => string.Equals(k.ScenarioId, scenarioId, StringComparison.Ordinal)) is { Kind: not null } d ? d : null;
+
+    /// <summary>Every scenario's current manual/technical decision in this document (scenario id → kind); returned-to-suggestion ones left out.</summary>
+    public static Dictionary<string, ScenarioTestKind> TestKindDecisions(StoryGroupingDocument? doc) =>
+        (doc?.TestKinds ?? []).GroupBy(k => k.ScenarioId, StringComparer.Ordinal).Select(g => g.Last()).Where(d => d.Kind is not null)
+            .ToDictionary(d => d.ScenarioId, d => d.Kind!.Value, StringComparer.Ordinal);
+
+    public static string TestKindLabel(ScenarioTestKind? kind) => kind switch
+    {
+        ScenarioTestKind.Manual => "Manuell",
+        ScenarioTestKind.Technical => "Teknisk",
+        _ => "automatisk forslag",
+    };
 }

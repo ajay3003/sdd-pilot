@@ -189,7 +189,7 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
 
         foreach (var technical in new[] { false, true })
         {
-            if (technical) cut.Find("[data-testid=mtd-show-technical] input").Change(true);
+            if (technical) cut.Find("[data-testid=mtd-kind-view-option][data-view=All]").Click();
             var union = new HashSet<string>();
             foreach (var queue in new[] { "Recommended", "NeedsClarification", "Prepared", "SourceChanged" })
             {
@@ -232,14 +232,14 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
     public void Technical_content_stays_hidden_until_asked_and_resetting_filters_keeps_that_choice()
     {
         var cut = Open(MainPath, Spec1, Spec2, Ui);
-        cut.Find("[data-testid=mtd-show-technical] input").HasAttribute("checked").Should().BeFalse();
+        cut.Find("[data-testid=mtd-kind-view-option][data-view=Manual]").GetAttribute("aria-checked").Should().Be("true");
 
-        cut.Find("[data-testid=mtd-show-technical] input").Change(true);
+        cut.Find("[data-testid=mtd-kind-view-option][data-view=All]").Click();
         cut.Find("[data-testid=mtd-search]").Input("report");
         cut.Find("[data-testid=mtd-reset-filters]").Click();
 
         cut.Find("[data-testid=mtd-search]").GetAttribute("value").Should().BeEmpty();
-        cut.Find("[data-testid=mtd-show-technical] input").HasAttribute("checked").Should().BeTrue("a visibility preference, not a filter");
+        cut.Find("[data-testid=mtd-kind-view-option][data-view=All]").GetAttribute("aria-checked").Should().Be("true", "a visibility preference, not a filter");
     }
 
     [Fact]

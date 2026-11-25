@@ -701,3 +701,17 @@
 .mtw-ac-head, .mtp-scenario-heading { background: var(--clr-accent-bg, #ede9fe); border: 1px solid var(--clr-accent-border, #ddd6fe); border-left: 4px solid var(--clr-accent, #7c3aed);
     border-radius: 10px; padding: 0.55rem 0.75rem; }
 .mtp-scenario-heading { margin: 0.6rem 0 0.4rem; font-size: 1rem; }
+
+/* Manuell | Teknisk (2026-11-25): a segmented choice for the list view and for one scenario; technical = amber, never the level colours. */
+.mtw-seg { display: inline-flex; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 999px; padding: 2px; background: var(--clr-surface-white, #fff); gap: 2px; }
+.mtw-seg-btn { border: 0; background: transparent; color: inherit; border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 0.85rem; cursor: pointer; display: inline-flex; gap: 0.35rem; align-items: center; }
+.mtw-seg-btn:hover:not(:disabled) { background: var(--clr-surface, #f8fafc); }
+.mtw-seg-btn[aria-checked="true"] { background: var(--clr-text, #1f2937); color: #fff; font-weight: 600; }
+.mtw-seg-btn.is-technical[aria-checked="true"] { background: var(--clr-warning, #b45309); }
+.mtw-seg-btn:disabled { cursor: default; opacity: 0.75; }
+.mtw-seg-btn:focus-visible { outline: 2px solid var(--clr-info, #1d4ed8); outline-offset: 2px; }
+.mtw-seg-n { font-size: 0.72rem; opacity: 0.8; }
+.mtw-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; margin: 0.35rem 0 0.6rem; }
+.mtw-card-kinds { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.mtw-kind-tag { font-size: 0.72rem; font-weight: 600; border-radius: 999px; padding: 0.05rem 0.45rem; border: 1px solid var(--clr-border, #e2e8f0); background: var(--clr-surface-white, #fff); }
+.mtw-kind-tag.is-technical { background: var(--clr-warning-bg-light, #fffbeb); border-color: var(--clr-warning-border, #fde68a); color: var(--clr-warning, #b45309); }

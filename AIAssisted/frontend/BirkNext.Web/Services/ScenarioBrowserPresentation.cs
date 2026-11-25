@@ -124,7 +124,49 @@ public static partial class ScenarioBrowserPresentation
         public string Id => Candidate.CandidateId;
         public string TypeLabel => ScenarioCandidateTypes.Label(Candidate.Type);
         public bool In(ScenarioWorkQueue queue) => Work?.Queues.Contains(queue) == true;
+        /// <summary>The automatic suggestion when a reviewer chose the kind (2026-11-25); null = <see cref="Relevance"/> is the suggestion.</summary>
+        public Relevance? AutomaticRelevance { get; init; }
+        public bool KindDecided => AutomaticRelevance is not null;
+        public Relevance Suggested => AutomaticRelevance ?? Relevance;
     }
+
+    /// <summary>
+    /// Applies reviewers' manual/technical decisions (2026-11-25): <paramref name="decided"/> maps a scenario id to the chosen kind for the scenarios
+    /// of <paramref name="specificationPath"/>. Idempotent: an item keeps its automatic suggestion beside the decision, and an item without a decision
+    /// (or outside the specification) shows the suggestion. Takes plain values, never grouping state: grouping stays navigation only.
+    /// </summary>
+    public static List<Item> WithTestKinds(IReadOnlyList<Item> items, IReadOnlyDictionary<string, ScenarioTestKind> decided, string? specificationPath) =>
+        [.. items.Select(i =>
+        {
+            var auto = i.Suggested;
+            var inScope = specificationPath is not null && i.Candidate.Story?.SpecificationPath is { } p && BirkNext.Specifications.SpecificationCatalogRules.SamePath(p, specificationPath);
+            return inScope && decided.TryGetValue(i.Id, out var k)
+                ? i with { Relevance = k == ScenarioTestKind.Technical ? Relevance.Technical : Relevance.Manual, AutomaticRelevance = auto }
+                : i with { Relevance = auto, AutomaticRelevance = null };
+        })];
+
+    /// <summary>Why the automatic suggestion is what it is, in the tester's words.</summary>
+    public static string SuggestionReason(Item i)
+    {
+        if (i.Candidate.Conflicts.Count > 0) return "Kildene er uenige, så en person må se på det.";
+        if (ManualTestingRelevance.StoryReason(i.Candidate.Story) is { } story) return $"Brukerhistorien: {story}.";
+        if (ManualTestingRelevance.TechnicalReason(i.Candidate.Title, i.Candidate.Purpose, i.Candidate.ExpectedBehaviour) is { } text) return text + ".";
+        return i.Suggested == Relevance.Manual ? "Atferd en tester kan observere." : "Teknisk kontrakt eller ikke-funksjonell kontroll.";
+    }
+
+    public static string KindLabel(Relevance r) => r == Relevance.Technical ? "Teknisk" : "Manuell";
+
+    /// <summary>The three test-kind views (2026-11-25): only manual (default), only technical, or both.</summary>
+    public enum KindView { Manual, Technical, All }
+
+    public static KindView ViewOf(Filter f) => f.OnlyTechnical ? KindView.Technical : f.Technical || f.All ? KindView.All : KindView.Manual;
+
+    public static Filter WithView(Filter f, KindView v) => v switch
+    {
+        KindView.Technical => f with { Technical = true, OnlyTechnical = true, All = false },
+        KindView.All => f with { Technical = true, OnlyTechnical = false, All = false },
+        _ => f with { Technical = false, OnlyTechnical = false, All = false },
+    };
 
     /// <summary>
     /// The collection from the server's work queues (<see cref="ScenarioWorkQueueView"/>): one dictionary lookup per scenario, no client-side join
@@ -172,7 +214,7 @@ public static partial class ScenarioBrowserPresentation
 
     /// <summary>All filters compose. <see cref="Queue"/> null = every scenario (Finn og forstå starts on <see cref="DefaultView"/>).</summary>
     public sealed record Filter(string Query = "", string? Area = null, string? Type = null, string? Status = null, string? Story = null, string? Requirement = null, bool Technical = false, bool All = false,
-        ScenarioWorkQueue? Queue = null, string? Priority = null, ExecutionApproach? Approach = null);
+        ScenarioWorkQueue? Queue = null, string? Priority = null, ExecutionApproach? Approach = null, bool OnlyTechnical = false);
 
     /// <summary>The priority filter value for scenarios whose user story declares no priority (never guessed).</summary>
     public const string NoPriority = "(none)";
@@ -195,7 +237,7 @@ public static partial class ScenarioBrowserPresentation
     public static bool HasFilters(Filter f) => f.Query.Length > 0 || f.Area is not null || AdvancedFilterCount(f) > 0;
 
     /// <summary>«Nullstill filtre»: search and filters cleared; the work queue and the technical-content preference stay as chosen.</summary>
-    public static Filter ResetFilters(Filter f) => new(Technical: f.Technical, All: f.All, Queue: f.Queue);
+    public static Filter ResetFilters(Filter f) => new(Technical: f.Technical, All: f.All, Queue: f.Queue, OnlyTechnical: f.OnlyTechnical);
 
     /// <summary>One short sentence per work queue (the rules are under «Hva betyr dette?»).</summary>
     public static string QueueHint(ScenarioWorkQueue? queue) => queue switch
@@ -216,6 +258,7 @@ public static partial class ScenarioBrowserPresentation
         var words = f.Query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         bool Match(Item i) =>
             (f.All || f.Technical || i.Relevance == Relevance.Manual)
+            && (!f.OnlyTechnical || i.Relevance == Relevance.Technical)
             && (f.Area is null || i.Area == f.Area)
             && (f.Type is null || i.TypeLabel == f.Type)
             && (f.Status is null || i.Status.Key == f.Status)
