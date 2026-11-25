@@ -107,7 +107,9 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
             var reasons = new List<string>();
             if (direct) reasons.Add($"Test source file linked to impacted source: {string.Join(", ", testFiles!)}");
             reasons.AddRange(reqs.Select(id => $"Covers impacted requirement {requirementById[id].Title}"));
-            return new ImpactTestRecommendation(t.Id, t.Title, "Test scenario", string.Join("; ", reasons), reasons);
+            // Legacy links have no review/freshness state: a test is «review» evidence, never confirmed impact (RI-03, 2026-11-25).
+            return new ImpactTestRecommendation(t.Id, t.Title, "Test scenario", string.Join("; ", reasons), reasons,
+                direct ? ImpactTestRecommendation.LinkedToChangedSource : ImpactTestRecommendation.Potential, ImpactTestRecommendation.Unknown);
         }).Where(x => x.Paths.Count > 0).DistinctBy(x => x.TestId).ToList();
 
         var coveredRequirementIds = requirementTestLinks.Select(l => l.TargetId).ToHashSet();

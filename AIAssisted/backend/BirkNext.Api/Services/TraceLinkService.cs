@@ -26,8 +26,21 @@ public class TraceabilityMatrixRow
     public CoverageStatus CoverageStatus { get; init; }
 }
 
+/// <summary>
+/// Aggregate legacy trace-link coverage (2026-11-25: RI-01). "Covered" here means a requirement has at least one saved <c>Covers</c> link from a
+/// test scenario — <b>test design linkage</b>. It is not evidence that a test case is prepared, approved, executed, passed or current; those states
+/// are not evaluated (see <see cref="EvidenceBasis"/> / <see cref="ExecutionEvidence"/>). Field names are kept for GraphQL compatibility.
+/// </summary>
 public class CoverageSummary
 {
+    public const string TestDesignLinkage = "TestDesignLinkage";
+    public const string NotEvaluated = "NotEvaluated";
+
+    /// <summary>What "covered" means in this summary: always <see cref="TestDesignLinkage"/>.</summary>
+    public string EvidenceBasis { get; init; } = TestDesignLinkage;
+    /// <summary>Approval / execution / result / freshness evidence: always <see cref="NotEvaluated"/> for legacy trace links.</summary>
+    public string ExecutionEvidence { get; init; } = NotEvaluated;
+
     public int TotalRequirements { get; init; }
     public int CoveredRequirements { get; init; }
     public int NotCoveredRequirements { get; init; }
@@ -44,6 +57,7 @@ public class CoverageSummary
     public int HighConfidenceSuggestionCount { get; init; }
 }
 
+/// <summary>Legacy matrix status: <see cref="Covered"/> = at least one linked test scenario (test design linkage), never an executed or passed test.</summary>
 public enum CoverageStatus { Covered, NotCovered }
 
 public sealed class TraceLinkService

@@ -6,7 +6,8 @@ namespace BirkNext.Web.Services;
 
 public static class TraceabilityModelBuilder
 {
-    private static readonly Regex FrIdRe = new(@"\bFR-\d{3,4}\b", RegexOptions.Compiled);
+    // Not inside another document's namespace ("UT-FR-001", "[SR-FR-013]") (2026-11-25).
+    private static readonly Regex FrIdRe = new(@"(?<![\w-])FR-\d{3,4}\b", RegexOptions.Compiled);
     private static readonly Regex UsIdRe = new(@"\bUS\d+\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex IdPrefixRe = new(
@@ -132,7 +133,7 @@ public static class TraceabilityModelBuilder
                 });
             }
 
-            AddDeterministicScLinks(frToScIds);
+            // No fixed FR → SC table (2026-11-25): success criteria link to requirements only where the source names them.
         }
 
         // ── Step 4: normalize candidates ────────────────────────────────────
@@ -376,55 +377,15 @@ public static class TraceabilityModelBuilder
         return result;
     }
 
+    /// <summary>
+    /// The user story an item belongs to: only an explicit story id in its context heading or title (2026-11-25). The former fallback mapped FR
+    /// numbers to stories by fixed ranges (FR-001..007 → US1, FR-008..012 → US2, …) written for one specification and applied to every other; a
+    /// numeric range is never a relationship. Without an explicit id the story is unknown.
+    /// </summary>
     private static (string? Id, string? Source) InferUserStoryId(string? frId, string? context)
     {
         var direct = FirstMatch(UsIdRe, context);
-        if (direct is not null) return (direct.ToUpperInvariant(), "context heading");
-        if (frId is null) return (null, null);
-
-        if (!int.TryParse(frId.Split('-')[1], out var number)) return (null, null);
-        return number switch
-        {
-            >= 1 and <= 7 => ("US1", "deterministic FR range"),
-            >= 8 and <= 12 => ("US2", "deterministic FR range"),
-            >= 13 and <= 16 => ("US3", "deterministic FR range"),
-            33 => ("US3", "deterministic FR range"),
-            >= 17 and <= 19 => ("US4", "deterministic FR range"),
-            >= 20 and <= 24 => ("US5", "deterministic FR range"),
-            32 => ("US5", "deterministic FR range"),
-            >= 25 and <= 28 => ("US6", "deterministic FR range"),
-            >= 29 and <= 31 => ("Cross-cutting / Platform", "deterministic FR range"),
-            _ => (null, null),
-        };
-    }
-
-    private static void AddDeterministicScLinks(Dictionary<string, List<string>> frToScIds)
-    {
-        AddScRange(frToScIds, "SC-001", 1, 5);
-        AddSc(frToScIds, "SC-002", "FR-024");
-        AddSc(frToScIds, "SC-003", "FR-002", "FR-003", "FR-008", "FR-010");
-        AddSc(frToScIds, "SC-004", "FR-016", "FR-028");
-        AddSc(frToScIds, "SC-005", "FR-022");
-        AddSc(frToScIds, "SC-006", "FR-026");
-        AddSc(frToScIds, "SC-007", "FR-029");
-        AddScRange(frToScIds, "SC-008", 1, 33);
-    }
-
-    private static void AddScRange(Dictionary<string, List<string>> frToScIds, string scId, int first, int last)
-    {
-        for (var n = first; n <= last; n++)
-            AddSc(frToScIds, scId, $"FR-{n:000}");
-    }
-
-    private static void AddSc(Dictionary<string, List<string>> frToScIds, string scId, params string[] frIds)
-    {
-        foreach (var frId in frIds)
-        {
-            if (!frToScIds.TryGetValue(frId, out var list))
-                frToScIds[frId] = list = [];
-            if (!list.Contains(scId, StringComparer.OrdinalIgnoreCase))
-                list.Add(scId);
-        }
+        return direct is not null ? (direct.ToUpperInvariant(), "context heading") : (null, null);
     }
 
     private static bool IsDecisionHeading(

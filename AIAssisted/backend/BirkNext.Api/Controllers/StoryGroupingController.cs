@@ -27,6 +27,6 @@ public sealed class StoryGroupingController(StoryGroupingService service) : Cont
     private async Task<ActionResult> Run(Func<Task<ActionResult>> action)
     {
         try { return await action(); }
-        catch (StoryGroupingService.GroupingException e) { return StatusCode(e.Status, new { code = e.Code, error = e.Message, currentRevision = e.CurrentRevision }); }
+        catch (StoryGroupingService.GroupingException e) { return StatusCode(e.Status, new { code = e.Code, message = e.Message, error = e.Message, currentRevision = e.CurrentRevision }); }
     }
 }

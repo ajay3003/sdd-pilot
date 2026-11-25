@@ -16,6 +16,9 @@ public sealed class StoryGroupingService(AppDbContext db, TimeProvider clock, IL
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    /// <summary>How many applied change ids a document remembers for idempotent retries.</summary>
+    public const int MaxRememberedRequests = 50;
+
     public sealed class GroupingException(int status, string code, string message, int? currentRevision = null) : Exception(message)
     {
         public int Status { get; } = status;
@@ -48,12 +51,16 @@ public sealed class StoryGroupingService(AppDbContext db, TimeProvider clock, IL
 
         var row = await db.StoryGroupings.FirstOrDefaultAsync(r => r.ProjectKey == projectKey && r.SpecificationPath == path, ct);
         var current = row is null ? new StoryGroupingDocument { ProjectKey = projectKey, SpecificationPath = path } : Read(row);
+        // A retry of a change already stored (the answer was lost: timeout, network): answered with the stored document, never applied twice.
+        if (request.RequestId is { Length: > 0 } requestId && current.AppliedRequests.Contains(requestId, StringComparer.Ordinal)) return current;
         if (request.ExpectedRevision != current.Revision)
             throw new GroupingException(409, "stale-revision", "Grupperingen er endret av noen andre siden du åpnet den. Last inn på nytt; ingenting ble lagret.", current.Revision);
         StoryGroupingDocument next;
         try { next = StoryGroupingEngine.Apply(current, ops, actor, clock.GetUtcNow(), known.Contains); }
         catch (StoryGroupingEngine.GroupingRefusal refusal) { throw new GroupingException(400, refusal.Code, refusal.Message, current.Revision); }
 
+        if (request.RequestId is { Length: > 0 and <= 100 } applied)
+            next = next with { AppliedRequests = [.. next.AppliedRequests.Append(applied).TakeLast(MaxRememberedRequests)] };
         var json = JsonSerializer.Serialize(next, Json);
         if (row is null)
         {

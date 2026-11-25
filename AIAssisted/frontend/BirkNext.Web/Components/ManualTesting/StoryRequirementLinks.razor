@@ -32,6 +32,7 @@
                         <li data-testid="srl-link" data-requirement="@r.RequirementId" data-basis="@r.Basis" data-disputed="@(r.Disputed ? "true" : "false")">
                             <span class="msb-req mtw-req-@G.BasisTone(r.Basis)" title="@Title(r.RequirementId)">@r.DisplayId</span>
                             <span class="msb-small">@G.BasisLabel(r.Basis)@(r.CrossCutting ? " · tverrgående" : "")@(r.Disputed ? " · omstridt" : "")</span>
+                            <span class="msb-small srl-role" data-testid="srl-role" data-role="@r.Role" data-reviewed="@(r.RoleReviewed ? "true" : "false")">@StoryGroupingEngine.RoleLabel(r.Role)@(r.RoleReviewed ? " (vurdert)" : "")</span>
                             <span class="mt-muted msb-small srl-text">@Title(r.RequirementId)</span>
                         </li>
                     }
@@ -74,6 +75,17 @@
                                 <button type="button" class="msb-link" @onclick="() => { _disputing = rel.RequirementId; _reason = string.Empty; }" data-testid="srl-dispute">Marker som omstridt</button>
                             }
                         </span>
+                        @if (!rel.Rejected && rel.Basis != StoryLinkBasis.Suggested)
+                        {
+                            @* The relationship's role, separate from how it is known: a role never changes the link or its source evidence. *@
+                            <label class="msb-small">Rolle
+                                <select class="msb-select" aria-label="Rolle for @rel.DisplayId" @onchange="e => StageRole(rel, e.Value?.ToString())" data-testid="srl-role-select">
+                                    @foreach (var role in Enum.GetValues<StoryLinkRole>())
+                                    {
+                                        <option value="@role" selected="@(rel.Role == role)">@StoryGroupingEngine.RoleLabel(role)@(rel.Role == role && !rel.RoleReviewed && role != StoryLinkRole.Unknown ? " (avledet)" : "")</option>
+                                    }
+                                </select></label>
+                        }
                         <details class="srl-evidence"><summary>Se kilde</summary>
                             <ul>@foreach (var e in rel.Evidence) { <li><span class="msb-ev-kind">@EvidenceKind(e.Kind)</span> <code>@e.Reference</code>@if (e.Detail is { Length: > 0 } d) { <span class="mt-muted"> — @(d.Length > 160 ? d[..157] + "…" : d)</span> }</li> }</ul>
                         </details>
@@ -174,6 +186,13 @@
     private StoryGroupingOperation Op(StoryGroupingOperationKind kind, StoryRequirementRelation r) =>
         new() { Kind = kind, StoryKey = Profile.StoryKey, RequirementId = r.RequirementId, DisplayId = r.DisplayId, Reason = string.IsNullOrWhiteSpace(_reason) ? null : _reason };
 
+    private void StageRole(StoryRequirementRelation r, string? value)
+    {
+        if (!Enum.TryParse<StoryLinkRole>(value, out var role)) return;
+        _staged.RemoveAll(o => o.Kind == StoryGroupingOperationKind.SetLinkRole && o.RequirementId == r.RequirementId);
+        Stage(Op(StoryGroupingOperationKind.SetLinkRole, r) with { Role = role });
+    }
+
     private void Stage(StoryGroupingOperation op)
     {
         _staged.Add(op);
@@ -211,7 +230,7 @@
     private static string EvidenceKind(string kind) => kind switch
     {
         "story" => "Brukerhistorie", "scenario" => "Akseptansescenario", "task" => "Oppgave", "plan" => "Testplan", "manual" => "Lagt til", "confirmed" => "Bekreftet",
-        "suggestion" => "Forslag", _ => kind,
+        "suggestion" => "Forslag", "phase-goal" => "Fasens mål (tasks.md)", "task-detail" => "Oppgavedetalj", "plan-mention" => "Nevnt i plan/quickstart", _ => kind,
     };
 
     private static string DecisionLabel(StoryLinkDecisionKind k) => k switch

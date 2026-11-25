@@ -133,9 +133,18 @@
             {
                 <div class="sci-gap" role="status"><strong>Traceability incomplete / impact coverage gap</strong><ul>@foreach (var gap in report.CoverageGaps) { <li>@gap</li> }</ul></div>
             }
-            <h4>Recommended tests (@report.RecommendedTests.Count)</h4>
+            <h4>Tests to review (@report.RecommendedTests.Count)</h4>
             @if (report.RecommendedTests.Count == 0) { <p>No linked tests found. No tests have been inferred.</p> }
-            else { <ul>@foreach (var test in report.RecommendedTests) { <li><strong>@test.Title</strong> <span>(@test.TestKind)</span> — @test.Reason</li> }</ul> }
+            else
+            {
+                <p class="sci-muted" data-testid="sci-tests-basis">From saved code and traceability links. These links carry no review or freshness state, and no test was executed: each entry is a test to review, not a confirmed functional impact.</p>
+                <ul>@foreach (var test in report.RecommendedTests)
+                {
+                    <li data-testid="sci-test" data-level="@test.EvidenceLevel"><strong>@test.Title</strong> <span>(@test.TestKind)</span>
+                        <span class="sci-badge" data-testid="sci-test-level">@(test.EvidenceLevel == BirkNext.SourceImpact.ImpactTestRecommendation.LinkedToChangedSource ? "Linked to changed source — review" : "Potential impact — review")</span>
+                        — @test.Reason</li>
+                }</ul>
+            }
             <h4>Source journey paths (@report.Journeys.Count)</h4>
             <p class="sci-muted">These paths come from source relationships in the selected snapshot. They do not prove deployed topology or runtime traffic.</p>
             @if (report.Journeys.Count == 0) { <p>No multi-component source path was established from the available evidence.</p> }

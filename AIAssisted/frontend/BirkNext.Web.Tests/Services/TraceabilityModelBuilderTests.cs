@@ -196,27 +196,25 @@ public sealed class TraceabilityModelBuilderTests
     }
 
     [Fact]
-    public async Task Traceability_UserStoryColumnPopulatesForKnownFrs()
+    public async Task Traceability_UserStoryColumn_comes_only_from_an_explicit_story_id_never_from_an_FR_number_range()
     {
+        // 2026-11-25: the column used a fixed table (FR-001..007 → US1, FR-008..012 → US2 …, FR-029..031 → "Cross-cutting / Platform") written for
+        // one specification and applied to every other. A requirement without an explicit story id in its context has no story.
         var model = await BuildPersonTraceabilityModelAsync();
 
-        Eligible(model, "FR-001").UserStoryId.Should().Be("US1");
-        Eligible(model, "FR-008").UserStoryId.Should().Be("US2");
-        Eligible(model, "FR-013").UserStoryId.Should().Be("US3");
-        Eligible(model, "FR-017").UserStoryId.Should().Be("US4");
-        Eligible(model, "FR-020").UserStoryId.Should().Be("US5");
-        Eligible(model, "FR-025").UserStoryId.Should().Be("US6");
-        Eligible(model, "FR-029").UserStoryId.Should().Be("Cross-cutting / Platform");
+        foreach (var fr in new[] { "FR-001", "FR-008", "FR-013", "FR-017", "FR-020", "FR-025", "FR-029" })
+            Eligible(model, fr).UserStoryId.Should().NotBe("Cross-cutting / Platform").And.Match(us => us == null || fr == null || us.StartsWith("US", StringComparison.Ordinal));
+        model.Requirements.Should().NotContain(r => r.UserStoryId == "Cross-cutting / Platform");
     }
 
     [Fact]
-    public async Task Traceability_SuccessCriteriaLinksPopulateForKnownFrs()
+    public async Task Traceability_SuccessCriteriaLinks_are_only_those_the_source_states()
     {
+        // 2026-11-25: no fixed FR → SC table. A requirement links to a success criterion only when that criterion names it.
         var model = await BuildPersonTraceabilityModelAsync();
-
-        Eligible(model, "FR-001").LinkedScIds.Should().Contain("SC-001");
-        Eligible(model, "FR-029").LinkedScIds.Should().Contain("SC-007");
-        Eligible(model, "FR-026").LinkedScIds.Should().Contain("SC-006");
+        foreach (var r in model.Requirements)
+            foreach (var sc in r.LinkedScIds)
+                model.SuccessCriteria.Should().Contain(c => c.SpecItemId == sc && c.LinkedFrIds.Any(), $"{sc} is linked to a requirement only when the criterion names one");
     }
 
     private static ExtractionCandidate Candidate(

@@ -28,7 +28,7 @@ public static class TaskExplorerService
 
     // FR-027 and suffixed requirements such as FR-027a (a separate requirement in the specification, FR-027A after normalization).
     private static readonly Regex FrRefRe = new(
-        @"\b(FR)-?(\d{1,4})([a-z])?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        @"(?<![\w-])(FR)-?(\d{1,4})([a-z])?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static string FrId(Match m) => BirkNext.Sdd.RequirementReferenceParser.Normalize($"FR-{m.Groups[2].Value}") + m.Groups[3].Value.ToUpperInvariant();
 

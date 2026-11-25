@@ -54,17 +54,19 @@ public static class StoryGroupingPresentation
         })];
     }
 
-    /// <param name="Key">A stable node key: the business group id, "area:{title}", or a fixed key for the special groups.</param>
+    /// <param name="Key">A stable node key: the business group id, "area:{title}", or <see cref="UngroupedKey"/>.</param>
+    /// <param name="Kind">"area", "business", "stories" or "system" (the permanent «Uten gruppe»).</param>
     public sealed record GroupNode(string Key, string Title, string Kind, IReadOnlyList<StoryGroupingProfile> Stories, string? Detail);
 
-    public const string NeedsGroupingKey = "special:needs-grouping";
-    public const string UngroupedKey = "special:ungrouped";
-    public const string NoRequirementsKey = "special:no-requirements";
+    /// <summary>The permanent system view «Uten gruppe» (2026-11-25): derived from grouping state, never a stored group; it cannot be renamed, deleted or
+    /// merged, and it is present in every grouped mode, also when empty.</summary>
+    public const string UngroupedKey = "system:ungrouped";
+    public const string UngroupedTitle = "Uten gruppe";
 
     /// <summary>
-    /// The navigation tree of a grouping mode. Every story appears exactly once (its primary placement); a story with several areas lists the others as
-    /// secondary in its details, never as a duplicate row. Stories that cannot be placed are never hidden: they are under «Trenger gruppering»,
-    /// «Uten krav» or «Uten gruppe».
+    /// The navigation tree of a grouping mode. Every story appears exactly once: under its primary area (functional mode) or business group (business
+    /// mode) when it has one — a person's placement, or a clear source suggestion — and otherwise under the permanent «Uten gruppe», with its reason.
+    /// Related areas are shown in a story's details, never as a duplicate row. Nothing is ever hidden.
     /// </summary>
     public static List<GroupNode> Tree(Mode mode, IReadOnlyList<StoryGroupingProfile> profiles, StoryGroupingDocument? doc, RequirementSectionMap sections)
     {
@@ -76,9 +78,7 @@ public static class StoryGroupingPresentation
                 var nodes = profiles.Where(p => p.PrimaryArea is not null).GroupBy(p => p.PrimaryArea!)
                     .OrderBy(g => order.GetValueOrDefault(g.Key, int.MaxValue)).ThenBy(g => g.Key, StringComparer.CurrentCulture)
                     .Select(g => new GroupNode("area:" + g.Key, g.Key, "area", [.. g], SectionDetail(sections, g.Key))).ToList();
-                AddSpecial(nodes, profiles.Where(p => p.PrimaryArea is null && p.State is GroupingState.NeedsGrouping or GroupingState.OnlySuggestions).ToList(),
-                    NeedsGroupingKey, "Trenger gruppering", "Kravene peker mot flere områder, eller bare forslag finnes.");
-                AddSpecial(nodes, profiles.Where(p => p.PrimaryArea is null && p.State == GroupingState.NoRequirements).ToList(), NoRequirementsKey, "Uten krav", "Ingen krav er knyttet til disse brukerhistoriene ennå.");
+                nodes.Add(Ungrouped([.. profiles.Where(p => p.PrimaryArea is null)]));
                 return nodes;
             }
             case Mode.Business:
@@ -86,7 +86,7 @@ public static class StoryGroupingPresentation
                 var groups = (doc?.Groups ?? []).OrderBy(g => g.Order).ToList();
                 var nodes = groups.Select(g => new GroupNode(g.Id, g.Name, "business", [.. profiles.Where(p => p.GroupId == g.Id)],
                     g.FunctionalAreas.Count > 0 ? string.Join(" · ", g.FunctionalAreas) : "Ingen funksjonsområder tilordnet")).ToList();
-                AddSpecial(nodes, profiles.Where(p => p.GroupId is null || groups.All(g => g.Id != p.GroupId)).ToList(), UngroupedKey, "Uten gruppe", "Ikke plassert i en forretningsgruppe.");
+                nodes.Add(Ungrouped([.. profiles.Where(p => p.GroupId is null || groups.All(g => g.Id != p.GroupId))]));
                 return nodes;
             }
             case Mode.Stories:
@@ -95,10 +95,103 @@ public static class StoryGroupingPresentation
                 return [];
         }
 
-        static void AddSpecial(List<GroupNode> nodes, List<StoryGroupingProfile> stories, string key, string title, string detail)
+        static GroupNode Ungrouped(List<StoryGroupingProfile> stories) => new(UngroupedKey, UngroupedTitle, "system", stories,
+            stories.Count == 0 ? "Alle brukerhistorier er gruppert." : "Brukerhistorier uten gjeldende gruppe. De kan testes som alle andre.");
+    }
+
+    /// <summary>Why a story is under «Uten gruppe» in a mode, in the tester's words (null when it is grouped in that mode).</summary>
+    public static string? UngroupedReason(StoryGroupingProfile p, Mode mode, StoryGroupingDocument? doc)
+    {
+        var grouped = mode == Mode.Business ? p.GroupId is { } g && (doc?.Groups ?? []).Any(x => x.Id == g) : p.PrimaryArea is not null;
+        if (grouped) return null;
+        if (p.KeptUngrouped) return "Bevisst uten gruppe";
+        if (p.MissingGroupId is not null) return "Gruppen finnes ikke lenger";
+        return p.State switch
         {
-            if (stories.Count > 0) nodes.Add(new GroupNode(key, title, "special", stories, detail));
+            GroupingState.NoRequirements => "Ingen tilknyttede funksjonelle krav",
+            GroupingState.OnlySuggestions => "Bare foreslåtte kravkoblinger",
+            GroupingState.NeedsGrouping => "Flere mulige grupper",
+            GroupingState.NeedsReview => p.Candidates.Count == 0 ? "Kravene står utenfor funksjonsdelene" : "Trenger gjennomgang",
+            _ when mode == Mode.Business => p.PrimaryArea is { } area ? $"Ikke i en forretningsgruppe (område «{area}»)" : "Ikke i en forretningsgruppe",
+            _ => "Uten funksjonsområde",
+        };
+    }
+
+    /// <summary>The story's grouping status for testers: «Gruppert», «Uten gruppe», «Trenger gjennomgang» or «Flere mulige grupper».</summary>
+    public static string StatusLabel(StoryGroupingProfile p) => p.KeptUngrouped ? "Uten gruppe" : p.State switch
+    {
+        GroupingState.Confirmed or GroupingState.Suggested => "Gruppert",
+        GroupingState.NeedsReview => "Trenger gjennomgang",
+        GroupingState.NeedsGrouping => "Flere mulige grupper",
+        _ => "Uten gruppe",
+    };
+
+    /// <summary>How a grouped story got its group (never presents a suggestion as confirmed).</summary>
+    public static string? StatusBasis(StoryGroupingProfile p) => p.KeptUngrouped ? "besluttet av en person" : p.State switch
+    {
+        GroupingState.Confirmed => "bekreftet av en person",
+        GroupingState.Suggested => "foreslått fra kilden",
+        _ => null,
+    };
+
+    public static string StatusTone(StoryGroupingProfile p) => p.KeptUngrouped ? "muted" : p.State switch
+    {
+        GroupingState.Confirmed => "ok",
+        GroupingState.Suggested => "info",
+        GroupingState.NoRequirements or GroupingState.OnlySuggestions => "muted",
+        _ => "warn",
+    };
+
+    /// <summary>
+    /// «Gjennomgå gruppering»: the stories that need a person — no current group for an open reason (not a deliberate «Uten gruppe»), several
+    /// possible groups, a thin or cross-cutting candidate, a placement naming a deleted group, or a confirmed placement whose suggestion changed.
+    /// </summary>
+    public static List<StoryGroupingProfile> ReviewQueue(IReadOnlyList<StoryGroupingProfile> profiles) =>
+        [.. profiles.Where(p => !p.KeptUngrouped && (p.NeedsReviewFlag || p.MissingGroupId is not null
+            || p.State is GroupingState.NeedsReview or GroupingState.NeedsGrouping or GroupingState.OnlySuggestions or GroupingState.NoRequirements))];
+
+    /// <summary>
+    /// What the page does with the stored grouping it read (2026-11-25): a document is used (and editable); a failed read is «Gruppering feilet» —
+    /// never an empty document, which would silently turn confirmed placements back into suggestions; a host without grouping storage
+    /// (<paramref name="notAvailable"/>) is no failure: suggestions only, nothing to edit.
+    /// </summary>
+    public static (StoryGroupingDocument? Document, string? Error, bool Writable) LoadOutcome(StoryGroupingDocument? doc, string? error, string notAvailable) =>
+        doc is not null ? (doc, null, true)
+        : error == notAvailable ? (null, null, false)
+        : (null, error ?? "Grupperingen kunne ikke leses.", false);
+
+    /// <summary>«Kilde mangler»: there are stories but the specification text (and so its FR sections) is not available.</summary>
+    public static bool SourceMissing(bool hasStories, string? specificationText) => hasStories && string.IsNullOrWhiteSpace(specificationText);
+
+    /// <summary>A change's identity across retries: the revision it starts from and its operations (the same retry gives the same id; FNV-1a 64).</summary>
+    public static string RequestId(int revision, IReadOnlyList<StoryGroupingOperation> ops)
+    {
+        var text = revision + "|" + System.Text.Json.JsonSerializer.Serialize(ops);
+        var hash = 14695981039346656037UL;
+        foreach (var c in text) { hash ^= c; hash *= 1099511628211UL; }
+        return $"r{revision}-{hash:x16}";
+    }
+
+    /// <summary>
+    /// Navigation invariants (2026-11-25), checked by tests and safe to check at runtime: every story of the profiles is in the tree exactly once; every
+    /// story that has scenarios has a profile; scenarios are not duplicated. Returns the violations (empty = sound).
+    /// </summary>
+    public static List<string> NavigationViolations(IReadOnlyList<S.Item> items, IReadOnlyList<StoryGroupingProfile> profiles, IReadOnlyList<GroupNode> tree, Mode mode)
+    {
+        var problems = new List<string>();
+        if (mode is Mode.Functional or Mode.Business)
+        {
+            var seen = tree.SelectMany(n => n.Stories.Select(s => s.StoryKey)).GroupBy(k => k, StringComparer.Ordinal).ToList();
+            problems.AddRange(seen.Where(g => g.Count() > 1).Select(g => $"{g.Key} står {g.Count()} ganger i navigasjonen."));
+            var keys = seen.Select(g => g.Key).ToHashSet(StringComparer.Ordinal);
+            problems.AddRange(profiles.Where(p => !keys.Contains(p.StoryKey)).Select(p => $"{p.StoryKey} mangler i navigasjonen."));
+            if (tree.Count(n => n.Key == UngroupedKey) != 1) problems.Add("«Uten gruppe» mangler.");
         }
+        var profiled = profiles.Select(p => p.StoryKey).ToHashSet(StringComparer.Ordinal);
+        problems.AddRange(items.Where(i => i.Candidate.Story is { } s && !profiled.Contains(s.Key)).Select(i => i.Candidate.Story!.Key).Distinct()
+            .Select(k => $"{k} har scenarioer, men ingen grupperingsprofil."));
+        problems.AddRange(items.GroupBy(i => i.Id, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => $"Scenario {g.Key} finnes flere ganger."));
+        return problems;
     }
 
     private static string? SectionDetail(RequirementSectionMap sections, string area) =>
@@ -122,11 +215,10 @@ public static class StoryGroupingPresentation
 
     public static string StateLabel(GroupingState s) => s switch
     {
-        GroupingState.Suggested => "Foreslått gruppering",
-        GroupingState.Confirmed => "Bekreftet gruppering",
-        GroupingState.NeedsGrouping => "Trenger gruppering",
-        GroupingState.OnlySuggestions => "Trenger gjennomgang",
-        _ => "Uten krav",
+        GroupingState.Suggested or GroupingState.Confirmed => "Gruppert",
+        GroupingState.NeedsGrouping => "Flere mulige grupper",
+        GroupingState.NeedsReview => "Trenger gjennomgang",
+        _ => "Uten gruppe",
     };
 
     /// <summary>What a change would do, computed by applying it to a copy and comparing the profiles before and after (shown before saving; nothing is
@@ -158,6 +250,8 @@ public static class StoryGroupingPresentation
         foreach (var g in after.Groups.Where(g => doc.Groups.All(x => x.Id != g.Id))) lines.Add($"Ny gruppe «{g.Name}».");
         foreach (var g in doc.Groups.Where(g => after.Groups.All(x => x.Id != g.Id))) lines.Add($"Gruppen «{g.Name}» fjernes (bare grupperingen).");
         foreach (var g in after.Groups) if (doc.Groups.FirstOrDefault(x => x.Id == g.Id) is { } old && old.Name != g.Name) lines.Add($"«{old.Name}» får navnet «{g.Name}».");
+        foreach (var op in ops.Where(o => o.Kind == StoryGroupingOperationKind.SetLinkRole))
+            lines.Add($"{(op.StoryKey is { } k && label.TryGetValue(k, out var l) ? l : op.StoryKey)}: rollen til {op.DisplayId ?? op.RequirementId} blir «{StoryGroupingEngine.RoleLabel(op.Role ?? StoryLinkRole.Unknown)}» (koblingen og kildebeviset er uendret).");
         lines.Add("Akseptansescenarioer, lagrede testtilfeller, testplaner og kjøringer endres ikke.");
         return lines;
 

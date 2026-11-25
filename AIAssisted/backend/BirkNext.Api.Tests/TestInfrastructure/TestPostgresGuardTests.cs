@@ -42,7 +42,7 @@ public sealed class TestPostgresGuardTests
         var tests = Directory.GetParent(root)!.FullName;
         var offenders = Directory.EnumerateFiles(tests, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
-            .Where(f => Path.GetFileName(f) is not ("TestPostgres.cs" or "TestPostgresGuardTests.cs" or "DatabaseConnectionTests.cs"))
+            .Where(f => Path.GetFileName(f) is not ("TestPostgres.cs" or "TestPostgresGuardTests.cs" or "DatabaseConnectionTests.cs" or "TestDatabaseIsolation.cs"))
             .Where(f =>
             {
                 var text = File.ReadAllText(f);

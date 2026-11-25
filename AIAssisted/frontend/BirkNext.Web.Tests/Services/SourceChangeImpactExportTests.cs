@@ -48,6 +48,17 @@ public sealed class SourceChangeImpactExportTests
             .And.Contain("QA verification: Review and run the linked test.").And.Contain($"[snapshot {snapshot}]");
     }
 
+    [Fact]
+    public void Exports_keep_that_a_linked_test_is_a_potential_impact_to_review_not_a_confirmed_or_executed_one()
+    {
+        // RI-03 (2026-11-25): legacy links carry no review state; both exports say so for every test to review.
+        var report = Report();
+        SourceChangeImpactExport.Markdown(report).Should().Contain("Potential impact — review (link not reviewed; not executed)");
+        SourceChangeImpactExport.Html(report).Should().Contain("Potential impact — review (link not reviewed; not executed)");
+        var direct = report with { RecommendedTests = [report.RecommendedTests[0] with { EvidenceLevel = ImpactTestRecommendation.LinkedToChangedSource }] };
+        SourceChangeImpactExport.Markdown(direct).Should().Contain("Linked to changed source — review");
+    }
+
     private static SourceChangeImpactReport Report()
     {
         var baseline = Guid.NewGuid();

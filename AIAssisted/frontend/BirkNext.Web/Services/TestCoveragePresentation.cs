@@ -58,7 +58,7 @@ public static class TestCoveragePresentation
 
     /// <summary>Requirement ids a story's own text names (FR-008, FR-008a …), normalised like the specification's ids.</summary>
     public static List<string> NamedRequirements(string text) =>
-        [.. System.Text.RegularExpressions.Regex.Matches(text ?? "", @"\b(FR)-?(\d{1,4})([a-z])?\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+        [.. System.Text.RegularExpressions.Regex.Matches(text ?? "", @"(?<![\w-])(FR)-?(\d{1,4})([a-z])?\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
             .Select(m => BirkNext.Sdd.RequirementReferenceParser.Normalize($"FR-{m.Groups[2].Value}") + m.Groups[3].Value.ToUpperInvariant()).Distinct(StringComparer.Ordinal)];
 
     /// <summary>
@@ -74,10 +74,12 @@ public static class TestCoveragePresentation
         var all = new List<TaskNode>();
         void Walk(IEnumerable<TaskNode> nodes) { foreach (var n in nodes) { all.Add(n); Walk(n.Children); } }
         Walk(TaskExplorerService.Parse(text).Roots);
+        // Tagged task lines, then the story's phase goal and the tagged tasks' continuation lines (2026-11-25, StoryTaskContext).
         return [.. all.Where(t => t.NodeType == TaskNodeType.Task && string.Equals(t.UserStoryTag, storyTag, StringComparison.OrdinalIgnoreCase))
             .SelectMany(t => t.ReferencedFrIds.Select(fr => new StoryTaskRequirement(fr, t.TaskId, t.RawText.Length > 300 ? t.RawText[..300] + "…" : t.RawText, tasksPath,
-                t.Provenance?.Sources.FirstOrDefault()?.StartLine)))
-            .DistinctBy(r => (r.RequirementId, r.TaskId))];
+                t.Provenance?.Sources.FirstOrDefault()?.StartLine, StoryTaskRequirement.TaskLine)))
+            .DistinctBy(r => (r.RequirementId, r.TaskId))
+            .Concat(BirkNext.Sdd.StoryTaskContext.Read(tasksPath, text, storyTag))];
     }
 
     /// <summary>The feature documents besides tasks.md that may relate a story to requirements (Spec Kit plan.md and quickstart.md).</summary>
@@ -106,7 +108,7 @@ public static class TestCoveragePresentation
                 var line = lines[i].Trim();
                 if (!names.IsMatch(line)) continue;
                 foreach (var fr in NamedRequirements(line))
-                    result.Add(new StoryTaskRequirement(fr, null, line.Length > 300 ? line[..300] + "…" : line, path, i + 1));
+                    result.Add(new StoryTaskRequirement(fr, null, line.Length > 300 ? line[..300] + "…" : line, path, i + 1, StoryTaskRequirement.PlanMention));
             }
         }
         return [.. result.DistinctBy(r => (r.RequirementId, r.TasksPath, r.Line))];

@@ -124,3 +124,120 @@ public static partial class RequirementSections
 
     private static string Clean(string title) => Regex.Replace(title.Replace("*", "").Trim().TrimEnd(':').Trim(), @"\s+", " ");
 }
+
+/// <summary>
+/// The parts of a feature's tasks.md that relate a story to requirements beyond its tagged task lines (2026-11-25). The real SkoleService US2 names
+/// its only requirement (FR-008a) in its phase's «Goal», and SkoleService task bodies name requirements in indented sub-bullets and «As built» notes,
+/// which a line-by-line reader never saw:
+/// <list type="bullet">
+/// <item><b>Phase goal</b> (<see cref="BirkNext.TestCoverage.StoryTaskRequirement.PhaseGoal"/>): the «Goal» line inside the phase whose heading names the
+/// story ("## Phase 4: User Story 2 …"). The story's own stated purpose: structural evidence like a task line.</item>
+/// <item><b>Task detail</b> (<see cref="BirkNext.TestCoverage.StoryTaskRequirement.TaskDetail"/>): an indented continuation line of a task tagged with the
+/// story ("- [X] T072 [US2] …" followed by "  - … (FR-008a)"). Supporting only: it shows a related area, never the primary one.</item>
+/// </list>
+/// Only ids written as this specification's own (FR-008a), never a prefixed reference of another service (UT-FR-001, SR-FR-013).
+/// </summary>
+public static partial class StoryTaskContext
+{
+    [GeneratedRegex(@"(?<![\w-])FR-?(?<n>\d{1,4})(?<s>[a-z])?\b", RegexOptions.IgnoreCase)]
+    private static partial Regex FrId();
+
+    [GeneratedRegex(@"^#{2,3}\s+(?:Phase\s+\d+\s*:\s*)?(?:User Story|Brukerhistorie)\s+(?<n>\d+)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex StoryPhase();
+
+    [GeneratedRegex(@"^#{1,2}\s")]
+    private static partial Regex TopHeading();
+
+    [GeneratedRegex(@"^\*\*(?:Goal|Mål)\*\*\s*:", RegexOptions.IgnoreCase)]
+    private static partial Regex GoalLine();
+
+    [GeneratedRegex(@"^[-*]\s+\[[ xX]\]\s+(?<id>T\d+)\b(?<rest>.*)$")]
+    private static partial Regex TaskLine();
+
+    /// <param name="taskLines">Also the tagged task lines themselves (<see cref="BirkNext.TestCoverage.StoryTaskRequirement.TaskLine"/>): the API's
+    /// builder has no task parser; the browser reads tagged lines through its task explorer and asks for the context only.</param>
+    public static List<BirkNext.TestCoverage.StoryTaskRequirement> Read(string tasksPath, string? text, string storyTag, bool taskLines = false)
+    {
+        var result = new List<BirkNext.TestCoverage.StoryTaskRequirement>();
+        if (string.IsNullOrWhiteSpace(text) || Regex.Match(storyTag ?? "", @"\d+") is not { Success: true } number) return result;
+        var tag = new Regex($@"\[(?:US|Brukerhistorie\s*)-?{number.Value}\]", RegexOptions.IgnoreCase);
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        var inPhase = false; string? task = null;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var raw = lines[i]; var line = raw.Trim();
+            if (line.StartsWith('#'))
+            {
+                task = null;
+                if (StoryPhase().Match(line) is { Success: true } phase) inPhase = phase.Groups["n"].Value == number.Value;
+                else if (TopHeading().IsMatch(line)) inPhase = false; // the next "## Phase …" ends this story's phase; "### Tests for …" does not
+                continue;
+            }
+            if (line.Length == 0) continue;
+            var indented = raw.Length - raw.TrimStart().Length >= 2;
+            if (!indented && TaskLine().Match(line) is { Success: true } t)
+            {
+                task = tag.IsMatch(t.Groups["rest"].Value) ? t.Groups["id"].Value : null;
+                if (task is not null && taskLines) Add(line, i, task, BirkNext.TestCoverage.StoryTaskRequirement.TaskLine);
+                continue;
+            }
+            if (!indented) task = null;
+            if (inPhase && GoalLine().IsMatch(line)) Add(line, i, null, BirkNext.TestCoverage.StoryTaskRequirement.PhaseGoal);
+            else if (task is not null && indented) Add(line, i, task, BirkNext.TestCoverage.StoryTaskRequirement.TaskDetail);
+        }
+        return [.. result.DistinctBy(r => (r.RequirementId, r.Line))];
+
+        void Add(string line, int index, string? taskId, string kind)
+        {
+            foreach (Match m in FrId().Matches(line))
+                result.Add(new(RequirementReferenceParser.Normalize($"FR-{m.Groups["n"].Value}") + m.Groups["s"].Value.ToUpperInvariant(), taskId,
+                    line.Length > 300 ? line[..300] + "…" : line, tasksPath, index + 1, kind));
+        }
+    }
+}
+
+/// <summary>A reference to an acceptance scenario as a feature's documents write it: "US2-3", "User Story 3 scenario 3", "US2 scenarios 2–3".</summary>
+public sealed record SourceScenarioReference(string StoryId, int Number, string Text);
+
+/// <summary>A scenario reference resolved within ONE specification (2026-11-25): resolved only when that specification has the story and the numbered
+/// scenario; "US3-14" in another feature never resolves to this specification's US3. Unresolved references are kept with their reason.</summary>
+public sealed record ResolvedScenarioReference(SourceScenarioReference Reference, string SpecificationPath, bool Resolved, string? Reason);
+
+/// <summary>
+/// Scenario references of the Spec Kit project convention used in M2LB (2026-11-25; e.g. MeldingsutvekslerReceiver tasks.md "US5-2", SkoleService
+/// tasks.md "US2 scenarios 2–3"). Read verbatim; ranges expand to their members; an id inside another namespace ("TT-US1-2") is not read.
+/// </summary>
+public static partial class SourceScenarioReferences
+{
+    [GeneratedRegex(@"(?<![\w-])US(?<s>\d+)-(?<n>\d+)\b")]
+    private static partial Regex Dash();
+
+    [GeneratedRegex(@"(?<![\w-])(?:US(?<s>\d+)|User Story (?<s>\d+)),?\s+scenarios?\s+(?<a>\d+)(?:\s*(?:[–-]|to)\s*(?<b>\d+))?(?<more>(?:\s*(?:,|and|og)\s*\d+)*)", RegexOptions.IgnoreCase)]
+    private static partial Regex Words();
+
+    public static List<SourceScenarioReference> Parse(string? text)
+    {
+        var result = new List<SourceScenarioReference>();
+        if (string.IsNullOrWhiteSpace(text)) return result;
+        foreach (Match m in Dash().Matches(text)) result.Add(new($"US{m.Groups["s"].Value}", int.Parse(m.Groups["n"].Value), m.Value));
+        foreach (Match m in Words().Matches(text))
+        {
+            var story = $"US{m.Groups["s"].Value}";
+            var a = int.Parse(m.Groups["a"].Value);
+            var b = m.Groups["b"].Success ? int.Parse(m.Groups["b"].Value) : a;
+            if (b < a || b - a > 50) b = a;
+            for (var n = a; n <= b; n++) result.Add(new(story, n, m.Value));
+            foreach (Match extra in Regex.Matches(m.Groups["more"].Value, @"\d+")) result.Add(new(story, int.Parse(extra.Value), m.Value));
+        }
+        return [.. result.DistinctBy(r => (r.StoryId, r.Number))];
+    }
+
+    /// <param name="scenarioCount">The number of acceptance scenarios a story of THIS specification has (null = the story does not exist here).</param>
+    public static List<ResolvedScenarioReference> Resolve(IEnumerable<SourceScenarioReference> references, string specificationPath, Func<string, int?> scenarioCount) =>
+        [.. references.Select(r => scenarioCount(r.StoryId) switch
+        {
+            null => new ResolvedScenarioReference(r, specificationPath, false, $"{r.StoryId} finnes ikke i denne spesifikasjonen."),
+            var count when r.Number < 1 || r.Number > count => new ResolvedScenarioReference(r, specificationPath, false, $"{r.StoryId} har {count} scenarioer her; {r.Text} peker utenfor."),
+            _ => new ResolvedScenarioReference(r, specificationPath, true, null),
+        })];
+}

@@ -66,9 +66,10 @@ public sealed class StoryGroupingPresentationTests
     {
         var profiles = StoryGroupingEngine.Profiles(G.Inputs(Items(), Browser(), null), Sections, null);
         var tree = G.Tree(G.Mode.Functional, profiles, null, Sections);
-        tree.Select(n => n.Title).Should().Equal("Intake and identity", "Period lock", "Uten krav");
+        // US2 only mentions FR-019 in a scenario: an incidental reference never places a story (2026-11-25), so US2 waits under «Uten gruppe».
+        tree.Select(n => n.Title).Should().Equal("Intake and identity", "Uten gruppe");
         tree.SelectMany(n => n.Stories).Select(p => p.StoryKey).Should().OnlyHaveUniqueItems().And.HaveCount(3);
-        tree.Single(n => n.Title == "Uten krav").Stories.Single().StoryKey.Should().Be(Us3.Key);
+        tree.Single(n => n.Key == G.UngroupedKey).Stories.Select(p => p.StoryKey).Should().Equal(Us2.Key, Us3.Key);
         tree.First().Detail.Should().Be("2 krav i denne delen av spesifikasjonen");
     }
 
@@ -83,7 +84,7 @@ public sealed class StoryGroupingPresentationTests
         var tree = G.Tree(G.Mode.Business, profiles, doc, Sections);
         tree.Select(n => n.Title).Should().Equal("Mottak og behandling", "Leveranse", "Uten gruppe");
         tree[0].Stories.Single().StoryKey.Should().Be(Us1.Key);
-        tree[2].Stories.Single().StoryKey.Should().Be(Us3.Key);
+        tree[2].Stories.Select(p => p.StoryKey).Should().Equal(Us2.Key, Us3.Key);
         G.DefaultMode(doc, Sections).Should().Be(G.Mode.Business);
         G.DefaultMode(null, Sections).Should().Be(G.Mode.Functional);
         G.DefaultMode(null, RequirementSectionMap.Empty).Should().Be(G.Mode.Stories);
@@ -114,7 +115,7 @@ public sealed class StoryGroupingPresentationTests
         G.BasisLabel(StoryLinkBasis.HumanConfirmed).Should().Be("Bekreftet av en person");
         G.BasisLabel(StoryLinkBasis.Suggested).Should().Be("Foreslått");
         G.BasisTone(StoryLinkBasis.Suggested).Should().NotBe(G.BasisTone(StoryLinkBasis.HumanConfirmed), "a suggestion never looks confirmed");
-        G.StateLabel(GroupingState.NeedsGrouping).Should().Be("Trenger gruppering");
+        G.StateLabel(GroupingState.NeedsGrouping).Should().Be("Flere mulige grupper");
         G.ModeLabel(G.Mode.Functional).Should().Be("Funksjonelle områder");
     }
 }

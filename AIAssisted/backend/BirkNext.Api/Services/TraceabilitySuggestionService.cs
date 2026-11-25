@@ -40,7 +40,7 @@ public sealed class TraceabilitySuggestionService
     private const double MinimumConfidenceThreshold = 0.25;
 
     private static readonly Regex IdPattern = new(
-        @"\b(FR|SC|US|TC|TEST|TASK|T)[-]?\s*(\d+)\b",
+        @"(?<![\w-])(FR|SC|US|TC|TEST|TASK|T)[-]?\s*(\d+)\b", // not "UT-FR-001" / "SR-FR-013" / "US-B1" style references of other documents
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)

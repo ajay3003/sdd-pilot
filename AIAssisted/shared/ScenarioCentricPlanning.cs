@@ -500,13 +500,26 @@ public static partial class ScenarioPlanning
     public static List<TestCaseVariantProposal> Variants(TestCaseDraft scenario, IEnumerable<TestCaseDraft> siblings)
     {
         var list = new List<TestCaseVariantProposal>();
-        var expected = scenario.Generated.ExpectedResult;
+        // A source scenario may state further "Given … Then …" pairs after its first outcome (SkoleService US2 scenario 5: counting option off /
+        // on). The scenario stays ONE source record; each further pair is a test-design variant (2026-11-25). Clause analysis reads the first pair only.
+        var alternatives = SourceAlternatives(scenario.Generated.ExpectedResult);
+        var expected = alternatives.First;
+        foreach (var (given, when, then) in alternatives.Further)
+            list.Add(new($"alt:{Sha(given + "|" + then)[..10]}", Clip($"{scenario.Generated.Title} — gitt {given}", 200), "Source alternative",
+                $"The source scenario states a further condition with its own outcome: \"Given {given}{(when is null ? "" : $", When {when}")}, Then {then}\". It is one source scenario; this is a test-design variant of it.",
+                Upper(given), when is null ? null : Upper(when), Upper(then.TrimEnd('.')) + "."));
+        // Alternative conditions listed in the precondition with one shared outcome ("dates span two periods, start after the submission date, or fall
+        // in a locked period …", US1 scenario 8): one variant per listed condition, verbatim.
+        foreach (var condition in ListedConditions(scenario.Generated.Preconditions))
+            list.Add(new($"cond:{Sha(condition)[..10]}", Clip($"{scenario.Generated.Title} — {condition}", 200), "Listed condition",
+                $"The source lists alternative conditions with the same outcome; this variant covers \"{condition}\".", Upper(condition), null,
+                string.IsNullOrWhiteSpace(expected) ? null : Upper(expected.Trim().TrimEnd('.')) + "."));
         if (!string.IsNullOrWhiteSpace(expected))
         {
             var clauses = ClauseSplit().Split(expected).Select(s => s.Trim().TrimEnd('.')).Where(s => s.Length > 8).ToList();
             foreach (var clause in clauses.Skip(1))
             {
-                var condition = Regex.Match(clause, @"^(even (?:with|if|when)|if|when|unless|except (?:when|if)|otherwise)\b\s*(.*)$", RegexOptions.IgnoreCase);
+                var condition = Regex.Match(clause, @"^(even (?:with|if|when)|if|when|where|unless|except (?:when|if)|otherwise)\b\s*(.*)$", RegexOptions.IgnoreCase);
                 var title = condition.Success ? $"{scenario.Generated.Title} — {Upper(condition.Value)}" : $"{scenario.Generated.Title} — {Upper(clause)}";
                 list.Add(new($"clause:{Sha(clause)[..10]}", Clip(title, 200), "Business-rule combination",
                     $"The expected outcome states a further condition: \"{clause}\".", condition.Success ? Upper(condition.Groups[2].Value) : null, null, Upper(clause) + "."));
@@ -527,6 +540,38 @@ public static partial class ScenarioPlanning
         // A case added from a proposal keeps its key: the proposal is not offered again when the case's title is later edited.
         var used = siblings.Select(s => s.FromVariant).OfType<string>().ToHashSet(StringComparer.Ordinal);
         return [.. list.Where(v => !titles.Contains(v.Title) && !used.Contains(v.Key)).DistinctBy(v => v.Key).DistinctBy(v => v.Title, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    [GeneratedRegex(@"(?:^|(?<=[.;])\s*)\**Given\**\s+", RegexOptions.CultureInvariant)]
+    private static partial Regex FurtherGiven();
+
+    /// <summary>The first outcome, and each further "Given … [When …], Then …" pair a source scenario states after it (verbatim, markdown removed).
+    /// Text that does not form recognisable pairs stays whole and proposes nothing.</summary>
+    public static (string? First, List<(string Given, string? When, string Then)> Further) SourceAlternatives(string? expected)
+    {
+        if (string.IsNullOrWhiteSpace(expected)) return (expected, []);
+        var parts = FurtherGiven().Split(expected);
+        if (parts.Length < 2 || parts[0].Trim().Length == 0) return (expected, []);
+        var further = new List<(string, string?, string)>();
+        foreach (var part in parts.Skip(1))
+        {
+            var m = Regex.Match(part, @"^(?<given>.+?),?\s+\**When\**\s+(?<when>.+?),?\s+\**Then\**\s+(?<then>.+)$", RegexOptions.Singleline);
+            if (!m.Success) m = Regex.Match(part, @"^(?<given>.+?),?\s+\**Then\**\s+(?<then>.+)$", RegexOptions.Singleline);
+            if (!m.Success) return (expected, []);
+            further.Add((Clean(m.Groups["given"].Value), m.Groups["when"].Success ? Clean(m.Groups["when"].Value) : null, Clean(m.Groups["then"].Value)));
+        }
+        return (parts[0].Trim(), further);
+        static string Clean(string v) => Regex.Replace(v.Replace("**", "").Trim().TrimEnd(','), @"\s+", " ");
+    }
+
+    /// <summary>Three or more alternative conditions listed in a precondition ("A, B, or C"), verbatim; nothing for a plain sentence.</summary>
+    public static List<string> ListedConditions(string? preconditions)
+    {
+        if (string.IsNullOrWhiteSpace(preconditions) || !preconditions.Contains(", or ", StringComparison.Ordinal)) return [];
+        var items = preconditions.Replace("**", "").Trim().TrimEnd('.').Split(", ").Select(i => i.Trim()).ToList();
+        if (items.Count < 3) return [];
+        items[^1] = Regex.Replace(items[^1], @"^or\s+", "");
+        return items.Any(i => i.Length < 4) ? [] : items;
     }
 
     // ── Words ──────────────────────────────────────────────────────────────────────────────────────────────────────

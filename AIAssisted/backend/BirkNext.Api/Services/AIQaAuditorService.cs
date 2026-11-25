@@ -193,13 +193,16 @@ public sealed class AIQaAuditorService
     private static void Deduct(List<QaScoreDeduction> list, string category, string reason, int points) =>
         list.Add(new QaScoreDeduction { Category = category, Reason = reason, Points = points });
 
-    private static QaReadinessStatus DetermineReadiness(
+    /// <summary>
+    /// Readiness from the audit's signals (2026-11-25: evidence gate). The coverage percentage is TEST DESIGN LINKAGE (requirements with a linked
+    /// test), never approval or execution evidence, and this audit reads no test results — so it can say «review needed» or «high risk», never
+    /// «ready»: <see cref="QaReadinessStatus.Ready"/> needs current executed and passed tests, which are not evaluated here. Before, a project whose
+    /// requirements merely had linked tests could be reported Ready.
+    /// </summary>
+    internal static QaReadinessStatus DetermineReadiness(
         int score, double coveragePercent, SpecDriftReport drift)
     {
         bool hasHighDrift = drift.Findings.Any(f => f.Severity == RiskLevel.High);
-
-        if (score >= 80 && !hasHighDrift && coveragePercent >= 80)
-            return QaReadinessStatus.Ready;
 
         if (score < 50 || coveragePercent < 50 || hasHighDrift)
             return QaReadinessStatus.HighRisk;
@@ -215,8 +218,8 @@ public sealed class AIQaAuditorService
         if (code.TotalFiles > 0 && code.UnlinkedFiles > 0)
             actions.Add($"Link {code.UnlinkedFiles} unregistered code file(s) to their requirements and tests via Code Traceability.");
 
-        if (readiness == QaReadinessStatus.Ready && !actions.Any())
-            actions.Add("All quality indicators are healthy. Continue monitoring after each sprint.");
+        if (!actions.Any())
+            actions.Add("Design-level indicators are healthy (requirements have linked tests). Release readiness also needs approved, executed and passed tests on the current source, which this audit does not evaluate.");
 
         return actions;
     }

@@ -245,10 +245,42 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
         Send<ScenarioWorkQueueView>(() => http.GetAsync($"{Base}/project/work-queues?projectKey={Uri.EscapeDataString(projectKey)}{(discoveryId is { Length: > 0 } d ? $"&discoveryId={Uri.EscapeDataString(d)}" : "")}", ct), ct);
 
     public Task<(StoryGroupingDocument?, string?)> StoryGroupingAsync(string projectKey, string specificationPath, CancellationToken ct = default) =>
-        Send<StoryGroupingDocument>(() => http.GetAsync($"{Base}/story-grouping?projectKey={Uri.EscapeDataString(projectKey)}&specificationPath={Uri.EscapeDataString(specificationPath)}", ct), ct);
+        SendGrouping(() => http.GetAsync($"{Base}/story-grouping?projectKey={Uri.EscapeDataString(projectKey)}&specificationPath={Uri.EscapeDataString(specificationPath)}", ct), read: true, ct);
 
     public Task<(StoryGroupingDocument?, string?)> ApplyStoryGroupingAsync(string projectKey, string specificationPath, StoryGroupingChangeRequest request, CancellationToken ct = default) =>
-        Send<StoryGroupingDocument>(() => http.PostAsJsonAsync($"{Base}/story-grouping?projectKey={Uri.EscapeDataString(projectKey)}&specificationPath={Uri.EscapeDataString(specificationPath)}", request, Json, ct), ct);
+        SendGrouping(() => http.PostAsJsonAsync($"{Base}/story-grouping?projectKey={Uri.EscapeDataString(projectKey)}&specificationPath={Uri.EscapeDataString(specificationPath)}", request, Json, ct), read: false, ct);
+
+    /// <summary>
+    /// Grouping calls with the tester's language and the truth about what happened (2026-11-25): a refused change names why (duplicate name, stale
+    /// revision, permission) and says nothing was saved; an unreachable or failing service never looks like success. The server's own message
+    /// (<c>message</c>, else <c>error</c>) is shown when it gives one.
+    /// </summary>
+    private static async Task<(StoryGroupingDocument? Value, string? Error)> SendGrouping(Func<Task<HttpResponseMessage>> call, bool read, CancellationToken ct)
+    {
+        var nothing = read ? "" : " Ingenting er lagret.";
+        try
+        {
+            using var response = await call();
+            if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<StoryGroupingDocument>(Json, ct), null);
+            if ((int)response.StatusCode is 401 or 403) return (null, (read ? "Du har ikke tilgang til grupperingen." : "Du har ikke tilgang til å endre grupperingen.") + nothing);
+            string? message = null;
+            try
+            {
+                var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json, ct);
+                message = body.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString()
+                    : body.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : null;
+            }
+            catch (Exception e) when (e is JsonException or InvalidOperationException or NotSupportedException) { }
+            if (message is not null) return (null, message.Contains("ingenting", StringComparison.OrdinalIgnoreCase) || read ? message : message + nothing);
+            return (null, (int)response.StatusCode >= 500
+                ? (read ? "Grupperingen kunne ikke leses (serverfeil)." : "Grupperingen kunne ikke lagres (serverfeil).") + nothing + " Prøv igjen."
+                : $"Forespørselen ble avvist (HTTP {(int)response.StatusCode}).{nothing}");
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException or NotSupportedException)
+        {
+            return (null, (read ? "Grupperingstjenesten svarer ikke." : "Grupperingstjenesten svarte ikke. Endringen er kanskje ikke lagret; «Prøv igjen» lagrer den bare én gang.") + (read ? " Prøv igjen." : ""));
+        }
+    }
 
     public Task<(PreparedCaseTraceView?, string?)> PreparedCaseTraceAsync(string projectKey, PreparedCaseTraceRequest request, CancellationToken ct = default) =>
         Send<PreparedCaseTraceView>(() => http.PostAsJsonAsync($"{Base}/project/traceability?projectKey={Uri.EscapeDataString(projectKey)}", request, Json, ct), ct);

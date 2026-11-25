@@ -25,6 +25,10 @@ public sealed class SpecificationSemanticModel
     public List<SemanticAssumption> Assumptions { get; init; } = [];
     public List<SemanticSecurity> SecurityConsiderations { get; init; } = [];
     public List<SemanticAcceptanceScenario> AcceptanceScenarios { get; init; } = [];
+    /// <summary>«Dependencies &amp; Open Items» rows as the source records them (status in the document, not the live state).</summary>
+    public List<SemanticDependency> Dependencies { get; init; } = [];
+    /// <summary>«Out of Scope» items: boundaries of this feature, never mandatory tests for it.</summary>
+    public List<SemanticScopeItem> OutOfScope { get; init; } = [];
 
     // ── Aggregates ───────────────────────────────────────────────────────────
     public int TotalUserStories => UserStories.Count;
@@ -82,7 +86,8 @@ public sealed class SemanticRequirement
 {
     public string Id { get; init; } = string.Empty;
     public string Text { get; init; } = string.Empty;
-    public string? Category { get; init; }
+    /// <summary>The functional area the source writes the requirement under (its FR section), else a heading-based category.</summary>
+    public string? Category { get; set; }
 
     // ── Semantic links ──────────────────────────────────────────────────────
     public List<SemanticSuccessCriterion> LinkedSuccessCriteria { get; init; } = [];
@@ -155,11 +160,44 @@ public sealed class SemanticClarification
     public string Question { get; init; } = string.Empty;
     public string? Answer { get; init; }
 
+    /// <summary>The dated session the clarification belongs to ("2026-10-06"), when the source groups them so.</summary>
+    public string? Session { get; set; }
+    /// <summary>
+    /// What the source itself says about the answer (2026-11-25): <see cref="Current"/>, <see cref="Superseded"/> ("*Superseded 2026-10-06: …*": the
+    /// answer is historical, the note states what replaced it) or <see cref="Amended"/> ("*Amended …*": the note refines the answer). Read from the
+    /// source's own markers only; a later position in the document never decides precedence.
+    /// </summary>
+    public string Status { get; set; } = Current;
+    /// <summary>The source's supersession / amendment note, verbatim (without the asterisks).</summary>
+    public string? StatusNote { get; set; }
+    public const string Current = "Current", Superseded = "Superseded", Amended = "Amended";
+
     // ── Semantic links ──────────────────────────────────────────────────────
     /// <summary>
     /// Elements affected by this clarification (US ID, FR ID, SC ID, etc.)
     /// </summary>
     public List<string> AffectedElements { get; init; } = [];
+}
+
+/// <summary>A row of «Dependencies &amp; Open Items». <see cref="Closed"/> and <see cref="Withdrawn"/> are the document's own record (bold «Closed»,
+/// struck-through row); the live implementation state is not known from the specification.</summary>
+public sealed class SemanticDependency
+{
+    public string Id { get; init; } = string.Empty;
+    public string Statement { get; init; } = string.Empty;
+    public string? Owner { get; init; }
+    public string? Blocks { get; init; }
+    public bool Closed { get; init; }
+    public bool Withdrawn { get; init; }
+    public int Line { get; init; }
+    public List<string> RequirementIds { get; init; } = [];
+}
+
+/// <summary>An «Out of Scope» item with the references it cites.</summary>
+public sealed class SemanticScopeItem
+{
+    public string Text { get; init; } = string.Empty;
+    public int Line { get; init; }
 }
 
 /// <summary>

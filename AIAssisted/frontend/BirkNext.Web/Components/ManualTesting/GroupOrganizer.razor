@@ -11,9 +11,10 @@
 
     <div class="gor-create">
         <input class="msb-search" placeholder="Ny gruppe, f.eks. «Mottak og behandling»" value="@_newName" @oninput="e => _newName = e.Value?.ToString() ?? string.Empty" data-testid="gor-new-name" />
-        <button type="button" class="btn btn-secondary btn-sm" disabled="@string.IsNullOrWhiteSpace(_newName)" data-testid="gor-create"
+        <button type="button" class="btn btn-secondary btn-sm" disabled="@(NameProblem(_newName) is not null)" data-testid="gor-create"
                 @onclick="() => { Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.CreateGroup, Name = _newName.Trim() }); _newName = string.Empty; }">Opprett gruppe</button>
     </div>
+    @if (_newName.Length > 0 && NameProblem(_newName) is { } nameProblem) { <p class="mt-alert msb-small" role="alert" data-testid="gor-name-problem">@nameProblem</p> }
 
     @{ var groups = Staged.Groups.OrderBy(g => g.Order).ToList(); }
     @if (groups.Count == 0) { <p class="mt-muted msb-small" data-testid="gor-empty">Ingen forretningsgrupper ennå. Funksjonelle områder fra spesifikasjonen brukes til navigasjon.</p> }
@@ -32,6 +33,10 @@
                     {
                         <button type="button" class="msb-link" @onclick="() => Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.DeleteGroup, GroupId = group.Id })" data-testid="gor-delete">Slett tom gruppe</button>
                     }
+                    else
+                    {
+                        <button type="button" class="msb-link" aria-expanded="@(_deleting == group.Id ? "true" : "false")" @onclick="() => _deleting = _deleting == group.Id ? null : group.Id" data-testid="gor-delete-members">Slett gruppe …</button>
+                    }
                     @if (groups.Count > 1)
                     {
                         <select class="msb-select" aria-label="Slå sammen med" @onchange="e => Merge(group, e.Value?.ToString())" data-testid="gor-merge">
@@ -47,6 +52,23 @@
                         <label class="msb-small"><input type="checkbox" checked="@group.FunctionalAreas.Contains(a)" @onchange="e => ToggleArea(group, a, e.Value is true)" data-testid="gor-area" data-area="@a" /> @a</label>
                     }
                 </fieldset>
+                @if (_deleting == group.Id && members > 0)
+                {
+                    @* Removing a group with stories: a preview and an explicit choice; never a cascade to stories, scenarios, requirements or cases. *@
+                    <div class="gor-delete-form" role="group" aria-label="Slett gruppe" data-testid="gor-delete-form">
+                        <p class="msb-small" data-testid="gor-delete-count">Gruppen inneholder @members brukerhistorie@(members == 1 ? "" : "r"). Brukerhistoriene, scenarioene, kravene og testtilfellene beholdes uansett.</p>
+                        @if (groups.Count > 1)
+                        {
+                            <select class="msb-select" aria-label="Flytt brukerhistoriene til" @onchange="e => DeleteInto(group, e.Value?.ToString())" data-testid="gor-delete-into">
+                                <option value="">Flytt dem til …</option>
+                                @foreach (var other in groups.Where(x => x.Id != group.Id)) { <option value="@other.Id">@other.Name</option> }
+                            </select>
+                        }
+                        <button type="button" class="btn btn-secondary btn-sm" data-testid="gor-delete-release"
+                                @onclick="() => { Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.DeleteGroup, GroupId = group.Id, ReleaseMembers = true }); _deleting = null; }">La dem stå uten gruppe</button>
+                        <button type="button" class="msb-link" @onclick="() => _deleting = null" data-testid="gor-delete-cancel">Avbryt</button>
+                    </div>
+                }
                 @if (_splitting == group.Id)
                 {
                     <div class="gor-split" data-testid="gor-split-form">
@@ -95,7 +117,7 @@
         <div class="srl-preview" role="region" aria-label="Forhåndsvisning" data-testid="gor-preview">
             <span class="mtp-ctx-label">Forhåndsvisning — ingenting er lagret ennå</span>
             <ul>@foreach (var line in _preview) { <li data-testid="gor-preview-line">@line</li> }</ul>
-            <button type="button" class="btn btn-primary btn-sm" disabled="@_saving" @onclick="SaveAsync" data-testid="gor-save">@(_saving ? "Lagrer …" : "Lagre")</button>
+            <button type="button" class="btn btn-primary btn-sm" disabled="@(_saving || _preview.Any(l => l.StartsWith("Kan ikke lagres", StringComparison.Ordinal)))" @onclick="SaveAsync" data-testid="gor-save">@(_saving ? "Lagrer …" : _error is null ? "Lagre" : "Prøv igjen")</button>
             <button type="button" class="msb-link" disabled="@_saving" @onclick="Discard" data-testid="gor-discard">Forkast</button>
         </div>
     }
@@ -116,7 +138,7 @@
     private readonly List<StoryGroupingOperation> _staged = [];
     private List<string> _preview = [];
     private string _newName = string.Empty, _splitName = string.Empty;
-    private string? _splitting, _error;
+    private string? _splitting, _error, _deleting;
     private readonly HashSet<string> _splitStories = [];
     private bool _saving;
 
@@ -146,6 +168,18 @@
     private void Discard() { _staged.Clear(); _preview = []; _error = null; }
 
     private void Rename(BusinessGroup g, string? name) { if (name is { Length: > 0 } n && n.Trim() != g.Name) Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.RenameGroup, GroupId = g.Id, Name = n.Trim() }); }
+
+    /// <summary>A new group's name must be given and unused (case-insensitive, also among staged groups); the server refuses the same.</summary>
+    private string? NameProblem(string name) =>
+        string.IsNullOrWhiteSpace(name) ? "Gruppen må ha et navn."
+        : Staged.Groups.Any(g => string.Equals(g.Name, name.Trim(), StringComparison.CurrentCultureIgnoreCase)) ? $"Det finnes allerede en gruppe som heter «{name.Trim()}»." : null;
+
+    private void DeleteInto(BusinessGroup g, string? into)
+    {
+        if (string.IsNullOrEmpty(into)) return;
+        Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.DeleteGroup, GroupId = g.Id, TargetGroupId = into });
+        _deleting = null;
+    }
 
     private void Merge(BusinessGroup g, string? into) { if (into is { Length: > 0 }) Stage(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.MergeGroups, GroupId = g.Id, TargetGroupId = into }); }
 

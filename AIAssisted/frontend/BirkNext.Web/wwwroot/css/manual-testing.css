@@ -633,3 +633,17 @@
 .gor-split { display: grid; gap: 0.25rem; }
 .gor-stories { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
 .gor-stories td, .gor-stories th { border-bottom: 1px solid var(--clr-border-muted, #eaeef2); padding: 0.3rem 0.35rem; text-align: left; vertical-align: middle; }
+
+/* Fail-safe grouping (2026-11-25): the permanent «Uten gruppe», reasons, review. */
+.mtw-group.is-system > .mtw-group-head .mtw-group-title { font-style: italic; }
+.mtw-ungrouped-reason { display: block; font-size: 0.72rem; color: var(--clr-text-muted, #57606a); margin: -0.15rem 0 0.3rem 0.6rem; }
+.mtw-grouping-failed { font-size: 0.82rem; margin: 0.25rem 0 0.5rem; }
+.grv { border: 1px solid var(--clr-border, #d0d7de); border-radius: 8px; padding: 0.6rem 0.75rem; margin-bottom: 0.75rem; background: var(--clr-surface, #fff); }
+.grv-list { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.5rem; }
+.grv-row { border-top: 1px solid var(--clr-border, #d0d7de); padding-top: 0.45rem; }
+.grv-head { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: baseline; }
+.grv-title { font-weight: 600; }
+.grv-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin-top: 0.3rem; }
+.grv-new { display: inline-flex; gap: 0.25rem; align-items: center; }
+.grv-new .msb-search { width: 11rem; }
+.gor-delete-form { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.3rem 0; padding: 0.4rem; border-left: 3px solid var(--clr-warn, #bf8700); }

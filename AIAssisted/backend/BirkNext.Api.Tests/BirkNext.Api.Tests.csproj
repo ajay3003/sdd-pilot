@@ -1,10 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Server GC, as BirkNext.Api itself runs (the Web SDK default) (2026-11-24). The suite hosts dozens of in-process copies of the web app;
-         under the default workstation GC a full run spent ~229 s (33 %) frozen in collections, single pauses up to 6 s, and in-memory HTTP calls hit
-         their 100 s timeouts (9-11 failures per run). With Server GC: 32 s total, longest pause 0.44 s (runtime probe: BIRKNEXT_TEST_STALL_PROBE). -->
-    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <!-- Workstation (concurrent) GC, chosen from measurements (2026-11-25; scratchpad diag/mem-*, harness run_suite.ps1, 24 cores, ~8.5 GB free):
+         - Workstation: full suite completed 7352 passed / 0 failed / 19 skipped in 13 m 15 s; peak 6.5 GB; GC pauses 394 s total, longest 8.7 s.
+         - Server GC (default threads and 8 threads) and Server GC + DATAS: stopped by the 2.5 GB free-RAM floor after 60-140 s at 4.6-6.1 GB
+           (24 heaps grow budgets faster than the suite releases hosts). On 2026-11-24 Server GC shortened pauses but the machine ran out of memory.
+         - 8 parallel threads instead of 24 did not lower the peak (5.5 GB at 170 s): the memory is the sum of many concurrent host-based tests
+           (Data/Integration/Contract 2.1 GB, Controllers 1.1 GB; no single leak found).
+         The 2026-11-24 timeouts under workstation GC were measured while every test host shared the real database; with isolated databases the
+         workstation run had none. Re-measure before changing this: set BIRKNEXT_TEST_STALL_PROBE to a file path for GC/pause/heap per second. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

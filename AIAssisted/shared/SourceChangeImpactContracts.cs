@@ -24,7 +24,14 @@ public sealed record TechnicalImpactItem(string Id, string EntityType, string En
     public int Depth { get; init; }
 }
 public sealed record ImpactTraceabilityItem(Guid ScenarioId, string Kind, string Title, string Reason, List<string> Paths);
-public sealed record ImpactTestRecommendation(Guid TestId, string Title, string TestKind, string Reason, List<string> Paths);
+/// <summary>A test to review after a source change (2026-11-25: RI-03). <see cref="EvidenceLevel"/>: <see cref="LinkedToChangedSource"/> = the test's own
+/// source file is code-linked to a changed source; <see cref="Potential"/> = reached only through a requirement's Covers link. Legacy code and trace links
+/// carry no review or freshness state (<see cref="LinkReview"/> = Unknown), so neither level is a confirmed functional impact and nothing was executed.</summary>
+public sealed record ImpactTestRecommendation(Guid TestId, string Title, string TestKind, string Reason, List<string> Paths,
+    string EvidenceLevel = ImpactTestRecommendation.Potential, string LinkReview = ImpactTestRecommendation.Unknown)
+{
+    public const string LinkedToChangedSource = "LinkedToChangedSource", Potential = "Potential", Unknown = "Unknown";
+}
 public sealed record ImpactJourneyStep(string EntityType, string EntityId, string Label, string Relationship, string EvidenceState, List<string> SourceFiles);
 public sealed record ImpactJourneyItem(string Id, string DisplayName, string ImpactedSection, string EvidenceState, Guid SourceSnapshotId, List<ImpactJourneyStep> Steps,
     string Limitation);

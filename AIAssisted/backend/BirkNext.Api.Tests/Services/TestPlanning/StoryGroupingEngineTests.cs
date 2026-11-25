@@ -48,7 +48,9 @@ public sealed class StoryGroupingEngineTests
         us1.TaskRequirements.Select(t => t.RequirementId).Distinct().Should().Contain(["FR-007", "FR-014", "FR-016", "FR-018", "FR-022"]);
         us1.TaskRequirements.Should().OnlyContain(t => t.TasksPath.EndsWith("tasks.md", StringComparison.Ordinal) || t.TasksPath.EndsWith("plan.md", StringComparison.Ordinal)
             || t.TasksPath.EndsWith("quickstart.md", StringComparison.Ordinal));
-        Real.Value.Evidence.Stories.Single(s => s.StoryId == "US2").TaskRequirements.Should().BeEmpty("no task tagged [US2] names a requirement");
+        // 2026-11-25: no tagged [US2] task line names a requirement, but US2's phase goal names FR-008a; only tagged lines, goals and task details count.
+        Real.Value.Evidence.Stories.Single(s => s.StoryId == "US2").TaskRequirements.Should().OnlyContain(t => t.Kind != StoryTaskRequirement.TaskLine);
+        Real.Value.Evidence.Stories.Single(s => s.StoryId == "US2").TaskRequirements.Should().Contain(t => t.RequirementId == "FR-008A" && t.Kind == StoryTaskRequirement.PhaseGoal);
     }
 
     [Fact]
@@ -140,7 +142,7 @@ public sealed class StoryGroupingEngineTests
         var tie = One(In(Story("US2", tasks: ["FR-001", "FR-014"])));
         tie.SuggestedArea.Should().BeNull();
         tie.State.Should().Be(GroupingState.NeedsGrouping);
-        tie.Explanation.Should().Contain("Like mye støtte");
+        tie.Explanation.Should().Contain("like mye støtte").And.Contain("Flere mulige grupper");
     }
 
     [Fact]
@@ -156,7 +158,7 @@ public sealed class StoryGroupingEngineTests
         var p = One(In(Story("US5", tasks: ["FR-777"])));
         p.Requirements.Single().Area.Should().Be(StoryGroupingEngine.UnknownArea);
         p.SuggestedArea.Should().BeNull();
-        p.State.Should().Be(GroupingState.NeedsGrouping);
+        p.State.Should().Be(GroupingState.NeedsReview, "2026-11-25: one possible story, no area to suggest — a person reviews it");
     }
 
     [Fact]

@@ -185,7 +185,8 @@ public sealed class LocalSessionService
         for (var attempt = 1; ; attempt++)
         {
             try { File.Move(temp, _codePath, overwrite: true); break; }
-            catch (IOException) when (attempt < 6) { Thread.Sleep(25 * attempt); }
+            // Windows reports a replace racing another replace of the same file as access denied, not as an IOException.
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException && attempt < 6) { Thread.Sleep(25 * attempt); }
             catch { try { File.Delete(temp); } catch (IOException) { } throw; }
         }
         RestrictToCurrentUser(_codePath, isDirectory: false);

@@ -57,7 +57,7 @@ public static class SpecificationEvidenceBuilder
     // The three helpers below are the browser's own rules (TestCoveragePresentation.NamedRequirements / DocumentRequirements and
     // ClarificationStates.ForDiscovery with no recorded state); those browser services are not compiled into the API.
 
-    private static readonly System.Text.RegularExpressions.Regex FrIds = new(@"\b(FR)-?(\d{1,4})([a-z])?\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    private static readonly System.Text.RegularExpressions.Regex FrIds = new(@"(?<![\w-])(FR)-?(\d{1,4})([a-z])?\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     private static readonly System.Text.RegularExpressions.Regex ClarificationIds = new(@"\b(FR|US|SC)-?(\d{1,4})([a-z])?\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     public static List<string> NamedRequirements(string text) =>
@@ -77,12 +77,15 @@ public static class SpecificationEvidenceBuilder
             // tasks.md too (2026-11-24): its "[US1]" task lines name the story's requirements — the browser's builder always read them, discovery did not,
             // so a story showed only the plan's references (SkoleService US1: FR-018 instead of FR-007, FR-014, FR-015c, FR-016, FR-018, FR-022, FR-026a).
             if (!new[] { "plan.md", "quickstart.md", "tasks.md" }.Contains(file, StringComparer.OrdinalIgnoreCase) || !string.Equals(Folder(path), folder, StringComparison.OrdinalIgnoreCase)) continue;
+            // tasks.md (2026-11-25): the story's tagged task lines ("- [X] T072 [US2] …"), its phase goal and its tasks' continuation lines — as the
+            // browser's task parser reads them. Not any line that mentions the story: US2's phase goal says "Processing is US1's", not a US1 task.
+            if (string.Equals(file, "tasks.md", StringComparison.OrdinalIgnoreCase)) { result.AddRange(BirkNext.Sdd.StoryTaskContext.Read(path, text, storyTag, taskLines: true)); continue; }
             var lines = (text ?? "").Split('\n');
             for (var i = 0; i < lines.Length; i++)
             {
                 var line = lines[i].Trim();
                 if (!names.IsMatch(line)) continue;
-                foreach (var fr in NamedRequirements(line)) result.Add(new StoryTaskRequirement(fr, null, line.Length > 300 ? line[..300] + "…" : line, path, i + 1));
+                foreach (var fr in NamedRequirements(line)) result.Add(new StoryTaskRequirement(fr, null, line.Length > 300 ? line[..300] + "…" : line, path, i + 1, StoryTaskRequirement.PlanMention));
             }
         }
         return [.. result.DistinctBy(r => (r.RequirementId, r.TasksPath, r.Line))];

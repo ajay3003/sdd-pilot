@@ -1,0 +1,187 @@
+@using BirkNext.Sdd
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using G = BirkNext.Web.Services.StoryGroupingPresentation
+@using W = BirkNext.Web.Services.ScenarioWorkspacePresentation
+@* «Gjennomgå gruppering» (2026-11-25): the stories that need a person, one compact row each — why, the possible areas with their real requirement
+   evidence on demand, and the decision: confirm a candidate, choose another area or group, create a group, keep the current placement, leave the
+   story under «Uten gruppe», or defer. Every decision is previewed and saved through the page's normal save (revision check, idempotent retry).
+   Grouping is navigation only: opening scenarios and preparing tests never waits for it. *@
+<section class="grv" aria-label="Gjennomgå gruppering" data-testid="grv">
+    <div class="gor-head"><strong>Gjennomgå gruppering</strong>
+        <span class="mt-muted msb-small" data-testid="grv-count">@Visible.Count av @Queue.Count trenger en beslutning@(_deferred.Count > 0 ? $" · {_deferred.Count} utsatt" : "")</span>
+        <button type="button" class="msb-link" @onclick="OnClose" data-testid="grv-close">Lukk</button></div>
+    @if (Visible.Count == 0)
+    {
+        <p class="mt-muted msb-small" data-testid="grv-empty">Ingen brukerhistorier venter på gruppering.@(_deferred.Count > 0 ? " Utsatte vises igjen neste gang siden åpnes." : "")</p>
+    }
+    <ul class="grv-list">
+        @foreach (var p in Visible)
+        {
+            var profile = p;
+            var story = Story(profile.StoryKey);
+            var reason = G.UngroupedReason(profile, Mode, Document) ?? (profile.NeedsReviewFlag ? "Grupperingsforslaget er endret" : G.StatusLabel(profile));
+            var staged = _stagedFor == profile.StoryKey;
+            <li class="grv-row" data-testid="grv-row" data-story="@profile.StoryKey" data-state="@profile.State">
+                <div class="grv-head">
+                    <span class="mtw-us">@(story is null ? profile.StoryKey : W.StoryLabel(story))</span>
+                    <span class="grv-title">@(story is null ? "" : W.StoryTitle(story))</span>
+                    <span class="msb-status msb-tone-@G.StatusTone(profile)" data-testid="grv-status">@G.StatusLabel(profile)</span>
+                </div>
+                <p class="msb-small" data-testid="grv-reason"><strong>@reason.</strong> @profile.Explanation</p>
+                @if (CurrentPlacement(profile) is { } current) { <p class="mt-muted msb-small" data-testid="grv-current">Nå: @current</p> }
+                <details class="mtw-why" data-testid="grv-evidence"><summary>Vis kravgrunnlag</summary>
+                    @if (profile.Areas.Count == 0) { <p class="mt-muted msb-small">Ingen etablerte kravkoblinger.</p> }
+                    <ul class="msb-small">
+                        @foreach (var a in profile.Areas)
+                        {
+                            <li data-testid="grv-area" data-area="@a.Area"><b>@a.Area</b>: @string.Join(", ", profile.Requirements.Where(r => r.Established && r.Area == a.Area).Select(r => $"{r.DisplayId} ({G.BasisLabel(r.Basis)}{(r.SupportingOnly ? ", oppgavedetalj" : "")})"))@(a.CrossCutting ? " · tverrgående" : "")</li>
+                        }
+                    </ul>
+                    @if (profile.Requirements.Any(r => r.Basis == StoryLinkBasis.Suggested))
+                    {
+                        <p class="mt-muted msb-small">Forslag (avgjør ikke): @string.Join(", ", profile.Requirements.Where(r => r.Basis == StoryLinkBasis.Suggested).Select(r => r.DisplayId))</p>
+                    }
+                </details>
+                @if (CanEdit)
+                {
+                    <div class="grv-actions">
+                        @foreach (var c in profile.Candidates)
+                        {
+                            var candidate = c;
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => StageArea(profile, candidate)" data-testid="grv-choose" data-area="@candidate">Velg «@candidate»</button>
+                        }
+                        @if (profile.NeedsReviewFlag)
+                        {
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => StageKeep(profile)" data-testid="grv-keep">Behold nåværende</button>
+                        }
+                        <select class="msb-select" aria-label="Velg et annet område" @onchange="e => StageArea(profile, e.Value?.ToString())" data-testid="grv-area-select">
+                            <option value="">Velg område …</option>
+                            @foreach (var s in Sections.Sections.Select(x => x.Title).Distinct()) { <option value="@s">@s</option> }
+                        </select>
+                        @if (Document.Groups.Count > 0)
+                        {
+                            <select class="msb-select" aria-label="Velg gruppe" @onchange="e => StageGroup(profile, e.Value?.ToString())" data-testid="grv-group-select">
+                                <option value="">Velg gruppe …</option>
+                                @foreach (var g in Document.Groups.OrderBy(x => x.Order)) { <option value="@g.Id">@g.Name</option> }
+                            </select>
+                        }
+                        <span class="grv-new">
+                            <input class="msb-search" placeholder="Ny gruppe" value="@(_newNameFor == profile.StoryKey ? _newName : "")" aria-label="Navn på ny gruppe"
+                                   @oninput="e => { _newNameFor = profile.StoryKey; _newName = e.Value?.ToString() ?? string.Empty; }" data-testid="grv-new-name" />
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@(_newNameFor != profile.StoryKey || NameProblem(_newName) is not null)" @onclick="() => StageNewGroup(profile)" data-testid="grv-create">Opprett gruppe</button>
+                        </span>
+                        <button type="button" class="msb-link" @onclick="() => StageLeave(profile)" data-testid="grv-leave">La stå uten gruppe</button>
+                        <button type="button" class="msb-link" @onclick="() => Defer(profile.StoryKey)" data-testid="grv-defer">Utsett</button>
+                        @if (OnOpenStory.HasDelegate) { <button type="button" class="msb-link" @onclick="() => OnOpenStory.InvokeAsync(profile.StoryKey)" data-testid="grv-open">Åpne scenarioer</button> }
+                    </div>
+                    @if (_newNameFor == profile.StoryKey && _newName.Length > 0 && NameProblem(_newName) is { } problem) { <p class="mt-alert msb-small" role="alert" data-testid="grv-name-problem">@problem</p> }
+                }
+                else if (OnOpenStory.HasDelegate)
+                {
+                    <button type="button" class="msb-link" @onclick="() => OnOpenStory.InvokeAsync(profile.StoryKey)" data-testid="grv-open">Åpne scenarioer</button>
+                }
+                @if (staged)
+                {
+                    <div class="gor-preview" data-testid="grv-preview">
+                        <ul class="msb-small">@foreach (var line in _preview) { <li data-testid="grv-preview-line">@line</li> }</ul>
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@(_saving || _preview.Any(l => l.StartsWith("Kan ikke lagres", StringComparison.Ordinal)))" @onclick="SaveAsync" data-testid="grv-save">@(_error is null ? "Lagre" : "Prøv igjen")</button>
+                        <button type="button" class="msb-link" @onclick="Discard" data-testid="grv-discard">Forkast</button>
+                        @if (_error is { } err) { <p class="mt-alert" role="alert" data-testid="grv-error">@err</p> }
+                    </div>
+                }
+            </li>
+        }
+    </ul>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<StoryGroupingProfile> Queue { get; set; } = default!;
+    [Parameter, EditorRequired] public StoryGroupingDocument Document { get; set; } = default!;
+    [Parameter, EditorRequired] public RequirementSectionMap Sections { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<StoryGroupingEngine.StoryInputs> Inputs { get; set; } = default!;
+    [Parameter] public G.Mode Mode { get; set; } = G.Mode.Functional;
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public Func<IReadOnlyList<StoryGroupingOperation>, Task<string?>>? OnApply { get; set; }
+    [Parameter] public EventCallback<string> OnOpenStory { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private readonly HashSet<string> _deferred = new(StringComparer.Ordinal);
+    private readonly List<StoryGroupingOperation> _staged = [];
+    private List<string> _preview = [];
+    private string? _stagedFor, _error, _newNameFor;
+    private string _newName = string.Empty;
+    private bool _saving;
+
+    private List<StoryGroupingProfile> Visible => [.. Queue.Where(p => !_deferred.Contains(p.StoryKey))];
+
+    private BirkNext.TestCoverage.CoverageUserStory? Story(string key) => Inputs.FirstOrDefault(i => i.Story.Key == key)?.Story;
+
+    private string? CurrentPlacement(StoryGroupingProfile p)
+    {
+        var group = Document.Groups.FirstOrDefault(g => g.Id == p.GroupId)?.Name;
+        var parts = new[] { p.PrimaryArea is { } a ? $"område «{a}»" : null, group is null ? null : $"gruppe «{group}»" }.OfType<string>().ToList();
+        return parts.Count == 0 ? null : string.Join(", ", parts) + (G.StatusBasis(p) is { } b ? $" ({b})" : "");
+    }
+
+    /// <summary>A new group's name must be given and not already used (the server refuses the same; checked here so the tester sees why at once).</summary>
+    private string? NameProblem(string name) =>
+        string.IsNullOrWhiteSpace(name) ? "Gruppen må ha et navn."
+        : Document.Groups.Any(g => string.Equals(g.Name, name.Trim(), StringComparison.CurrentCultureIgnoreCase)) ? $"Det finnes allerede en gruppe som heter «{name.Trim()}»." : null;
+
+    private void Stage(StoryGroupingProfile p, params StoryGroupingOperation[] ops)
+    {
+        _staged.Clear(); _staged.AddRange(ops); _stagedFor = p.StoryKey; _error = null;
+        _preview = G.Preview(Inputs, Sections, Document, _staged, _ => true);
+    }
+
+    private void StageArea(StoryGroupingProfile p, string? area)
+    {
+        if (string.IsNullOrWhiteSpace(area)) return;
+        var group = Document.Groups.FirstOrDefault(g => g.FunctionalAreas.Contains(area, StringComparer.OrdinalIgnoreCase))?.Id;
+        Stage(p, new StoryGroupingOperation { Kind = StoryGroupingOperationKind.SetPrimaryArea, StoryKey = p.StoryKey, PrimaryArea = area, SuggestedArea = p.SuggestedArea },
+            new StoryGroupingOperation { Kind = StoryGroupingOperationKind.PlaceStory, StoryKey = p.StoryKey, GroupId = group ?? (p.MissingGroupId is null ? p.GroupId : null), SuggestedArea = p.SuggestedArea });
+    }
+
+    private void StageGroup(StoryGroupingProfile p, string? groupId)
+    {
+        if (string.IsNullOrWhiteSpace(groupId)) return;
+        Stage(p, new StoryGroupingOperation { Kind = StoryGroupingOperationKind.PlaceStory, StoryKey = p.StoryKey, GroupId = groupId, SuggestedArea = p.SuggestedArea });
+    }
+
+    private void StageNewGroup(StoryGroupingProfile p)
+    {
+        if (NameProblem(_newName) is not null) return;
+        var id = Guid.NewGuid().ToString("N")[..12];
+        var area = p.PrimaryArea ?? (p.Candidates.Count == 1 ? p.Candidates[0] : null);
+        Stage(p, new StoryGroupingOperation { Kind = StoryGroupingOperationKind.CreateGroup, GroupId = id, Name = _newName.Trim(), Areas = area is null ? [] : [area] },
+            new StoryGroupingOperation { Kind = StoryGroupingOperationKind.PlaceStory, StoryKey = p.StoryKey, GroupId = id, SuggestedArea = p.SuggestedArea });
+    }
+
+    private void StageKeep(StoryGroupingProfile p)
+    {
+        var placement = Document.Placements.LastOrDefault(x => x.StoryKey == p.StoryKey);
+        Stage(p, new StoryGroupingOperation { Kind = StoryGroupingOperationKind.SetPrimaryArea, StoryKey = p.StoryKey, PrimaryArea = placement?.PrimaryArea, SuggestedArea = p.SuggestedArea },
+            new StoryGroupingOperation { Kind = StoryGroupingOperationKind.PlaceStory, StoryKey = p.StoryKey, GroupId = placement?.GroupId, SuggestedArea = p.SuggestedArea });
+    }
+
+    private void StageLeave(StoryGroupingProfile p) =>
+        Stage(p, new StoryGroupingOperation { Kind = StoryGroupingOperationKind.LeaveUngrouped, StoryKey = p.StoryKey, SuggestedArea = p.SuggestedArea });
+
+    /// <summary>«Utsett»: hidden from this review until the page is opened again (nothing stored; the story stays under «Uten gruppe»).</summary>
+    private void Defer(string key) { _deferred.Add(key); if (_stagedFor == key) Discard(); }
+
+    private void Discard() { _staged.Clear(); _preview = []; _stagedFor = null; _error = null; }
+
+    private async Task SaveAsync()
+    {
+        if (OnApply is null || _staged.Count == 0) return;
+        _saving = true;
+        try
+        {
+            _error = await OnApply([.. _staged]);
+            if (_error is null) { _staged.Clear(); _preview = []; _stagedFor = null; _newName = string.Empty; _newNameFor = null; }
+        }
+        finally { _saving = false; }
+    }
+}

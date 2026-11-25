@@ -100,11 +100,17 @@ type ConfirmSuggestionPayload {
   correlationId: String!
 }
 
-"Aggregate coverage statistics for a project."
+"Aggregate TEST DESIGN LINKAGE statistics for a project: a requirement counts as covered when at least one test scenario is linked to it (Covers). Not evidence of prepared, approved, executed or passed tests (evidenceBasis \/ executionEvidence)."
 type CoverageSummary {
+  "Always \"TestDesignLinkage\"."
+  evidenceBasis: String!
+  "Always \"NotEvaluated\": approval, execution, result and freshness are not part of this summary."
+  executionEvidence: String!
   totalRequirements: Int!
+  "Requirements with at least one linked test scenario (design linkage only)."
   coveredRequirements: Int!
   notCoveredRequirements: Int!
+  "Share of requirements with a linked test scenario (design linkage), not executed-test coverage."
   coveragePercent: Float!
   orphanTests: Int!
   "Requirements with pending suggestions but no confirmed coverage."
@@ -543,7 +549,7 @@ type TraceLinkWithTest {
   test: Scenario!
 }
 
-"A single row in the traceability matrix: one requirement and all tests that cover it."
+"A single row in the traceability matrix: one requirement and the test scenarios linked to it. coverageStatus COVERED means test design linkage only (a saved Covers link), not a prepared, approved, executed or passed test."
 type TraceabilityMatrixRow {
   requirement: Scenario!
   linkedTests: [TraceLinkWithTest!]!
@@ -745,6 +751,7 @@ enum CandidateReviewStatus {
   NEEDS_REVIEW
 }
 
+"Legacy matrix status: Covered = at least one linked test scenario (test design linkage), never an executed or passed test."
 enum CoverageStatus {
   COVERED
   NOT_COVERED

@@ -15,6 +15,12 @@ public static partial class TestPostgres
 
     private static string Base => Environment.GetEnvironmentVariable("ConnectionStrings__Default") ?? LocalDevelopment;
 
+    /// <summary>The local development connection (server and credentials) when ConnectionStrings__Default is not set.</summary>
+    internal static string DefaultConnection => LocalDevelopment;
+
+    /// <summary>Whether a name has the temporary shape (prefix + random 12-hex suffix), whatever the configuration names.</summary>
+    internal static bool IsTemporaryName(string? database) => database is not null && TemporaryRe().IsMatch(database);
+
     /// <summary>The maintenance database, for CREATE / DROP DATABASE only.</summary>
     public static NpgsqlConnectionStringBuilder Admin() => new(Base) { Database = "postgres", Pooling = false };
 

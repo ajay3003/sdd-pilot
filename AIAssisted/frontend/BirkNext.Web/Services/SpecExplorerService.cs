@@ -76,9 +76,9 @@ public static class SpecExplorerService
         @"^\s*(?:[-*]\s*)?\*{0,2}(Given|When|Then|And|But|Gitt|Når|Så)\*{0,2}\s+(.+)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    // Entity definition in Key Entities section: "- **EntityName**: description"
+    // Entity definition in Key Entities section: "- **EntityName**: description", also with a code name: "- **Skolenærværsrapport** (`Report`): …"
     private static readonly Regex EntityDefRe = new(
-        @"^[-*]\s+\*{1,2}([^\*\n]+?)\*{1,2}\s*:\s*(.*)?$",
+        @"^[-*]\s+\*{1,2}([^\*\n]+?)\*{1,2}\s*(?:\([^)\n]*\)\s*)?:\s*(.*)?$",
         RegexOptions.Compiled);
 
     // Frontmatter metadata: "**Feature Branch**: value", "**Source**: value"
@@ -87,7 +87,7 @@ public static class SpecExplorerService
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // FR identifier — used to deduplicate sub-bullet fragments in BuildFromCandidates
-    private static readonly Regex FrIdRe = new(@"\bFR-\d{3,4}\b", RegexOptions.Compiled);
+    private static readonly Regex FrIdRe = new(@"(?<![\w-])FR-\d{3,4}\b", RegexOptions.Compiled);
 
     // ISO-date heading: "2026-03-06" — marks a Q/A decision session, not a user-story lane
     private static readonly Regex DateHeadingRe = new(@"^\d{4}-\d{2}-\d{2}\b", RegexOptions.Compiled);
@@ -183,7 +183,10 @@ public static class SpecExplorerService
 
         bool InClarificationsContext() => InAnyContext(SectionSemantics.Clarifications);
         bool IsInDecisionSession() => headingStack.Any(h => DateHeadingRe.IsMatch(h.Node.Title));
-        bool InBddContext() => InAnyContext(SectionSemantics.UserStory) || InAnyContext(SectionSemantics.AcceptanceScenarios);
+        // A nested "### Edge Cases" (or Assumptions / Key Entities) under "## User Scenarios & Testing" is its own section, not scenario prose
+        // (2026-11-25: SkoleService's 13 edge cases were swallowed as scenario text, so the model had none).
+        bool InBddContext() => (InAnyContext(SectionSemantics.UserStory) || InAnyContext(SectionSemantics.AcceptanceScenarios))
+            && ActiveSemantics() is not (SectionSemantics.EdgeCases or SectionSemantics.Assumptions or SectionSemantics.KeyEntities);
         bool InKeyEntitiesContext() => InAnyContext(SectionSemantics.KeyEntities);
         bool InAssumptionsContext() => ActiveSemantics() == SectionSemantics.Assumptions;
         bool InEdgeCasesContext() => ActiveSemantics() == SectionSemantics.EdgeCases;
@@ -1402,6 +1405,9 @@ public static class SpecExplorerService
         // Extract semantic elements from the tree
         var userStories = ExtractUserStories(specTree);
         var requirements = ExtractRequirements(specTree);
+        // The requirement's own functional area as the source writes it (bold line or sub-heading under the requirements heading), 2026-11-25.
+        var sections = BirkNext.Sdd.RequirementSections.Read(markdown);
+        foreach (var r in requirements) if (sections.Find(r.Id)?.Section is { } area) r.Category = area;
         var successCriteria = ExtractSuccessCriteria(specTree);
         var acceptanceScenarios = ExtractAcceptanceScenarios(specTree);
         var clarifications = ExtractClarifications(specTree);
@@ -1419,6 +1425,8 @@ public static class SpecExplorerService
         LinkClarifications(clarifications, userStories, requirements, successCriteria);
         LinkSecurityToRequirements(securityConsiderations, requirements);
         LinkEdgeCasesToRequirements(edgeCases, requirements);
+        AnnotateClarifications(clarifications, markdown);
+        var (dependencies, outOfScope) = ExtractBoundaries(markdown, requirements);
 
         return new SpecificationSemanticModel
         {
@@ -1437,7 +1445,83 @@ public static class SpecExplorerService
             Assumptions = assumptions,
             SecurityConsiderations = securityConsiderations,
             KeyEntities = entities,
+            Dependencies = dependencies,
+            OutOfScope = outOfScope,
         };
+    }
+
+    private static readonly Regex ClarificationStatusRe = new(@"\*(?<kind>Superseded|Amended)\b(?<note>[^*]*)\*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SessionHeadingRe = new(@"^#{2,5}\s+Session\s+(?<date>\d{4}-\d{2}-\d{2})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>
+    /// The session and the source's own status of each clarification (2026-11-25): "*Superseded …*" / "*Amended …*" in the answer. The question
+    /// line is located in the text to find its "#### Session yyyy-mm-dd" heading. Nothing is inferred from position.
+    /// </summary>
+    private static void AnnotateClarifications(List<SemanticClarification> clarifications, string markdown)
+    {
+        var lines = (markdown ?? "").Replace("\r\n", "\n").Split('\n');
+        string? session = null;
+        var sessionOfLine = new string?[lines.Length];
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (SessionHeadingRe.Match(lines[i]) is { Success: true } m) session = m.Groups["date"].Value;
+            else if (lines[i].StartsWith("## ", StringComparison.Ordinal)) session = null;
+            sessionOfLine[i] = session;
+        }
+        foreach (var c in clarifications)
+        {
+            var probe = c.Question.Length > 40 ? c.Question[..40] : c.Question;
+            var at = Array.FindIndex(lines, l => probe.Length > 0 && l.Contains(probe, StringComparison.Ordinal));
+            if (at >= 0) c.Session = sessionOfLine[at];
+            if (ClarificationStatusRe.Match(c.Answer ?? "") is { Success: true } s)
+            {
+                c.Status = s.Groups["kind"].Value.StartsWith("S", StringComparison.OrdinalIgnoreCase) ? SemanticClarification.Superseded : SemanticClarification.Amended;
+                c.StatusNote = (s.Groups["kind"].Value + s.Groups["note"].Value).Trim();
+            }
+        }
+    }
+
+    /// <summary>
+    /// «Dependencies &amp; Open Items» (table rows or bullets) and «Out of Scope» (bullets), read from the same text the tree came from (2026-11-25).
+    /// Supporting context only: a dependency informs preparation, an out-of-scope item marks a boundary; neither is a requirement or a test.
+    /// </summary>
+    private static (List<SemanticDependency>, List<SemanticScopeItem>) ExtractBoundaries(string markdown, List<SemanticRequirement> requirements)
+    {
+        var lines = (markdown ?? "").Replace("\r\n", "\n").Split('\n');
+        var deps = new List<SemanticDependency>(); var scope = new List<SemanticScopeItem>();
+        string? section = null;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i].TrimEnd();
+            if (Regex.IsMatch(line, @"^#{1,3}\s"))
+            {
+                var title = line.TrimStart('#').Trim().ToLowerInvariant();
+                section = Regex.IsMatch(title, @"^(dependencies|open items|avhengigheter)") ? "deps" : Regex.IsMatch(title, @"^(out of scope|utenfor omfang)") ? "scope" : null;
+                continue;
+            }
+            if (section == "deps" && line.StartsWith('|') && !Regex.IsMatch(line, @"^\|\s*-{2,}") && !Regex.IsMatch(line, @"^\|\s*ID\s*\|", RegexOptions.IgnoreCase))
+            {
+                var cells = line.Trim('|').Split('|').Select(c => c.Trim()).ToList();
+                if (cells.Count < 2) continue;
+                var withdrawn = cells[0].StartsWith("~~", StringComparison.Ordinal);
+                string Clean(string v) => v.Replace("~~", "").Trim();
+                var statement = Clean(cells[1]);
+                deps.Add(new SemanticDependency
+                {
+                    Id = Clean(cells[0]), Statement = statement, Owner = cells.Count > 2 ? Clean(cells[2]) : null, Blocks = cells.Count > 3 ? Clean(cells[3]) : null,
+                    Closed = Regex.IsMatch(statement, @"\*\*\s*Closed\b", RegexOptions.IgnoreCase), Withdrawn = withdrawn, Line = i + 1,
+                    RequirementIds = [.. requirements.Where(r => CanLinkByReference(line, r.Id)).Select(r => r.Id)],
+                });
+            }
+            else if (section == "deps" && Regex.IsMatch(line, @"^[-*]\s+"))
+                deps.Add(new SemanticDependency { Id = $"D{deps.Count + 1}", Statement = StripMarkdown(line[1..].Trim()), Line = i + 1,
+                    RequirementIds = [.. requirements.Where(r => CanLinkByReference(line, r.Id)).Select(r => r.Id)] });
+            else if (section == "scope" && Regex.IsMatch(line, @"^[-*]\s+"))
+                scope.Add(new SemanticScopeItem { Text = StripMarkdown(line[1..].Trim()), Line = i + 1 });
+            else if (section == "scope" && scope.Count > 0 && lines[i].StartsWith("  ", StringComparison.Ordinal) && line.Trim().Length > 0)
+                scope[^1] = new SemanticScopeItem { Text = scope[^1].Text + " " + line.Trim(), Line = scope[^1].Line };
+        }
+        return (deps, scope);
     }
 
     private static string ExtractTitle(SpecTree tree)
@@ -1782,11 +1866,12 @@ public static class SpecExplorerService
         List<SemanticUserStory> userStories,
         List<SemanticRequirement> requirements)
     {
+        // Explicit references only (2026-11-25). Two shared title words ("the", "a", "report") linked SkoleService US1 to 58 of 65 requirements;
+        // a behavioural relationship is a reviewable suggestion elsewhere (ScenarioPlanning.SuggestRequirements), never a source link.
         foreach (var us in userStories)
         {
-            var linked = requirements
-                .Where(r => CanLinkByReference(us.Description, r.Id) || CanLinkSemantically(us.Title, r.Text))
-                .ToList();
+            var text = $"{us.Title}\n{us.Description}\n{us.Why}\n{us.IndependentTest}";
+            var linked = requirements.Where(r => CanLinkByReference(text, r.Id)).ToList();
             ((List<SemanticRequirement>)us.LinkedRequirements).AddRange(linked);
             foreach (var req in linked)
                 ((List<SemanticUserStory>)req.LinkedUserStories).Add(us);
@@ -1825,7 +1910,10 @@ public static class SpecExplorerService
     {
         foreach (var req in requirements)
         {
-            var linked = scenarios.Where(s => !string.IsNullOrWhiteSpace(s.Id) && CanLinkByReference(req.Text, s.Id)).ToList();
+            // A requirement naming a scenario id, or (2026-11-25) a scenario whose own Given/When/Then names the requirement ("… the counting
+            // option in FR-009 …"). Before, only the first direction existed, so no SkoleService scenario had a requirement.
+            var linked = scenarios.Where(s => (!string.IsNullOrWhiteSpace(s.Id) && CanLinkByReference(req.Text, s.Id))
+                || CanLinkByReference($"{s.Title}\n{s.Given}\n{s.When}\n{s.Then}", req.Id)).ToList();
             ((List<SemanticAcceptanceScenario>)req.LinkedAcceptanceScenarios).AddRange(linked);
             foreach (var scenario in linked)
                 ((List<SemanticRequirement>)scenario.LinkedRequirements).Add(req);
@@ -1880,11 +1968,18 @@ public static class SpecExplorerService
         }
     }
 
+    /// <summary>
+    /// Whether the text names the identifier as a whole identifier (2026-11-25): FR-008 never matches FR-008a or FR-0081, and an identifier of
+    /// another document's namespace (UT-FR-001, [SR-FR-013]) is not this one's FR-001 / FR-013. The hyphen stays optional (FR008 = FR-008).
+    /// </summary>
     private static bool CanLinkByReference(string? content, string specId)
     {
         if (string.IsNullOrWhiteSpace(content) || string.IsNullOrWhiteSpace(specId)) return false;
-        var id = specId.Replace("-", "").ToLowerInvariant();
-        return content.Replace("-", "").ToLowerInvariant().Contains(id);
+        var m = Regex.Match(specId.Trim(), @"^(?<p>[A-Za-z]+)-?(?<n>\d+)(?<s>[A-Za-z]?)$");
+        if (!m.Success) return content.Contains(specId, StringComparison.OrdinalIgnoreCase);
+        var number = m.Groups["n"].Value.TrimStart('0');
+        var pattern = $@"(?<![\w-]){Regex.Escape(m.Groups["p"].Value)}-?0*{Regex.Escape(number.Length == 0 ? "0" : number)}{Regex.Escape(m.Groups["s"].Value)}(?![A-Za-z0-9])";
+        return Regex.IsMatch(content, pattern, RegexOptions.IgnoreCase);
     }
 
     private static bool CanLinkSemantically(string title1, string text2)

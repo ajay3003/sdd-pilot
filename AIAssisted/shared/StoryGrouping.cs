@@ -30,6 +30,8 @@ public sealed record StoryPlacement
     public string? PrimaryArea { get; init; }
     /// <summary>The suggestion (primary area) when the person decided: a later different suggestion is reported, never applied silently.</summary>
     public string? SuggestedAtDecision { get; init; }
+    /// <summary>A person decided the story stays under «Uten gruppe» (2026-11-25): a reviewed decision, not an open question.</summary>
+    public bool KeepUngrouped { get; init; }
     public string By { get; init; } = "";
     public DateTimeOffset At { get; init; }
 }
@@ -71,8 +73,44 @@ public sealed record StoryGroupingDocument
     public List<StoryPlacement> Placements { get; init; } = [];
     public List<StoryLinkDecision> Decisions { get; init; } = [];
     public List<GroupingHistoryEntry> History { get; init; } = [];
-    /// <summary>Requirements a person classified as cross-cutting (supporting evidence, never primary grouping evidence).</summary>
+    /// <summary>Requirements (or functional areas) a person classified as cross-cutting (supporting evidence, never primary grouping evidence).</summary>
     public List<string> CrossCutting { get; init; } = [];
+    /// <summary>Ids of the latest applied change requests (2026-11-25): a retried save of a change that was already stored is answered with the
+    /// stored document instead of being applied twice (no duplicate group after a timeout).</summary>
+    public List<string> AppliedRequests { get; init; } = [];
+    /// <summary>Reviewers' role decisions per story → requirement (2026-11-25). A role never changes the link itself or its source evidence.</summary>
+    public List<StoryLinkRoleDecision> Roles { get; init; } = [];
+}
+
+/// <summary>
+/// What a requirement is FOR a user story (2026-11-25), separate from how the link is known (<see cref="StoryLinkBasis"/>, the provenance). A source
+/// reference proves that a relationship exists; it does not prove primary business ownership. Only <see cref="Primary"/> (set by a reviewer) or
+/// unreviewed responsibility evidence (the story's own text, its tagged tasks, its phase goal, a person's link) can decide a story's primary area.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum StoryLinkRole
+{
+    /// <summary>The relationship is real; its role is not established by the evidence.</summary>
+    Unknown,
+    /// <summary>The requirement defines the story's central behaviour (reviewer decision).</summary>
+    Primary,
+    /// <summary>A prerequisite, constraint, exception or supporting operation (task details, plan mentions, or a reviewer).</summary>
+    Supporting,
+    /// <summary>A control many stories pass through (authorisation, classification, audit) — derived from breadth, or a reviewer.</summary>
+    CrossCutting,
+    /// <summary>Mentioned for comparison or background (reviewer decision).</summary>
+    Contextual,
+}
+
+/// <summary>A reviewer's role for one story → requirement relationship; the latest per pair is current; null role = unresolved again.</summary>
+public sealed record StoryLinkRoleDecision
+{
+    public string StoryKey { get; init; } = "";
+    public string RequirementId { get; init; } = "";
+    public StoryLinkRole Role { get; init; }
+    public string? Reason { get; init; }
+    public string By { get; init; } = "";
+    public DateTimeOffset At { get; init; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -81,6 +119,10 @@ public enum StoryGroupingOperationKind
     CreateGroup, RenameGroup, MoveGroup, DeleteGroup, SetGroupAreas, MergeGroups, SplitGroup,
     PlaceStory, SetPrimaryArea, ClearPlacement, RestoreSourceNavigation,
     ConfirmLink, RejectLink, AddLink, RemoveLink, ReplaceLink, RestoreLink, DisputeLink, Undo,
+    /// <summary>A reviewed decision to keep the story under «Uten gruppe» (2026-11-25).</summary>
+    LeaveUngrouped,
+    /// <summary>Sets the reviewed role of a story → requirement relationship (<see cref="StoryGroupingOperation.Role"/>); Unknown = unresolved.</summary>
+    SetLinkRole,
 }
 
 /// <summary>One change to the grouping document. Unused fields are null. Applied together and atomically (all or nothing).</summary>
@@ -102,10 +144,18 @@ public sealed record StoryGroupingOperation
     public string? NewDisplayId { get; init; }
     public string? Reason { get; init; }
     public bool ExcludeFromGrouping { get; init; }
+    /// <summary>DeleteGroup of a group with stories (2026-11-25): true = the stories go to «Uten gruppe»; or name <see cref="TargetGroupId"/> to move
+    /// them there. Without either, deleting a non-empty group is refused. Never deletes a story, scenario, requirement or test case.</summary>
+    public bool ReleaseMembers { get; init; }
+    /// <summary>SetLinkRole: the role a reviewer gives the relationship.</summary>
+    public StoryLinkRole? Role { get; init; }
 }
 
 public sealed record StoryGroupingChangeRequest
 {
+    /// <summary>Identifies this change across retries (2026-11-25): the browser derives it from the revision and the operations, so a retry after a
+    /// lost answer is recognised and never applied twice.</summary>
+    public string? RequestId { get; init; }
     public int ExpectedRevision { get; init; }
     public List<StoryGroupingOperation> Operations { get; init; } = [];
     /// <summary>The project's requirement catalog (as for plan saves): a link may only name a requirement of this project's specification.</summary>
@@ -141,16 +191,57 @@ public sealed record StoryRequirementRelation(string RequirementId, string Displ
     /// <summary>Counted as grouping evidence: established (not a suggestion), not rejected, not a disputed source link left out of grouping.</summary>
     public bool Established => Basis != StoryLinkBasis.Suggested && !Rejected && !(Disputed && ExcludedByDispute);
     internal bool ExcludedByDispute { get; init; }
+
+    /// <summary>Only supporting evidence (2026-11-25): every piece is a task's continuation line (implementation detail, «As built»). It shows a related
+    /// area; it never decides the primary one.</summary>
+    public bool SupportingOnly => Basis == StoryLinkBasis.Structural && Evidence.Count > 0 && Evidence.All(e => e.Kind is StoryTaskRequirement.TaskDetail or StoryTaskRequirement.PlanMention);
+
+    /// <summary>The relationship's role for the story (2026-11-25): a reviewer's decision, else derived where the evidence shows it (cross-cutting
+    /// breadth, supporting-only evidence), else <see cref="StoryLinkRole.Unknown"/>.</summary>
+    public StoryLinkRole Role { get; init; }
+    /// <summary>The role was set by a reviewer.</summary>
+    public bool RoleReviewed { get; init; }
+
+    /// <summary>
+    /// Evidence that the story is responsible for the requirement, not only that it mentions it: the story's own text, one of its tagged tasks, its
+    /// tasks.md phase goal, or a person's link. A requirement named only inside an acceptance scenario's text ("unless the counting option in
+    /// FR-009 is on") or only in supporting lines is a real relationship with an unknown role; it never decides the primary area by itself.
+    /// </summary>
+    public bool ResponsibilityEvidence => Evidence.Any(e => e.Kind is "story" or "manual" or "confirmed" or "plan" or StoryTaskRequirement.TaskLine or StoryTaskRequirement.PhaseGoal);
+
 }
 
-public sealed record AreaEvidence(string Area, IReadOnlyList<string> RequirementIds, StoryLinkBasis Strongest);
+/// <param name="Strongest">The strongest basis of the area's requirements for this story.</param>
+public sealed record AreaEvidence(string Area, IReadOnlyList<string> RequirementIds, StoryLinkBasis Strongest)
+{
+    /// <summary>The area is a cross-cutting control: many stories link to it (see <see cref="StoryGroupingEngine.CrossCuttingAreas"/>).</summary>
+    public bool CrossCutting { get; init; }
+    /// <summary>Only supporting evidence (task details) points here.</summary>
+    public bool SupportingOnly { get; init; }
+}
 
+/// <summary>
+/// The grouping state of a story (navigation metadata only; never a readiness criterion):
+/// <see cref="Confirmed"/> and <see cref="Suggested"/> are «Gruppert» (by a person / by clear source evidence); <see cref="NeedsReview"/> «Trenger
+/// gjennomgang» (one possible area, too little or only cross-cutting evidence); <see cref="NeedsGrouping"/> «Flere mulige grupper»;
+/// <see cref="NoRequirements"/> and <see cref="OnlySuggestions"/> are «Uten gruppe» with their reason.
+/// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum GroupingState { Suggested, NeedsGrouping, NoRequirements, OnlySuggestions, Confirmed }
+public enum GroupingState { Suggested, NeedsGrouping, NoRequirements, OnlySuggestions, Confirmed, NeedsReview }
 
 public sealed record StoryGroupingProfile(string StoryKey, IReadOnlyList<StoryRequirementRelation> Requirements, IReadOnlyList<AreaEvidence> Areas,
     string? SuggestedArea, IReadOnlyList<string> SecondaryAreas, GroupingState State, string Explanation, string? PrimaryArea, string? GroupId,
-    string? SuggestedGroupId, bool SuggestionChanged);
+    string? SuggestedGroupId, bool SuggestionChanged)
+{
+    /// <summary>The possible primary areas a reviewer chooses between (tied areas, the one thin or cross-cutting candidate); empty when settled.</summary>
+    public IReadOnlyList<string> Candidates { get; init; } = [];
+    /// <summary>A person decided the story stays under «Uten gruppe».</summary>
+    public bool KeptUngrouped { get; init; }
+    /// <summary>The placement names a business group that no longer exists (deleted elsewhere): the story is under «Uten gruppe» until placed again.</summary>
+    public string? MissingGroupId { get; init; }
+    /// <summary>A person's placement exists and the current suggestion differs from the one they decided against: «Trenger gjennomgang» while it stays.</summary>
+    public bool NeedsReviewFlag => SuggestionChanged && State == GroupingState.Confirmed;
+}
 
 public static class StoryGroupingEngine
 {
@@ -196,7 +287,7 @@ public static class StoryGroupingEngine
         foreach (var id in story.NamedRequirements) Add(id, StoryLinkBasis.SourceExplicit, new("story", $"{story.SpecificationPath}#{story.StoryId}", "Nevnt i brukerhistoriens tekst"));
         foreach (var (id, reference) in input.ConfirmedElsewhere) Add(id, StoryLinkBasis.HumanConfirmed, new("plan", reference, "Koblet av en tester i en testplan"));
         foreach (var (id, reference) in input.ScenarioLinks) Add(id, StoryLinkBasis.ScenarioExplicit, new("scenario", reference, "Nevnt i et akseptansescenario"));
-        foreach (var t in story.TaskRequirements) Add(t.RequirementId, StoryLinkBasis.Structural, new("task", $"{t.TasksPath}:{t.Line}", t.TaskText));
+        foreach (var t in story.TaskRequirements) Add(t.RequirementId, StoryLinkBasis.Structural, new(t.Kind ?? StoryTaskRequirement.TaskLine, $"{t.TasksPath}:{t.Line}", t.TaskText));
         foreach (var (id, reason) in input.Suggestions) Add(id, StoryLinkBasis.Suggested, new("suggestion", "regel", reason));
 
         // Review decisions: the latest per requirement is current.
@@ -218,60 +309,163 @@ public static class StoryGroupingEngine
         }).OfType<StoryRequirementRelation>().OrderBy(r => r.Basis).ThenBy(r => r.RequirementId, StringComparer.OrdinalIgnoreCase)];
     }
 
+    /// <summary>Grouping evidence that may decide a primary area: established, not a cross-cutting requirement, not only supporting, in a known area.</summary>
+    /// <summary>Grouping evidence that may decide a primary area (2026-11-25): a reviewer's Primary role; otherwise an unreviewed relationship with
+    /// responsibility evidence that is not cross-cutting or supporting-only. Supporting, cross-cutting and contextual roles never decide.</summary>
+    private static bool Deciding(StoryRequirementRelation r) => r.Established && r.Area != UnknownArea && (r.RoleReviewed
+        ? r.Role == StoryLinkRole.Primary
+        : !r.CrossCutting && !r.SupportingOnly && r.ResponsibilityEvidence);
+
     /// <summary>
-    /// The grouping profile of every story. Each story is decided on its own relations only (no transitive clustering). Primary area: the area with
-    /// strictly the most distinct established, non-cross-cutting requirements; a tie is "Trenger gruppering"; only suggestions is "Bare forslag";
-    /// none is "Uten krav". A person's placement wins and is reported when the suggestion has changed since.
+    /// Cross-cutting functional areas (2026-11-25): an area that deciding evidence of at least three stories, and of at least half of the stories with
+    /// established links, points to is a control many stories pass through (SkoleService: «Classification» — US1, US2, US3 and US8 name gradering
+    /// requirements). Breadth alone; no keyword. Such an area is related to those stories, never decides their primary area on its own. A person may
+    /// also declare an area cross-cutting (<see cref="StoryGroupingDocument.CrossCutting"/>).
+    /// </summary>
+    public static HashSet<string> CrossCuttingAreas(IReadOnlyList<IReadOnlyList<StoryRequirementRelation>> perStory, IEnumerable<string> declared)
+    {
+        var result = new HashSet<string>(declared, StringComparer.OrdinalIgnoreCase);
+        var linked = perStory.Count(r => r.Any(x => x.Established));
+        foreach (var g in perStory.SelectMany(r => r.Where(Deciding).Select(x => x.Area!).Distinct(StringComparer.Ordinal)).GroupBy(a => a, StringComparer.Ordinal))
+            if (g.Count() >= 3 && g.Count() * 2 >= linked) result.Add(g.Key);
+        return result;
+    }
+
+    /// <summary>
+    /// The grouping profile of every story, each decided on its own relations only (no transitive clustering). Deterministic, from source evidence:
+    /// <list type="number">
+    /// <item>No relation: «Uten gruppe» (no requirements). Only suggestions: «Uten gruppe» (a suggestion never decides).</item>
+    /// <item>Deciding evidence: established, not cross-cutting, not only a task detail, in a known area outside the cross-cutting areas.</item>
+    /// <item>No deciding evidence: the remaining known areas are candidates — one: «Trenger gjennomgang»; several: «Flere mulige grupper».</item>
+    /// <item>A tie for most distinct deciding requirements: «Flere mulige grupper» (never an arbitrary pick).</item>
+    /// <item>A single winner resting on one task-line requirement while the story touches other areas: «Trenger gjennomgang» (too little to group
+    /// silently). Otherwise the winner is suggested.</item>
+    /// </list>
+    /// A person's placement wins (and is flagged when the suggestion has changed since); a placement naming a deleted group falls back to «Uten gruppe».
     /// </summary>
     public static List<StoryGroupingProfile> Profiles(IReadOnlyList<StoryInputs> inputs, RequirementSectionMap sections, StoryGroupingDocument? doc)
     {
-        var relations = inputs.Select(i => Relations(i, sections, doc)).ToList();
-        var cross = CrossCutting([.. relations], doc?.CrossCutting ?? []);
+        var raw = inputs.Select(i => Relations(i, sections, doc)).ToList();
+        var cross = CrossCutting([.. raw], doc?.CrossCutting ?? []);
+        var reviewed = (doc?.Roles ?? []).GroupBy(d => (d.StoryKey, RequirementReferenceParser.Normalize(d.RequirementId)))
+            .ToDictionary(g => g.Key, g => g.Last().Role);
+        var relations = raw.Select((r, i) => r.Select(x =>
+        {
+            var withCross = cross.Contains(x.RequirementId) ? x with { CrossCutting = true } : x;
+            return reviewed.TryGetValue((inputs[i].Story.Key, x.RequirementId), out var role) && role != StoryLinkRole.Unknown
+                ? withCross with { Role = role, RoleReviewed = true }
+                : withCross with { Role = withCross.CrossCutting ? StoryLinkRole.CrossCutting : withCross.SupportingOnly ? StoryLinkRole.Supporting : StoryLinkRole.Unknown };
+        }).ToList()).ToList();
+        var crossAreas = CrossCuttingAreas([.. relations], (doc?.CrossCutting ?? []).Where(c => sections.Sections.Any(s => s.Title.Equals(c, StringComparison.OrdinalIgnoreCase))));
+        relations = [.. relations.Select(r => r.Select(x => !x.RoleReviewed && x.Role == StoryLinkRole.Unknown && x.Area is { } a && crossAreas.Contains(a) ? x with { Role = StoryLinkRole.CrossCutting } : x).ToList())];
+        var linkedStories = relations.Count(r => r.Any(x => x.Established));
+        var holders = relations.SelectMany(r => r.Where(Deciding).Select(x => x.Area!).Distinct(StringComparer.Ordinal)).GroupBy(a => a, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
         var groups = (doc?.Groups ?? []).OrderBy(g => g.Order).ToList();
         var result = new List<StoryGroupingProfile>();
         for (var i = 0; i < inputs.Count; i++)
         {
             var story = inputs[i].Story;
-            var rel = relations[i].Select(r => cross.Contains(r.RequirementId) ? r with { CrossCutting = true } : r).ToList();
+            var rel = relations[i];
             var areas = rel.Where(r => r.Established).GroupBy(r => r.Area ?? UnknownArea)
-                .Select(g => new AreaEvidence(g.Key, [.. g.Select(r => r.RequirementId)], g.Min(r => r.Basis)))
+                .Select(g => new AreaEvidence(g.Key, [.. g.Select(r => r.RequirementId)], g.Min(r => r.Basis))
+                    { CrossCutting = crossAreas.Contains(g.Key), SupportingOnly = g.All(r => r.SupportingOnly) })
                 .OrderByDescending(a => a.RequirementIds.Count).ThenBy(a => a.Strongest).ThenBy(a => a.Area, StringComparer.Ordinal).ToList();
-            // Primary-area candidates: established, not cross-cutting, and in a known area.
-            var deciding = rel.Where(r => r.Established && !r.CrossCutting && r.Area != UnknownArea).GroupBy(r => r.Area!)
-                .Select(g => (Area: g.Key, Count: g.Select(r => r.RequirementId).Distinct(StringComparer.OrdinalIgnoreCase).Count(), Strongest: g.Min(r => r.Basis)))
-                .OrderByDescending(a => a.Count).ThenBy(a => a.Strongest).ToList();
-            string? suggested = null; GroupingState state; string why;
-            if (rel.Count == 0) { state = GroupingState.NoRequirements; why = "Ingen krav er knyttet til brukerhistorien i kilden eller av en person."; }
-            else if (!rel.Any(r => r.Established)) { state = GroupingState.OnlySuggestions; why = $"Bare foreslåtte koblinger ({string.Join(", ", rel.Select(r => r.DisplayId))}); et forslag avgjør aldri grupperingen."; }
+            var deciding = rel.Where(r => Deciding(r) && !crossAreas.Contains(r.Area!)).GroupBy(r => r.Area!)
+                .Select(g => (Area: g.Key, Ids: g.Select(r => r.DisplayId).Distinct(StringComparer.OrdinalIgnoreCase).ToList(), Strongest: g.Min(r => r.Basis)))
+                .OrderByDescending(a => a.Ids.Count).ThenBy(a => a.Strongest).ThenBy(a => a.Area, StringComparer.Ordinal).ToList();
+            string? suggested = null; GroupingState state; string why; List<string> candidates = [];
+            string Ids(string area) => string.Join(", ", rel.Where(r => r.Established && r.Area == area).Select(r => r.DisplayId));
+            string CrossNote(string area) => holders.TryGetValue(area, out var n) ? $"«{area}» er knyttet til {n} av {linkedStories} brukerhistorier (tverrgående)" : $"«{area}» er tverrgående";
+            if (rel.Count == 0)
+            {
+                state = GroupingState.NoRequirements;
+                why = "Ingen tilknyttede funksjonelle krav. Verken brukerhistorien, scenarioene, oppgavene eller en person knytter den til et krav.";
+            }
+            else if (!rel.Any(r => r.Established))
+            {
+                state = GroupingState.OnlySuggestions;
+                candidates = [.. rel.Select(r => r.Area).OfType<string>().Where(a => a != UnknownArea).Distinct(StringComparer.Ordinal)];
+                why = $"Bare foreslåtte kravkoblinger ({string.Join(", ", rel.Select(r => r.DisplayId))}). Et forslag avgjør aldri grupperingen; bekreft en kobling eller velg gruppe.";
+            }
             else if (deciding.Count == 0)
             {
-                state = GroupingState.NeedsGrouping;
-                why = rel.Any(r => r.Established && r.CrossCutting) ? "De tilknyttede kravene er tverrgående og avgjør ikke ett område alene." : "De tilknyttede kravene står ikke under noen funksjonsdel i spesifikasjonen.";
+                var crossOnly = rel.Where(r => Deciding(r) && crossAreas.Contains(r.Area!)).Select(r => r.Area!).Distinct(StringComparer.Ordinal).ToList();
+                candidates = [.. crossOnly.Concat(areas.Select(a => a.Area).Where(a => a != UnknownArea)).Distinct(StringComparer.Ordinal)];
+                state = candidates.Count > 1 ? GroupingState.NeedsGrouping : GroupingState.NeedsReview;
+                why = candidates.Count == 0
+                    ? "De tilknyttede kravene står ikke under noen funksjonsdel i spesifikasjonen."
+                    : crossOnly.Count > 0
+                        ? $"Kravene peker bare mot {string.Join(" og ", crossOnly.Select(CrossNote))}: {string.Join("; ", crossOnly.Select(a => $"{a}: {Ids(a)}"))}. Kilden knytter ikke brukerhistorien til et eget område; bekreft området eller velg et annet."
+                        : rel.Any(r => r.Established && !r.ResponsibilityEvidence && !r.SupportingOnly && r.Role == StoryLinkRole.Unknown)
+                            ? $"Kravene er bare nevnt i akseptansescenarioer eller støttende linjer ({string.Join(", ", candidates.Select(c => $"«{c}» ({Ids(c)})"))}); en henvisning viser at kravet er relevant, ikke at historien eier det. Bekreft rollen eller velg område."
+                            : $"Bare støttende henvisninger (oppgavedetaljer eller tverrgående krav) peker mot {string.Join(", ", candidates.Select(c => $"«{c}» ({Ids(c)})"))}; de avgjør ikke et hovedområde alene.";
             }
-            else if (deciding.Count > 1 && deciding[0].Count == deciding[1].Count)
+            else if (deciding.Count > 1 && deciding[0].Ids.Count == deciding[1].Ids.Count)
             {
                 state = GroupingState.NeedsGrouping;
-                why = $"Like mye støtte for {string.Join(" og ", deciding.TakeWhile(d => d.Count == deciding[0].Count).Select(d => $"«{d.Area}» ({d.Count})"))}: gruppering trenger en person.";
+                var tied = deciding.TakeWhile(d => d.Ids.Count == deciding[0].Ids.Count).ToList();
+                candidates = [.. tied.Select(d => d.Area)];
+                why = $"Flere mulige grupper med like mye støtte: {string.Join(" og ", tied.Select(d => $"«{d.Area}» ({string.Join(", ", d.Ids)})"))}. Grupperingen trenger en person.";
             }
             else
             {
-                suggested = deciding[0].Area; state = GroupingState.Suggested;
-                var ids = rel.Where(r => r.Established && !r.CrossCutting && r.Area == suggested).Select(r => r.DisplayId);
-                why = $"Foreslått under «{suggested}» fordi {string.Join(", ", ids)} står i denne delen av spesifikasjonen" +
-                      (deciding.Count > 1 ? $" ({deciding[0].Count} mot {deciding[1].Count} for «{deciding[1].Area}»)." : ".");
+                var top = deciding[0];
+                // Other areas the story's own (non-cross-cutting) evidence touches; a cross-cutting requirement or area never makes a suggestion thin.
+                var others = areas.Where(a => a.Area != top.Area && a.Area != UnknownArea && !a.CrossCutting
+                    // An incidental reference (role unknown, no responsibility evidence) neither decides nor makes a suggestion thin (2026-11-25).
+                    && rel.Any(r => r.Established && !r.CrossCutting && r.Area == a.Area && (Deciding(r) || r.SupportingOnly))).Select(a => a.Area).ToList();
+                if (top.Ids.Count == 1 && top.Strongest == StoryLinkBasis.Structural && others.Count > 0)
+                {
+                    state = GroupingState.NeedsReview;
+                    candidates = [top.Area];
+                    why = $"Mulig område «{top.Area}» bygger bare på {top.Ids[0]} fra én oppgave, mens brukerhistorien også berører {string.Join(", ", others.Select(o => $"«{o}»"))}. Bekreft området eller velg et annet.";
+                }
+                else
+                {
+                    suggested = top.Area; state = GroupingState.Suggested;
+                    why = $"Foreslått under «{top.Area}» fordi {string.Join(", ", top.Ids)} står i denne delen av spesifikasjonen" +
+                          (deciding.Count > 1 ? $" ({top.Ids.Count} mot {deciding[1].Ids.Count} for «{deciding[1].Area}»)." : ".") +
+                          (others.Count > 0 ? $" Også relatert: {string.Join(", ", others.Select(o => $"«{o}»"))}." : "");
+                }
             }
             var placement = doc?.Placements.LastOrDefault(p => p.StoryKey == story.Key);
-            var primary = placement?.PrimaryArea ?? suggested;
+            var missingGroup = placement?.GroupId is { } gid && groups.All(g => g.Id != gid) ? gid : null;
+            var placedGroup = missingGroup is null ? placement?.GroupId : null;
+            var kept = placement?.KeepUngrouped == true;
+            var primary = kept ? null : placement?.PrimaryArea ?? suggested;
             var suggestedGroup = primary is null ? null : groups.Where(g => g.FunctionalAreas.Contains(primary, StringComparer.OrdinalIgnoreCase)).Select(g => g.Id).FirstOrDefault();
             var changed = placement is not null && !string.Equals(placement.SuggestedAtDecision ?? "", suggested ?? "", StringComparison.Ordinal);
-            if (placement is not null && (placement.GroupId is not null || placement.PrimaryArea is not null)) state = GroupingState.Confirmed;
+            if (placement is not null && (placedGroup is not null || placement.PrimaryArea is not null || kept)) state = GroupingState.Confirmed;
+            if (missingGroup is not null && state != GroupingState.Confirmed)
+                why = $"Den valgte gruppen finnes ikke lenger. {why}";
+            if (kept) why = $"Bevisst uten gruppe (besluttet av {placement!.By}). {why}";
             result.Add(new StoryGroupingProfile(story.Key, rel, areas, suggested,
-                [.. areas.Select(a => a.Area).Where(a => a != primary)], state, why, primary, placement?.GroupId ?? suggestedGroup, suggestedGroup, changed));
+                [.. areas.Select(a => a.Area).Where(a => a != primary)], state, why, primary, kept ? null : placedGroup ?? suggestedGroup, suggestedGroup, changed)
+                { Candidates = candidates, KeptUngrouped = kept, MissingGroupId = missingGroup });
         }
         return result;
     }
 
+    /// <summary>Placements of stories the current source does not have (removed, renamed or the source is temporarily missing). Kept, never deleted:
+    /// they apply again when the story returns.</summary>
+    public static List<StoryPlacement> OrphanPlacements(StoryGroupingDocument? doc, IReadOnlyList<StoryInputs> inputs)
+    {
+        var keys = inputs.Select(i => i.Story.Key).ToHashSet(StringComparer.Ordinal);
+        return [.. (doc?.Placements ?? []).Where(p => !keys.Contains(p.StoryKey))];
+    }
+
     // ── Applying review operations (server side; also used by the browser for the preview) ───────────────────────────────────────────
+
+    /// <summary>The Norwegian label of a relationship role.</summary>
+    public static string RoleLabel(StoryLinkRole role) => role switch
+    {
+        StoryLinkRole.Primary => "Primær atferd",
+        StoryLinkRole.Supporting => "Støttende",
+        StoryLinkRole.CrossCutting => "Tverrgående kontroll",
+        StoryLinkRole.Contextual => "Kontekst",
+        _ => "Uavklart rolle",
+    };
 
     public sealed class GroupingRefusal(string code, string message) : Exception(message) { public string Code { get; } = code; }
 
@@ -288,6 +482,7 @@ public static class StoryGroupingEngine
         var placements = doc.Placements.ToList();
         var decisions = doc.Decisions.ToList();
         var history = doc.History.ToList();
+        var roles = doc.Roles.ToList();
         void Log(string action, string detail) => history.Add(new(now, actor, action, detail));
         StoryLinkDecision? Current(string story, string req) =>
             decisions.LastOrDefault(d => d.StoryKey == story && string.Equals(d.RequirementId, req, StringComparison.OrdinalIgnoreCase));
@@ -334,9 +529,21 @@ public static class StoryGroupingEngine
                 case StoryGroupingOperationKind.DeleteGroup:
                 {
                     var g = Group(op.GroupId);
-                    if (placements.Any(p => p.GroupId == g.Id)) throw new GroupingRefusal("group-not-empty", $"«{g.Name}» har brukerhistorier plassert i seg. Flytt dem eller slå sammen gruppene først.");
+                    var members = placements.Select((p, index) => (p, index)).Where(x => x.p.GroupId == g.Id).Select(x => x.index).ToList();
+                    BusinessGroup? into = null;
+                    if (members.Count > 0)
+                    {
+                        if (op.TargetGroupId is { Length: > 0 } target)
+                        {
+                            into = Group(target);
+                            if (into.Id == g.Id) throw new GroupingRefusal("same-group", "Brukerhistoriene kan ikke flyttes til gruppen som slettes.");
+                        }
+                        else if (!op.ReleaseMembers)
+                            throw new GroupingRefusal("group-not-empty", $"«{g.Name}» har {members.Count} brukerhistorier plassert i seg. Velg en annen gruppe for dem, eller la dem stå uten gruppe.");
+                        foreach (var k in members) placements[k] = placements[k] with { GroupId = into?.Id, By = actor, At = now };
+                    }
                     groups.Remove(g);
-                    Log("Slettet gruppe", $"«{g.Name}» (bare grupperingen; ingen brukerhistorier, krav, scenarioer eller testtilfeller er berørt)");
+                    Log("Slettet gruppe", $"«{g.Name}»{(members.Count == 0 ? "" : into is null ? $" ({members.Count} brukerhistorier står nå uten gruppe)" : $" ({members.Count} brukerhistorier flyttet til «{into.Name}»)")} — bare grupperingen; ingen brukerhistorier, krav, scenarioer eller testtilfeller er berørt");
                     break;
                 }
                 case StoryGroupingOperationKind.SetGroupAreas:
@@ -384,7 +591,7 @@ public static class StoryGroupingEngine
                     var target = op.GroupId is null ? null : Group(op.GroupId);
                     var k = placements.FindLastIndex(p => p.StoryKey == s);
                     var before = k >= 0 ? groups.FirstOrDefault(g => g.Id == placements[k].GroupId)?.Name : null;
-                    var placed = (k >= 0 ? placements[k] : new StoryPlacement { StoryKey = s }) with { GroupId = target?.Id, SuggestedAtDecision = op.SuggestedArea, By = actor, At = now };
+                    var placed = (k >= 0 ? placements[k] : new StoryPlacement { StoryKey = s }) with { GroupId = target?.Id, SuggestedAtDecision = op.SuggestedArea, KeepUngrouped = false, By = actor, At = now };
                     if (k >= 0) placements[k] = placed; else placements.Add(placed);
                     Log("Flyttet brukerhistorie", $"{s}: {before ?? "forslag"} → {target?.Name ?? "forslag"} (krav og scenarioer er uendret)");
                     break;
@@ -393,9 +600,27 @@ public static class StoryGroupingEngine
                 {
                     var s = Story(op.StoryKey);
                     var k = placements.FindLastIndex(p => p.StoryKey == s);
-                    var placed = (k >= 0 ? placements[k] : new StoryPlacement { StoryKey = s }) with { PrimaryArea = string.IsNullOrWhiteSpace(op.PrimaryArea) ? null : op.PrimaryArea.Trim(), SuggestedAtDecision = op.SuggestedArea, By = actor, At = now };
+                    var placed = (k >= 0 ? placements[k] : new StoryPlacement { StoryKey = s }) with { PrimaryArea = string.IsNullOrWhiteSpace(op.PrimaryArea) ? null : op.PrimaryArea.Trim(), SuggestedAtDecision = op.SuggestedArea, KeepUngrouped = false, By = actor, At = now };
                     if (k >= 0) placements[k] = placed; else placements.Add(placed);
                     Log("Endret primært funksjonsområde", $"{s}: {placed.PrimaryArea ?? "forslaget"} (kravkoblinger og kravenes kildedeler er uendret)");
+                    break;
+                }
+                case StoryGroupingOperationKind.SetLinkRole:
+                {
+                    var s = Story(op.StoryKey); var r = Req(op.RequirementId, "rolle");
+                    var role = op.Role ?? StoryLinkRole.Unknown;
+                    roles.Add(new StoryLinkRoleDecision { StoryKey = s, RequirementId = r, Role = role, Reason = string.IsNullOrWhiteSpace(op.Reason) ? null : op.Reason.Trim(), By = actor, At = now });
+                    Log("Endret kravrolle", $"{s} → {op.DisplayId ?? r}: {RoleLabel(role)} (koblingen og kildebeviset er uendret)");
+                    break;
+                }
+                case StoryGroupingOperationKind.LeaveUngrouped:
+                {
+                    var s = Story(op.StoryKey);
+                    var k = placements.FindLastIndex(p => p.StoryKey == s);
+                    var placed = (k >= 0 ? placements[k] : new StoryPlacement { StoryKey = s }) with
+                        { GroupId = null, PrimaryArea = null, KeepUngrouped = true, SuggestedAtDecision = op.SuggestedArea, By = actor, At = now };
+                    if (k >= 0) placements[k] = placed; else placements.Add(placed);
+                    Log("Beholdt uten gruppe", $"{s}{(string.IsNullOrWhiteSpace(op.Reason) ? "" : $": {op.Reason.Trim()}")} (brukerhistorien, scenarioene og testtilfellene er uendret)");
                     break;
                 }
                 case StoryGroupingOperationKind.ClearPlacement:
@@ -500,6 +725,6 @@ public static class StoryGroupingEngine
                 }
             }
         }
-        return doc with { Revision = doc.Revision + 1, Groups = groups, Placements = placements, Decisions = decisions, History = history };
+        return doc with { Revision = doc.Revision + 1, Groups = groups, Placements = placements, Decisions = decisions, History = history, Roles = roles };
     }
 }

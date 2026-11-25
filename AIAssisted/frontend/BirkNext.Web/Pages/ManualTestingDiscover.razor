@@ -102,6 +102,18 @@
                 @* 1. User stories: a grouping and business context, never a compulsory step («Alle scenarioer» is always one click away). *@
                 <nav class="mtw-stories" aria-label="Brukerhistorier" data-testid="mtd-stories">
                     <span class="mtw-h">Brukerhistorier</span>
+                    @if (_groupError is { } groupError)
+                    {
+                        @* Grouping is navigation metadata: when it fails, every story and scenario stays available in the plain list below. *@
+                        <div class="msb-callout is-warn mtw-grouping-failed" role="alert" data-testid="mtd-grouping-failed">
+                            <strong>Gruppering feilet.</strong> @groupError Alle brukerhistorier og scenarioer er tilgjengelige nedenfor, og testing kan fortsette.
+                            <button type="button" class="msb-link" @onclick="ReloadGroupingAsync" data-testid="mtd-grouping-retry">Prøv igjen</button>
+                        </div>
+                    }
+                    else if (_sourceMissing && _groupInputs.Count > 0)
+                    {
+                        <p class="msb-spec-note msb-small" role="status" data-testid="mtd-grouping-source-missing"><strong>Kilde mangler:</strong> spesifikasjonsteksten er ikke tilgjengelig, så funksjonsområdene kan ikke beregnes. Lagrede grupperinger er beholdt.</p>
+                    }
                     @if (_groupInputs.Count > 0)
                     {
                         <label class="mtw-mode msb-small">Grupper etter
@@ -117,23 +129,27 @@
                         <li><button type="button" class="mtw-story is-all @(_filter.Story is null ? "is-current" : null)" aria-pressed="@(_filter.Story is null ? "true" : "false")"
                                     @onclick="() => SelectStory(null)" data-testid="mtd-story" data-story="">
                             <span class="mtw-story-title">Alle scenarioer</span><span class="mtw-story-meta" data-testid="mtd-story-all-count">@(showTechnical ? $"{_items.Count} scenarioer" : $"{allView.Shown.Count} for manuell testing")@(allView.HiddenTechnical > 0 ? $" · {allView.HiddenTechnical} tekniske skjult" : "") · søk på tvers av alt</span></button></li>
-                        @if (_groupMode is G.Mode.Functional or G.Mode.Business && _groupInputs.Count > 0)
+                        @if (_groupMode is G.Mode.Functional or G.Mode.Business && _groupInputs.Count > 0 && _groupError is null)
                         {
                             var tree = G.Tree(_groupMode, _profiles, _groupDoc, _sections);
                             @foreach (var node in tree)
                             {
                                 var n = node;
                                 var open = IsOpen(n);
-                                <li class="mtw-group" data-testid="mtd-group" data-group="@n.Key" data-kind="@n.Kind">
+                                <li class="mtw-group @(n.Kind == "system" ? "is-system" : null)" data-testid="mtd-group" data-group="@n.Key" data-kind="@n.Kind">
                                     <button type="button" class="mtw-group-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleGroup(n.Key)" data-testid="mtd-group-toggle">
                                         <span class="mtw-caret" aria-hidden="true">@(open ? "▾" : "▸")</span><span class="mtw-group-title">@n.Title</span><span class="mtw-group-count">@n.Stories.Count</span></button>
-                                    <span class="mtw-group-meta" data-testid="mtd-group-stats">@GroupStats(n)</span>
+                                    <span class="mtw-group-meta" data-testid="mtd-group-stats">@(n.Kind == "system" ? $"{n.Stories.Count} brukerhistorie{(n.Stories.Count == 1 ? "" : "r")}" + (n.Stories.Count > 0 ? " · " + GroupStats(n) : " · alle er gruppert") : GroupStats(n))</span>
                                     @if (open)
                                     {
                                         <ul class="mtw-story-list is-nested">
                                             @foreach (var p in n.Stories)
                                             {
-                                                if (railStories.FirstOrDefault(e => e.Key == p.StoryKey) is { } member) { <li>@StoryButton((member, showTechnical))</li> }
+                                                var reason = n.Kind == "system" ? G.UngroupedReason(p, _groupMode, _groupDoc) : null;
+                                                if (railStories.FirstOrDefault(e => e.Key == p.StoryKey) is { } member)
+                                                {
+                                                    <li>@StoryButton((member, showTechnical))@if (reason is not null) { <span class="mtw-ungrouped-reason" data-testid="mtd-ungrouped-reason" data-story="@p.StoryKey">@reason@(p.Candidates.Count > 0 && p.State != GroupingState.OnlySuggestions ? $" · mulig: {string.Join(", ", p.Candidates)}" : "")</span> }</li>
+                                                }
                                             }
                                         </ul>
                                     }
@@ -146,9 +162,18 @@
                             @foreach (var st in railStories) { <li>@StoryButton((st, showTechnical))</li> }
                         }
                     </ul>
+                    @if (_groupInputs.Count > 0 && _groupError is null && _groupDoc is not null)
+                    {
+                        var queue = G.ReviewQueue(_profiles).Count;
+                        <button type="button" class="msb-link mtw-manage" aria-expanded="@(_reviewGrouping ? "true" : "false")" @onclick="() => { _reviewGrouping = !_reviewGrouping; _manageGroups = false; }" data-testid="mtd-review-grouping">@(_reviewGrouping ? "Lukk gjennomgang" : $"Gjennomgå gruppering ({queue})")</button>
+                    }
                     @if (_groupInputs.Count > 0 && CanEditGrouping)
                     {
-                        <button type="button" class="msb-link mtw-manage" @onclick="() => _manageGroups = !_manageGroups" data-testid="mtd-manage-groups">@(_manageGroups ? "Lukk gruppeadministrasjon" : "Administrer grupper")</button>
+                        <button type="button" class="msb-link mtw-manage" @onclick="() => { _manageGroups = !_manageGroups; _reviewGrouping = false; }" data-testid="mtd-manage-groups">@(_manageGroups ? "Lukk gruppeadministrasjon" : "Administrer grupper")</button>
+                    }
+                    @if (_orphanPlacements > 0)
+                    {
+                        <p class="mt-muted msb-small" data-testid="mtd-grouping-orphans">@_orphanPlacements lagrede plassering@(_orphanPlacements == 1 ? "" : "er") gjelder brukerhistorier som ikke finnes i kilden nå. De er beholdt og gjelder igjen hvis historiene kommer tilbake.</p>
                     }
                     @if (hiddenStories > 0)
                     {
@@ -163,6 +188,12 @@
                         <BirkNext.Web.Components.ManualTesting.GroupOrganizer Document="_groupDoc" Sections="_sections" Inputs="_groupInputs" Profiles="_profiles"
                             OnApply="ApplyGroupingAsync" OnClose="() => _manageGroups = false" />
                     }
+                    @if (_reviewGrouping && _groupDoc is not null && _groupError is null)
+                    {
+                        <BirkNext.Web.Components.ManualTesting.GroupingReview Queue="G.ReviewQueue(_profiles)" Document="_groupDoc" Sections="_sections" Inputs="_groupInputs"
+                            Mode="_groupMode == G.Mode.Business ? G.Mode.Business : G.Mode.Functional" CanEdit="CanEditGrouping" OnApply="ApplyGroupingAsync"
+                            OnOpenStory="OpenStoryFromReviewAsync" OnClose="() => _reviewGrouping = false" />
+                    }
                     @if (_groupNotice is { } notice) { <p class="msb-spec-note" role="status" data-testid="mtd-group-notice">@notice</p> }
                     @* 2. The chosen story's business context (compact; details on demand). *@
                     @if (currentStory is { Story: { } us } entryNow)
@@ -175,14 +206,22 @@
                             <p class="mt-muted msb-small" data-testid="mtd-story-scenarios">@W.ScenarioCountText(entryNow)@(entryNow.WithCases > 0 ? $" · {entryNow.WithCases} med testtilfeller" : "")</p>
                             @if (_profiles.FirstOrDefault(p => p.StoryKey == us.Key) is { } prof)
                             {
-                                <div class="mtw-grouping" data-testid="mtd-grouping" data-state="@prof.State">
-                                    <span class="msb-status msb-tone-@(prof.State switch { GroupingState.Confirmed => "ok", GroupingState.Suggested => "info", _ => "warn" })" data-testid="mtd-grouping-state">@G.StateLabel(prof.State)</span>
-                                    <span data-testid="mtd-grouping-area">@(prof.PrimaryArea ?? "Uten funksjonsområde")@(_groupDoc?.Groups.FirstOrDefault(g => g.Id == prof.GroupId) is { } grp ? $" · {grp.Name}" : "")</span>
+                                <div class="mtw-grouping" data-testid="mtd-grouping" data-state="@prof.State" data-status="@G.StatusLabel(prof)">
+                                    <span class="msb-status msb-tone-@G.StatusTone(prof)" data-testid="mtd-grouping-state">@G.StatusLabel(prof)</span>
+                                    @if (prof.NeedsReviewFlag) { <span class="msb-status msb-tone-warn" data-testid="mtd-grouping-review-flag">Trenger gjennomgang</span> }
+                                    <span data-testid="mtd-grouping-area">@(prof.PrimaryArea ?? G.UngroupedReason(prof, G.Mode.Functional, _groupDoc) ?? "Uten funksjonsområde")@(_groupDoc?.Groups.FirstOrDefault(g => g.Id == prof.GroupId) is { } grp ? $" · {grp.Name}" : "")@(G.StatusBasis(prof) is { } groupBasis ? $" ({groupBasis})" : "")</span>
+                                    @if (prof.PrimaryArea is null && prof.Candidates.Count > 0) { <span class="mt-muted msb-small" data-testid="mtd-grouping-candidates">Mulige: @string.Join(", ", prof.Candidates)</span> }
                                     <details class="mtw-why"><summary>Se begrunnelse</summary>
                                         <p class="msb-small" data-testid="mtd-grouping-why">@prof.Explanation</p>
-                                        @if (prof.SecondaryAreas.Count > 0) { <p class="mt-muted msb-small">Også: @string.Join(", ", prof.SecondaryAreas)</p> }
+                                        @if (prof.Areas.Count > 0)
+                                        {
+                                            <ul class="msb-small" data-testid="mtd-grouping-areas">
+                                                @foreach (var a in prof.Areas) { <li><b>@a.Area</b>@(a.Area == prof.PrimaryArea ? " (primært)" : " (relatert)"): @string.Join(", ", prof.Requirements.Where(r => r.Established && r.Area == a.Area).Select(r => r.DisplayId))@(a.CrossCutting ? " · tverrgående" : "")@(a.SupportingOnly ? " · bare oppgavedetaljer" : "")</li> }
+                                            </ul>
+                                        }
+                                        <p class="mt-muted msb-small">Grupperingen er bare navigasjon. Den påvirker ikke scenarioer, testtilfeller, klargjøring eller kjøring.</p>
                                     </details>
-                                    @if (prof.SuggestionChanged)
+                                    @if (prof.NeedsReviewFlag)
                                     {
                                         <div class="msb-callout is-warn" data-testid="mtd-grouping-changed"><strong>Grupperingsforslaget er endret:</strong> nå «@(prof.SuggestedArea ?? "ingen")». Den bekreftede plasseringen er beholdt.
                                             @if (CanEditGrouping)
@@ -208,6 +247,7 @@
                                                         @foreach (var g in d.Groups.OrderBy(x => x.Order)) { <option value="@g.Id" selected="@(prof.GroupId == g.Id)">@g.Name</option> }
                                                     </select></label>
                                             }
+                                            <button type="button" class="msb-link" @onclick="() => StageLeaveUngrouped(prof)" data-testid="mtd-grouping-leave">La stå uten gruppe</button>
                                             @if (_placementPreview.Count > 0)
                                             {
                                                 <ul class="msb-small" data-testid="mtd-grouping-preview">@foreach (var line in _placementPreview) { <li>@line</li> }</ul>
@@ -985,8 +1025,9 @@
     private List<StoryGroupingEngine.StoryInputs> _groupInputs = [];
     private List<StoryGroupingProfile> _profiles = [];
     private G.Mode _groupMode = G.Mode.Stories;
-    private bool _groupModeChosen, _manageGroups, _groupWritable;
-    private string? _groupNotice, _groupSpecPath;
+    private bool _groupModeChosen, _manageGroups, _groupWritable, _reviewGrouping, _sourceMissing;
+    private string? _groupNotice, _groupSpecPath, _groupError;
+    private int _orphanPlacements;
     private readonly HashSet<string> _openGroups = new(StringComparer.Ordinal);
     private readonly List<StoryGroupingOperation> _placementOps = [];
     private List<string> _placementPreview = [];
@@ -1009,13 +1050,14 @@
         var inScope = _items.Where(i => i.Candidate.Story?.SpecificationPath is { } p && _groupSpecPath is not null
             && BirkNext.Specifications.SpecificationCatalogRules.SamePath(p, _groupSpecPath)).ToList();
         _groupInputs = G.Inputs(inScope, _ws?.Evidence, _ws?.Requirements);
-        _groupDoc = null; _groupWritable = false;
+        _groupDoc = null; _groupWritable = false; _groupError = null;
+        // «Kilde mangler»: stories exist but the specification text (and so its FR sections) is not available; stored decisions are kept as they are.
+        _sourceMissing = G.SourceMissing(_groupInputs.Count > 0, _ws?.Specification?.Content);
         if (_groupInputs.Count > 0 && api is not null && _ws?.ProjectKey is { } key && _groupSpecPath is { } spec)
         {
-            var (doc, _) = await api.StoryGroupingAsync(key, spec);
+            var (doc, error) = await api.StoryGroupingAsync(key, spec);
             if (generation != _loadGeneration) return;
-            _groupWritable = doc is not null;
-            _groupDoc = doc ?? new StoryGroupingDocument { ProjectKey = key, SpecificationPath = spec };
+            (_groupDoc, _groupError, _groupWritable) = G.LoadOutcome(doc, error, ITestPlanSuggestionsApiService.NotAvailable);
         }
         Recompute();
         if (!_groupModeChosen) _groupMode = _groupInputs.Count == 0 ? G.Mode.Stories : G.DefaultMode(_groupDoc, _sections);
@@ -1023,11 +1065,38 @@
         if (_profiles.FirstOrDefault(p => p.StoryKey == _filter.Story) is { } open) _openGroups.Add(NodeKeyOf(open));
     }
 
-    private void Recompute() => _profiles = _groupInputs.Count == 0 ? [] : StoryGroupingEngine.Profiles(_groupInputs, _sections, _groupDoc);
+    /// <summary>Profiles from the inputs and the decisions. A failure here is «Gruppering feilet» (the plain story list stays), never a lost story.</summary>
+    private void Recompute()
+    {
+        try
+        {
+            _profiles = _groupInputs.Count == 0 ? [] : StoryGroupingEngine.Profiles(_groupInputs, _sections, _groupDoc);
+            _orphanPlacements = StoryGroupingEngine.OrphanPlacements(_groupDoc, _groupInputs).Count;
+        }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException or NullReferenceException or KeyNotFoundException)
+        {
+            _profiles = []; _orphanPlacements = 0;
+            _groupError = "Grupperingen kunne ikke beregnes.";
+        }
+    }
+
+    private async Task ReloadGroupingAsync()
+    {
+        _groupNotice = null;
+        await LoadGroupingAsync(ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService, _loadGeneration);
+    }
+
+    /// <summary>«Åpne scenarioer» from the review: the story's scenarios, with its group expanded (the review stays open beside them).</summary>
+    private Task OpenStoryFromReviewAsync(string storyKey)
+    {
+        SelectStory(storyKey);
+        if (_profiles.FirstOrDefault(p => p.StoryKey == storyKey) is { } p) _openGroups.Add(NodeKeyOf(p));
+        return Task.CompletedTask;
+    }
 
     private string NodeKeyOf(StoryGroupingProfile p) => _groupMode == G.Mode.Business
-        ? p.GroupId ?? G.UngroupedKey
-        : p.PrimaryArea is { } a ? "area:" + a : p.State == GroupingState.NoRequirements ? G.NoRequirementsKey : G.NeedsGroupingKey;
+        ? p.GroupId is { } g && _groupDoc?.Groups.Any(x => x.Id == g) == true ? g : G.UngroupedKey
+        : p.PrimaryArea is { } a ? "area:" + a : G.UngroupedKey;
 
     private bool IsOpen(G.GroupNode n) => _openGroups.Contains(n.Key) || n.Stories.Any(s => s.StoryKey == _filter.Story);
     private void ToggleGroup(string key) { if (!_openGroups.Remove(key)) _openGroups.Add(key); }
@@ -1061,6 +1130,8 @@
         var before = _profiles.ToDictionary(p => p.StoryKey, p => p.SuggestedArea);
         var (doc, error) = await api.ApplyStoryGroupingAsync(key, spec, new StoryGroupingChangeRequest
         {
+            // The same change retried after a lost answer has the same id: the server answers with the stored document instead of applying it twice.
+            RequestId = G.RequestId(_groupDoc.Revision, ops),
             ExpectedRevision = _groupDoc.Revision, Operations = [.. ops],
             RequirementCatalog = new ProjectRequirementCatalog { ProjectKey = key, Requirements = [.. _ws.Requirements ?? []] },
         });
@@ -1079,6 +1150,13 @@
         _placementOps.RemoveAll(o => o.StoryKey == p.StoryKey && (area is not null ? o.Kind == StoryGroupingOperationKind.SetPrimaryArea : o.Kind == StoryGroupingOperationKind.PlaceStory));
         if (area is not null) _placementOps.Add(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.SetPrimaryArea, StoryKey = p.StoryKey, PrimaryArea = area.Length == 0 ? null : area, SuggestedArea = p.SuggestedArea });
         if (group is not null) _placementOps.Add(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.PlaceStory, StoryKey = p.StoryKey, GroupId = group.Length == 0 ? null : group, SuggestedArea = p.SuggestedArea });
+        _placementPreview = _groupDoc is null ? [] : G.Preview(_groupInputs, _sections, _groupDoc, _placementOps, _ => true);
+    }
+
+    private void StageLeaveUngrouped(StoryGroupingProfile p)
+    {
+        _placementOps.RemoveAll(o => o.StoryKey == p.StoryKey);
+        _placementOps.Add(new StoryGroupingOperation { Kind = StoryGroupingOperationKind.LeaveUngrouped, StoryKey = p.StoryKey, SuggestedArea = p.SuggestedArea });
         _placementPreview = _groupDoc is null ? [] : G.Preview(_groupInputs, _sections, _groupDoc, _placementOps, _ => true);
     }
 

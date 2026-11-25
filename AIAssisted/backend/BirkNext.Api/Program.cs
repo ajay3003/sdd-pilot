@@ -145,6 +145,7 @@ builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.Local
 builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.WorkspaceTransfer.WorkspaceTransferHandler>();
 
 var databaseConnectionString = DatabaseConnection.GetConnectionString(builder.Configuration);
+DatabaseConnection.EnsureAllowed(databaseConnectionString); // test hosts only: never the person's real database
 
 // Backup & Transfer — full backup / isolated restore (PostgreSQL-native dump + managed files, always encrypted). Docs: docs/operations/birknext-backup-recovery.md.
 builder.Services.AddSingleton(sp => builder.Configuration.GetSection("Backup:PostgresTools").Get<BirkNext.Api.Services.WorkspaceTransfer.PostgresToolOptions>() ?? new());

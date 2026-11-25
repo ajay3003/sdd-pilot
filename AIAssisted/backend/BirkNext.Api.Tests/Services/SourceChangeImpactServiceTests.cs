@@ -164,6 +164,8 @@ public sealed class SourceChangeImpactServiceTests
         report!.Requirements.Should().ContainSingle(x => x.ScenarioId == requirement.Id);
         report.RecommendedTests.Should().ContainSingle(x => x.TestId == test.Id);
         report.RecommendedTests.Single().Reason.Should().Contain("Test source file linked").And.Contain("Covers impacted requirement");
+        // RI-03 (2026-11-25): a test whose own file is code-linked is «linked to changed source — review»; links carry no review state.
+        (report.RecommendedTests.Single().EvidenceLevel, report.RecommendedTests.Single().LinkReview).Should().Be((ImpactTestRecommendation.LinkedToChangedSource, ImpactTestRecommendation.Unknown));
     }
 
     [Fact]
@@ -219,6 +221,8 @@ public sealed class SourceChangeImpactServiceTests
         report.TechnicalImpacts.Should().Contain(i => i.EntityType == "Component" && i.EntityId == "orders-api" && i.Level == TechnicalImpactLevel.Direct);
         report.Requirements.Should().ContainSingle(x => x.ScenarioId == requirement.Id);
         report.RecommendedTests.Should().ContainSingle(x => x.TestId == test.Id && x.Reason.Contains("Covers impacted requirement", StringComparison.Ordinal));
+        // RI-03: reached only through a requirement's Covers link → potential impact to review, never confirmed; the direct technical impact stays Direct.
+        report.RecommendedTests.Single().EvidenceLevel.Should().Be(ImpactTestRecommendation.Potential);
     }
 
     [Fact]

@@ -20,6 +20,18 @@ public static class DatabaseConnection
             password: configuration["POSTGRES_PASSWORD"] ?? "birknext");
     }
 
+    /// <summary>
+    /// Tests only (2026-11-25): set by the test assembly before any host starts. Returns a refusal for a database a test host must never open (the
+    /// person's real BirkNext database, or anything that is not the test run's own database); null allows it. Null in BirkNext itself.
+    /// </summary>
+    internal static Func<string, string?>? TestDatabaseGuard { get; set; }
+
+    /// <summary>Fails closed when a test host would open a database the test run does not own (see <see cref="TestDatabaseGuard"/>).</summary>
+    public static void EnsureAllowed(string connectionString)
+    {
+        if (TestDatabaseGuard?.Invoke(connectionString) is { } refusal) throw new InvalidOperationException(refusal);
+    }
+
     public static string BuildConnectionString(
         string host,
         string port,

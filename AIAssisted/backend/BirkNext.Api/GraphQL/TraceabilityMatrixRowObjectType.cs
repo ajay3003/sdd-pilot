@@ -21,7 +21,8 @@ public sealed class TraceabilityMatrixRowObjectType : ObjectType<TraceabilityMat
 {
     protected override void Configure(IObjectTypeDescriptor<TraceabilityMatrixRow> descriptor)
     {
-        descriptor.Description("A single row in the traceability matrix: one requirement and all tests that cover it.");
+        descriptor.Description("A single row in the traceability matrix: one requirement and the test scenarios linked to it. coverageStatus COVERED means " +
+            "test design linkage only (a saved Covers link), not a prepared, approved, executed or passed test.");
 
         descriptor.Field(r => r.Requirement).Type<NonNullType<ObjectType<Scenario>>>();
         descriptor.Field(r => r.LinkedTests).Type<NonNullType<ListType<NonNullType<ObjectType<TraceLinkWithTest>>>>>();

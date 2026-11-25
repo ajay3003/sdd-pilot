@@ -24,7 +24,11 @@ internal static class RuntimeStallProbe
     private static void Run(string path)
     {
         using var writer = new StreamWriter(path, append: true) { AutoFlush = true };
-        writer.WriteLine("time;wakeLateMs;poolQueueWaitMs;poolThreads;pendingItems;completedItems;gen0;gen1;gen2;gcPauseTotalMs;heapMB;committedMB");
+        var heaps = AppContext.GetData("GCHeapCount") ?? Environment.GetEnvironmentVariable("DOTNET_GCHeapCount") ?? "default";
+        var adaptation = AppContext.GetData("System.GC.DynamicAdaptationMode") ?? Environment.GetEnvironmentVariable("DOTNET_GCDynamicAdaptationMode") ?? "default";
+        writer.WriteLine($"# pid={Environment.ProcessId} serverGC={System.Runtime.GCSettings.IsServerGC} latency={System.Runtime.GCSettings.LatencyMode} "
+            + $"cpus={Environment.ProcessorCount} gcHeapCount={heaps} dynamicAdaptation={adaptation}");
+        writer.WriteLine("time;wakeLateMs;poolQueueWaitMs;poolThreads;pendingItems;completedItems;gen0;gen1;gen2;gcPauseTotalMs;heapMB;committedMB;workingSetMB");
         var process = Stopwatch.StartNew();
         while (true)
         {
@@ -39,7 +43,8 @@ internal static class RuntimeStallProbe
             var info = GC.GetGCMemoryInfo();
             writer.WriteLine(string.Join(';', DateTime.Now.ToString("HH:mm:ss"), late, waited, ThreadPool.ThreadCount, ThreadPool.PendingWorkItemCount,
                 ThreadPool.CompletedWorkItemCount, GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2),
-                (long)GC.GetTotalPauseDuration().TotalMilliseconds, GC.GetTotalMemory(false) / (1024 * 1024), info.TotalCommittedBytes / (1024 * 1024)));
+                (long)GC.GetTotalPauseDuration().TotalMilliseconds, GC.GetTotalMemory(false) / (1024 * 1024), info.TotalCommittedBytes / (1024 * 1024),
+                Environment.WorkingSet / (1024 * 1024)));
         }
     }
 }

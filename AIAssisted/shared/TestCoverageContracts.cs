@@ -404,7 +404,15 @@ public sealed record CoverageClarification(string Id, string Question, string? A
 }
 
 /// <summary>A requirement a task of the story names in tasks.md: the task id, its line and text (evidence for a structural story → requirement link).</summary>
-public sealed record StoryTaskRequirement(string RequirementId, string? TaskId, string TaskText, string TasksPath, int? Line);
+/// <param name="Kind">Where in the feature documents (2026-11-25): null or <see cref="TaskLine"/> = the story's tagged task line or a plan line naming
+/// the story; <see cref="PhaseGoal"/> = the «Goal» of the story's own tasks.md phase; <see cref="TaskDetail"/> = a continuation line of a tagged task
+/// (sub-bullets, «As built» notes). Details are supporting evidence: they show related areas but never decide the story's primary area.</param>
+public sealed record StoryTaskRequirement(string RequirementId, string? TaskId, string TaskText, string TasksPath, int? Line, string? Kind = null)
+{
+    public const string TaskLine = "task", PhaseGoal = "phase-goal", TaskDetail = "task-detail";
+    /// <summary>A plan.md / quickstart.md line that mentions the story and a requirement together (supporting only: a co-mention, not a task of the story).</summary>
+    public const string PlanMention = "plan-mention";
+}
 
 /// <summary>
 /// A user story of a specification feature as the document states it. <see cref="Key"/> = specification file + the story's own number
