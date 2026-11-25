@@ -195,24 +195,32 @@
                         <ul class="mtp-scenarios">
                             @foreach (var row in rows)
                             {
-                                <li class="mtp-scenario" data-testid="mtp-scenario" data-key="@row.Key">
+                                var holdsSelected = row.Cases.Any(x => P.IdOf(x) == _selectedId);
+                                var collapsible = row.Cases.Count >= 3;
+                                <li class="mtp-scenario @(holdsSelected ? "has-selected" : null)" data-testid="mtp-scenario" data-key="@row.Key" data-cases="@row.Cases.Count">
                                     <div class="mtp-scenario-head">
                                         @if (row.StoryId is { } sid) { <span class="mtp-story" title="@row.StoryTitle" data-testid="mtp-row-story">@sid</span> }
                                         @* The acceptance scenario next to the story (2026-11-25): the saved source identity the detail heading uses, never a list position.
                                            Static text: «Vis scenarioet i Finn og forstå» in the detail opens the scenario. *@
                                         @if (row.Ac is { } ac) { <span class="mtp-ac" title="@($"Akseptansescenario {ac}{(row.StoryId is { } acStory ? $" i {acStory}" : "")}")" data-testid="mtp-row-ac">@ac</span> }
-                                        else if (row.AcAmbiguous) { <span class="mtp-ac is-unclear" title="Testtilfellene her viser til flere akseptansescenarioer, så ingen er valgt. Åpne et testtilfelle for å se hvilket det gjelder." data-testid="mtp-row-ac" data-state="ambiguous">AC ?</span> }
+                                        else if (row.AcAmbiguous) { <span class="mtp-ac is-unclear" title="Testtilfellene her viser til flere akseptansescenarioer, så ingen er valgt. Åpne et testtilfelle for å se hvilket det gjelder." data-testid="mtp-row-ac" data-state="ambiguous">Flere AC</span> }
                                         <span class="mtp-scenario-title">@row.Title</span>
                                     </div>
+                                    @* Scenario-first (2026-11-25): the scenario title once; a case whose title is the scenario's is shown by its type and status only.
+                                       Distinct case titles are always kept; three or more cases fold under a count and open when one of them is selected. *@
+                                    <details class="mtp-case-group" open="@(!collapsible || holdsSelected)" data-testid="mtp-case-group">
+                                    <summary class="mtp-case-count @(collapsible ? null : "is-static")" data-testid="mtp-case-count" tabindex="@(collapsible ? null : "-1")">@row.Cases.Count testtilfelle@(row.Cases.Count == 1 ? "" : "r")@P.ApprovalSummary(row.Cases)</summary>
                                     <ul class="mtp-cases">
                                         @foreach (var c in row.Cases)
                                         {
                                             var id = P.IdOf(c);
                                             var source = P.SourceLabel(c);
+                                            var sameTitle = P.SameAsScenario(c.EffectiveTitle, row.Title);
                                             <li>
-                                                <button type="button" class="mtp-case @(id == _selectedId ? "is-selected" : null)" aria-current="@(id == _selectedId ? "true" : null)"
-                                                        @onclick="() => SelectAsync(id)" data-testid="mtp-case" data-case="@id">
-                                                    <span class="mtp-case-title">@(Dirty && id == _selectedId ? "● " : "")@c.EffectiveTitle</span>
+                                                <button type="button" class="mtp-case @(id == _selectedId ? "is-selected" : null) @(sameTitle ? "is-same-title" : null)" aria-current="@(id == _selectedId ? "true" : null)"
+                                                        aria-label="@(sameTitle ? c.EffectiveTitle : null)" @onclick="() => SelectAsync(id)" data-testid="mtp-case" data-case="@id">
+                                                    @if (sameTitle) { <span class="mtp-case-title is-same" data-testid="mtp-case-same">@(Dirty && id == _selectedId ? "● " : "")Testtilfellet</span> }
+                                                    else { <span class="mtp-case-title">@(Dirty && id == _selectedId ? "● " : "")@c.EffectiveTitle</span> }
                                                     @if (c.Edits.TestKind is { } savedKind) { <span class="mtw-kind-tag is-@savedKind.ToString().ToLowerInvariant()" data-testid="mtp-case-kind" data-kind="@savedKind">@P.CaseKindLabel(savedKind)</span> }
                                                     <span class="msb-status msb-tone-@P.ReviewTone(c.Review)" data-testid="mtp-case-state">@P.ReviewLabel(c.Review)</span>
                                                     @if (c.HasUnresolvedConflict) { <span class="msb-status msb-tone-bad" data-testid="mtp-case-conflict">Kildekonflikt</span> }
@@ -221,6 +229,7 @@
                                             </li>
                                         }
                                     </ul>
+                                    </details>
                                     @if (CanWrite && !ReadOnlyPlan && row.Key.Length > 0)
                                     {
                                         <button type="button" class="msb-link mtp-add-case" disabled="@_busy" @onclick="() => OpenNewCaseAsync(row.Key, row.Title)" data-testid="mtp-add-case">+ Testtilfelle</button>

@@ -4,6 +4,7 @@ using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using P = BirkNext.Web.Services.PlanPreparePresentation;
 
 namespace BirkNext.Web.Tests.Pages;
 
@@ -32,6 +33,30 @@ public sealed partial class ManualTestingPlanTests
         BirkNext.Web.Services.PlanPreparePresentation.SourceLabel(c1).Should().BeNull();
         BirkNext.Web.Services.PlanSourcePresentation.CaseState(c1)!.Text.Should().Be("Ikke sammenlignet");
         BirkNext.Web.Services.PlanSourcePresentation.CaseState(c1 with { SourceState = CaseSourceState.Removed })!.Text.Should().Be("Utgått scenario", "a real removal is still shown");
+    }
+
+    [Fact]
+    public void The_left_list_shows_a_scenario_title_once_keeps_distinct_case_titles_and_never_calls_a_group_approved_because_one_case_is()
+    {
+        var only = Case("c1", "Submit a valid report");                                                     // one case, same title as its scenario
+        var a = Case("c2", "Reject an invalid report", review: TestCaseReviewState.Accepted);              // scenario with three cases
+        var b = Case("m2", "Reject a report twice", kind: ScenarioSourceKind.Manual, scenarioKey: "c2");
+        var d = Case("m3", "Reject an empty report", kind: ScenarioSourceKind.Manual, scenarioKey: "c2");
+        Setup(Plan(only, a, b, d));
+        var cut = Open();
+
+        var single = cut.Find("[data-testid=mtp-scenario][data-key=c1]");
+        single.QuerySelector("[data-testid=mtp-case-same]")!.TextContent.Should().Be("Testtilfellet", "the scenario title is not repeated");
+        single.QuerySelector("[data-testid=mtp-case]")!.GetAttribute("aria-label").Should().Be("Submit a valid report", "the full title stays for screen readers");
+        single.QuerySelector("[data-testid=mtp-case-count]")!.TextContent.Should().Be("1 testtilfelle");
+
+        var group = cut.Find("[data-testid=mtp-scenario][data-key=c2]");
+        group.GetAttribute("data-cases").Should().Be("3");
+        group.QuerySelector("[data-testid=mtp-case-count]")!.TextContent.Should().Be("3 testtilfeller · 1 av 3 godkjent", "a group is never «Godkjent» because one case is");
+        group.QuerySelectorAll("[data-testid=mtp-case]").Select(x => x.TextContent).Should().Contain(t => t.Contains("Reject a report twice")).And.Contain(t => t.Contains("Reject an empty report"),
+            "distinct case titles are kept");
+        P.SameAsScenario("Submit a valid report.", "submit a  valid report").Should().BeTrue();
+        P.SameAsScenario("Reject a report twice", "Reject an invalid report").Should().BeFalse();
     }
 
     [Fact]

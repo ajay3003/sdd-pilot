@@ -806,3 +806,16 @@
     margin: -0.9rem -1.1rem 0.6rem; padding: 0.6rem 1.1rem; background: var(--msb-surface, #fff); border-bottom: 1px solid var(--msb-border); }
 .mtw-drawer-title { font-weight: 600; }
 .mtw-details-btn { flex: 0 0 auto; white-space: nowrap; }
+
+/* Planlegg left list (2026-11-25): prominent purple AC (the detail heading's accent), the selected scenario group softly purple, no repeated titles. */
+.mtp-ac { font-size: 0.78rem; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--clr-accent-bg, #ede9fe); border: 1px solid var(--clr-accent, #7c3aed);
+    color: var(--clr-accent, #6d28d9); }
+.mtp-scenario { padding: 0.45rem 0.4rem; border-radius: 8px; }
+.mtp-scenario.has-selected { background: color-mix(in srgb, var(--clr-accent-bg, #ede9fe) 55%, var(--msb-surface)); }
+.mtp-case-group > summary { list-style: none; cursor: pointer; font-size: 0.8rem; color: var(--clr-text-muted, #57606a); padding: 0 0.5rem; }
+.mtp-case-group > summary::-webkit-details-marker { display: none; }
+.mtp-case-group > summary.is-static { cursor: default; pointer-events: none; }
+.mtp-case-group > summary:not(.is-static)::before { content: "▸ "; }
+.mtp-case-group[open] > summary:not(.is-static)::before { content: "▾ "; }
+.mtp-case.is-selected { border-color: var(--clr-accent, #7c3aed); background: var(--msb-surface); }
+.mtp-case-title.is-same { color: var(--clr-text-muted, #57606a); }

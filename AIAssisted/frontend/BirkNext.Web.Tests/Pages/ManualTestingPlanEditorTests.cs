@@ -157,7 +157,7 @@ public sealed partial class ManualTestingPlanTests
         cut.Find("[data-testid=mtp-title]").GetAttribute("value").Should().Be("New original title");
         cut.Find("[data-testid=mtp-save]").HasAttribute("disabled").Should().BeFalse();
 
-        cut.FindAll("[data-testid=mtp-case]").First(e => e.TextContent.Contains("Another case")).Click();
+        cut.FindAll("[data-testid=mtp-case]").First(e => (e.TextContent + " " + e.GetAttribute("aria-label")).Contains("Another case")).Click();
         cut.Find("[data-testid=mtp-unsaved]").TextContent.Should().Contain("ulagrede endringer");
     }
 
@@ -214,7 +214,7 @@ public sealed partial class ManualTestingPlanTests
         Setup(Plan(Translated(Case("c1", "Submit a valid report"), TranslationOrigin.MachineEdited), Translated(Case("c2", "Other")) ));
         var cut = Open();
         cut.Find("[data-testid=mtp-translation-protected]").TextContent.Should().Contain("Beholdes ved ny maskinoversettelse");
-        cut.FindAll("[data-testid=mtp-case]").First(e => e.TextContent.Contains("Other")).Click();
+        cut.FindAll("[data-testid=mtp-case]").First(e => (e.TextContent + " " + e.GetAttribute("aria-label")).Contains("Other")).Click();
         cut.FindAll("[data-testid=mtp-translation-protected]").Should().BeEmpty();
     }
 
@@ -306,7 +306,7 @@ public sealed partial class ManualTestingPlanTests
         var cut = Open();
         cut.FindAll("[data-testid=mtp-quality]").Should().BeEmpty();
 
-        cut.FindAll("[data-testid=mtp-case]").First(e => e.TextContent.Contains("Vague case")).Click();
+        cut.FindAll("[data-testid=mtp-case]").First(e => (e.TextContent + " " + e.GetAttribute("aria-label")).Contains("Vague case")).Click();
         var hints = cut.FindAll("[data-testid=mtp-quality-hint]").Select(h => h.TextContent).ToList();
         hints.Should().Contain(h => h.Contains("Steg 1 begynner med «It»"));
         hints.Should().Contain(h => h.Contains("Samlet forventet resultat er vagt"));

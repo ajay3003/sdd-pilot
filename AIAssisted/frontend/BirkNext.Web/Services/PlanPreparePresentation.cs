@@ -201,6 +201,21 @@ public static partial class PlanPreparePresentation
         return paths.Any(p => N(p) == selected || N(p).EndsWith("/" + selected, StringComparison.Ordinal) || selected.EndsWith("/" + N(p), StringComparison.Ordinal)) ? null : paths;
     }
 
+    /// <summary>Whether a case's title only repeats its scenario's (same words, ignoring case, spacing and punctuation): the list then shows it once.</summary>
+    public static bool SameAsScenario(string? caseTitle, string? scenarioTitle)
+    {
+        static string N(string? t) => new string((t ?? "").ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+        var (a, b) = (N(caseTitle), N(scenarioTitle));
+        return a.Length > 0 && a == b;
+    }
+
+    /// <summary>« · N godkjent» for a group: the approval of the cases, counted — a group is never «Godkjent» because one case is.</summary>
+    public static string ApprovalSummary(IReadOnlyCollection<TestCaseDraft> cases)
+    {
+        var approved = cases.Count(c => c.Review == TestCaseReviewState.Accepted);
+        return cases.Count > 1 && approved > 0 ? $" · {approved} av {cases.Count} godkjent" : "";
+    }
+
     /// <summary>Stable id of a case within a plan (the server's own identity: scenario id of its source).</summary>
     public static string IdOf(TestCaseDraft c) => c.Source.ScenarioId;
 
