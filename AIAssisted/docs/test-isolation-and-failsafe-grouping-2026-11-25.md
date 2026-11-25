@@ -290,9 +290,9 @@ Not measured in the browser (see U). Engine work is linear in stories × relatio
 
 ## X. Limitations
 
-1. **CI_DEF_3** fails intermittently under the full parallel suite; the cause is unexplained (G).
+1. **CI_DEF_3** fails intermittently under the full parallel suite. Load-related starvation is the likely cause but is not proven; the assertion now carries diagnostics (Final verification, FV1).
 2. **Memory is tight:** about 6.5 GB peak with 3 GB free on this machine, and long workstation-GC pauses. Other heavy work during a full run (a build, the app, a browser) can push it to the floor.
-3. **About 130 legacy temporary databases** remain. They have no ownership marker, so they cannot be proven test-only and were not dropped. A one-off cleanup needs your confirmation.
+3. **368 legacy temporary databases (6.6 GB)** remain. They have no ownership marker, so they cannot be proven test-only and were not dropped. A one-off cleanup needs your confirmation; criteria are in FV4.
 4. **Hosts in one test process** share one temporary App_Data and one run database.
 5. **«Utsett»** is per page session only (by design).
 6. **Grouping writes** reuse `IntegrationConfigurationWritePolicy`.
@@ -326,10 +326,124 @@ Not measured in the browser (see U). Engine work is linear in stories × relatio
 | 23 primary versus related distinct | PASS | F43 |
 | 24 traceability unchanged without authorised edits | PASS | grouping never writes links (F32/F33) |
 | 25 ungrouped stories testable | PASS | U28 |
-| 26 Planlegg accessible | PASS (unit) / browser pending | |
+| 26 Planlegg accessible | PASS | unit + browser E38/E42/E43 (FV6) |
 | 27 Norwegian/Original/Compare intact | PASS | frontend suite |
-| 28 real browser walkthrough | **BLOCKED** | U |
-| 29 performance measured | **NOT DONE** | V |
+| 28 real browser walkthrough | PASS (41/42; F45 = the deliberate 400/409 logged by the browser) | FV6 |
+| 29 performance measured | PASS | FV6 timings |
 | 30 plans, cases, approvals, runs, translations preserved | PASS | fingerprints; no writes outside `story_groupings` (F35) |
 | 31 no competing engine | PASS | |
 | 32 no destructive reset, commit or push by this work | PASS | the reset at 07:55 was a UI action in the running app (U) |
+
+## Final verification (2026-11-25, 09:00–09:20 local)
+
+This section supersedes G (CI_DEF_3), H, U (blocked walkthrough), V (performance) and X.1/X.3 where they differ.
+
+All steps below ran after the user's go-ahead. The app was not running when this verification started, so nothing was stopped. Nothing was reset, no database was dropped, both Git stashes and all saved plans are untouched, and nothing was pushed.
+
+### FV1. Full backend regression (isolated run database, memory sampled)
+
+| Run | Result | Duration | Peak working set / min free RAM | Leftover processes |
+|---|---|---|---|---|
+| final3 (08:30, committed code) | 7,431 passed / **1 failed** (`CI_DEF_3`) / 19 skipped | 7 m 39 s | 6.6 GB / 2.07 GB | 0 |
+| final4 (09:00, current tree) | **7,432 passed / 0 failed** / 19 skipped | 6 m 44 s | 7.3 GB / 3.24 GB | 0 |
+
+`CI_DEF_3_the_connect_callback_lets_an_allowed_host_through`:
+
+- In final3 it took 29.4 s and returned Unreachable, because the fetcher's 20 s timeout fired.
+- In final4 it passed but took **9.3 s**; run alone it takes milliseconds.
+- Both runs show heavy GC pressure (187–233 s of total pause, wake-ups up to 3.6–4.8 s late).
+
+The pattern fits thread-pool/GC starvation of the in-test loopback server under full-suite load, not a policy or production defect. This is **not proven**. The test assertion now reports the fetcher's problem text, the elapsed time, whether the loopback server answered, thread-pool counts and the default proxy, so the next failure names its cause. The assertion itself is unchanged in strength. **This is not a claim that CI_DEF_3 is fixed.** It passed in one of the last two full runs.
+
+### FV2. Full frontend regression
+
+**9,639 passed / 0 failed.** This includes 7 new tests for:
+
+- AC titles;
+- the story shown in Norwegian, untranslated and stale states;
+- «Sammenlign» showing every story field in both languages;
+- the detail title.
+
+### FV3. The 07:55:20 FullIncludingProtected reset
+
+- **What happened:** `POST /api/admin/data-reset` (correlation `48705cc1…`, mode `FullIncludingProtected`) arrived through a browser session of the running app, after that session opened System settings and loaded the reset plan.
+- **What it removed:** 416 rows across 88 main tables and the dependent schemas (canonical_interpretation, delivery_reporting, integration_journeys, scope_registry, snapshot_registry, task_alignment).
+- **What it kept:** test plans and revisions; the fingerprints of the original plans are identical before and after.
+- **Afterwards:** a new project was imported (`import:import-a5c083c81e63c1a2`), and plan `369a1a8b…` was created at 08:08:09 through the app.
+- **Who initiated it is not established.** The request shows only that it came through the app's own UI session. Nothing in the logs identifies a person, and none is inferred.
+
+### FV4. Temporary test databases (read-only inventory; nothing dropped)
+
+The inventory found **368 databases, 6.6 GB in total**:
+
+| Kind | Count | Size |
+|---|---|---|
+| Random-suffix test databases | 230 | 2.1 GB |
+| Dated acceptance databases | 118 | 4.0 GB |
+| Other | 20 | 0.6 GB |
+
+- None has an open connection.
+- None carries the ownership marker that today's isolation writes (`birknext_testrun_*` plus a comment), so none can be proven test-only.
+
+Recommended criteria for a cleanup, which runs only after your confirmation:
+
+- The name matches a known test pattern exactly.
+- There are no connections.
+- The database is not `birknext` and not a template.
+- The database is older than the newest run.
+- Each one is listed and confirmed before it is dropped.
+
+New runs drop their own marked database, and the full runs above left none behind.
+
+### FV5. The 57 committed files
+
+The 57 files in commit `e4d6c16d` were reviewed file by file, and every one is intentional. Seven of them had their line endings flipped from LF to CRLF on commit. Commit `2b3af1a4` restored LF in those seven with no content change. The repository uses `core.autocrlf=false`, and each file keeps its own line endings.
+
+### FV6. Browser walkthrough with disposable records (`scratchpad/grp_walk3.py`)
+
+- **Setup:** the real app (signed `dotnet run`, API :5000, frontend :5173), project `import:import-a5c083c81e63c1a2`, SkoleService `spec.md`.
+- **Safety gate:** before running, the script checked that no grouping row existed for the specification, and it refuses to run if one exists.
+- **What it writes:** only grouping metadata. Every group it creates is named `TEMP gjennomgang …` and deleted by the script itself.
+- **Before:** plan fingerprint `e20566b3…`, zero grouping rows.
+- **After:** the same fingerprint, and zero rows after cleanup.
+
+**Result: 42 checks, 41 PASS, 1 FAIL.**
+
+- **The failure (F45, "no console errors"):** the browser logs the two *deliberate* negative tests as console errors: a duplicate name refused with 400 and a stale revision refused with 409. F46 already excludes those two expected responses and passes. No other console errors occurred.
+- **Drill-down (G01–G07):** groups → stories → AC, with a breadcrumb and «‹ group» back link. «Alle scenarioer (218)» stays reachable.
+- **Titles (G04, E42):** the detail title and the Planlegg heading are «AC n — …», never «US… —».
+- **Level colours (G05):** group = blue `rgb(239,246,255)`, user story = green `rgb(240,253,244)`, scenario/AC = purple `rgb(237,233,254)`.
+- **Grouping (B11–B21, T-US3/US6/US8):** every story shows a status and its source-based reasons, and incidental references (FR-009, FR-041) stay visible with a role without deciding the primary area.
+- **Disposable round trip (C22–C30):** create, rename, duplicate-name refusal, reload persistence, move, rationale, leave ungrouped, delete. US6 was used because it needs review and is not one of the reviewer decisions below.
+- **Server failure paths (D31–D35):** a server-side 400 with its own message, a 409 on a stale revision, and a retry stored once.
+- **Testability (E36–E43):** an ungrouped story's scenario shows Given/When/Then and its requirements, and can be prepared. Planlegg opens and shows the story card and the Norsk/Original/Sammenlign controls.
+- **Layout (F47/F48):** keyboard focus moves; there is no horizontal scroll at 900, 1280 or 1920 px.
+
+**Timings (ms):** initial workspace load 22,606 (discovery of 655 scenarios), open group 52, open story 173, select a story 382–426, search 857, a grouping save 115–991, open Planlegg 2,726.
+
+**Earlier attempts.** Two earlier attempts stopped on problems in the script, not the product:
+
+- US2 no longer needs review.
+- The organizer's name is a DOM property, not an attribute.
+- The script's direct API calls lacked the `X-BirkNext-Client` header, which the API correctly refused with 403.
+
+Each attempt's own row (`b7407133…`, `0b0db545…`, and the final run's `dcbc8f25…`) was deleted by id, project and specification together. Nothing else was touched.
+
+### FV7. Reviewer decisions applied (US4, US5, US8)
+
+These were applied through the story card's existing reviewer UI («Endre plassering» and «Administrer kravkoblinger»), with a preview before each save. No parser rule and no direct database write was involved. The result is stored in grouping row `48db6a24…`, revision 5, with 7 history entries by `local-user`.
+
+| Story | Decision | Result after reload |
+|---|---|---|
+| US4 | Primary area «Intake and identity» | Gruppert, «Intake and identity (bekreftet av en person)». The Period lock link FR-026a is unchanged, so Period lock stays a related area. |
+| US5 | Primary area «Corrections, chains and idempotency» | Gruppert, confirmed by a person. All six links are unchanged. |
+| US8 | Primary area «Follow-up lists»; FR-041 and FR-042 confirmed; the Classification links FR-009 and FR-008a given the role «Støttende» | Gruppert, «Follow-up lists (bekreftet av en person)». FR-041/042 changed from Suggested to HumanConfirmed. FR-009 (ScenarioExplicit) and FR-008a (Structural) keep their source basis and now have the role Supporting. |
+
+All original source relationships are kept: no link was removed or replaced, and roles never change a link or its evidence. Plan fingerprints are unchanged.
+
+### FV8. Manual testing UI changes in the same verification
+
+- **Story card:** the user story card in Finn og forstå and Planlegg is a prominent light-green card with its details one click away.
+- **Story language:** the story follows the editor language. Norsk shows the plan's stored translation, Original shows the source, and Sammenlign shows title, description, «Hvorfor denne prioriteten» and «Uavhengig test» side by side. Untranslated and stale states are labelled.
+- **Scenario titles:** a scenario is named «AC n — …», never «US1 — …».
+- **Drill-down:** groups → user stories → AC, with one colour per level.

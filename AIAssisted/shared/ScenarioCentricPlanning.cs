@@ -617,5 +617,9 @@ public static partial class ScenarioPlanning
 
     private static string Upper(string text) => text.Length > 0 && char.IsLower(text[0]) ? char.ToUpperInvariant(text[0]) + text[1..] : text;
     private static string Clip(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
+    /// <summary>The fingerprint a story translation is made from: title, description, why this priority and Independent Test (a changed story makes
+    /// its translation stale).</summary>
+    public static string StoryFingerprint(BirkNext.TestCoverage.CoverageUserStory s) => Sha($"{s.Title}\u001f{s.Description}\u001f{s.WhyThisPriority}\u001f{s.IndependentTest}");
+
     public static string Sha(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 }

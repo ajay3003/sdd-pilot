@@ -891,7 +891,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         return new TranslateScenarioResult(plan, translated, kept, failed, message, target, provider);
     }
 
-    public static string StoryFingerprint(BirkNext.TestCoverage.CoverageUserStory s) => ScenarioPlanning.Sha($"{s.Title}\u001f{s.Description}\u001f{s.WhyThisPriority}\u001f{s.IndependentTest}");
+    public static string StoryFingerprint(BirkNext.TestCoverage.CoverageUserStory s) => ScenarioPlanning.StoryFingerprint(s);
 
     /// <summary>No translation choice could translate: what was tried and why, where to set it up, and that the text can be written by hand.</summary>
     private static TestPlanException NoTranslationService(string detail, string language)

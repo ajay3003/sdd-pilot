@@ -127,7 +127,7 @@
                     </select>
                     <ul class="mtw-story-list">
                         <li><button type="button" class="mtw-story is-all @(_filter.Story is null ? "is-current" : null)" aria-pressed="@(_filter.Story is null ? "true" : "false")"
-                                    @onclick="() => SelectStory(null)" data-testid="mtd-story" data-story="">
+                                    @onclick="() => { _showAll = true; SelectStory(null); }" data-testid="mtd-story" data-story="">
                             <span class="mtw-story-title">Alle scenarioer</span><span class="mtw-story-meta" data-testid="mtd-story-all-count">@(showTechnical ? $"{_items.Count} scenarioer" : $"{allView.Shown.Count} for manuell testing")@(allView.HiddenTechnical > 0 ? $" · {allView.HiddenTechnical} tekniske skjult" : "") · søk på tvers av alt</span></button></li>
                         @if (_groupMode is G.Mode.Functional or G.Mode.Business && _groupInputs.Count > 0 && _groupError is null)
                         {
@@ -195,53 +195,77 @@
                             OnOpenStory="OpenStoryFromReviewAsync" OnClose="() => _reviewGrouping = false" />
                     }
                     @if (_groupNotice is { } notice) { <p class="msb-spec-note" role="status" data-testid="mtd-group-notice">@notice</p> }
-                    @* 2. The chosen story's business context (compact; details on demand). *@
+                    @* 2. The chosen story (2026-11-25): a prominent, quiet card — who/what/priority at a glance, the rest one click away. *@
                     @if (currentStory is { Story: { } us } entryNow)
                     {
-                        <section class="mtw-story-card" aria-label="Brukerhistorie" data-testid="mtd-story-head">
+                        var prof = _profiles.FirstOrDefault(p => p.StoryKey == us.Key);
+                        <section class="mtw-story-card is-story" aria-label="Brukerhistorie" data-testid="mtd-story-head">
+                            @if (prof is not null && _groupMode is G.Mode.Functional or G.Mode.Business && _groupError is null)
+                            {
+                                var home = NodeKeyOf(prof);
+                                var homeTitle = G.Tree(_groupMode, _profiles, _groupDoc, _sections).FirstOrDefault(n => n.Key == home)?.Title;
+                                <button type="button" class="mtw-back" @onclick="() => BackToGroup(home)" data-testid="mtd-story-back">‹ @(homeTitle ?? "Oversikt")</button>
+                            }
                             <div class="mtw-story-card-head">
                                 <span class="mtw-us">@entryNow.Label</span>@if (us.Priority is { Length: > 0 } p) { <span class="mtw-prio">@p</span> }
                                 <h2 class="mtw-story-card-title">@W.StoryTitle(us)</h2>
+                                @if (prof is not null)
+                                {
+                                    <button type="button" class="mtw-chip msb-tone-@G.StatusTone(prof)" aria-expanded="@(_storyGrouping ? "true" : "false")" title="@prof.Explanation"
+                                            @onclick="() => _storyGrouping = !_storyGrouping" data-testid="mtd-grouping-chip">
+                                        @G.StatusLabel(prof)@(prof.PrimaryArea is { } area ? $" · {area}" : "")@(prof.NeedsReviewFlag ? " · !" : "")
+                                    </button>
+                                }
                             </div>
-                            <p class="mt-muted msb-small" data-testid="mtd-story-scenarios">@W.ScenarioCountText(entryNow)@(entryNow.WithCases > 0 ? $" · {entryNow.WithCases} med testtilfeller" : "")</p>
-                            @if (_profiles.FirstOrDefault(p => p.StoryKey == us.Key) is { } prof)
+                            @if (us.Description is { Length: > 0 } lead) { <p class="mtw-story-lead" data-testid="mtd-story-description" title="@lead">@lead</p> }
+                            <div class="mtw-story-foot">
+                                <span class="mtw-story-meta" data-testid="mtd-story-scenarios">@W.ScenarioCountText(entryNow)@(entryNow.WithCases > 0 ? $" · {entryNow.WithCases} med testtilfeller" : "")</span>
+                                <button type="button" class="mtw-toggle" aria-expanded="@(_storyDetails ? "true" : "false")" @onclick="() => _storyDetails = !_storyDetails" data-testid="mtd-story-toggle">@(_storyDetails ? "Skjul detaljer" : "Detaljer")</button>
+                                @if (prof is not null)
+                                {
+                                    <button type="button" class="mtw-toggle" aria-expanded="@(_storyGrouping ? "true" : "false")" @onclick="() => _storyGrouping = !_storyGrouping" data-testid="mtd-grouping-toggle">Gruppering</button>
+                                }
+                            </div>
+                            @if (prof is not null && (_storyGrouping || prof.NeedsReviewFlag))
                             {
                                 <div class="mtw-grouping" data-testid="mtd-grouping" data-state="@prof.State" data-status="@G.StatusLabel(prof)">
                                     <span class="msb-status msb-tone-@G.StatusTone(prof)" data-testid="mtd-grouping-state">@G.StatusLabel(prof)</span>
                                     @if (prof.NeedsReviewFlag) { <span class="msb-status msb-tone-warn" data-testid="mtd-grouping-review-flag">Trenger gjennomgang</span> }
                                     <span data-testid="mtd-grouping-area">@(prof.PrimaryArea ?? G.UngroupedReason(prof, G.Mode.Functional, _groupDoc) ?? "Uten funksjonsområde")@(_groupDoc?.Groups.FirstOrDefault(g => g.Id == prof.GroupId) is { } grp ? $" · {grp.Name}" : "")@(G.StatusBasis(prof) is { } groupBasis ? $" ({groupBasis})" : "")</span>
                                     @if (prof.PrimaryArea is null && prof.Candidates.Count > 0) { <span class="mt-muted msb-small" data-testid="mtd-grouping-candidates">Mulige: @string.Join(", ", prof.Candidates)</span> }
-                                    <details class="mtw-why"><summary>Se begrunnelse</summary>
-                                        <p class="msb-small" data-testid="mtd-grouping-why">@prof.Explanation</p>
-                                        @if (prof.Areas.Count > 0)
-                                        {
-                                            <ul class="msb-small" data-testid="mtd-grouping-areas">
-                                                @foreach (var a in prof.Areas) { <li><b>@a.Area</b>@(a.Area == prof.PrimaryArea ? " (primært)" : " (relatert)"): @string.Join(", ", prof.Requirements.Where(r => r.Established && r.Area == a.Area).Select(r => r.DisplayId))@(a.CrossCutting ? " · tverrgående" : "")@(a.SupportingOnly ? " · bare oppgavedetaljer" : "")</li> }
-                                            </ul>
-                                        }
-                                        <p class="mt-muted msb-small">Grupperingen er bare navigasjon. Den påvirker ikke scenarioer, testtilfeller, klargjøring eller kjøring.</p>
-                                    </details>
+                                    @if (_storyGrouping)
+                                    {
+                                        <details class="mtw-why" title="Grupperingen er bare navigasjon; den påvirker ikke scenarioer, testtilfeller eller kjøring."><summary>Hvorfor?</summary>
+                                            <p class="msb-small" data-testid="mtd-grouping-why">@prof.Explanation</p>
+                                            @if (prof.Areas.Count > 0)
+                                            {
+                                                <ul class="msb-small" data-testid="mtd-grouping-areas">
+                                                    @foreach (var a in prof.Areas) { <li><b>@a.Area</b>@(a.Area == prof.PrimaryArea ? " (primært)" : ""): @string.Join(", ", prof.Requirements.Where(r => r.Established && r.Area == a.Area).Select(r => r.DisplayId))@(a.CrossCutting ? " · tverrgående" : "")</li> }
+                                                </ul>
+                                            }
+                                        </details>
+                                    }
                                     @if (prof.NeedsReviewFlag)
                                     {
-                                        <div class="msb-callout is-warn" data-testid="mtd-grouping-changed"><strong>Grupperingsforslaget er endret:</strong> nå «@(prof.SuggestedArea ?? "ingen")». Den bekreftede plasseringen er beholdt.
+                                        <div class="msb-callout is-warn" data-testid="mtd-grouping-changed">Nytt forslag: «@(prof.SuggestedArea ?? "ingen")». Din plassering er beholdt.
                                             @if (CanEditGrouping)
                                             {
-                                                <button type="button" class="msb-link" @onclick="() => AcceptSuggestionAsync(prof)" data-testid="mtd-grouping-accept">Godta nytt forslag</button>
-                                                <button type="button" class="msb-link" @onclick="() => KeepPlacementAsync(prof)" data-testid="mtd-grouping-keep">Behold eksisterende plassering</button>
+                                                <button type="button" class="msb-link" @onclick="() => AcceptSuggestionAsync(prof)" data-testid="mtd-grouping-accept">Godta</button>
+                                                <button type="button" class="msb-link" @onclick="() => KeepPlacementAsync(prof)" data-testid="mtd-grouping-keep">Behold</button>
                                             }
                                         </div>
                                     }
-                                    @if (CanEditGrouping)
+                                    @if (CanEditGrouping && _storyGrouping)
                                     {
                                         <details class="mtw-why" data-testid="mtd-grouping-edit"><summary>Endre plassering</summary>
-                                            <label class="msb-small">Primært funksjonsområde
+                                            <label class="msb-small">Funksjonsområde
                                                 <select class="msb-select" @onchange="e => StagePlacement(prof, area: e.Value?.ToString(), group: null)" data-testid="mtd-grouping-area-select">
                                                     <option value="">Følg forslaget@(prof.SuggestedArea is { } sa ? $" ({sa})" : "")</option>
                                                     @foreach (var s in _sections.Sections.Select(x => x.Title).Distinct()) { <option value="@s" selected="@(prof.PrimaryArea == s && prof.State == GroupingState.Confirmed)">@s</option> }
                                                 </select></label>
                                             @if (_groupDoc is { Groups.Count: > 0 } d)
                                             {
-                                                <label class="msb-small">Forretningsgruppe
+                                                <label class="msb-small">Gruppe
                                                     <select class="msb-select" @onchange="e => StagePlacement(prof, area: null, group: e.Value?.ToString() ?? string.Empty)" data-testid="mtd-grouping-group-select">
                                                         <option value="">Følg forslaget</option>
                                                         @foreach (var g in d.Groups.OrderBy(x => x.Order)) { <option value="@g.Id" selected="@(prof.GroupId == g.Id)">@g.Name</option> }
@@ -258,35 +282,32 @@
                                     }
                                 </div>
                             }
-                            <button type="button" class="msb-link" aria-expanded="@(_storyDetails ? "true" : "false")" @onclick="() => _storyDetails = !_storyDetails" data-testid="mtd-story-toggle">@(_storyDetails ? "Skjul US-detaljer" : "Vis US-detaljer")</button>
                             @if (_storyDetails)
                             {
                                 var objectives = W.Objectives(us, scope);
                                 <div class="mtw-story-details" data-testid="mtd-story-details">
-                                    @if (us.Description is { Length: > 0 } description) { <div class="mtw-block"><span class="mtp-ctx-label">Beskrivelse</span><p data-testid="mtd-story-description">@description</p></div> }
                                     @if (us.WhyThisPriority is { Length: > 0 } why) { <div class="mtw-block"><span class="mtp-ctx-label">Hvorfor denne prioriteten</span><p data-testid="mtd-story-why">@why</p></div> }
                                     @if (us.IndependentTest is { Length: > 0 } independent)
                                     {
                                         <div class="mtw-block" data-testid="mtd-story-independent">
-                                            <span class="mtp-ctx-label">Independent Test</span>
-                                            <p class="mt-muted msb-small">@independent</p>
+                                            <span class="mtp-ctx-label">Uavhengig test</span>
                                             @if (objectives.Count > 0)
                                             {
-                                                <ul class="mtw-objectives">
+                                                <ul class="mtw-objectives" title="Treff på ord i scenarioene — et hint, ikke en vurdering.">
                                                     @foreach (var o in objectives)
                                                     {
-                                                        <li data-covered="@(o.Covered ? "true" : "false")" data-testid="mtd-story-objective"><span class="tdp-mark" aria-hidden="true">@(o.Covered ? "✓" : "?")</span>
-                                                            <span>@o.Objective.Text</span>
-                                                            <span class="mt-muted msb-small">@(o.Covered ? "Ser ut til å dekkes av " + string.Join(", ", o.CaseTitles.Take(2)) + (o.CaseTitles.Count > 2 ? $" og {o.CaseTitles.Count - 2} til" : "") : "Ingen scenario ser ut til å dekke dette — mulig manglende dekning")</span></li>
+                                                        <li data-covered="@(o.Covered ? "true" : "false")" data-testid="mtd-story-objective"
+                                                            title="@(o.Covered ? "Ser ut til å dekkes av " + string.Join(", ", o.CaseTitles.Take(3)) : "Ingen scenario ser ut til å dekke dette")">
+                                                            <span class="tdp-mark" aria-hidden="true">@(o.Covered ? "✓" : "?")</span><span>@o.Objective.Text</span></li>
                                                     }
                                                 </ul>
-                                                <span class="mt-muted msb-small">Treff på ord i scenarioene — et hint, ikke en vurdering.</span>
                                             }
+                                            else { <p class="mt-muted msb-small">@independent</p> }
                                         </div>
                                     }
-                                    @if (_profiles.FirstOrDefault(p => p.StoryKey == us.Key) is { } linksProfile && _groupDoc is not null)
+                                    @if (prof is not null && _groupDoc is not null)
                                     {
-                                        <BirkNext.Web.Components.ManualTesting.StoryRequirementLinks Profile="linksProfile" Document="_groupDoc" Sections="_sections" Inputs="_groupInputs"
+                                        <BirkNext.Web.Components.ManualTesting.StoryRequirementLinks Profile="prof" Document="_groupDoc" Sections="_sections" Inputs="_groupInputs"
                                             Catalog="CatalogFor(us)" CanEdit="CanEditGrouping" OnApply="ApplyGroupingAsync" />
                                     }
                                     else
@@ -294,11 +315,11 @@
                                         var storyReqs = us.NamedRequirements.Concat(us.TaskRequirements.Select(t => t.RequirementId)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                                         @if (storyReqs.Count > 0)
                                         {
-                                            <div class="mtw-block"><span class="mtp-ctx-label">Krav historien nevner eller oppgavene knytter til den</span>
+                                            <div class="mtw-block"><span class="mtp-ctx-label">Krav</span>
                                                 <p>@foreach (var r in storyReqs) { var rid = r; <button type="button" class="msb-req" @onclick="() => OpenRequirementTab(rid)" data-testid="mtd-story-req">@rid</button> }</p></div>
                                         }
                                     }
-                                    <p class="mt-muted msb-small">Kilde: @us.SpecificationPath@(us.LineStart is { } ls ? $", linje {ls}" : "")</p>
+                                    <p class="mt-muted msb-small" title="@us.SpecificationPath">Kilde: linje @(us.LineStart?.ToString() ?? "?")</p>
                                 </div>
                             }
                         </section>
@@ -308,6 +329,63 @@
                         <p class="mtw-story-card mt-muted" data-testid="mtd-story-head">Scenarioer uten brukerhistorie: funnet i kontrakter, kildekode, krav og integrasjonsflyter. De kan fortsatt kobles til krav og få testtilfeller.</p>
                     }
 
+                    @* 3a. Drill-down (2026-11-25): groups → user stories → acceptance criteria. Cards, few words; search and «Alle scenarioer» always one click away. *@
+                    @if (ShowOverview)
+                    {
+                        var groupsNow = G.Tree(_groupMode, _profiles, _groupDoc, _sections);
+                        var entries = railStories.Where(e => e.Story is not null).ToDictionary(e => e.Key);
+                        var drilled = _drillGroup is null ? null : groupsNow.FirstOrDefault(n => n.Key == _drillGroup);
+                        <section class="mtw-overview" aria-label="Oversikt" data-testid="mtd-overview">
+                            <div class="mtw-overview-head">
+                                <nav class="mtw-crumbs" aria-label="Plassering" data-testid="mtd-overview-crumbs">
+                                    @if (drilled is null) { <span class="mtw-crumb-current">@(G.ModeLabel(_groupMode))</span> }
+                                    else
+                                    {
+                                        <button type="button" class="msb-link" @onclick="() => _drillGroup = null" data-testid="mtd-crumb-groups">@G.ModeLabel(_groupMode)</button><span aria-hidden="true"> › </span>
+                                        <span class="mtw-crumb-current">@drilled.Title</span>
+                                    }
+                                </nav>
+                                <input type="search" class="msb-search mtw-overview-search" placeholder="Søk i scenarioer" aria-label="Søk i scenarioer" value="@_filter.Query"
+                                       @oninput="e => Set(_filter with { Query = e.Value?.ToString() ?? string.Empty })" data-testid="mtd-overview-search" />
+                                <button type="button" class="msb-link" @onclick="() => _showAll = true" data-testid="mtd-show-all">Alle scenarioer (@allView.Shown.Count)</button>
+                            </div>
+                            @if (drilled is null)
+                            {
+                                <ul class="mtw-cards" data-testid="mtd-group-cards">
+                                    @foreach (var node in groupsNow.Where(n => n.Stories.Count > 0))
+                                    {
+                                        var n = node;
+                                        var acs = n.Stories.Sum(p => entries.TryGetValue(p.StoryKey, out var e) ? e.Shown : 0);
+                                        var prepared = n.Stories.Sum(p => entries.TryGetValue(p.StoryKey, out var e) ? e.WithCases : 0);
+                                        <li><button type="button" class="mtw-card @(n.Kind == "system" ? "is-system" : "is-group")" @onclick="() => _drillGroup = n.Key" data-testid="mtd-group-card" data-group="@n.Key">
+                                            <span class="mtw-card-title">@n.Title</span>
+                                            <span class="mtw-card-stats"><b>@n.Stories.Count</b> @(n.Stories.Count == 1 ? "historie" : "historier") · <b>@acs</b> AC</span>
+                                            @if (acs > 0) { <span class="mtw-card-bar" title="@prepared av @acs AC har testtilfeller"><span style="width:@(Math.Round(100.0 * prepared / acs))%"></span></span> }
+                                        </button></li>
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <ul class="mtw-cards" data-testid="mtd-story-cards">
+                                    @foreach (var p in drilled.Stories)
+                                    {
+                                        if (!entries.TryGetValue(p.StoryKey, out var entry)) { continue; }
+                                        var e = entry;
+                                        var reason = drilled.Kind == "system" ? G.UngroupedReason(p, _groupMode, _groupDoc) : null;
+                                        <li><button type="button" class="mtw-card is-story" @onclick="() => SelectStory(e.Key)" data-testid="mtd-story-card" data-story="@e.Key">
+                                            <span class="mtw-card-top"><span class="mtw-us">@e.Label</span>@if (e.Priority is { Length: > 0 } pr) { <span class="mtw-prio">@pr</span> }</span>
+                                            <span class="mtw-card-title">@e.Title</span>
+                                            <span class="mtw-card-stats"><b>@e.Shown</b> AC@(e.WithCases > 0 ? $" · {e.WithCases} med testtilfeller" : "")</span>
+                                            @if (reason is not null) { <span class="mtw-card-reason" data-testid="mtd-story-card-reason">@reason</span> }
+                                        </button></li>
+                                    }
+                                </ul>
+                            }
+                        </section>
+                    }
+                    else
+                    {
                     @* 3. Tabs over the same scope: the scenarios, their saved test cases, and requirement coverage. *@
                     <div class="mtw-tabs" role="tablist" aria-label="Visning">
                         @foreach (var (tab, label) in TabLabels)
@@ -506,7 +584,7 @@
                                     @foreach (var i in pageItems)
                                     {
                                         var selected = _selected.Contains(i.Id);
-                                        <li id="@($"msb-row-{i.Id}")" role="option" aria-selected="@(selected ? "true" : "false")" class="msb-row @(i.Id == _active ? "is-active" : null) @(selected ? "is-selected" : null)"
+                                        <li id="@($"msb-row-{i.Id}")" role="option" aria-selected="@(selected ? "true" : "false")" class="msb-row mtw-ac-row @(i.Id == _active ? "is-active" : null) @(selected ? "is-selected" : null)"
                                             data-testid="mtd-scenario" data-id="@i.Id" data-relevance="@i.Relevance" @onclick="() => Open(i.Id)">
                                             <input type="checkbox" class="msb-check" checked="@selected" aria-label="@($"Velg {i.Title}")" @onclick:stopPropagation="true"
                                                    @onchange="() => ToggleAsync(i.Id)" data-testid="mtd-select" />
@@ -533,6 +611,7 @@
                                 }
                             }
                         </section>
+                    }
                     }
                 </div>
 
@@ -563,11 +642,11 @@
                         {
                             <p class="msb-spec-note" data-testid="mtd-detail-outside">Dette scenarioet vises ikke med gjeldende brukerhistorie eller filter. Det er fortsatt åpent her.</p>
                         }
-                        <div class="msb-detail-head">
-                            <h2 class="msb-detail-title" data-testid="mtd-detail-title">@active.Title</h2>
+                        <div class="msb-detail-head mtw-ac-head">
+                            <h2 class="msb-detail-title" data-testid="mtd-detail-title">@W.DetailTitle(active)</h2>
                             <span class="msb-status msb-tone-@active.Status.Tone">@active.Status.Text</span>
                         </div>
-                        @if (!string.Equals(active.Title, c.Title, StringComparison.Ordinal)) { <p class="msb-original" data-testid="mtd-detail-original">Opprinnelig tittel: @c.Title</p> }
+                        @if (!string.Equals(W.RowTitle(active), c.Title, StringComparison.Ordinal) && !string.Equals(active.Title, c.Title, StringComparison.Ordinal)) { <p class="msb-original" data-testid="mtd-detail-original">Opprinnelig tittel: @c.Title</p> }
                         <p class="msb-chips"><span>@active.TypeLabel</span><span>@active.Area</span>@if (active.Relevance == S.Relevance.Technical) { <span>Teknisk</span> }</p>
                         @if (!string.IsNullOrWhiteSpace(c.Purpose)) { <p data-testid="mtd-detail-purpose">@c.Purpose</p> }
                         @if (c.Conflicts.Count > 0)
@@ -1025,7 +1104,14 @@
     private List<StoryGroupingEngine.StoryInputs> _groupInputs = [];
     private List<StoryGroupingProfile> _profiles = [];
     private G.Mode _groupMode = G.Mode.Stories;
-    private bool _groupModeChosen, _manageGroups, _groupWritable, _reviewGrouping, _sourceMissing;
+    private bool _groupModeChosen, _manageGroups, _groupWritable, _reviewGrouping, _sourceMissing, _storyGrouping, _showAll;
+    private string? _drillGroup;
+
+    /// <summary>The drill-down instead of the full list: nothing chosen, no search, grouping available (else the page is as before).</summary>
+    private bool ShowOverview => _filter.Story is null && string.IsNullOrWhiteSpace(_filter.Query) && !_showAll && _groupError is null && _groupInputs.Count > 0
+        && _groupMode is G.Mode.Functional or G.Mode.Business;
+
+    private void BackToGroup(string groupKey) { _drillGroup = groupKey; _showAll = false; SelectStory(null); }
     private string? _groupNotice, _groupSpecPath, _groupError;
     private int _orphanPlacements;
     private readonly HashSet<string> _openGroups = new(StringComparer.Ordinal);
@@ -1104,7 +1190,7 @@
     private void SetMode(string? value)
     {
         if (!Enum.TryParse<G.Mode>(value, out var mode)) return;
-        _groupMode = mode; _groupModeChosen = true;
+        _groupMode = mode; _groupModeChosen = true; _drillGroup = null;
         if (mode == G.Mode.None && _filter.Story is not null && _filter.Story != W.NoStory) SelectStory(null);
     }
 

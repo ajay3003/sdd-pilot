@@ -13,6 +13,30 @@ public enum EditorLanguage { Norwegian, Original, Compare }
 /// </summary>
 public static partial class PlanPreparePresentation
 {
+    /// <summary>
+    /// The story text to show in a language (2026-11-25): Norwegian = the plan's stored translation («Oversett alle» translates stories with their
+    /// cases) when there is one; <see cref="StoryText.Stale"/> when the story changed after it was translated. Never a machine translation on the fly.
+    /// </summary>
+    public sealed record StoryText(string Title, string? Description, string? Why, string? IndependentTest, bool Translated, bool Stale, string? Provider);
+
+    public static StoryText StoryIn(TestPlanDraft? plan, BirkNext.TestCoverage.CoverageUserStory us, bool norwegian)
+    {
+        var original = new StoryText(ScenarioWorkspacePresentation.CleanStoryTitle(us.Title), us.Description, us.WhyThisPriority, us.IndependentTest, false, false, null);
+        if (!norwegian) return original;
+        var nb = plan?.StoryTranslations?.FirstOrDefault(t => t.StoryKey == us.Key && string.Equals(t.Language, ScenarioPlanning.Norwegian, StringComparison.OrdinalIgnoreCase));
+        if (nb is null || string.IsNullOrWhiteSpace(nb.Title) && string.IsNullOrWhiteSpace(nb.Description)) return original;
+        return new StoryText(ScenarioWorkspacePresentation.CleanStoryTitle(nb.Title ?? us.Title), nb.Description ?? us.Description, nb.WhyThisPriority ?? us.WhyThisPriority,
+            nb.IndependentTest ?? us.IndependentTest, true, nb.SourceFingerprint != ScenarioPlanning.StoryFingerprint(us), nb.Provider);
+    }
+
+    /// <summary>The scenario heading of a case: "AC 3 — <scenario title>" when the case comes from a story's numbered acceptance scenario.</summary>
+    public static string ScenarioHeading(TestCaseDraft c)
+    {
+        var title = c.Generated.Title;
+        if (c.Generated.Story?.StoryId is { Length: > 0 } id && title.StartsWith(id + " — ", StringComparison.Ordinal)) title = title[(id.Length + 3)..];
+        return c.Generated.Story is not null && c.Generated.NumberInStory is { } n ? $"{ScenarioWorkspacePresentation.AcLabel(n)} — {title}" : title;
+    }
+
     /// <summary>Norwegian when a translation exists, otherwise the original. Never "translate on open".</summary>
     public static EditorLanguage DefaultLanguage(CaseForm form) => form.HasTranslation ? EditorLanguage.Norwegian : EditorLanguage.Original;
 

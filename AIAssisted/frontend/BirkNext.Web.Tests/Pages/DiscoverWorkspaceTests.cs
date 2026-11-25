@@ -91,7 +91,7 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         stories[1].Click();
         Ids(cut).Should().Equal("US1-AS1", "US1-AS2");
         cut.Find("[data-testid=mtd-story-head]").TextContent.Should().Contain("Accept a valid report").And.Contain("11 akseptansescenarioer i spesifikasjonen");
-        cut.FindAll("[data-testid=mtd-scenario-label]").Select(e => e.TextContent).Should().Equal("Scenario 1", "Scenario 2");
+        cut.FindAll("[data-testid=mtd-scenario-label]").Select(e => e.TextContent).Should().Equal("AC 1", "AC 2");
 
         cut.Find($"[data-testid=mtd-story][data-story='{W.NoStory}']").Click();
         Ids(cut).Should().Equal("journey-1");
@@ -147,7 +147,7 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         var cut = Open();
         cut.Find("[data-testid=mtd-scenario][data-id='US1-AS2']").Click();
 
-        cut.Find("[data-testid=mtd-breadcrumb]").TextContent.Should().Contain("US1").And.Contain("Scenario 2");
+        cut.Find("[data-testid=mtd-breadcrumb]").TextContent.Should().Contain("US1").And.Contain("AC 2");
         var source = cut.Find("[data-testid=mtd-detail-source]").TextContent;
         source.Should().Contain("Gitt").And.Contain("a report for a child Person knows (Attendance above plan)").And.Contain("Når").And.Contain("it arrives").And.Contain("Så");
         cut.FindAll("[data-testid=mtd-req-link]").Select(e => (e.GetAttribute("data-relation"), e.QuerySelector("[data-testid=mtd-req-chip]")!.TextContent))
@@ -174,7 +174,7 @@ public sealed class DiscoverWorkspaceTests : BunitContext
 
         var panel = cut.Find("[data-testid=mtd-req-panel]");
         panel.TextContent.Should().Contain("FR-001").And.Contain("Nevnt i kilden").And.Contain("Kravet er nevnt i scenarioets egen kilde.");
-        cut.FindAll("[data-testid=mtd-req-other]").Select(e => e.TextContent).Should().Equal("Scenario 1 (US2)");
+        cut.FindAll("[data-testid=mtd-req-other]").Select(e => e.TextContent).Should().Equal("AC 1 (US2)");
 
         cut.Find("[data-testid=mtd-req-other]").Click();
         cut.Find("[data-testid=mtd-detail-title]").TextContent.Should().Contain("Graded child hidden from lists");

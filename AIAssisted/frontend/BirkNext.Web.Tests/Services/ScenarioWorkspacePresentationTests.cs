@@ -86,7 +86,7 @@ public sealed class ScenarioWorkspacePresentationTests
     public void A_scenario_is_numbered_as_the_specification_numbers_it_and_other_scenarios_keep_their_type()
     {
         var items = Items(Above, Contract);
-        W.ScenarioLabel(items.Single(i => i.Id == "US1-AS2")).Should().Be("Scenario 2");
+        W.ScenarioLabel(items.Single(i => i.Id == "US1-AS2")).Should().Be("AC 2");
         W.ScenarioLabel(items.Single(i => i.Id == "post-reports")).Should().Be(ScenarioCandidateTypes.Label(ScenarioCandidateType.ApiContract));
     }
 
@@ -196,7 +196,9 @@ public sealed class ScenarioWorkspacePresentationTests
         item.Title.Should().StartWith("US1 — ");
         W.RowTitle(item).Should().Be(item.Title["US1 — ".Length..]);
         W.RowTitle(Items(Contract).Single()).Should().Be("POST /reports");
-        W.OtherScenarioLabel(Items(Graded).Single()).Should().Be("Scenario 1 (US2)");
+        W.DetailTitle(item).Should().Be("AC 1 — " + item.Title["US1 — ".Length..], "the detail pane names the acceptance criterion, never «US1 — »");
+        W.DetailTitle(Items(Contract).Single()).Should().Be(Items(Contract).Single().Title);
+        W.OtherScenarioLabel(Items(Graded).Single()).Should().Be("AC 1 (US2)");
         W.OtherScenarioLabel(Items(Contract).Single()).Should().Be("POST /reports", "an unnumbered scenario is named by its title, never its type");
         W.StageText(PreparedCaseStage.Prepared).Should().Be("Forberedt");
         W.StageText(PreparedCaseStage.Approved).Should().Be("Godkjent");

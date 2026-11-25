@@ -262,58 +262,93 @@
 
                             @if (current.Generated.Story is { } us)
                             {
+                                @* The user story (2026-11-25): a prominent, quiet card in the editor's language — Norsk shows the plan's stored translation
+                                   («Oversett alle» translates stories with their cases), Original the source, Sammenlign both. Details one click away. *@
                                 var objectives = P.StoryObjectiveCoverage(_plan!, us);
                                 var refs = StoryInterpretation.ReferencedStories(us.Description);
-                                <details class="mtp-us" data-testid="mtp-story">
-                                    <summary>
-                                        <span class="mtp-us-kicker">Brukerhistorie og testmål</span>
-                                        <span class="mtp-us-title">@(us.StoryId is { Length: > 0 } usid ? $"{usid} — " : "")@us.Title</span>
-                                        @if (us.Priority is { Length: > 0 } prio) { <span class="msb-status msb-tone-info" data-testid="mtp-story-priority">@prio</span> }
+                                var nbStory = P.StoryIn(_plan, us, norwegian: true);
+                                var ogStory = P.StoryIn(_plan, us, norwegian: false);
+                                var storyCompare = _lang == EditorLanguage.Compare && nbStory.Translated;
+                                var shown = _lang == EditorLanguage.Norwegian || storyCompare ? nbStory : ogStory;
+                                <section class="mtp-us is-story" aria-label="Brukerhistorie" data-testid="mtp-story" data-language="@(shown.Translated ? "nb" : "original")">
+                                    <div class="mtp-us-head">
+                                        @if (us.StoryId is { Length: > 0 } usid) { <span class="mtw-us">@usid</span> }
+                                        @if (us.Priority is { Length: > 0 } prio) { <span class="mtw-prio" data-testid="mtp-story-priority">@prio</span> }
+                                        <h3 class="mtp-us-title" data-testid="mtp-story-title">@shown.Title</h3>
+                                        @if (storyCompare && ogStory.Title != nbStory.Title) { <span class="mtp-us-original-title" data-testid="mtp-story-title-original"><span class="mtp-lang-tag">Original</span>@ogStory.Title</span> }
                                         @if (objectives.Count > 0)
                                         {
-                                            <span class="msb-status msb-tone-@(objectives.All(o => o.Covered) ? "ok" : "warn")" data-testid="mtp-story-coverage">@objectives.Count(o => o.Covered) av @objectives.Count testmål funnet i planen</span>
-                                        }
-                                    </summary>
-                                    <div class="mtp-us-body">
-                                        @if (us.Description is { Length: > 0 } desc) { <p data-testid="mtp-story-description">@desc</p> }
-                                        @if (refs.Count > 0)
-                                        {
-                                            <p class="mtp-us-refs" data-testid="mtp-story-refs"><span class="mtp-ctx-label">Viser til</span>
-                                                @foreach (var rf in refs) { <span class="mtp-chip" data-testid="mtp-story-ref">@rf</span> }
-                                            </p>
-                                        }
-                                        @if (us.WhyThisPriority is { Length: > 0 } why2)
-                                        {
-                                            <div class="mtp-us-block" data-testid="mtp-story-why"><span class="mtp-ctx-label">Hvorfor denne prioriteten</span><p>@why2</p></div>
-                                        }
-                                        @if (us.IndependentTest is { Length: > 0 } independent)
-                                        {
-                                            <div class="mtp-us-block" data-testid="mtp-story-independent">
-                                                <span class="mtp-ctx-label">Uavhengig test (fra spesifikasjonen)</span>
-                                                <p class="mtp-quote">@independent</p>
-                                                <ul class="mtp-objectives">
-                                                    @foreach (var oc in objectives)
-                                                    {
-                                                        <li class="mtp-objective" data-covered="@(oc.Covered ? "true" : "false")" data-testid="mtp-objective">
-                                                            <span class="mtp-obj-kind">@(oc.Objective.Kind == StoryObjectiveKind.Condition ? "Situasjon" : "Kontroller")</span>
-                                                            <span class="mtp-obj-text">@oc.Objective.Text</span>
-                                                            @if (oc.Objective.NeedsReview) { <span class="msb-tag" title="Delt opp av BirkNext — sjekk mot originalteksten over.">tolket</span> }
-                                                            @if (oc.Covered)
-                                                            {
-                                                                <span class="mtp-obj-cov is-ok" title="Ordene i testmålet finnes i disse testtilfellene. Et forslag, ikke en vurdering." data-testid="mtp-objective-covered">Ser ut til å dekkes av: @string.Join(", ", oc.CaseTitles)</span>
-                                                            }
-                                                            else
-                                                            {
-                                                                <span class="mtp-obj-cov is-gap" data-testid="mtp-objective-gap">Ikke funnet i planens testtilfeller</span>
-                                                            }
-                                                        </li>
-                                                    }
-                                                </ul>
-                                            </div>
+                                            <span class="mtw-chip msb-tone-@(objectives.All(o => o.Covered) ? "ok" : "warn")" title="Testmål fra «Uavhengig test» som ser ut til å finnes i planens testtilfeller (et hint)." data-testid="mtp-story-coverage">@objectives.Count(o => o.Covered)/@objectives.Count testmål</span>
                                         }
                                     </div>
-                                </details>
+                                    @if (storyCompare)
+                                    {
+                                        <div class="mtp-us-compare" data-testid="mtp-story-compare">
+                                            <p class="mtw-story-lead"><span class="mtp-lang-tag">Norsk</span> @nbStory.Description</p>
+                                            <p class="mtw-story-lead"><span class="mtp-lang-tag">Original</span> @ogStory.Description</p>
+                                        </div>
+                                    }
+                                    else if (shown.Description is { Length: > 0 } desc) { <p class="mtw-story-lead" data-testid="mtp-story-description">@desc</p> }
+                                    @if (_lang != EditorLanguage.Original && !nbStory.Translated)
+                                    {
+                                        <p class="mtp-us-note" data-testid="mtp-story-untranslated" title="«Oversett alle» oversetter brukerhistorien sammen med testtilfellene.">Ikke oversatt ennå — vises på originalspråket.</p>
+                                    }
+                                    else if (nbStory.Stale && _lang != EditorLanguage.Original)
+                                    {
+                                        <p class="mtp-us-note is-warn" data-testid="mtp-story-stale" title="Oversett på nytt med «Oversett alle».">Kilden er endret etter oversettelsen.</p>
+                                    }
+                                    <div class="mtw-story-foot">
+                                        @if (refs.Count > 0) { @foreach (var rf in refs) { <span class="mtp-chip" data-testid="mtp-story-ref">@rf</span> } }
+                                        <button type="button" class="mtw-toggle" aria-expanded="@(_storyOpen ? "true" : "false")" @onclick="() => _storyOpen = !_storyOpen" data-testid="mtp-story-toggle">@(_storyOpen ? "Skjul detaljer" : "Detaljer")</button>
+                                    </div>
+                                    @if (_storyOpen)
+                                    {
+                                        <div class="mtp-us-body">
+                                            @if (storyCompare && (nbStory.Why is { Length: > 0 } || ogStory.Why is { Length: > 0 }))
+                                            {
+                                                <div class="mtp-us-block" data-testid="mtp-story-why"><span class="mtp-ctx-label">Hvorfor denne prioriteten</span>
+                                                    <div class="mtp-us-compare" data-testid="mtp-story-why-compare">
+                                                        <p><span class="mtp-lang-tag">Norsk</span> @nbStory.Why</p>
+                                                        <p><span class="mtp-lang-tag">Original</span> @ogStory.Why</p>
+                                                    </div></div>
+                                            }
+                                            else if (shown.Why is { Length: > 0 } why2)
+                                            {
+                                                <div class="mtp-us-block" data-testid="mtp-story-why"><span class="mtp-ctx-label">Hvorfor denne prioriteten</span><p>@why2</p></div>
+                                            }
+                                            @if (shown.IndependentTest is { Length: > 0 } independent)
+                                            {
+                                                <div class="mtp-us-block" data-testid="mtp-story-independent">
+                                                    <span class="mtp-ctx-label">Uavhengig test</span>
+                                                    @if (storyCompare)
+                                                    {
+                                                        <div class="mtp-us-compare" data-testid="mtp-story-independent-compare">
+                                                            <p class="mtp-quote"><span class="mtp-lang-tag">Norsk</span> @nbStory.IndependentTest</p>
+                                                            <p class="mtp-quote"><span class="mtp-lang-tag">Original</span> @ogStory.IndependentTest</p>
+                                                        </div>
+                                                    }
+                                                    else { <p class="mtp-quote">@independent</p> }
+                                                    <ul class="mtp-objectives">
+                                                        @foreach (var oc in objectives)
+                                                        {
+                                                            <li class="mtp-objective" data-covered="@(oc.Covered ? "true" : "false")" data-testid="mtp-objective"
+                                                                title="@(oc.Covered ? "Ser ut til å dekkes av: " + string.Join(", ", oc.CaseTitles.Take(3)) : "Ikke funnet i planens testtilfeller")">
+                                                                <span class="tdp-mark" aria-hidden="true">@(oc.Covered ? "✓" : "○")</span>
+                                                                <span class="mtp-obj-text">@oc.Objective.Text</span>
+                                                                @if (oc.Objective.NeedsReview) { <span class="msb-tag" title="Delt opp av BirkNext — sjekk mot originalteksten.">tolket</span> }
+                                                                @if (oc.Covered) { <span class="mtp-obj-cov is-ok" data-testid="mtp-objective-covered">dekket</span> }
+                                                                else { <span class="mtp-obj-cov is-gap" data-testid="mtp-objective-gap">mangler</span> }
+                                                            </li>
+                                                        }
+                                                    </ul>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </section>
                             }
+                            @* The scenario the selected case comes from: its acceptance criterion number, never "US1 — …" (the card above names the story). *@
+                            <h3 class="mtp-scenario-heading" data-testid="mtp-scenario-heading">@P.ScenarioHeading(current)</h3>
 
                             var hasNb = _form.HasTranslation;
                             var showO = _lang != EditorLanguage.Norwegian;
@@ -587,7 +622,7 @@
                                 {
                                     <div class="mtp-ctx" data-testid="mtp-ctx-story">
                                         <span class="mtp-ctx-label">Brukerhistorie</span>
-                                        <span>@(story.StoryId is { Length: > 0 } sid ? $"{sid} — " : "")@story.Title
+                                        <span>@if (story.StoryId is { Length: > 0 } sid) { <span class="mtw-us">@sid</span> } @BirkNext.Web.Services.ScenarioWorkspacePresentation.StoryTitle(story)
                                             @if (P.IsTechnicalStory(story)) { <span class="msb-tag" data-testid="mtp-ctx-story-technical">teknisk</span> }</span>
                                     </div>
                                 }
@@ -714,6 +749,7 @@
     private bool _loading = true, _busy, _showTechnical, _archiveAsk, _excludeAsk, _translationAvailable = true;
     /// <summary>The editor's language view; reset to the default (Norsk when a translation exists) for each case.</summary>
     private EditorLanguage _lang = EditorLanguage.Original;
+    private bool _storyOpen;
     private string _query = string.Empty, _tool = "cases", _excludeWhy = string.Empty, _conflictText = string.Empty, _conflictWhy = string.Empty;
     private string? _error, _notice, _selectedId, _conflictChoice;
     private ManualTestingWorkspace.Snapshot? _ws;

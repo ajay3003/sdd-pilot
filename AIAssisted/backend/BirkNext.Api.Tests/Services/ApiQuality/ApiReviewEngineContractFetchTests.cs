@@ -106,10 +106,16 @@ public sealed partial class ApiReviewEngineTests
             await stream.WriteAsync(body);
         });
         using var http = new HttpClient(ContractSourcePolicy.CreateHandler());
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         var result = await new ContractSourceFetcher(http).FetchAsync($"http://127.0.0.1:{port}/openapi.yaml", CancellationToken.None);
-        await serve;
+        var elapsed = clock.Elapsed;
+        var served = await Task.WhenAny(serve, Task.Delay(TimeSpan.FromSeconds(5))) == serve;
 
-        Assert.Equal(ContractFetchStatus.Fetched, result.Status);
+        // Diagnostics (2026-11-25): this fails only inside the full parallel suite (20 s fetch timeout → Unreachable); name the cause when it does.
+        Assert.True(result.Status == ContractFetchStatus.Fetched,
+            $"Expected Fetched, got {result.Status} after {elapsed.TotalSeconds:F1}s; problem: {result.Problem}; server accepted+answered: {served} ({serve.Status}{(serve.Exception is { } sx ? ": " + sx.GetBaseException().Message : "")}); "
+            + $"threadpool threads={System.Threading.ThreadPool.ThreadCount} pending={System.Threading.ThreadPool.PendingWorkItemCount}; UseProxy default proxy for target: {HttpClient.DefaultProxy.GetProxy(new Uri($"http://127.0.0.1:{port}/"))?.ToString() ?? "none"}");
+        await serve;
         Assert.Equal("openapi: 3.0.3", result.Text);
         Assert.Equal(64, result.Sha256!.Length);
     }

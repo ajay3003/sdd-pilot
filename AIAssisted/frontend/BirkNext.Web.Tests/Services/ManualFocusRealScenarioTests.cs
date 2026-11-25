@@ -79,7 +79,7 @@ public sealed class ManualFocusRealScenarioTests
         var items = Items();
         foreach (var i in items.Where(i => i.Candidate.Story is not null))
         {
-            W.ScenarioLabel(i).Should().Be($"Scenario {i.Candidate.NumberInStory}");
+            W.ScenarioLabel(i).Should().Be($"AC {i.Candidate.NumberInStory}");
             W.RowTitle(i).Should().NotStartWith(i.Candidate.Story!.StoryId + " — ");
             TestDesignAdvisor.FactsOf(i.Candidate).SourceText.Should().Contain(i.Candidate.Template[0].Value!, "Gitt / Når / Så are the source's own words");
         }

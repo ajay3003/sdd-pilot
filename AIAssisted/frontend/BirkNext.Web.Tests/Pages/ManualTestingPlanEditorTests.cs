@@ -242,10 +242,39 @@ public sealed partial class ManualTestingPlanTests
 
         story.HasAttribute("open").Should().BeFalse("collapsed by default — the case is the work");
         cut.Find("[data-testid=mtp-story-priority]").TextContent.Should().Be("P1");
+        cut.Find("[data-testid=mtp-story-toggle]").Click(); // 2026-11-25: rationale and Independent Test are one click away
         cut.Find("[data-testid=mtp-story-why]").TextContent.Should().Contain("the child's national identifier must stop here");
         cut.FindAll("[data-testid=mtp-story-ref]").Select(e => e.TextContent).Should().Equal("US-B1", "US-B2", "US-B3");
         cut.FindAll("[data-testid=mtp-story-ref]").Select(e => e.TextContent).Should().NotContain("US1");
         cut.Find("[data-testid=mtp-story-independent] .mtp-quote").TextContent.Should().Be(SkoleUs1.IndependentTest);
+    }
+
+    [Fact]
+    public void L13b_the_user_story_follows_the_editor_language_and_Sammenlign_shows_every_field_in_both_languages()
+    {
+        var nb = new StoryTranslation
+        {
+            StoryKey = SkoleUs1.Key, Title = "Godta en gyldig rapport uten å beholde barnets fødselsnummer", Description = "En privat institusjon sender inn en måneds fravær.",
+            WhyThisPriority = "Uten godtatte rapporter er det ingenting å levere.", IndependentTest = "Send inn gyldige og ugyldige rapporter og kontroller resultatet.",
+            SourceFingerprint = ScenarioPlanning.StoryFingerprint(SkoleUs1), Provider = "offline",
+        };
+        Setup(Plan(Translated(Case("c1", "Accept a valid report", story: SkoleUs1))) with { StoryTranslations = [nb] });
+        var cut = Open();
+
+        Choose(cut, EditorLanguage.Original);
+        cut.Find("[data-testid=mtp-story-title]").TextContent.Should().Be(SkoleUs1.Title, "Original is always the source text");
+        Choose(cut, EditorLanguage.Norwegian);
+        cut.Find("[data-testid=mtp-story-title]").TextContent.Should().Be(nb.Title);
+        cut.Find("[data-testid=mtp-story-description]").TextContent.Should().Be(nb.Description);
+
+        Choose(cut, EditorLanguage.Compare);
+        cut.Find("[data-testid=mtp-story-toggle]").Click();
+        cut.Find("[data-testid=mtp-story-title]").TextContent.Should().Be(nb.Title);
+        cut.Find("[data-testid=mtp-story-title-original]").TextContent.Should().Contain(SkoleUs1.Title);
+        cut.Find("[data-testid=mtp-story-compare]").TextContent.Should().Contain(nb.Description).And.Contain("A private institution or a foster home");
+        cut.Find("[data-testid=mtp-story-why-compare]").TextContent.Should().Contain(nb.WhyThisPriority).And.Contain(SkoleUs1.WhyThisPriority);
+        cut.Find("[data-testid=mtp-story-independent-compare]").TextContent.Should().Contain(nb.IndependentTest).And.Contain(SkoleUs1.IndependentTest);
+        cut.FindAll("[data-testid=mtp-story-untranslated]").Should().BeEmpty();
     }
 
     [Fact]
@@ -256,15 +285,16 @@ public sealed partial class ManualTestingPlanTests
         var excluded = Case("c3", "Flags on inconsistent reports", expected: "The flags are set", story: SkoleUs1, review: TestCaseReviewState.Excluded);
         Setup(Plan(stored, rejected, excluded));
         var cut = Open();
+        cut.Find("[data-testid=mtp-story-toggle]").Click();
 
         var rows = cut.FindAll("[data-testid=mtp-objective]");
         rows.Should().HaveCount(7, "three conditions and four verifications");
         var covered = rows.Where(r => r.GetAttribute("data-covered") == "true").Select(r => r.QuerySelector(".mtp-obj-text")!.TextContent).ToList();
         covered.Should().Contain("the stored outcome").And.Contain("the rejection reasons");
         covered.Should().NotContain("the flags", "an excluded case covers nothing");
-        rows.Single(r => r.TextContent.Contains("the rejection reasons")).TextContent.Should().Contain("Reject an invalid report");
-        cut.Find("[data-testid=mtp-story-coverage]").TextContent.Should().MatchRegex(@"^\d av 7 testmål funnet i planen$");
-        rows.Where(r => r.QuerySelector(".mtp-obj-kind")!.TextContent == "Situasjon").Should().OnlyContain(r => r.TextContent.Contains("tolket"), "split conditions are marked as interpretation");
+        rows.Single(r => r.TextContent.Contains("the rejection reasons")).GetAttribute("title").Should().Contain("Reject an invalid report", "the covering cases are named on demand (tooltip)");
+        cut.Find("[data-testid=mtp-story-coverage]").TextContent.Should().MatchRegex(@"^\d/7 testmål$");
+        rows.Where(r => r.TextContent.Contains("tolket")).Should().NotBeEmpty("split conditions are marked as interpretation");
     }
 
     // ── Quality guidance ──────────────────────────────────────────────────────────────────────────────────────

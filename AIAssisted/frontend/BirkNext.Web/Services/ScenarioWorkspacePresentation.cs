@@ -44,11 +44,15 @@ public static class ScenarioWorkspacePresentation
 
     /// <summary>The story's own title without the heading's "User Story 1 -" prefix and "(Priority: P1)" suffix (shown as chips); the stored title
     /// is unchanged. Anything else is kept as written.</summary>
-    public static string StoryTitle(CoverageUserStory s)
+    public static string StoryTitle(CoverageUserStory s) => CleanStoryTitle(s.Title);
+
+    /// <summary>A story title without its "User Story 1 - " / "Brukerhistorie 1 - " prefix and "(Priority: P1)" / "(Prioritet: P1)" suffix — also
+    /// for a translated title.</summary>
+    public static string CleanStoryTitle(string title)
     {
-        var t = System.Text.RegularExpressions.Regex.Replace(s.Title.Trim(), @"^(?:User\s+Story|Brukerhistorie|US)\s*-?\s*\w*\d+\w*\s*[-–—:]\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var t = System.Text.RegularExpressions.Regex.Replace(title.Trim(), @"^(?:User\s+Story|Brukerhistorie|US)\s*-?\s*\w*\d+\w*\s*[-–—:]\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         t = System.Text.RegularExpressions.Regex.Replace(t, @"\s*\((?:Priority|Prioritet)\s*:\s*[^)]*\)\s*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        return t.Length > 0 ? t : s.Title;
+        return t.Length > 0 ? t : title;
     }
 
     /// <summary>The user stories of the discovery in specification order, then «Uten brukerhistorie» when some scenarios have none. The feature
@@ -83,8 +87,16 @@ public static class ScenarioWorkspacePresentation
     }
 
     /// <summary>"Scenario 2" for the second acceptance scenario of its story (the number the specification gives); otherwise the scenario type.</summary>
+    /// <summary>A story's acceptance scenario is named by its acceptance criterion number within the story ("AC 3", 2026-11-25); the story is shown
+    /// beside it, so the title never repeats "US1 — ".</summary>
     public static string ScenarioLabel(S.Item i) =>
-        i.Candidate.Story is not null && i.Candidate.NumberInStory is { } n ? $"Scenario {n}" : i.TypeLabel;
+        i.Candidate.Story is not null && i.Candidate.NumberInStory is { } n ? AcLabel(n) : i.TypeLabel;
+
+    public static string AcLabel(int number) => $"AC {number}";
+
+    /// <summary>The scenario title in the detail pane: "AC 3 — <title>" for a story's acceptance scenario, never "US1 — …"; else the title.</summary>
+    public static string DetailTitle(S.Item i) =>
+        i.Candidate.Story is not null && i.Candidate.NumberInStory is { } n ? $"{AcLabel(n)} — {RowTitle(i)}" : i.Title;
 
     /// <summary>The row title under a "Scenario N" label: the display title without its leading "US1 — " (the label and the story already say it).</summary>
     public static string RowTitle(S.Item i) =>
