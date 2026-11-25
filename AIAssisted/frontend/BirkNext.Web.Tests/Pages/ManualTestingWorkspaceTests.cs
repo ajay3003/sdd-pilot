@@ -177,4 +177,19 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.Find("[data-testid=mt-readiness-counts]").TextContent.Should().Contain("Ikke klar til kjøring").And.Contain("Uten koblet testdata");
         cut.Find("[data-testid=mt-count-executed]").TextContent.Should().Be("Registreres i Azure DevOps", "no execution or pass count is invented");
     }
+
+    [Fact]
+    public void V1_with_execution_in_BirkNext_on_the_landing_page_says_results_are_also_in_BirkNext_and_still_shows_no_pass_number()
+    {
+        // v1.0 acceptance (2026-11-25): «Registreres i Azure DevOps» was shown even when testers record runs in BirkNext.
+        var runs = new Moq.Mock<IManualTestRunsApiService>();
+        runs.Setup(x => x.AvailabilityAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        Services.AddSingleton(runs.Object);
+        Setup([new(PlanId, "project:library", "Library – test plan", null, 3, 10, 4, 1, 2, 6, 7, "anna", DateTimeOffset.UtcNow)], Discovery(4));
+        var cut = Open<ManualTesting>("manual-testing");
+
+        var executed = cut.Find("[data-testid=mt-count-executed]");
+        executed.TextContent.Should().StartWith("Registreres i Azure DevOps og i BirkNext").And.NotMatchRegex(@"\d");
+        cut.Find("[data-testid=mt-run-history]").GetAttribute("href").Should().Be("manual-testing/run");
+    }
 }

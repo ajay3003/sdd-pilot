@@ -724,9 +724,10 @@
                                             }
                                         </ul>
                                     }
-                                    else
+                                    @* Both kinds are listed (v1.0 acceptance 2026-11-25): a fetched Azure DevOps result used to hide every BirkNext run of the case. *@
+                                    @if (caseRuns.Count > 0)
                                     {
-                                        <ul class="mtp-run-list">
+                                        <ul class="mtp-run-list" aria-label="Gjennomført i BirkNext">
                                             @foreach (var run in caseRuns.Take(10))
                                             {
                                                 var earlier = run.CaseFingerprint != currentFingerprint;

@@ -650,21 +650,47 @@ public static class TestScenarioDiscoveryEngine
         var scenarioHolders = merged.Select(c => ScenarioKey(c)).OfType<string>().GroupBy(k => k, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
         var byScenario = (scenarioLinks ?? []).GroupBy(l => $"{l.Module}|{l.StoryId.ToUpperInvariant()}|{l.Number}", StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Select(l => l.Test).ToList(), StringComparer.OrdinalIgnoreCase);
-        var sharing = merged.SelectMany(c => c.RequirementIds.Select(r => (Req: Norm(r), c.CandidateId, c.CapabilityId))).GroupBy(x => x.Req).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        var sharing = merged.SelectMany(c => c.RequirementIds.Select(r => (Req: Norm(r), c.CandidateId, c.CapabilityId, Module: SpecModule(c)))).GroupBy(x => x.Req).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        // Requirement ids are local to a specification (v1.0 acceptance 2026-11-25): in a repository of several modules, FR-025 of SkoleService is not
+        // FR-025 of PersonService. A scenario whose specification is <M>/specs/… is given only requirement-based tests of module M when M has tests of
+        // its own and tests exist in at least two modules (decided per scenario: a discovery often covers one module only). A specification at the root,
+        // or a module without its own tests (e.g. MyApp/specs + MyApp.Tests), keeps the project-wide match. Possible duplicates never cross two
+        // different <M>/specs modules.
+        var testModules = links.Select(l => ModuleOf(l.Test.File)).Where(m => m.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        bool ScopedTo(string? m) => m is not null && testModules.Count >= 2 && testModules.Contains(m);
+        static bool SameModule(string? scenarioModule, string? otherModule) =>
+            scenarioModule is null || otherModule is null || string.Equals(scenarioModule, otherModule, StringComparison.OrdinalIgnoreCase);
         return [.. merged.Select(c =>
         {
             var key = ScenarioKey(c);
+            var module = SpecModule(c);
+            var moduleScoped = ScopedTo(module);
             var named = key is not null && byScenario.TryGetValue(key, out var found) ? found : [];
             if (key is not null && scenarioHolders.GetValueOrDefault(key) > 1)
                 named = [.. named.Select(t => t with { Confirmed = false, Basis = t.Basis + " — the module has this story and scenario number in more than one specification" })];
-            var tests = named.Concat(c.RequirementIds.SelectMany(r => byRequirement.GetValueOrDefault(Norm(r)) ?? [])).DistinctBy(t => t.TestId).Take(20).ToList();
-            var duplicates = c.RequirementIds.SelectMany(r => sharing.GetValueOrDefault(Norm(r)) ?? []).Where(x => x.CandidateId != c.CandidateId && x.CapabilityId != c.CapabilityId)
+            var tests = named.Concat(c.RequirementIds.SelectMany(r => byRequirement.GetValueOrDefault(Norm(r)) ?? [])
+                .Where(t => !moduleScoped || string.Equals(ModuleOf(t.File), module, StringComparison.OrdinalIgnoreCase)))
+                .DistinctBy(t => t.TestId).Take(20).ToList();
+            var duplicates = c.RequirementIds.SelectMany(r => sharing.GetValueOrDefault(Norm(r)) ?? [])
+                .Where(x => x.CandidateId != c.CandidateId && x.CapabilityId != c.CapabilityId && SameModule(module, x.Module))
                 .Select(x => x.CandidateId).Distinct(StringComparer.Ordinal).Take(5).ToList();
             return c with { ExistingTests = tests, PossibleDuplicates = duplicates };
         }).OrderBy(c => c.SourceCategory, StringComparer.Ordinal).ThenBy(c => c.Area ?? "￿", StringComparer.CurrentCultureIgnoreCase).ThenBy(c => c.Title, StringComparer.CurrentCultureIgnoreCase)];
     }
 
     private static string Norm(string requirementId) => requirementId.Trim().ToUpperInvariant();
+
+    /// <summary>The module of a scenario's specification when the repository is laid out by module ("SkoleService/specs/001-…/spec.md" →
+    /// "SkoleService"): from its user story, else from its requirement evidence ("SkoleService/specs/001-…/spec.md#FR-025" — a scenario derived from
+    /// a requirement has no story). Null for a specification at the root ("specs/001/spec.md") or a scenario without one.</summary>
+    public static string? SpecModule(DiscoveredScenario c) =>
+        PathModule(c.Story?.SpecificationPath) ?? c.Evidence.Select(e => PathModule(e.Reference.Split('#')[0])).FirstOrDefault(m => m is not null);
+
+    private static string? PathModule(string? specificationPath)
+    {
+        var parts = (specificationPath ?? "").Replace('\\', '/').TrimStart('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 3 && parts[1].Equals("specs", StringComparison.OrdinalIgnoreCase) && parts[^1].EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? parts[0] : null;
+    }
 
     // ── Candidate → Test Case content ────────────────────────────────────────────────────────────────────────
 

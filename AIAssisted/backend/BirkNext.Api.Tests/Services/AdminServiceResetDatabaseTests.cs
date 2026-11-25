@@ -87,14 +87,17 @@ public sealed class AdminServiceResetDatabaseTests : IAsyncLifetime
         }
         await using var db = Db();
 
-        var (success, message, _, _) = await Service(db).ResetLocalDatabaseAsync(BirkNext.Api.Services.LocalDataReset.LocalDataResetCoordinator.SettingsEntityTypes);
+        // The keep list the coordinator passes for "Reset project data, keep settings": the settings tables plus the Azure DevOps export settings,
+        // which only Reset everything removes (c6ecf05b moved them out of SettingsEntityTypes; v1.0 acceptance 2026-11-25 aligned this test).
+        IReadOnlyCollection<Type> keep = [.. BirkNext.Api.Services.LocalDataReset.LocalDataResetCoordinator.SettingsEntityTypes,
+            .. BirkNext.Api.Services.LocalDataReset.LocalDataResetCoordinator.ResetEverythingOnlyEntityTypes];
+        var (success, message, _, _) = await Service(db).ResetLocalDatabaseAsync(keep);
 
         success.Should().BeTrue(message);
         (await CountAsync("integration_suites")).Should().Be(0, "project data is removed");
         (await CountAsync("integration_suite_runs")).Should().Be(0);
         (await CountAsync("execution_retention_settings")).Should().Be(1, "settings are kept");
-        (await CountAsync("ado_export_profiles")).Should().Be(1);
-    }
+        (await CountAsync("ado_export_profiles")).Should().Be(1, "Azure DevOps export settings are removed only by Reset everything");    }
 
     [Fact]
     public async Task A_model_table_missing_in_the_database_is_refused_before_anything_is_deleted()

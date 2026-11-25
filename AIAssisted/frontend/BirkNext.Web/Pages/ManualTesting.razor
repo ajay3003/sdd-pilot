@@ -125,11 +125,11 @@
                     <div class="@(missingExpected > 0 ? "is-warn" : null)"><dt>Mangler forventet resultat</dt><dd data-testid="mt-count-missing-expected">@missingExpected av @cases</dd></div>
                     <div class="@(missingData > 0 ? "is-warn" : null)"><dt>Uten koblet testdata</dt><dd data-testid="mt-count-missing-data">@missingData av @cases</dd></div>
                     <div class="@(blocked > 0 ? "is-warn" : null)"><dt>Ikke klar til kjøring</dt><dd data-testid="mt-count-blocked">@blocked av @cases</dd></div>
-                    <div><dt>Gjennomført / bestått</dt><dd data-testid="mt-count-executed">Registreres i Azure DevOps</dd></div>
+                    <div><dt>Gjennomført / bestått</dt><dd data-testid="mt-count-executed">@if (_executionEnabled) { <text>Registreres i Azure DevOps og i BirkNext · </text><a href="manual-testing/run" data-testid="mt-run-history">Se kjøringshistorikk</a> } else { <text>Registreres i Azure DevOps</text> }</dd></div>
                 </dl>
                 <p class="mt-muted msb-small" data-testid="mt-readiness-basis">Av alle testtilfeller i lagrede testplaner; utelatte testtilfeller telles ikke som mangler. «Uten koblet testdata» gjelder også testtilfeller som ikke trenger testdata.</p>
             }
-            <p class="mt-muted msb-small mt-boundary">Tallene kommer fra lagrede data. Et forslag er ikke et testtilfelle, og et forberedt, godkjent eller overført testtilfelle er ikke en kjørt test: manuelle tester kjøres, og resultatene registreres, i Azure DevOps Test Plans.</p>
+            <p class="mt-muted msb-small mt-boundary">Tallene kommer fra lagrede data. Et forslag er ikke et testtilfelle, og et forberedt, godkjent eller overført testtilfelle er ikke en kjørt test: manuelle tester kjøres, og resultatene registreres, i Azure DevOps Test Plans@(_executionEnabled ? " eller i BirkNext (Testgjennomføring er slått på)" : "").</p>
         }
         else
         {
@@ -152,7 +152,9 @@
     /// <summary>A test plan id: open «Overfør testplan» for it.</summary>
     [SupplyParameterFromQuery(Name = "transfer")] public string? TransferQuery { get; set; }
 
-    private ITestPlanSuggestionsApiService? Api => ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
+    /// <summary>Execution in BirkNext is switched on (System settings; off by default): results are then recorded in BirkNext too.</summary>
+    private bool _executionEnabled;
+    private ITestPlanSuggestionsApiService? Api =>ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
     private bool _loading = true;
     private ManualTestingWorkspace.Snapshot? _ws;
     private ICurrentWorkspaceProjection? _projection;
@@ -194,6 +196,9 @@
         {
             _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(requirements: true);
             if (_ws.ProjectKey is { } key) _selection = await TabDraftStore.ReadAsync<List<string>>(JS, TabDraftStore.SelectionKey(key)) ?? [];
+            // v1.0 acceptance (2026-11-25): with execution in BirkNext switched on, results are not only in Azure DevOps — say where they are.
+            if (ServiceProvider.GetService(typeof(IManualTestRunsApiService)) is IManualTestRunsApiService runs)
+                try { _executionEnabled = await runs.AvailabilityAsync(); } catch (Exception e) when (e is not OperationCanceledException) { _executionEnabled = false; }
         }
         finally { _loading = false; }
     }

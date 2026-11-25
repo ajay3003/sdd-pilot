@@ -154,6 +154,51 @@ public sealed class ScenarioTestReferenceTests
     }
 
     [Fact]
+    public void V1_the_same_FR_number_in_two_modules_is_two_requirements_tests_and_duplicates_stay_in_their_own_module()
+    {
+        // v1.0 acceptance (2026-11-25), found on the real M2LB package: SkoleService FR-025 listed PersonService's and TjenesteService's tests that name
+        // their own FR-025, and «7 automatiske tester refererer kravet» counted them.
+        static CandidateTestAssociation In(string id, string file) => new(id, id, file, "The test references FR-025", true) { Origin = TestScenarioLinkOrigin.SharedRequirement };
+        var skole = Scenario("skole-fr25", "SkoleService/specs/001-skoleservice/spec.md", "US3", 1, "FR-025");
+        var person = Scenario("person-fr25", "PersonService/specs/001-person-module/spec.md", "US2", 1, "FR-025") with { CapabilityId = ScenarioOwnership.ApiContract };
+        var skole2 = Scenario("skole-api-fr25", "SkoleService/specs/001-skoleservice/spec.md", "US3", 2, "FR-025") with { CapabilityId = ScenarioOwnership.ApiContract };
+        var links = new List<RequirementTestLink>
+        {
+            new("FR-025", In("t-skole", "SkoleService/tests/S.Tests/LockTests.cs:10")),
+            new("FR-025", In("t-person", "PersonService/tests/P.Tests/OutboxPatternTests.cs:78")),
+            new("FR-025", In("t-tjeneste", "TjenesteService/tests/T.Tests/HealthTests.cs:5")),
+        };
+
+        var final = D.Finalize("p", "snap", [skole, person, skole2], links).ToDictionary(c => c.CandidateId);
+
+        final["skole-fr25"].ExistingTests.Select(t => t.TestId).Should().Equal(["t-skole"], "PersonService's FR-025 is another requirement");
+        final["person-fr25"].ExistingTests.Select(t => t.TestId).Should().Equal(["t-person"]);
+        final["skole-fr25"].PossibleDuplicates.Should().Equal(["skole-api-fr25"], "a possible duplicate is in the same module, never PersonService's FR-025");
+        final["person-fr25"].PossibleDuplicates.Should().BeEmpty();
+
+        // A scenario derived from the requirement itself has no story: its module comes from its requirement evidence (the real M2LB candidate).
+        var fromRequirement = Scenario("req-fr25", "", "", 0, "FR-025") with
+        {
+            Story = null, NumberInStory = null, Evidence = [new CandidateEvidenceRef("requirement", "SkoleService/specs/001-skoleservice/spec.md#FR-025")],
+        };
+        D.SpecModule(fromRequirement).Should().Be("SkoleService");
+        // As on the real package: the discovery holds ONLY the chosen SkoleService specification's scenarios, while the inventory has every module's tests.
+        D.Finalize("p", "snap", [fromRequirement], links).Single().ExistingTests.Select(t => t.TestId)
+            .Should().Equal(["t-skole"], "the requirement's own specification decides its module, also when no other module was discovered");
+
+        // One application with its test projects beside it (MyApp/specs + MyApp.Tests + MyApp.IntegrationTests): the module has no tests of its own folder,
+        // so nothing is filtered away.
+        var app = Scenario("app-fr25", "MyApp/specs/001/spec.md", "US1", 1, "FR-025");
+        D.Finalize("p", "snap", [app], [new("FR-025", In("t-unit", "MyApp.Tests/LockTests.cs:1")), new("FR-025", In("t-int", "MyApp.IntegrationTests/LockTests.cs:1"))])
+            .Single().ExistingTests.Select(t => t.TestId).Should().Equal("t-unit", "t-int");
+
+        // A single-module layout (specs/ at the root, tests in their own folder) keeps every test of the id: nothing to tell apart.
+        var single = D.Finalize("p", "snap", [Scenario("root-fr25", "specs/001/spec.md", "US1", 1, "FR-025")],
+            [new("FR-025", In("t-root", "tests/App.Tests/LockTests.cs:1")), new("FR-025", In("t-root2", "src/App.Tests/More.cs:1"))]).Single();
+        single.ExistingTests.Select(t => t.TestId).Should().Equal("t-root", "t-root2");
+    }
+
+    [Fact]
     public void T09_T10_the_same_test_is_listed_once_per_scenario_and_scenario_links_come_from_the_inventory_with_their_details()
     {
         var inventory = Discover(("SkoleService/tests/S.Integration/CorrectionTests.cs", Chain));

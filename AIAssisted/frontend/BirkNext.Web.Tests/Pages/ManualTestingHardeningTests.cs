@@ -57,6 +57,19 @@ public sealed class ManualTestingHardeningTests : BunitContext
     }
 
     [Fact]
+    public void V1_an_unchanged_source_is_never_shown_as_a_bare_Klar_beside_the_readiness_counts()
+    {
+        // v1.0 acceptance (2026-11-25): the badge is the plan's SOURCE status; a bare «Klar» read as «the test plan is ready» next to «Ikke klar til kjøring».
+        var ws = Workspace() with { PlanStatus = new() { [A] = new PlanSourceStatus { State = "Klar", Message = "Kilden er uendret." } } };
+        var cut = Render<SavedPlans>(p => p.Add(x => x.Workspace, ws).Add(x => x.Api, new Mock<ITestPlanSuggestionsApiService>().Object));
+
+        var badge = cut.Find("[data-testid=mt-plan-source]");
+        badge.TextContent.Should().Be("Kilde uendret");
+        badge.GetAttribute("data-state").Should().Be("Klar");
+        badge.GetAttribute("title").Should().Be("Kilden er uendret.");
+    }
+
+    [Fact]
     public void Archive_and_restore_use_the_revision_shown_and_reload_the_list()
     {
         var api = new Mock<ITestPlanSuggestionsApiService>();

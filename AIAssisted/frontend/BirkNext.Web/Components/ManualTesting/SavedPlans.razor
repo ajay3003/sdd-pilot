@@ -41,7 +41,7 @@
                     </div>
                     @if (!_archivedView && status is not null)
                     {
-                        <span class="msb-status msb-tone-@(status.State switch { "Klar" => "ok", "Må gjennomgås" or "Kilde mangler" => "warn", "Ny kildeversjon" => "info", _ => "muted" })" title="@status.Message" data-testid="mt-plan-source">@status.State</span>
+                        <span class="msb-status msb-tone-@(status.State switch { "Klar" => "ok", "Må gjennomgås" or "Kilde mangler" => "warn", "Ny kildeversjon" => "info", _ => "muted" })" title="@status.Message" data-testid="mt-plan-source" data-state="@status.State">@(status.State == "Klar" ? "Kilde uendret" : status.State)</span>
                     }
                     @if (_archivedView) { <span class="msb-status msb-tone-muted">Arkivert</span> }
                     <a class="btn btn-secondary btn-sm" href="@($"{M.PlanRoute}?draft={p.Id}")" data-testid="mt-plan-open">@(_archivedView ? "Vis" : "Åpne")</a>
