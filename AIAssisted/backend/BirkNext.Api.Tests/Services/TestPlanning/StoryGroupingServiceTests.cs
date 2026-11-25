@@ -62,6 +62,16 @@ public sealed class StoryGroupingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task V_kind_Begge_is_stored_as_a_scenario_decision()
+    {
+        var saved = await Service().ApplyAsync("m2lb", Spec, new StoryGroupingChangeRequest { ExpectedRevision = 0, RequirementCatalog = Catalog(),
+            Operations = [new StoryGroupingOperation { Kind = StoryGroupingOperationKind.SetScenarioTestKind, ScenarioId = "US1-AS3", StoryKey = "us1", TestKind = ScenarioTestKind.Both, DisplayId = "AC 3" }] }, "anna", default);
+        StoryGroupingEngine.TestKindDecision(saved, "US1-AS3")!.Kind.Should().Be(ScenarioTestKind.Both);
+        saved.History.Last().Detail.Should().StartWith("AC 3: Begge");
+        _db.StoryGroupings.Single().ContentJson.Should().Contain("\"Both\"");
+    }
+
+    [Fact]
     public async Task V02_a_stale_revision_is_refused_and_nothing_is_saved()
     {
         await Service().ApplyAsync("m2lb", Spec, Change(0, Add("FR-001")), "anna", default);

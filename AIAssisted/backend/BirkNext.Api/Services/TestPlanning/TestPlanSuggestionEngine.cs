@@ -386,6 +386,7 @@ public static partial class TestPlanSuggestionEngine
         Diff("Risk", b.Risk.ToString(), a.Risk.ToString());
         Diff("TestType", b.EffectiveType.ToString(), a.EffectiveType.ToString());
         Diff("ExecutionMethod", b.EffectiveExecutionMethod.ToString(), a.EffectiveExecutionMethod.ToString());
+        Diff("TestKind", b.Edits.TestKind?.ToString(), a.Edits.TestKind?.ToString());
         Diff("Performance", PerformanceText(b.Edits.Performance), PerformanceText(a.Edits.Performance));
         Diff("Testability", b.Testability.Summary + Facts(b.Testability), a.Testability.Summary + Facts(a.Testability));
         Diff("Review", b.Review.ToString(), a.Review.ToString());
@@ -458,7 +459,7 @@ public static partial class TestPlanSuggestionEngine
                     observation = c.EffectiveObservation, testability = c.Testability.Summary, unresolved = c.Missing, azureDevOpsTestCaseId = c.VerifiedAzureDevOpsTestCaseId,
                     // Type and method are separate; performance details travel whole (no Azure DevOps field holds them, so they are a structured
                     // section of the case description and never dropped). Empty when not stated — nothing is assumed.
-                    testType = c.EffectiveType.ToString(), executionMethod = c.EffectiveExecutionMethod.ToString(), performance = c.Edits.Performance,
+                    testType = c.EffectiveType.ToString(), executionMethod = c.EffectiveExecutionMethod.ToString(), testKind = c.Edits.TestKind?.ToString(), performance = c.Edits.Performance,
                     stepExpected = c.Generated.StepExpected.Count == 0 && c.Edits.StepExpected is null ? null : c.EffectiveStepExpected,
                     readiness = c.Testability.Readiness.ToString(), evidence = c.Generated.Evidence.Count == 0 ? null : c.Generated.Evidence,
                     template = c.Generated.Template.Count == 0 ? null : c.Generated.Template, priority = c.Edits.Priority, roles = c.Edits.Roles, dependencies = c.Edits.Dependencies,
@@ -478,6 +479,7 @@ public static partial class TestPlanSuggestionEngine
             foreach (var c in inSuite)
             {
                 text.AppendLine($"### {c.EffectiveTitle}  [{c.Review}; risk {c.Risk}; type {c.EffectiveType}; method {c.EffectiveExecutionMethod}]");
+                if (c.Edits.TestKind is { } testKind) text.AppendLine($"Testtype: {(testKind == ScenarioTestKind.Technical ? "Teknisk" : "Manuell")}");
                 if (c.EffectivePreconditions is { } pre) text.AppendLine($"Preconditions: {pre}");
                 var i = 1;
                 var stepExpected = c.EffectiveStepExpected;

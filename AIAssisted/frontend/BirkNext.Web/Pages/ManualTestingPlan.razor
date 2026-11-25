@@ -4,6 +4,8 @@
 @using BirkNext.Web.Services
 @using M = BirkNext.Web.Services.ManualTestingPresentation
 @using P = BirkNext.Web.Services.PlanPreparePresentation
+@using TC = BirkNext.Web.Services.TechnicalCoveragePresentation
+@using SC = BirkNext.Web.Services.SpecContextPresentation
 @implements IDisposable
 @inject IServiceProvider ServiceProvider
 @inject NavigationManager Nav
@@ -37,7 +39,12 @@
     {
         @if (_error is { } error)
         {
-            <p class="mt-alert" role="alert" data-testid="mtp-error">@error</p>
+            <p class="mt-alert" role="alert" data-testid="mtp-error">@error
+                <button type="button" class="msb-link" disabled="@_busy" @onclick="LoadAsync" data-testid="mtp-retry">Last inn på nytt</button></p>
+        }
+        @if (!_loading && _plan is not null && !CanWrite)
+        {
+            <p class="mtp-notice" role="status" data-testid="mtp-read-only">Du har lesetilgang til planen. Du kan se alt, men endringer kan ikke lagres.</p>
         }
         @if (_notice is { } notice)
         {
@@ -153,6 +160,10 @@
                         <div class="mtp-master-tools">
                             <input type="search" class="mtp-search" placeholder="Søk i scenarioer, krav …" aria-label="Søk" value="@_query" @oninput="e => _query = e.Value?.ToString() ?? string.Empty" data-testid="mtp-search" />
                             <label class="mtp-toggle"><input type="checkbox" checked="@_showTechnical" @onchange="e => _showTechnical = e.Value is true" data-testid="mtp-technical" /> Vis teknisk innhold</label>
+                            @if (CanWrite && !ReadOnlyPlan)
+                            {
+                                <button type="button" class="msb-link" disabled="@_busy" @onclick="() => OpenNewCaseAsync(null, null)" data-testid="mtp-new-case">+ Nytt testtilfelle</button>
+                            }
                             @if (!_showTechnical && hidden > 0)
                             {
                                 <span class="mt-muted msb-small" data-testid="mtp-hidden">@hidden teknisk@(hidden == 1 ? "" : "e") testtilfelle@(hidden == 1 ? "" : "r") skjult</span>
@@ -179,6 +190,7 @@
                                                 <button type="button" class="mtp-case @(id == _selectedId ? "is-selected" : null)" aria-current="@(id == _selectedId ? "true" : null)"
                                                         @onclick="() => SelectAsync(id)" data-testid="mtp-case" data-case="@id">
                                                     <span class="mtp-case-title">@(Dirty && id == _selectedId ? "● " : "")@c.EffectiveTitle</span>
+                                                    @if (c.Edits.TestKind is { } savedKind) { <span class="mtw-kind-tag is-@savedKind.ToString().ToLowerInvariant()" data-testid="mtp-case-kind" data-kind="@savedKind">@P.CaseKindLabel(savedKind)</span> }
                                                     <span class="msb-status msb-tone-@P.ReviewTone(c.Review)" data-testid="mtp-case-state">@P.ReviewLabel(c.Review)</span>
                                                     @if (c.HasUnresolvedConflict) { <span class="msb-status msb-tone-bad" data-testid="mtp-case-conflict">Kildekonflikt</span> }
                                                     else if (source is not null) { <span class="msb-status msb-tone-warn" data-testid="mtp-case-source">@source</span> }
@@ -188,7 +200,7 @@
                                     </ul>
                                     @if (CanWrite && !ReadOnlyPlan && row.Key.Length > 0)
                                     {
-                                        <button type="button" class="msb-link mtp-add-case" disabled="@_busy" @onclick="() => AddCaseAsync(row.Key, row.Title)" data-testid="mtp-add-case">+ Testtilfelle</button>
+                                        <button type="button" class="msb-link mtp-add-case" disabled="@_busy" @onclick="() => OpenNewCaseAsync(row.Key, row.Title)" data-testid="mtp-add-case">+ Testtilfelle</button>
                                     }
                                 </li>
                             }
@@ -196,6 +208,31 @@
                     </nav>
 
                     <section class="mtp-detail" aria-label="Testtilfelle" data-testid="mtp-detail">
+                        @if (_newCase is { } nc)
+                        {
+                            <section class="mtp-new" aria-label="Nytt testtilfelle" data-testid="mtp-new" data-scenario="@(nc.ScenarioKey ?? "")">
+                                <h3 class="mtp-new-title">Nytt testtilfelle</h3>
+                                <p class="mt-muted msb-small" data-testid="mtp-new-context">@(nc.ScenarioTitle is { } ncTitle ? $"Under scenarioet «{ncTitle}»." : "Skrives direkte i planen, uten scenario.")</p>
+                                <label class="msb-small">Tittel
+                                    <input type="text" class="mtp-lcell" value="@nc.Title" @oninput="e => nc.Title = e.Value?.ToString() ?? string.Empty" data-testid="mtp-new-title-input" /></label>
+                                <div class="mtw-kind">
+                                    <span class="mtp-ctx-label">Testtype</span>
+                                    <div class="mtw-seg" role="radiogroup" aria-label="Testtype for det nye testtilfellet">
+                                        @foreach (var (k, label) in new[] { (ScenarioTestKind.Manual, "Manuell"), (ScenarioTestKind.Technical, "Teknisk") })
+                                        {
+                                            var kind = k;
+                                            <button type="button" role="radio" class="mtw-seg-btn is-@kind.ToString().ToLowerInvariant()" aria-checked="@(nc.Kind == kind ? "true" : "false")"
+                                                    @onclick="() => nc.Kind = kind" data-testid="mtp-new-kind-option" data-kind="@kind">@label</button>
+                                        }
+                                    </div>
+                                </div>
+                                <p class="mt-muted msb-small" data-testid="mtp-new-kind-hint">@P.SuggestionText(nc.Suggestion)</p>
+                                <div class="mtp-new-actions">
+                                    <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || nc.Kind is null || string.IsNullOrWhiteSpace(nc.Title))" @onclick="CreateCaseAsync" data-testid="mtp-new-create">Legg til</button>
+                                    <button type="button" class="msb-link" @onclick="() => _newCase = null" data-testid="mtp-new-cancel">Avbryt</button>
+                                </div>
+                            </section>
+                        }
                         @if (_pending is not null)
                         {
                             <div class="mtp-unsaved" role="alertdialog" aria-label="Ulagrede endringer" data-testid="mtp-unsaved">
@@ -349,6 +386,48 @@
                             }
                             @* The scenario the selected case comes from: its acceptance criterion number, never "US1 — …" (the card above names the story). *@
                             <h3 class="mtp-scenario-heading" data-testid="mtp-scenario-heading">@P.ScenarioHeading(current)</h3>
+                            @* «Hva er allerede kontrollert?» (2026-11-25): the scenario's source tests as Finn og forstå reviews them; read-only here, never a result. *@
+                            @if (ScenarioCandidateOf(current) is { } scenarioCandidate)
+                            {
+                                var planTech = TC.Of(scenarioCandidate, PlanTechDecisions(scenarioCandidate), _ws?.Discovery?.TestsReadForScenarios ?? false);
+                                <details class="mtw-tech mtp-tech" data-testid="mtp-tech" data-state="@planTech.State">
+                                    <summary><span class="mtp-ctx-label">Hva er allerede kontrollert?</span> <span class="msb-status msb-tone-@planTech.Tone" data-testid="mtp-tech-state">@planTech.Label</span></summary>
+                                    @if (planTech.Tests.Count == 0)
+                                    {
+                                        <p class="mt-muted msb-small">@(planTech.State == TC.State.NotAssessed ? "Testene i kilden er ikke lest for scenariohenvisninger ennå." : "Ingen automatisk test i kilden nevner scenarioet.")</p>
+                                    }
+                                    else
+                                    {
+                                        <p class="mt-muted msb-small" data-testid="mtp-tech-result">@TC.NoResult. Vurder i Finn og forstå om et manuelt testtilfelle fortsatt trengs; automatiske tester fjerner ingenting her.</p>
+                                        <ul class="mtp-tech-list">
+                                            @foreach (var tr in planTech.Tests)
+                                            {
+                                                <li data-testid="mtp-tech-test" data-link="@tr.Link"><span class="mtw-tech-layer">@tr.Layer</span> @tr.ReadableName — <span class="msb-small">@TC.LinkLabel(tr.Link)@(tr.Link == TC.Link.Confirmed ? $", {TC.ExtentLabel(tr.Extent).ToLowerInvariant()}" : "")</span></li>
+                                            }
+                                        </ul>
+                                    }
+                                </details>
+                                @* «Fra spesifikasjonen» (2026-11-25): the same explicit-id context as Finn og forstå, when the scenario's specification is the one loaded. *@
+                                @if (PlanSpecItems(scenarioCandidate) is { Count: > 0 } planSpecItems)
+                                {
+                                    var planSpec = SC.For(planSpecItems, scenarioCandidate.RequirementIds, scenarioCandidate.Story?.StoryId);
+                                    <details class="mtw-spec mtp-spec" data-testid="mtp-spec-context" data-direct="@planSpec.Direct.Count">
+                                        <summary><span class="mtp-ctx-label">Fra spesifikasjonen</span> <span class="msb-small mt-muted">@SC.Summary(planSpec)</span></summary>
+                                        @foreach (var kind in SC.Order.Where(k => planSpec.Count(k, direct: true) > 0))
+                                        {
+                                            <div class="mtw-spec-group" data-kind="@kind"><span class="mtw-spec-heading">@SC.Heading(kind)</span>
+                                                <ul>@foreach (var item in planSpec.Direct.Where(i => i.Kind == kind))
+                                                {
+                                                    <li class="mtw-spec-item @(item.Historical ? "is-historical" : null)" data-testid="mtp-spec-item"><span class="mtw-spec-title">@(item.Id is { Length: > 0 } id && id != item.Title ? $"{id}: " : "")@item.Title</span>
+                                                        @if (item.Status is { } specStatus) { <span class="msb-tag">@specStatus</span> }
+                                                        @if (item.Text is { Length: > 0 } t) { <span class="mtw-spec-text">@t</span> }
+                                                        @if (item.StatusNote is { Length: > 0 } note) { <span class="mt-muted msb-small">@note</span> }</li>
+                                                }</ul></div>
+                                        }
+                                        <p class="mt-muted msb-small">Alle spesielle situasjoner, avklaringer, mål, avhengigheter og «Dette inngår ikke» finnes under «Fra spesifikasjonen» i Finn og forstå.</p>
+                                    </details>
+                                }
+                            }
 
                             var hasNb = _form.HasTranslation;
                             var showO = _lang != EditorLanguage.Norwegian;
@@ -405,6 +484,20 @@
                                     </div>
                                 }
 
+                                @{ var caseSuggestion = P.SuggestKind(ScenarioCaseOf(current), ScenarioDecision(ScenarioCaseOf(current))); }
+                                <div class="mtw-kind mtp-case-kind" data-testid="mtp-kind" data-kind="@(_form.TestKind?.ToString() ?? "")">
+                                    <span class="mtp-ctx-label">Testtype</span>
+                                    <div class="mtw-seg" role="radiogroup" aria-label="Testtype for testtilfellet">
+                                        @foreach (var (k, label) in new[] { (ScenarioTestKind.Manual, "Manuell"), (ScenarioTestKind.Technical, "Teknisk") })
+                                        {
+                                            var kind = k;
+                                            <button type="button" role="radio" class="mtw-seg-btn is-@kind.ToString().ToLowerInvariant()" aria-checked="@(_form.TestKind == kind ? "true" : "false")" disabled="@readonlyCase"
+                                                    @onclick="() => _form.TestKind = kind" data-testid="mtp-kind-option" data-kind="@kind">@label</button>
+                                        }
+                                    </div>
+                                    @if (_form.TestKind is null) { <span class="msb-status msb-tone-warn" data-testid="mtp-kind-unset">Ikke angitt</span> }
+                                    <span class="mt-muted msb-small" data-testid="mtp-kind-hint">@P.SuggestionText(caseSuggestion)</span>
+                                </div>
                                 @if (showO || showN)
                                 {
                                     @if (compare)
@@ -469,12 +562,37 @@
                                                 <option value="">+ Koble testdata …</option>
                                                 @foreach (var o in TestDataOptions.Where(o => !_form.TestDataAssetIds.Contains(o.AssetId)))
                                                 {
-                                                    <option value="@o.AssetId">@o.Alias@(o.Label is { Length: > 0 } l ? $" — {l}" : "")</option>
+                                                    <option value="@o.AssetId">@P.TestDataOptionLabel(o)</option>
                                                 }
                                             </select>
                                         }
                                     </div>
                                     @if (current.Generated.RequiredTestData is { Length: > 0 } required) { <span class="mt-muted msb-small" data-testid="mtp-testdata-source">Kilden sier: @required</span> }
+                                    @if (!readonlyCase && TestDataOptions.Count == 0)
+                                    {
+                                        <span class="mt-muted msb-small" data-testid="mtp-testdata-none">Ingen testdata er registrert for prosjektet ennå. <a href="test-data">Registrer testdata</a></span>
+                                    }
+                                </div>
+
+                                @* «Hva trenger du før du starter?» (2026-11-25): what the existing readiness needs from a person — how the result is observed, access and
+                                   environment, and anything that stops the test now. Saved with the case like every other field; nothing is filled in for the tester. *@
+                                <div class="mtp-before" data-testid="mtp-before">
+                                    <span class="mtp-ctx-label">Før du starter</span>
+                                    <label class="mtp-field">
+                                        <span>Slik ser du resultatet</span>
+                                        <textarea class="mtp-lcell mtp-auto" rows="2" value="@_form.ObservationMethod" @oninput="e => _form.ObservationMethod = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase"
+                                                  placeholder="@(current.Generated.ObservationMethod ?? "For eksempel: i skjermbildet, i en rapport, i loggen eller i en melding")" data-testid="mtp-observation"></textarea>
+                                    </label>
+                                    <label class="mtp-field">
+                                        <span>Tilgang og miljø</span>
+                                        <textarea class="mtp-lcell mtp-auto" rows="2" value="@_form.EnvironmentPrerequisites" @oninput="e => _form.EnvironmentPrerequisites = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase"
+                                                  placeholder="@(current.Generated.EnvironmentPrerequisites ?? "For eksempel: QA-miljø, rolle, tilganger og systemer som må være oppe")" data-testid="mtp-environment"></textarea>
+                                    </label>
+                                    <label class="mtp-field">
+                                        <span>Hindring (stopper testen nå)</span>
+                                        <textarea class="mtp-lcell mtp-auto" rows="2" value="@_form.BlockedBy" @oninput="e => _form.BlockedBy = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase"
+                                                  placeholder="Tom = ingen kjent hindring. Skriv hva som mangler, hvem som eier det og eventuelt dato." data-testid="mtp-blocked-by"></textarea>
+                                    </label>
                                 </div>
 
                                 @if (showO || showN)
@@ -555,6 +673,14 @@
                                 }
                             </div>
 
+                            @* «Historikk» (2026-11-25): who changed or reviewed this case, when and why — stored on the case, newest first; read-only. *@
+                            var history = P.CaseHistory(current);
+                            @if (history.Count > 0)
+                            {
+                                <details class="mtw-why mtp-history" data-testid="mtp-history"><summary>Historikk (@history.Count)</summary>
+                                    <ul>@foreach (var h in history) { <li data-testid="mtp-history-item"><span class="mt-muted msb-small">@h.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · @h.By</span> @h.What</li> }</ul>
+                                </details>
+                            }
                             @if (!readonlyCase)
                             {
                                 var problems = P.ReadyProblems(current);
@@ -808,6 +934,7 @@
         if (draft is null) { _error = P.Friendly(error, "Planen kunne ikke lastes."); return; }
         _plan = draft;
         _archiveAsk = _excludeAsk = false;
+        await LoadScenarioKindsAsync();
         var first = P.Rows(draft, _showTechnical).Rows.SelectMany(r => r.Cases).FirstOrDefault() ?? draft.Cases.FirstOrDefault();
         Open(_selectedId is { } keep && draft.Cases.Any(c => P.IdOf(c) == keep) ? keep : first is null ? null : P.IdOf(first));
     }
@@ -963,19 +1090,106 @@
         finally { _busy = false; }
     }
 
-    private async Task AddCaseAsync(string scenarioKey, string scenarioTitle)
+    /// <summary>The short create form (2026-11-25): a title and Manuell/Teknisk before the case exists. A reviewer's scenario decision may be
+    /// preselected; an unreviewed scenario's recommendation is only shown.</summary>
+    private sealed class NewCaseForm
+    {
+        public string? ScenarioKey { get; init; }
+        public string? ScenarioTitle { get; init; }
+        public string Title { get; set; } = "";
+        public ScenarioTestKind? Kind { get; set; }
+        public P.KindSuggestion? Suggestion { get; init; }
+    }
+
+    private NewCaseForm? _newCase;
+    private readonly Dictionary<string, Dictionary<string, TC.Decision>> _scenarioTests = new(StringComparer.OrdinalIgnoreCase);
+    private (string Path, IReadOnlyList<SC.Item> Items)? _planSpec;
+
+    /// <summary>The specification context for a scenario, only when its specification is the one loaded (built once, from the existing semantic model).</summary>
+    private IReadOnlyList<SC.Item> PlanSpecItems(DiscoveredScenario c)
+    {
+        if (_ws?.Specification is not { Status: BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.Loaded, Selected: { } sel, Content: { Length: > 0 } text }) return [];
+        var path = sel.SourcePath ?? sel.FileName;
+        if (c.Story?.SpecificationPath is not { } storySpec || !BirkNext.Specifications.SpecificationCatalogRules.SamePath(storySpec, path)) return [];
+        if (_planSpec is not { } cached || cached.Path != path)
+        {
+            try { _planSpec = (path, SC.Items(SpecExplorerService.BuildSemanticModel(SpecExplorerService.Parse(text), text))); }
+            catch (Exception e) when (e is not OperationCanceledException) { _planSpec = (path, []); }
+        }
+        return _planSpec.Value.Items;
+    }
+
+    /// <summary>The discovered scenario a case belongs to (its own scenario, or the parent scenario of a hand-written case).</summary>
+    private DiscoveredScenario? ScenarioCandidateOf(TestCaseDraft c) =>
+        c.ParentScenario is { } key ? _ws?.Discovery?.Candidates.FirstOrDefault(x => x.CandidateId == key) : null;
+
+    private IReadOnlyDictionary<string, TC.Decision> PlanTechDecisions(DiscoveredScenario c) =>
+        c.Story?.SpecificationPath is { } spec && _scenarioTests.TryGetValue(spec, out var d) ? d : new Dictionary<string, TC.Decision>();
+    private readonly Dictionary<string, Dictionary<string, ScenarioTestKindDecision>> _scenarioKinds = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The scenario a case belongs to (its own source case, or the discovered case of its parent scenario).</summary>
+    private TestCaseDraft? ScenarioCaseOf(TestCaseDraft? c) => c?.ParentScenario is { } key
+        ? _plan?.Cases.FirstOrDefault(x => x.Source.Kind != ScenarioSourceKind.Manual && x.Source.ScenarioId == key) : null;
+
+    private ScenarioTestKindDecision? ScenarioDecision(TestCaseDraft? scenarioCase) =>
+        scenarioCase?.Generated.Story?.SpecificationPath is { } spec && _scenarioKinds.TryGetValue(spec, out var decided)
+        && decided.TryGetValue(scenarioCase.Source.ScenarioId, out var d) ? d : null;
+
+    /// <summary>Reads (never writes) the reviewed Manuell/Teknisk decisions of the plan's specifications, once per specification.</summary>
+    private async Task LoadScenarioKindsAsync()
+    {
+        if (_plan?.ProjectKey is not { } key || Api is not { } api) return;
+        foreach (var spec in _plan.Cases.Select(c => c.Generated.Story?.SpecificationPath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (_scenarioKinds.ContainsKey(spec)) continue;
+            _scenarioKinds[spec] = [];
+            try
+            {
+                var (doc, _) = await api.StoryGroupingAsync(key, spec);
+                if (doc is not null)
+                {
+                    _scenarioKinds[spec] = StoryGroupingEngine.TestKindDecisions(doc).ToDictionary(kv => kv.Key, kv => StoryGroupingEngine.TestKindDecision(doc, kv.Key)!, StringComparer.Ordinal);
+                    _scenarioTests[spec] = StoryGroupingEngine.TestLinkDecisions(doc).ToDictionary(kv => kv.Key, kv => TC.ToDecision(kv.Value), StringComparer.Ordinal);
+                }
+            }
+            catch (Exception e) when (e is not OperationCanceledException) { } // no suggestion is shown; nothing is blocked
+        }
+    }
+
+    private async Task OpenNewCaseAsync(string? scenarioKey, string? scenarioTitle)
+    {
+        if (_plan is null) return;
+        await LoadScenarioKindsAsync();
+        var scenarioCase = scenarioKey is null ? null : _plan.Cases.FirstOrDefault(x => x.Source.Kind != ScenarioSourceKind.Manual && x.Source.ScenarioId == scenarioKey);
+        var suggestion = P.SuggestKind(scenarioCase, ScenarioDecision(scenarioCase));
+        _newCase = new NewCaseForm
+        {
+            ScenarioKey = scenarioKey, ScenarioTitle = scenarioTitle,
+            Title = scenarioTitle is { } st ? $"Nytt testtilfelle: {st}" : "",
+            Kind = suggestion?.Reviewed is ScenarioTestKind.Manual or ScenarioTestKind.Technical ? suggestion.Reviewed : null, Suggestion = suggestion,
+        };
+    }
+
+    private async Task CreateCaseAsync()
+    {
+        if (_newCase is not { Kind: { } kind } nc || string.IsNullOrWhiteSpace(nc.Title)) return;
+        await AddCaseAsync(nc.ScenarioKey, nc.Title.Trim(), kind);
+    }
+
+    private async Task AddCaseAsync(string? scenarioKey, string title, ScenarioTestKind kind)
     {
         if (_plan is null || Api is not { } api) return;
-        if (Dirty) { _pending = () => AddCaseAsync(scenarioKey, scenarioTitle); return; }
+        if (Dirty) { _pending = () => AddCaseAsync(scenarioKey, title, kind); return; }
         _busy = true; _error = null;
         try
         {
             var before = _plan.Cases.Select(P.IdOf).ToHashSet(StringComparer.Ordinal);
-            var (draft, error) = await api.AddManualCaseAsync(_plan.Id, new AddManualTestCaseRequest(_plan.Revision, $"Nytt testtilfelle: {scenarioTitle}", null, null, ScenarioKey: scenarioKey));
+            var (draft, error) = await api.AddManualCaseAsync(_plan.Id, new AddManualTestCaseRequest(_plan.Revision, title, null, null, ScenarioKey: scenarioKey, TestKind: kind));
             if (draft is null) { _error = P.Friendly(error, "Testtilfellet kunne ikke legges til."); return; }
             _plan = draft;
             Open(draft.Cases.Select(P.IdOf).FirstOrDefault(id => !before.Contains(id)) ?? _selectedId);
-            _notice = "Nytt testtilfelle lagt til. Skriv teststegene og lagre.";
+            _newCase = null;
+            _notice = $"Nytt testtilfelle lagt til ({P.CaseKindLabel(kind).ToLowerInvariant()}). Skriv teststegene og lagre.";
         }
         finally { _busy = false; }
     }

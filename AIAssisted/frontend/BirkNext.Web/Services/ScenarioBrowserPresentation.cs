@@ -20,7 +20,8 @@ public static partial class ScenarioBrowserPresentation
     public const int PageSize = 40;
 
     /// <summary>Manual (shown by default) or Technical (behind "Vis tekniske scenarioer").</summary>
-    public enum Relevance { Manual, Technical }
+    /// <summary>Manual or technical; <see cref="Both"/> only from a reviewer's «Begge» decision (never suggested automatically).</summary>
+    public enum Relevance { Manual, Technical, Both }
 
     public static Relevance RelevanceOf(DiscoveredScenario c, ScenarioOwnershipInfo o)
     {
@@ -126,6 +127,8 @@ public static partial class ScenarioBrowserPresentation
         public bool In(ScenarioWorkQueue queue) => Work?.Queues.Contains(queue) == true;
         /// <summary>The automatic suggestion when a reviewer chose the kind (2026-11-25); null = <see cref="Relevance"/> is the suggestion.</summary>
         public Relevance? AutomaticRelevance { get; init; }
+        /// <summary>«Hva er allerede kontrollert?» for the list and its filter (set by the page; null = not computed).</summary>
+        public TechnicalCoveragePresentation.State? Tech { get; init; }
         public bool KindDecided => AutomaticRelevance is not null;
         public Relevance Suggested => AutomaticRelevance ?? Relevance;
     }
@@ -141,7 +144,7 @@ public static partial class ScenarioBrowserPresentation
             var auto = i.Suggested;
             var inScope = specificationPath is not null && i.Candidate.Story?.SpecificationPath is { } p && BirkNext.Specifications.SpecificationCatalogRules.SamePath(p, specificationPath);
             return inScope && decided.TryGetValue(i.Id, out var k)
-                ? i with { Relevance = k == ScenarioTestKind.Technical ? Relevance.Technical : Relevance.Manual, AutomaticRelevance = auto }
+                ? i with { Relevance = k switch { ScenarioTestKind.Technical => Relevance.Technical, ScenarioTestKind.Both => Relevance.Both, _ => Relevance.Manual }, AutomaticRelevance = auto }
                 : i with { Relevance = auto, AutomaticRelevance = null };
         })];
 
@@ -154,7 +157,10 @@ public static partial class ScenarioBrowserPresentation
         return i.Suggested == Relevance.Manual ? "Atferd en tester kan observere." : "Teknisk kontrakt eller ikke-funksjonell kontroll.";
     }
 
-    public static string KindLabel(Relevance r) => r == Relevance.Technical ? "Teknisk" : "Manuell";
+    public static string KindLabel(Relevance r) => r switch { Relevance.Technical => "Teknisk", Relevance.Both => "Begge", _ => "Manuell" };
+
+    /// <summary>The stored decision value for a relevance (the scenario control's options).</summary>
+    public static ScenarioTestKind KindOf(Relevance r) => r switch { Relevance.Technical => ScenarioTestKind.Technical, Relevance.Both => ScenarioTestKind.Both, _ => ScenarioTestKind.Manual };
 
     /// <summary>The three test-kind views (2026-11-25): only manual (default), only technical, or both.</summary>
     public enum KindView { Manual, Technical, All }
@@ -214,7 +220,7 @@ public static partial class ScenarioBrowserPresentation
 
     /// <summary>All filters compose. <see cref="Queue"/> null = every scenario (Finn og forstå starts on <see cref="DefaultView"/>).</summary>
     public sealed record Filter(string Query = "", string? Area = null, string? Type = null, string? Status = null, string? Story = null, string? Requirement = null, bool Technical = false, bool All = false,
-        ScenarioWorkQueue? Queue = null, string? Priority = null, ExecutionApproach? Approach = null, bool OnlyTechnical = false);
+        ScenarioWorkQueue? Queue = null, string? Priority = null, ExecutionApproach? Approach = null, bool OnlyTechnical = false, string? Tech = null);
 
     /// <summary>The priority filter value for scenarios whose user story declares no priority (never guessed).</summary>
     public const string NoPriority = "(none)";
@@ -231,7 +237,7 @@ public static partial class ScenarioBrowserPresentation
 
     /// <summary>Filters behind «Flere filtre» that are set (status, type, user story, requirement, priority).</summary>
     public static int AdvancedFilterCount(Filter f) =>
-        new[] { f.Status, f.Type, f.Story, f.Requirement, f.Priority, f.Approach?.ToString() }.Count(v => v is not null);
+        new[] { f.Status, f.Type, f.Story, f.Requirement, f.Priority, f.Approach?.ToString(), f.Tech }.Count(v => v is not null);
 
     /// <summary>Whether search or any filter narrows the view (the queue and «Vis teknisk innhold» are views, not filters).</summary>
     public static bool HasFilters(Filter f) => f.Query.Length > 0 || f.Area is not null || AdvancedFilterCount(f) > 0;
@@ -257,8 +263,8 @@ public static partial class ScenarioBrowserPresentation
     {
         var words = f.Query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         bool Match(Item i) =>
-            (f.All || f.Technical || i.Relevance == Relevance.Manual)
-            && (!f.OnlyTechnical || i.Relevance == Relevance.Technical)
+            (f.All || f.Technical || i.Relevance != Relevance.Technical)
+            && (!f.OnlyTechnical || i.Relevance != Relevance.Manual)
             && (f.Area is null || i.Area == f.Area)
             && (f.Type is null || i.TypeLabel == f.Type)
             && (f.Status is null || i.Status.Key == f.Status)
@@ -267,6 +273,7 @@ public static partial class ScenarioBrowserPresentation
             && (f.Priority is null || (f.Priority == NoPriority ? string.IsNullOrEmpty(i.Candidate.Story?.Priority)
                 : string.Equals(i.Candidate.Story?.Priority, f.Priority, StringComparison.OrdinalIgnoreCase)))
             && (f.Approach is not { } approach || i.Suitability.Has(approach))
+            && (f.Tech is null || i.Tech is { } tech && TechnicalCoveragePresentation.Matches(tech, f.Tech))
             && words.All(w => $"{i.Title} {i.Candidate.Title} {i.Candidate.Purpose} {i.Area} {string.Join(' ', i.Candidate.RequirementIds)}".Contains(w, StringComparison.CurrentCultureIgnoreCase));
         bool InQueue(Item i) => f.Queue is not { } q || i.In(q);
         var shown = items.Where(i => InQueue(i) && Match(i)).ToList();

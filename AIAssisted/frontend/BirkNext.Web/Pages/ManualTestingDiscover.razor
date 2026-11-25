@@ -5,6 +5,8 @@
 @using M = BirkNext.Web.Services.ManualTestingPresentation
 @using S = BirkNext.Web.Services.ScenarioBrowserPresentation
 @using W = BirkNext.Web.Services.ScenarioWorkspacePresentation
+@using TC = BirkNext.Web.Services.TechnicalCoveragePresentation
+@using SC = BirkNext.Web.Services.SpecContextPresentation
 @using G = BirkNext.Web.Services.StoryGroupingPresentation
 @implements IDisposable
 @inject IServiceProvider ServiceProvider
@@ -335,7 +337,7 @@
                         var groupsNow = G.Tree(_groupMode, _profiles, _groupDoc, _sections);
                         var entries = railStories.Where(e => e.Story is not null).ToDictionary(e => e.Key);
                         var kindCounts = _items.Where(i => i.Candidate.Story is not null).GroupBy(i => i.Candidate.Story!.Key)
-                            .ToDictionary(g => g.Key, g => (Manual: g.Count(i => i.Relevance == S.Relevance.Manual), Technical: g.Count(i => i.Relevance == S.Relevance.Technical)));
+                            .ToDictionary(g => g.Key, g => (Manual: g.Count(i => i.Relevance == S.Relevance.Manual), Technical: g.Count(i => i.Relevance == S.Relevance.Technical), Both: g.Count(i => i.Relevance == S.Relevance.Both)));
                         var drilled = _drillGroup is null ? null : groupsNow.FirstOrDefault(n => n.Key == _drillGroup);
                         <section class="mtw-overview" aria-label="Oversikt" data-testid="mtd-overview">
                             <div class="mtw-overview-head">
@@ -362,10 +364,11 @@
                                         var prepared = n.Stories.Sum(p => entries.TryGetValue(p.StoryKey, out var e) ? e.WithCases : 0);
                                         var gm = n.Stories.Sum(p => kindCounts.TryGetValue(p.StoryKey, out var kc) ? kc.Manual : 0);
                                         var gt = n.Stories.Sum(p => kindCounts.TryGetValue(p.StoryKey, out var kc) ? kc.Technical : 0);
+                                        var gb = n.Stories.Sum(p => kindCounts.TryGetValue(p.StoryKey, out var kc) ? kc.Both : 0);
                                         <li><button type="button" class="mtw-card @(n.Kind == "system" ? "is-system" : "is-group")" @onclick="() => _drillGroup = n.Key" data-testid="mtd-group-card" data-group="@n.Key">
                                             <span class="mtw-card-title">@n.Title</span>
                                             <span class="mtw-card-stats"><b>@n.Stories.Count</b> @(n.Stories.Count == 1 ? "historie" : "historier") · <b>@acs</b> AC</span>
-                                            @KindCounts(gm, gt)
+                                            @KindCounts(gm, gt, gb)
                                             @if (acs > 0) { <span class="mtw-card-bar" title="@prepared av @acs AC har testtilfeller"><span style="width:@(Math.Round(100.0 * prepared / acs))%"></span></span> }
                                         </button></li>
                                     }
@@ -384,7 +387,7 @@
                                             <span class="mtw-card-top"><span class="mtw-us">@e.Label</span>@if (e.Priority is { Length: > 0 } pr) { <span class="mtw-prio">@pr</span> }</span>
                                             <span class="mtw-card-title">@e.Title</span>
                                             <span class="mtw-card-stats"><b>@e.Shown</b> AC@(e.WithCases > 0 ? $" · {e.WithCases} med testtilfeller" : "")</span>
-                                            @KindCounts(skc.Manual, skc.Technical)
+                                            @KindCounts(skc.Manual, skc.Technical, skc.Both)
                                             @if (reason is not null) { <span class="mtw-card-reason" data-testid="mtd-story-card-reason">@reason</span> }
                                         </button></li>
                                     }
@@ -567,6 +570,10 @@
                                     <option value="">Alle testtilnærminger</option>
                                     @foreach (var ap in Enum.GetValues<ExecutionApproach>()) { <option value="@ap" selected="@(_filter.Approach == ap)">@TestDesignAdvisor.ApproachLabel(ap)</option> }
                                 </select>
+                                <select class="msb-select" aria-label="Automatiske tester" @onchange="e => Set(_filter with { Tech = Opt(e) })" data-testid="mtd-filter-tech">
+                                    <option value="">Alle (automatiske tester)</option>
+                                    @foreach (var (key, label) in TC.Filters) { <option value="@key" selected="@(_filter.Tech == key)">@label</option> }
+                                </select>
                             </div>
                         }
 
@@ -601,7 +608,7 @@
                                                     <span class="mtw-row-label" data-testid="mtd-scenario-label">@W.ScenarioLabel(i)@(_filter.Story is null ? $" · {W.StoryLabel(rs)}" : "")</span>
                                                 }
                                                 <span class="msb-row-title" data-testid="mtd-scenario-title">@W.RowTitle(i)</span>
-                                                <span class="msb-row-meta">@i.Area@(i.Candidate.Story?.Priority is { } pri ? $" · {pri}" : "")@(i.Relevance == S.Relevance.Technical ? " · teknisk" : i.KindDecided ? " · manuell" : "")@(i.KindDecided ? " (valgt)" : "")<span class="msb-approach" title="@string.Join(" ", i.Suitability.Approaches.Select(a => a.Reason))" data-testid="mtd-scenario-approach"> · @string.Join(" · ", i.Suitability.Approaches.Take(2).Select(a => TestDesignAdvisor.ApproachLabel(a.Approach)))</span></span>
+                                                <span class="msb-row-meta">@i.Area@(i.Candidate.Story?.Priority is { } pri ? $" · {pri}" : "")@(i.Relevance switch { S.Relevance.Technical => " · teknisk", S.Relevance.Both => " · manuell + teknisk", _ => i.KindDecided ? " · manuell" : "" })@(i.KindDecided ? " (valgt)" : "")@if (i.Tech is { } techState && TC.ListTag(techState) is { } techTag) { <span class="mtw-tech-tag is-@(techState.ToString().ToLowerInvariant())" data-testid="mtd-scenario-tech"> · @techTag</span> }<span class="msb-approach" title="@string.Join(" ", i.Suitability.Approaches.Select(a => a.Reason))" data-testid="mtd-scenario-approach"> · @string.Join(" · ", i.Suitability.Approaches.Take(2).Select(a => TestDesignAdvisor.ApproachLabel(a.Approach)))</span></span>
                                                 @if (i.Candidate.RequirementIds.Count > 0)
                                                 {
                                                     <span class="mtw-row-reqs" data-testid="mtd-scenario-reqs">@foreach (var r in i.Candidate.RequirementIds.Take(4)) { <span class="mtw-fr">@r</span> }@if (i.Candidate.RequirementIds.Count > 4) { <span class="mtw-fr is-more">+@(i.Candidate.RequirementIds.Count - 4)</span> }</span>
@@ -654,14 +661,14 @@
                             <span class="msb-status msb-tone-@active.Status.Tone">@active.Status.Text</span>
                         </div>
                         @if (!string.Equals(W.RowTitle(active), c.Title, StringComparison.Ordinal) && !string.Equals(active.Title, c.Title, StringComparison.Ordinal)) { <p class="msb-original" data-testid="mtd-detail-original">Opprinnelig tittel: @c.Title</p> }
-                        <p class="msb-chips"><span>@active.TypeLabel</span><span>@active.Area</span>@if (active.Relevance == S.Relevance.Technical) { <span>Teknisk</span> }</p>
+                        <p class="msb-chips"><span>@active.TypeLabel</span><span>@active.Area</span>@if (active.Relevance != S.Relevance.Manual) { <span>@(active.Relevance == S.Relevance.Both ? "Manuell + teknisk" : "Teknisk")</span> }</p>
                         var kindDecision = StoryGroupingEngine.TestKindDecision(_groupDoc, active.Id); var canSetKind = CanSetKind(active);
                         <div class="mtw-kind" data-testid="mtd-kind" data-kind="@active.Relevance" data-decided="@(active.KindDecided ? "true" : "false")">
                             <span class="mtp-ctx-label">Testtype</span>
                             <div class="mtw-seg" role="radiogroup" aria-label="Testtype for scenarioet">
-                                @foreach (var (k, label) in new[] { (ScenarioTestKind.Manual, "Manuell"), (ScenarioTestKind.Technical, "Teknisk") })
+                                @foreach (var (k, label) in new[] { (ScenarioTestKind.Manual, "Manuell"), (ScenarioTestKind.Technical, "Teknisk"), (ScenarioTestKind.Both, "Begge") })
                                 {
-                                    var kind = k; var on = (active.Relevance == S.Relevance.Technical) == (kind == ScenarioTestKind.Technical);
+                                    var kind = k; var on = S.KindOf(active.Relevance) == kind;
                                     <button type="button" role="radio" class="mtw-seg-btn is-@kind.ToString().ToLowerInvariant()" aria-checked="@(on ? "true" : "false")" disabled="@(!canSetKind || _kindSaving)"
                                             title="@(canSetKind ? null : "Kan bare endres for scenarioer i valgt spesifikasjon, med skrivetilgang.")"
                                             @onclick="() => SetKindAsync(active, on && !active.KindDecided ? kind : on ? null : kind)" data-testid="mtd-kind-option" data-kind="@kind">@label</button>
@@ -674,7 +681,7 @@
                                 }
                                 else
                                 {
-                                    @($"Automatisk forslag: {S.SuggestionReason(active)}")
+                                    @($"Ikke vurdert. Automatisk forslag: {S.KindLabel(active.Suggested).ToLowerInvariant()} — {S.SuggestionReason(active)}")
                                 }
                             </span>
                             @if (kindDecision is not null && canSetKind)
@@ -683,7 +690,96 @@
                             }
                             @if (_kindError is not null) { <span class="msb-small msb-tone-warn" role="alert" data-testid="mtd-kind-error">@_kindError</span> }
                         </div>
+                        var tech = TC.Of(c, TechDecisions, _ws?.Discovery?.TestsReadForScenarios ?? false);
+                        <section class="mtw-tech" aria-label="Hva er allerede kontrollert?" data-testid="mtd-tech" data-state="@tech.State">
+                            <div class="mtw-tech-head">
+                                <span class="mtp-ctx-label">Hva er allerede kontrollert?</span>
+                                <span class="msb-status msb-tone-@tech.Tone" data-testid="mtd-tech-state">@tech.Label</span>
+                                @if (tech.Tests.Count > 0) { <span class="mt-muted msb-small" data-testid="mtd-tech-result">@TC.NoResult</span> }
+                            </div>
+                            @if (tech.State == TC.State.NotAssessed)
+                            {
+                                <p class="mt-muted msb-small" data-testid="mtd-tech-not-assessed">Testene i kilden er ikke lest for scenariohenvisninger ennå. Importer kilden på nytt for å se hvilke automatiske tester som nevner scenarioet.</p>
+                            }
+                            else if (tech.Tests.Count == 0)
+                            {
+                                <p class="mt-muted msb-small" data-testid="mtd-tech-none">Ingen automatisk test i kilden nevner dette scenarioet eller kravene det bygger på. Det betyr ikke at det er risikofritt — bare at ingen kodetest er kjent.</p>
+                            }
+                            @foreach (var row in tech.Tests)
+                            {
+                                var r = row;
+                                <div class="mtw-tech-row" data-testid="mtd-tech-test" data-link="@r.Link" data-extent="@r.Extent" data-test="@r.Test.TestId">
+                                    <div class="mtw-tech-line">
+                                        <span class="mtw-tech-layer">@r.Layer</span>
+                                        <span class="mtw-tech-name">@r.ReadableName</span>
+                                    </div>
+                                    <div class="mtw-tech-facts">
+                                        <span class="msb-status msb-tone-@(r.Link switch { TC.Link.Confirmed or TC.Link.Explicit => "ok", TC.Link.Review => "warn", TC.Link.Rejected => "bad", _ => "info" })" data-testid="mtd-tech-link">@TC.LinkLabel(r.Link)</span>
+                                        @if (r.Link == TC.Link.Confirmed) { <span class="msb-small" data-testid="mtd-tech-extent">@TC.ExtentLabel(r.Extent)</span> }
+                                        @if (r.ReviewReason is { } why) { <span class="msb-small msb-tone-warn" data-testid="mtd-tech-review-reason">@why</span> }
+                                        @if (r.Decided is { } dd) { <span class="mt-muted msb-small">@($"Vurdert av {dd.By} {dd.At.ToLocalTime():dd.MM.yyyy}")</span> }
+                                    </div>
+                                    @if (canSetKind)
+                                    {
+                                        <div class="mtw-tech-actions">
+                                            @if (r.Link is not TC.Link.Confirmed)
+                                            {
+                                                <button type="button" class="msb-link" disabled="@_techSaving" @onclick="() => ReviewTestAsync(active, r, TestLinkReview.Confirmed, TechnicalCoverageExtent.NotAssessed)" data-testid="mtd-tech-confirm">Bekreft kobling</button>
+                                            }
+                                            @if (r.Link is not TC.Link.Rejected)
+                                            {
+                                                <button type="button" class="msb-link" disabled="@_techSaving" @onclick="() => ReviewTestAsync(active, r, TestLinkReview.Rejected, TechnicalCoverageExtent.NotAssessed)" data-testid="mtd-tech-reject">Avvis</button>
+                                            }
+                                            @if (r.Link == TC.Link.Confirmed)
+                                            {
+                                                <button type="button" class="msb-link" disabled="@_techSaving" @onclick="() => ReviewTestAsync(active, r, TestLinkReview.Confirmed, TechnicalCoverageExtent.Partial)" data-testid="mtd-tech-partial">Dekker deler</button>
+                                                <button type="button" class="msb-link" disabled="@_techSaving" title="Velg bare når du har lest hva testen kontrollerer og den dekker alle betingelsene i scenarioet."
+                                                        @onclick="() => ReviewTestAsync(active, r, TestLinkReview.Confirmed, TechnicalCoverageExtent.Full)" data-testid="mtd-tech-full">Dekker hele scenarioet</button>
+                                            }
+                                            @if (r.Decided is not null)
+                                            {
+                                                <button type="button" class="msb-link" disabled="@_techSaving" @onclick="() => ReviewTestAsync(active, r, TestLinkReview.Cleared, TechnicalCoverageExtent.NotAssessed)" data-testid="mtd-tech-clear">Fjern vurderingen</button>
+                                            }
+                                        </div>
+                                    }
+                                    <details class="mtw-why" data-testid="mtd-tech-details"><summary>Vis tekniske detaljer</summary>
+                                        <dl class="mtw-tech-dl">
+                                            <dt>Klasse</dt><dd data-testid="mtd-tech-class">@(r.Test.ClassName ?? "—")</dd>
+                                            <dt>Metode</dt><dd data-testid="mtd-tech-method">@(r.Test.MethodName ?? r.Test.Name)</dd>
+                                            <dt>Fil</dt><dd data-testid="mtd-tech-file">@(r.Test.File ?? "—")</dd>
+                                            <dt>Hvorfor</dt><dd data-testid="mtd-tech-basis">@r.Test.Basis</dd>
+                                            <dt>Rammeverk</dt><dd>@(r.Test.Framework ?? "—") · @(r.Test.Layer ?? "—")</dd>
+                                        </dl>
+                                    </details>
+                                </div>
+                            }
+                            @if (tech.ReviewedButGone > 0) { <p class="mt-muted msb-small" data-testid="mtd-tech-gone">@tech.ReviewedButGone tidligere vurdert@(tech.ReviewedButGone == 1 ? "" : "e") test@(tech.ReviewedButGone == 1 ? "" : "er") finnes ikke lenger i kilden.</p> }
+                            @if (_techError is not null) { <span class="msb-small msb-tone-warn" role="alert" data-testid="mtd-tech-error">@_techError</span> }
+                        </section>
                         @if (!string.IsNullOrWhiteSpace(c.Purpose)) { <p data-testid="mtd-detail-purpose">@c.Purpose</p> }
+                        @if (_specItems.Count > 0)
+                        {
+                            var specContext = SC.For(_specItems, c.RequirementIds, c.Story?.StoryId);
+                            <details class="mtw-spec" data-testid="mtd-spec-items" data-direct="@specContext.Direct.Count">
+                                <summary><span class="mtp-ctx-label">Fra spesifikasjonen</span> <span class="msb-small mt-muted" data-testid="mtd-spec-summary">@SC.Summary(specContext)</span></summary>
+                                @foreach (var kind in SC.Order.Where(k => specContext.Count(k, direct: true) > 0))
+                                {
+                                    <div class="mtw-spec-group" data-testid="mtd-spec-group" data-kind="@kind">
+                                        <span class="mtw-spec-heading">@SC.Heading(kind)</span>
+                                        <ul>@foreach (var item in specContext.Direct.Where(i => i.Kind == kind)) { @SpecItem(item) }</ul>
+                                    </div>
+                                }
+                                <details class="mtw-why" data-testid="mtd-spec-general"><summary>Generelt for spesifikasjonen</summary>
+                                    <p class="mt-muted msb-small">Punkter som ikke nevner scenarioets krav eller brukerhistorie direkte. De kan likevel være relevante.</p>
+                                    @foreach (var kind in SC.Order.Where(k => specContext.Count(k, direct: false) > 0))
+                                    {
+                                        <details class="mtw-spec-group" data-testid="mtd-spec-general-group" data-kind="@kind"><summary>@SC.Heading(kind) (@specContext.Count(kind, direct: false))</summary>
+                                            <ul>@foreach (var item in specContext.All.Where(i => i.Kind == kind)) { @SpecItem(item) }</ul>
+                                        </details>
+                                    }
+                                </details>
+                            </details>
+                        }
                         @if (c.Conflicts.Count > 0)
                         {
                             <div class="msb-callout is-bad" data-testid="mtd-detail-conflict">
@@ -811,9 +907,34 @@
                                 @if (c.TestDataNeeds.Count > 0) { <dt>Testdata</dt><dd>@string.Join("; ", c.TestDataNeeds)</dd> }
                                 @if (c.Story is { } story) { <dt>Brukerhistorie</dt><dd data-testid="mtd-detail-story">@W.StoryLabel(story) — @W.StoryTitle(story)</dd> }
                             </dl>
-                            @if (c.Relations.Count > 0)
+                            @* «Relaterte scenarioer» (2026-11-25): which ones and why, with a way to open them — suggestions from the source evidence, never merged. *@
+                            @if (c.Relations.Count > 0 || c.PossibleDuplicates.Count > 0)
                             {
-                                <p class="msb-basis" data-testid="mtd-detail-relations">@c.Relations.Count beslektede scenarioer fra andre kilder (@string.Join(", ", c.Relations.Select(r => RelationLabel(r.Relation)).Distinct())).</p>
+                                <div class="msb-basis mtw-related" data-testid="mtd-detail-relations">
+                                    <span class="mtp-ctx-label">Relaterte scenarioer</span>
+                                    <ul>
+                                        @foreach (var rel in c.Relations.Take(8))
+                                        {
+                                            var other = _items.FirstOrDefault(x => x.Id == rel.OtherCandidateId); var otherId = rel.OtherCandidateId;
+                                            <li data-testid="mtd-related" data-relation="@rel.Relation">
+                                                <span class="msb-tag">@RelationLabel(rel.Relation)</span>
+                                                @if (other is not null) { <button type="button" class="msb-link" @onclick="() => Open(otherId)" data-testid="mtd-related-open">@W.DetailTitle(other)</button> }
+                                                else { <span class="mt-muted">@rel.OtherCandidateId (ikke i gjeldende utvalg)</span> }
+                                                <span class="mt-muted msb-small"> — @rel.Reason</span>
+                                            </li>
+                                        }
+                                        @foreach (var dup in c.PossibleDuplicates.Where(d => c.Relations.All(r => r.OtherCandidateId != d)).Take(5))
+                                        {
+                                            var other = _items.FirstOrDefault(x => x.Id == dup); var dupId = dup;
+                                            <li data-testid="mtd-related" data-relation="PossibleDuplicate">
+                                                <span class="msb-tag">Mulig overlapp</span>
+                                                @if (other is not null) { <button type="button" class="msb-link" @onclick="() => Open(dupId)" data-testid="mtd-related-open">@W.DetailTitle(other)</button> }
+                                                else { <span class="mt-muted">@dup</span> }
+                                                <span class="mt-muted msb-small"> — nevner samme krav fra en annen kilde; kan dele forberedelse, men tester kanskje noe annet</span>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
                             }
                             <div class="msb-evidence" data-testid="mtd-detail-evidence">
                                 <span class="mtp-ctx-label">Hvorfor foreslått, og kildebevis</span>
@@ -1168,6 +1289,14 @@
     {
         _groupSpecPath = SelectedSpecificationPath?.Replace('\\', '/').TrimStart('/');
         _sections = RequirementSections.Read(_ws?.Specification?.Content);
+        // The specification's own context (edge cases, clarifications, success criteria, dependencies, out of scope): built once per load from the
+        // existing semantic model; never re-extracted per click.
+        try
+        {
+            _specItems = _ws?.Specification?.Content is { Length: > 0 } specText
+                ? SC.Items(SpecExplorerService.BuildSemanticModel(SpecExplorerService.Parse(specText), specText)) : [];
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _specItems = []; }
         var inScope = _items.Where(i => i.Candidate.Story?.SpecificationPath is { } p && _groupSpecPath is not null
             && BirkNext.Specifications.SpecificationCatalogRules.SamePath(p, _groupSpecPath)).ToList();
         _groupInputs = G.Inputs(inScope, _ws?.Evidence, _ws?.Requirements);
@@ -1187,8 +1316,40 @@
     }
 
     /// <summary>Profiles from the inputs and the decisions. A failure here is «Gruppering feilet» (the plain story list stays), never a lost story.</summary>
-    private bool _kindSaving;
-    private string? _kindError;
+    private IReadOnlyList<SC.Item> _specItems = [];
+
+    /// <summary>One specification item: its own text unchanged, the source's status marker, and the ids it names.</summary>
+    private static RenderFragment SpecItem(SC.Item item) => __builder =>
+    {
+        <li class="mtw-spec-item @(item.Historical ? "is-historical" : null)" data-testid="mtd-spec-item" data-status="@(item.Status ?? "")">
+            <span class="mtw-spec-title">@(item.Id is { Length: > 0 } id && id != item.Title ? $"{id}: " : "")@item.Title</span>
+            @if (item.Status is { } st) { <span class="msb-tag" data-testid="mtd-spec-status">@st</span> }
+            @if (item.Text is { Length: > 0 } t) { <span class="mtw-spec-text">@t</span> }
+            @if (item.StatusNote is { Length: > 0 } note) { <span class="mt-muted msb-small mtw-spec-note">@note</span> }
+            @if (item.Names.Count > 0) { <span class="mt-muted msb-small">Nevner: @string.Join(", ", item.Names.Take(6))</span> }
+        </li>
+    };
+
+    private bool _kindSaving, _techSaving;
+    private string? _kindError, _techError;
+
+    /// <summary>Reviewers' test-link decisions of the selected specification as plain values (cleared ones left out).</summary>
+    private Dictionary<string, TC.Decision> TechDecisions =>
+        StoryGroupingEngine.TestLinkDecisions(_groupDoc).ToDictionary(kv => kv.Key, kv => TC.ToDecision(kv.Value), StringComparer.Ordinal);
+
+    /// <summary>Stores a reviewer's decision about one source test for this scenario, with the fingerprints it was made on; nothing else changes.</summary>
+    private async Task ReviewTestAsync(S.Item i, TC.TestRow row, TestLinkReview review, TechnicalCoverageExtent extent)
+    {
+        if (!CanSetKind(i)) return;
+        _techSaving = true; _techError = null;
+        try
+        {
+            _techError = await ApplyGroupingAsync([new StoryGroupingOperation { Kind = StoryGroupingOperationKind.SetScenarioTestLink, ScenarioId = i.Id, StoryKey = i.Candidate.Story?.Key,
+                TestId = row.Test.TestId, LinkReview = review, Extent = extent, TestFingerprint = row.Test.SourceFingerprint, ScenarioFingerprint = i.Candidate.Fingerprint,
+                DisplayId = $"{W.OtherScenarioLabel(i)} · {row.ReadableName}" }]);
+        }
+        finally { _techSaving = false; }
+    }
 
     /// <summary>A scenario's kind can be chosen when it belongs to the selected specification's stories (its decision is stored with that
     /// specification's grouping) and the person may edit grouping.</summary>
@@ -1211,9 +1372,9 @@
     /// <summary>«Manuell | Teknisk | Alle» with counts (the overview and the scenario toolbar show the same switch; one is visible at a time).</summary>
     private RenderFragment KindViewSwitch() => __builder =>
     {
-        var current = S.ViewOf(_filter); var manualN = _items.Count(i => i.Relevance == S.Relevance.Manual);
+        var current = S.ViewOf(_filter); var manualN = _items.Count(i => i.Relevance != S.Relevance.Technical); var technicalN = _items.Count(i => i.Relevance != S.Relevance.Manual);
         <div class="mtw-seg" role="radiogroup" aria-label="Testtype" data-testid="mtd-kind-view">
-            @foreach (var (v, label, n) in new[] { (S.KindView.Manual, "Manuell", manualN), (S.KindView.Technical, "Teknisk", _items.Count - manualN), (S.KindView.All, "Alle", _items.Count) })
+            @foreach (var (v, label, n) in new[] { (S.KindView.Manual, "Manuell", manualN), (S.KindView.Technical, "Teknisk", technicalN), (S.KindView.All, "Alle", _items.Count) })
             {
                 var kv = v;
                 <button type="button" role="radio" class="mtw-seg-btn is-@kv.ToString().ToLowerInvariant()" aria-checked="@(current == kv ? "true" : "false")"
@@ -1222,10 +1383,11 @@
         </div>
     };
 
-    private static RenderFragment KindCounts(int manual, int technical) => __builder =>
+    private static RenderFragment KindCounts(int manual, int technical, int both) => __builder =>
     {
-        <span class="mtw-card-kinds" data-testid="mtd-card-kinds" data-manual="@manual" data-technical="@technical">
+        <span class="mtw-card-kinds" data-testid="mtd-card-kinds" data-manual="@manual" data-technical="@technical" data-both="@both">
             <span class="mtw-kind-tag is-manual">@manual manuelle</span>@if (technical > 0) { <span class="mtw-kind-tag is-technical">@technical tekniske</span> }
+            @if (both > 0) { <span class="mtw-kind-tag is-both">@both begge</span> }
         </span>
     };
 
@@ -1233,6 +1395,8 @@
     {
         // Reviewers' manual/technical decisions are part of the grouping document: applied (idempotently) whenever it changes.
         _items = S.WithTestKinds(_items, StoryGroupingEngine.TestKindDecisions(_groupDoc), _groupSpecPath);
+        var techDecisions = TechDecisions; var testsRead = _ws?.Discovery?.TestsReadForScenarios ?? false;
+        _items = [.. _items.Select(i => i with { Tech = TC.Of(i.Candidate, techDecisions, testsRead).State })];
         (_queueCounts, _allCount) = S.QueueCounts(_items, _filter);
         try
         {

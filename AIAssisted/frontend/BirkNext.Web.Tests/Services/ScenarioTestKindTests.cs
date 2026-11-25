@@ -107,4 +107,23 @@ public sealed class ScenarioTestKindTests
         S.KindLabel(S.Relevance.Technical).Should().Be("Teknisk");
         StoryGroupingEngine.TestKindLabel(null).Should().Be("automatisk forslag");
     }
+
+    [Fact]
+    public void Begge_is_a_reviewed_scenario_decision_shown_in_both_views_and_never_hidden_as_technical()
+    {
+        var doc = Decide(Empty, "US1-AS2", ScenarioTestKind.Both); // suggested technical, reviewed «Begge»
+        var items = S.WithTestKinds(Items(), StoryGroupingEngine.TestKindDecisions(doc), Spec);
+        var both = items.Single(i => i.Id == "US1-AS2");
+        both.Relevance.Should().Be(S.Relevance.Both);
+        both.Suggested.Should().Be(S.Relevance.Technical, "the suggestion stays beside the decision");
+        S.KindLabel(both.Relevance).Should().Be("Begge");
+        S.KindOf(both.Relevance).Should().Be(ScenarioTestKind.Both);
+
+        var manual = S.Apply(items, S.WithView(new S.Filter(), S.KindView.Manual));
+        manual.Shown.Select(i => i.Id).Should().Contain("US1-AS2", "a scenario that needs both is part of manual testing");
+        manual.HiddenTechnical.Should().Be(0);
+        S.Apply(items, S.WithView(new S.Filter(), S.KindView.Technical)).Shown.Select(i => i.Id).Should().Equal("US1-AS2");
+        S.Apply(items, S.WithView(new S.Filter(), S.KindView.All)).Shown.Should().HaveCount(3, "each scenario once");
+        StoryGroupingEngine.TestKindLabel(ScenarioTestKind.Both).Should().Be("Begge");
+    }
 }

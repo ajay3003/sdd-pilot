@@ -443,6 +443,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             ObservationMethod = T(e.ObservationMethod, 2000), EnvironmentPrerequisites = T(e.EnvironmentPrerequisites, 2000),
             TestType = e.TestType is TestCaseType.NotClassified ? null : e.TestType,
             ExecutionMethod = e.ExecutionMethod is TestExecutionMethod.NotDecided ? null : e.ExecutionMethod,
+            TestKind = e.TestKind is ScenarioTestKind.Manual or ScenarioTestKind.Technical ? e.TestKind : null,
             Performance = e.Performance is null ? null : CleanPerformance(e.Performance),
         };
 
@@ -681,7 +682,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
                 Title = title, Preconditions = copy.EffectivePreconditions, Steps = [.. copy.EffectiveSteps], StepExpected = [.. copy.EffectiveStepExpected],
                 ExpectedResult = copy.EffectiveExpected, ObservationMethod = copy.EffectiveObservation, EnvironmentPrerequisites = copy.EffectiveEnvironment,
                 Roles = copy.Edits.Roles, Dependencies = copy.Edits.Dependencies, Priority = copy.Edits.Priority, TestDataNeed = copy.EffectiveTestDataNeed,
-                TestType = copy.Edits.TestType, ExecutionMethod = copy.Edits.ExecutionMethod,
+                TestType = copy.Edits.TestType, ExecutionMethod = copy.Edits.ExecutionMethod, TestKind = copy.Edits.TestKind,
             };
             fields.Add($"Duplicated from \"{copy.EffectiveTitle}\"");
         }
@@ -704,6 +705,13 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         {
             edits = new TestCaseEdits { Title = title, Preconditions = startingSituation }; // the scenario's starting situation; no step or outcome is invented
             fields.Add("Started from the scenario's starting situation");
+        }
+        if (request.TestKind is { } chosen && chosen is not (ScenarioTestKind.Manual or ScenarioTestKind.Technical))
+            throw new TestPlanException(400, "invalid-test-kind", "A test case is Manual or Technical («Begge» is a scenario decision).");
+        if (request.TestKind is { } kind)
+        {
+            edits = (edits ?? new TestCaseEdits { Title = title }) with { TestKind = kind };
+            fields.Add($"Test type: {kind}");
         }
         manual = manual with
         {
@@ -1272,7 +1280,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         void C(string name, object? x, object? y) { if (JsonSerializer.Serialize(x, E.Json) != JsonSerializer.Serialize(y, E.Json)) fields.Add(name); }
         C("Title", a.Title, b.Title); C("Purpose", a.Purpose, b.Purpose); C("Preconditions", a.Preconditions, b.Preconditions); C("Steps", a.Steps, b.Steps);
         C("Step results", a.StepExpected, b.StepExpected); C("Expected result", a.ExpectedResult, b.ExpectedResult); C("Observation method", a.ObservationMethod, b.ObservationMethod);
-        C("Environment", a.EnvironmentPrerequisites, b.EnvironmentPrerequisites); C("Test type", a.TestType, b.TestType); C("Execution method", a.ExecutionMethod, b.ExecutionMethod);
+        C("Environment", a.EnvironmentPrerequisites, b.EnvironmentPrerequisites); C("Test type", a.TestType, b.TestType); C("Execution method", a.ExecutionMethod, b.ExecutionMethod); C("Manual or technical", a.TestKind, b.TestKind);
         C("Performance", a.Performance, b.Performance); C("Roles", a.Roles, b.Roles); C("Dependencies", a.Dependencies, b.Dependencies); C("Priority", a.Priority, b.Priority);
         C("Test Data need", a.TestDataNeed, b.TestDataNeed); C("Blocked by", a.BlockedBy, b.BlockedBy); C("Template values", a.TemplateValues, b.TemplateValues);
         return fields;

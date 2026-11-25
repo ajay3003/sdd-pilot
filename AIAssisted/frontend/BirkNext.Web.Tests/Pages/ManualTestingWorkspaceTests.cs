@@ -164,4 +164,16 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
 
         cut.WaitForAssertion(() => navigation.Uri.Should().Be(navigation.BaseUri + to));
     }
+
+    [Fact]
+    public void The_landing_page_shows_what_is_missing_before_tests_can_start_with_denominators_and_never_an_execution_number()
+    {
+        Setup([new(PlanId, "project:library", "Library – test plan", null, 3, 10, 4, 1, 2, 6, 7, "anna", DateTimeOffset.UtcNow)], Discovery(4));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.Find("[data-testid=mt-count-missing-expected]").TextContent.Should().Be("2 av 10");
+        cut.Find("[data-testid=mt-count-missing-data]").TextContent.Should().Be("6 av 10");
+        cut.Find("[data-testid=mt-count-blocked]").TextContent.Should().Be("7 av 10");
+        cut.Find("[data-testid=mt-readiness-counts]").TextContent.Should().Contain("Ikke klar til kjøring").And.Contain("Uten koblet testdata");
+        cut.Find("[data-testid=mt-count-executed]").TextContent.Should().Be("Registreres i Azure DevOps", "no execution or pass count is invented");
+    }
 }

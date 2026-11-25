@@ -40,7 +40,7 @@ public class PassiveSecurityLifecycleTests
     [Fact]
     public void ContainerArguments_AreBoundedAndDoNotExposeHostResources()
     {
-        var args = FrontendZapPassiveReviewService.BuildContainerArguments("birknext-zap-passive-test", 32123, new string('A', 64),
+        var args = FrontendZapPassiveReviewService.BuildContainerArguments("birknext-zap-passive-test", new string('A', 64),
             controllers: new HashSet<string>(["cpu", "memory", "pids"], StringComparer.OrdinalIgnoreCase));
         args.Should().Contain("--read-only").And.Contain("--cap-drop=ALL").And.Contain("--memory=768m").And.Contain("--cpus=1").And.Contain("--pids-limit=512").And.Contain("--pull=never");
         args.Should().NotContain("--privileged").And.NotContain("/var/run/docker.sock").And.NotContain("--network=host");

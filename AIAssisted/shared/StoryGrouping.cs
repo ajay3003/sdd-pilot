@@ -83,11 +83,38 @@ public sealed record StoryGroupingDocument
     /// <summary>Reviewers' manual/technical decisions per scenario (2026-11-25), newest last; a decision without a kind returns the scenario to
     /// the automatic suggestion. Never changes the scenario, its cases or its source.</summary>
     public List<ScenarioTestKindDecision> TestKinds { get; init; } = [];
+    /// <summary>Reviewers' decisions about a source test and a scenario (2026-11-25), newest last: confirmed or rejected, and how much of the scenario
+    /// the test checks. Never a test result; never changes the test, the scenario or any test case.</summary>
+    public List<ScenarioTestLinkDecision> TestLinks { get; init; } = [];
 }
 
-/// <summary>Whether a scenario is tested by a person (manual) or belongs with technical testing (2026-11-25).</summary>
+/// <summary>A reviewer's decision about a source test for a scenario. <see cref="Cleared"/> returns it to what the source says.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ScenarioTestKind { Manual, Technical }
+public enum TestLinkReview { Confirmed, Rejected, Cleared }
+
+/// <summary>How much of a scenario a confirmed test checks, as a reviewer assessed it from the test's assertions. Never inferred from a link.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TechnicalCoverageExtent { NotAssessed, Partial, Full }
+
+public sealed record ScenarioTestLinkDecision
+{
+    public string ScenarioId { get; init; } = "";
+    public string TestId { get; init; } = "";
+    public TestLinkReview Review { get; init; }
+    public TechnicalCoverageExtent Extent { get; init; }
+    /// <summary>The test's source fingerprint when it was reviewed: another fingerprint now means the test changed and the decision must be reviewed again.</summary>
+    public string? TestFingerprint { get; init; }
+    /// <summary>The scenario's content fingerprint when it was reviewed (a changed scenario also needs a new look).</summary>
+    public string? ScenarioFingerprint { get; init; }
+    public string? Note { get; init; }
+    public string By { get; init; } = "";
+    public DateTimeOffset At { get; init; }
+}
+
+/// <summary>Whether a scenario is tested by a person (manual), belongs with technical testing, or needs both (2026-11-25). <see cref="Both"/> is a
+/// reviewed SCENARIO decision only («Begge»): a saved test case is always Manual or Technical. No decision at all is «Ikke vurdert».</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ScenarioTestKind { Manual, Technical, Both }
 
 /// <summary>A reviewer's manual/technical decision for one scenario of this specification; <see cref="Kind"/> null = back to the suggestion.</summary>
 public sealed record ScenarioTestKindDecision
@@ -144,6 +171,9 @@ public enum StoryGroupingOperationKind
     /// <summary>Sets a scenario's manual/technical kind (<see cref="StoryGroupingOperation.ScenarioId"/>, <see cref="StoryGroupingOperation.TestKind"/>;
     /// null = back to the automatic suggestion). 2026-11-25.</summary>
     SetScenarioTestKind,
+    /// <summary>A reviewer's decision about a source test for a scenario (<see cref="StoryGroupingOperation.ScenarioId"/>, <see cref="StoryGroupingOperation.TestId"/>,
+    /// <see cref="StoryGroupingOperation.LinkReview"/>, <see cref="StoryGroupingOperation.Extent"/>). 2026-11-25.</summary>
+    SetScenarioTestLink,
 }
 
 /// <summary>One change to the grouping document. Unused fields are null. Applied together and atomically (all or nothing).</summary>
@@ -173,6 +203,12 @@ public sealed record StoryGroupingOperation
     /// <summary>SetScenarioTestKind: the scenario (its candidate id in this specification) and the chosen kind (null = automatic).</summary>
     public string? ScenarioId { get; init; }
     public ScenarioTestKind? TestKind { get; init; }
+    /// <summary>SetScenarioTestLink: the source test (its stable definition id), the decision, the assessed extent and the fingerprints it was made on.</summary>
+    public string? TestId { get; init; }
+    public TestLinkReview? LinkReview { get; init; }
+    public TechnicalCoverageExtent? Extent { get; init; }
+    public string? TestFingerprint { get; init; }
+    public string? ScenarioFingerprint { get; init; }
 }
 
 public sealed record StoryGroupingChangeRequest
@@ -508,6 +544,7 @@ public static class StoryGroupingEngine
         var history = doc.History.ToList();
         var roles = doc.Roles.ToList();
         var kinds = (doc.TestKinds ?? []).ToList();
+        var testLinks = (doc.TestLinks ?? []).ToList();
         void Log(string action, string detail) => history.Add(new(now, actor, action, detail));
         StoryLinkDecision? Current(string story, string req) =>
             decisions.LastOrDefault(d => d.StoryKey == story && string.Equals(d.RequirementId, req, StringComparison.OrdinalIgnoreCase));
@@ -646,6 +683,21 @@ public static class StoryGroupingEngine
                     Log("Endret testtype", $"{op.DisplayId ?? id}: {TestKindLabel(op.TestKind)} (scenarioet, testtilfellene og kilden er uendret)");
                     break;
                 }
+                case StoryGroupingOperationKind.SetScenarioTestLink:
+                {
+                    var scenario = string.IsNullOrWhiteSpace(op.ScenarioId) ? throw new GroupingRefusal("missing-scenario", "Mangler scenario.") : op.ScenarioId.Trim();
+                    var test = string.IsNullOrWhiteSpace(op.TestId) ? throw new GroupingRefusal("missing-test", "Mangler test.") : op.TestId.Trim();
+                    var review = op.LinkReview ?? throw new GroupingRefusal("missing-review", "Mangler vurdering.");
+                    var extent = review == TestLinkReview.Confirmed ? op.Extent ?? TechnicalCoverageExtent.NotAssessed : TechnicalCoverageExtent.NotAssessed;
+                    // A rejected or cleared link has no extent; «hele scenarioet» is only ever a reviewer's assessment of a confirmed link.
+                    if (review != TestLinkReview.Confirmed && op.Extent is TechnicalCoverageExtent.Partial or TechnicalCoverageExtent.Full)
+                        throw new GroupingRefusal("extent-needs-confirmed-link", "Dekningsgrad kan bare vurderes for en bekreftet kobling.");
+                    testLinks.Add(new ScenarioTestLinkDecision { ScenarioId = scenario, TestId = test, Review = review, Extent = extent,
+                        TestFingerprint = string.IsNullOrWhiteSpace(op.TestFingerprint) ? null : op.TestFingerprint, ScenarioFingerprint = string.IsNullOrWhiteSpace(op.ScenarioFingerprint) ? null : op.ScenarioFingerprint,
+                        Note = string.IsNullOrWhiteSpace(op.Reason) ? null : op.Reason.Trim(), By = actor, At = now });
+                    Log("Vurderte automatisk test", $"{op.DisplayId ?? scenario}: {TestLinkLabel(review, extent)} (testen, scenarioet og testtilfellene er uendret)");
+                    break;
+                }
                 case StoryGroupingOperationKind.LeaveUngrouped:
                 {
                     var s = Story(op.StoryKey);
@@ -758,7 +810,7 @@ public static class StoryGroupingEngine
                 }
             }
         }
-        return doc with { Revision = doc.Revision + 1, Groups = groups, Placements = placements, Decisions = decisions, History = history, Roles = roles, TestKinds = kinds };
+        return doc with { Revision = doc.Revision + 1, Groups = groups, Placements = placements, Decisions = decisions, History = history, Roles = roles, TestKinds = kinds, TestLinks = testLinks };
     }
 
     /// <summary>The reviewer's current manual/technical decision for a scenario (null = none, or returned to the suggestion).</summary>
@@ -770,10 +822,25 @@ public static class StoryGroupingEngine
         (doc?.TestKinds ?? []).GroupBy(k => k.ScenarioId, StringComparer.Ordinal).Select(g => g.Last()).Where(d => d.Kind is not null)
             .ToDictionary(d => d.ScenarioId, d => d.Kind!.Value, StringComparer.Ordinal);
 
+    /// <summary>Every current test-link decision (key "scenarioId|testId"); cleared ones are left out.</summary>
+    public static Dictionary<string, ScenarioTestLinkDecision> TestLinkDecisions(StoryGroupingDocument? doc) =>
+        (doc?.TestLinks ?? []).GroupBy(d => TestLinkKey(d.ScenarioId, d.TestId), StringComparer.Ordinal).Select(g => g.Last()).Where(d => d.Review != TestLinkReview.Cleared)
+            .ToDictionary(d => TestLinkKey(d.ScenarioId, d.TestId), StringComparer.Ordinal);
+
+    public static string TestLinkKey(string scenarioId, string testId) => $"{scenarioId}|{testId}";
+
+    public static string TestLinkLabel(TestLinkReview review, TechnicalCoverageExtent extent) => review switch
+    {
+        TestLinkReview.Rejected => "kobling avvist",
+        TestLinkReview.Cleared => "vurdering fjernet",
+        _ => extent switch { TechnicalCoverageExtent.Full => "bekreftet, dekker hele scenarioet", TechnicalCoverageExtent.Partial => "bekreftet, dekker deler av scenarioet", _ => "kobling bekreftet" },
+    };
+
     public static string TestKindLabel(ScenarioTestKind? kind) => kind switch
     {
         ScenarioTestKind.Manual => "Manuell",
         ScenarioTestKind.Technical => "Teknisk",
+        ScenarioTestKind.Both => "Begge",
         _ => "automatisk forslag",
     };
 }

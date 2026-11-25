@@ -55,7 +55,7 @@ public sealed class DiscoverWorkspaceTests : BunitContext
             .ReturnsAsync((new TestPlanWorkspace { ProjectKey = "m2lb", GuideKey = "project:m2lb", CanWrite = true }, (string?)null));
         api.Setup(x => x.LastDiscoveryAsync("m2lb", It.IsAny<Guid?>(), It.IsAny<CancellationToken>())).ReturnsAsync((new ScenarioDiscoveryResult
         {
-            DiscoveryId = "d1", ProjectKey = "m2lb", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = [.. candidates],
+            DiscoveryId = "d1", ProjectKey = "m2lb", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = [.. candidates], TestsReadForScenarios = true,
         }, (string?)null));
         api.Setup(x => x.WorkQueuesAsync("m2lb", It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync((new ScenarioWorkQueueView
         {
@@ -242,5 +242,57 @@ public sealed class DiscoverWorkspaceTests : BunitContext
 
         cut.Find("[data-testid=mtd-detail-title]").TextContent.Should().Contain("Attendance above plan");
         cut.Find("[data-testid=mtd-detail-outside]").TextContent.Should().Contain("vises ikke med gjeldende brukerhistorie");
+    }
+
+    [Fact]
+    public void Technical_coverage_shows_what_a_source_test_checks_in_plain_words_with_details_on_demand_and_never_a_result()
+    {
+        var test = new CandidateTestAssociation("t-9", "Scenario_1_valid_report_is_stored", "SkoleService/tests/M2LB.SkoleService.Integration/IntakeTests.cs:42",
+            "The method name names scenario 1; the class summary names US1 scenario 1")
+        { Origin = TestScenarioLinkOrigin.Scenario, Layer = "Integration", Framework = "xUnit", ClassName = "M2LB.SkoleService.Integration.IntakeTests", MethodName = "Scenario_1_valid_report_is_stored", SourceFingerprint = "fp" };
+        var cut = Open(null, null, Valid with { ExistingTests = [test] }, Above);
+        cut.Find("[data-testid=mtd-queue][data-queue='All']").Click();
+
+        cut.Find("[data-testid=mtd-scenario][data-id='US1-AS1'] [data-testid=mtd-scenario-tech]").TextContent.Should().Contain("automatisk test");
+        cut.FindAll("[data-testid=mtd-scenario][data-id='US1-AS2'] [data-testid=mtd-scenario-tech]").Should().BeEmpty();
+
+        cut.Find("[data-testid=mtd-scenario][data-id='US1-AS1']").Click();
+        cut.Find("[data-testid=mtd-tech-state]").TextContent.Should().Be("Automatisk test funnet");
+        cut.Find("[data-testid=mtd-tech-result]").TextContent.Should().Be("Testresultat ikke tilgjengelig");
+        cut.Find("[data-testid=mtd-tech-link]").TextContent.Should().Be("Testen nevner scenarioet");
+        cut.FindAll("[data-testid=mtd-tech-extent]").Should().BeEmpty("no extent before a reviewer assesses one");
+        cut.Find("[data-testid=mtd-tech-test]").TextContent.Should().Contain("Integrasjonstest").And.Contain("Scenario 1 valid report is stored");
+        cut.Find("[data-testid=mtd-tech-class]").TextContent.Should().Be("M2LB.SkoleService.Integration.IntakeTests");
+        cut.Find("[data-testid=mtd-tech-file]").TextContent.Should().EndWith("IntakeTests.cs:42");
+        cut.Find("[data-testid=mtd-tech-details]").HasAttribute("open").Should().BeFalse("technical details are on demand");
+        cut.FindAll("[data-testid=mtd-tech-confirm]").Should().BeEmpty("no review actions without write access to the specification's decisions");
+        cut.Markup.Should().NotContain("Bestått");
+
+        cut.Find("[data-testid=mtd-scenario][data-id='US1-AS2']").Click();
+        cut.Find("[data-testid=mtd-tech-state]").TextContent.Should().Be("Ingen kjent automatisk test");
+        cut.Find("[data-testid=mtd-tech-none]").TextContent.Should().Contain("betyr ikke at det er risikofritt");
+
+        cut.Find("[data-testid=mtd-more-filters]").Click();
+        cut.Find("[data-testid=mtd-filter-tech]").Change("linked");
+        Ids(cut).Should().Equal("US1-AS1");
+        cut.Find("[data-testid=mtd-filter-tech]").Change("none");
+        Ids(cut).Should().Equal("US1-AS2");
+    }
+
+    [Fact]
+    public void Related_scenarios_are_named_with_why_and_can_be_opened_never_merged()
+    {
+        var related = Valid with { Relations = [new ScenarioRelationNote(Enum.GetValues<ScenarioRelation>()[0], "US1-AS2", "Samme situasjon, annet utfall")], PossibleDuplicates = ["US2-AS1"] };
+        var cut = Open(null, null, related, Above, Graded);
+        cut.Find("[data-testid=mtd-queue][data-queue='All']").Click();
+        cut.Find("[data-testid=mtd-scenario][data-id='US1-AS1']").Click();
+
+        var items = cut.FindAll("[data-testid=mtd-related]");
+        items.Should().HaveCount(2);
+        items[0].TextContent.Should().Contain("Samme situasjon, annet utfall");
+        items[1].TextContent.Should().Contain("Mulig overlapp").And.Contain("kan dele forberedelse");
+        cut.FindAll("[data-testid=mtd-related-open]")[0].Click();
+        cut.Find("[data-testid=mtd-detail-title]").TextContent.Should().StartWith("AC 2", "opening a related scenario shows it; both keep their own identity");
+        Ids(cut).Should().Contain("US1-AS1").And.Contain("US1-AS2");
     }
 }

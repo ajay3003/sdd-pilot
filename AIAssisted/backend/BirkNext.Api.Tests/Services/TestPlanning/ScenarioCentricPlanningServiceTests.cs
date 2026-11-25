@@ -709,4 +709,135 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
     {
         public Task<TestDataSchemaPackage?> FindAsync(TestDataSchemaReference reference, CancellationToken ct) => Task.FromResult<TestDataSchemaPackage?>(null);
     }
+
+    // ── Testtype on a saved case (2026-11-25): Manuell/Teknisk chosen per case; canonical values; older plans honest; separate from scenario decisions ──
+
+    [Fact]
+    public async Task B21_B23_B24_a_direct_case_is_created_with_its_type_stored_by_name_and_read_back_after_a_reload()
+    {
+        await using var db = Context();
+        var (service, plan, _, _) = await PlanAsync(db);
+        var before = plan.Revision;
+
+        plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Kontroller kryptert lagring", null, null, TestKind: ScenarioTestKind.Technical), "anna", default);
+
+        plan.Revision.Should().Be(before + 1, "adding a case is a revision");
+        var created = plan.Cases.Single(c => c.EffectiveTitle == "Kontroller kryptert lagring");
+        created.ParentScenario.Should().BeNull("written directly, without a scenario");
+        created.Edits.TestKind.Should().Be(ScenarioTestKind.Technical);
+        created.EditHistory.Single().Fields.Should().Contain("Test type: Technical");
+        (await Service(Context()).DraftAsync(plan.Id, default)).Cases.Single(c => c.Source.ScenarioId == created.Source.ScenarioId).Edits.TestKind.Should().Be(ScenarioTestKind.Technical);
+
+        await using var raw = Context();
+        var json = raw.TestPlanDrafts.Single(d => d.Id == plan.Id).ContentJson;
+        json.Should().Contain("\"testKind\":\"Technical\"", "the canonical value, never a Norwegian label");
+        json.Should().NotContain("Teknisk");
+    }
+
+    [Fact]
+    public async Task B22_B27_B32_older_cases_stay_unset_and_keep_their_stored_form()
+    {
+        await using var db = Context();
+        var (service, plan, s42, s7) = await PlanAsync(db);
+        await using var raw = Context();
+        var stored = raw.TestPlanDrafts.Single(d => d.Id == plan.Id).ContentJson;
+        stored.Should().NotContain("testKind", "a case without a type writes nothing: older plans keep their stored form and fingerprint");
+        plan.Cases.Should().OnlyContain(c => c.Edits.TestKind == null, "never given a type that was not chosen");
+
+        plan = await service.SaveAsync(plan.Id, Human(plan), "anna", default); // a save that changes nothing about types
+        plan.Cases.Should().OnlyContain(c => c.Edits.TestKind == null);
+    }
+
+    [Fact]
+    public async Task B25_B27_changing_only_the_type_keeps_every_other_field_and_is_recorded_by_name()
+    {
+        await using var db = Context();
+        var (service, plan, s42, _) = await PlanAsync(db);
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42
+            ? part with { Edits = part.Edits with { Steps = ["Lock the period"], StepExpected = ["The child is not expected"], Priority = "P1" } } : part), "anna", default);
+        var edited = plan.Cases.Single(c => c.Source.ScenarioId == s42);
+
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42 ? part with { Edits = part.Edits with { TestKind = ScenarioTestKind.Manual } } : part), "anna", default);
+
+        var after = (await Service(Context()).DraftAsync(plan.Id, default)).Cases.Single(c => c.Source.ScenarioId == s42);
+        after.Edits.Should().BeEquivalentTo(edited.Edits with { TestKind = ScenarioTestKind.Manual }, "only the type changed");
+        after.EffectiveSteps.Should().Equal("Lock the period");
+        after.EditHistory.Last().Fields.Should().Equal("Manual or technical");
+    }
+
+    [Fact]
+    public async Task B24_B26_the_type_survives_revisions_and_a_refresh_from_the_source()
+    {
+        await using var db = Context();
+        var (service, plan, s42, _) = await PlanAsync(db);
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42 ? part with { Edits = part.Edits with { TestKind = ScenarioTestKind.Technical } } : part), "anna", default);
+        var saved = plan.Revision;
+
+        plan = await service.RefreshAsync(plan.Id, plan.Revision, "anna", default);
+
+        plan.Cases.Single(c => c.Source.ScenarioId == s42).Edits.TestKind.Should().Be(ScenarioTestKind.Technical, "a refresh from the source never changes a person's choice");
+        (await service.RevisionAsync(plan.Id, saved, default)).Cases.Single(c => c.Source.ScenarioId == s42).Edits.TestKind.Should().Be(ScenarioTestKind.Technical);
+    }
+
+    [Fact]
+    public async Task B28_a_duplicate_keeps_its_source_cases_type_unless_another_is_chosen_and_both_live_under_one_scenario()
+    {
+        await using var db = Context();
+        var (service, plan, s42, _) = await PlanAsync(db);
+        plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Manual check", null, null, ScenarioKey: s42, TestKind: ScenarioTestKind.Manual), "anna", default);
+        var manual = plan.Cases.Single(c => c.EffectiveTitle == "Manual check").Source.ScenarioId;
+
+        plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Manual check (copy)", null, null, CopyFrom: manual), "anna", default);
+        plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Technical check", null, null, CopyFrom: manual, TestKind: ScenarioTestKind.Technical), "anna", default);
+
+        plan.Cases.Single(c => c.EffectiveTitle == "Manual check (copy)").Edits.TestKind.Should().Be(ScenarioTestKind.Manual);
+        plan.Cases.Single(c => c.EffectiveTitle == "Technical check").Edits.TestKind.Should().Be(ScenarioTestKind.Technical);
+        plan.Cases.Where(c => c.ParentScenario == s42).Select(c => c.Edits.TestKind).Should().Contain(ScenarioTestKind.Manual).And.Contain(ScenarioTestKind.Technical,
+            "one scenario can have manual and technical cases; the scenario itself is not duplicated");
+        plan.Cases.Count(c => c.Source.ScenarioId == s42).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task B29_B30_creating_typed_cases_never_writes_scenario_decisions_and_a_stale_revision_is_refused()
+    {
+        await using var db = Context();
+        var (service, plan, s42, _) = await PlanAsync(db);
+        var stale = plan.Revision;
+        plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "First", null, null, ScenarioKey: s42, TestKind: ScenarioTestKind.Technical), "anna", default);
+
+        var again = () => service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(stale, "Second", null, null, TestKind: ScenarioTestKind.Manual), "bo", default);
+        (await again.Should().ThrowAsync<TestPlanException>()).Which.Status.Should().Be(409);
+
+        await using var check = Context();
+        check.StoryGroupings.Count().Should().Be(0, "a case's type is never written into the scenario's Manuell/Teknisk decision");
+    }
+
+    [Fact]
+    public async Task B18_the_export_carries_the_type_as_metadata_and_never_inside_the_steps()
+    {
+        await using var db = Context();
+        var (service, plan, s42, _) = await PlanAsync(db);
+        plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Verify retry", null, null, ScenarioKey: s42, TestKind: ScenarioTestKind.Technical), "anna", default);
+        var snapshot = await service.SaveSnapshotAsync(plan.Id, new SaveTestPlanSnapshotRequest(plan.Revision, "Sprint 1", null), "lead", default);
+
+        var export = await service.ExportAsync(snapshot.Snapshot.Id, default);
+
+        export.Json.Should().MatchRegex(@"""testKind"":\s*""Technical""");
+        export.Text.Should().Contain("Testtype: Teknisk");
+        var withoutType = export.Text.Split('\n').Where(l => l.StartsWith("### ", StringComparison.Ordinal)).Count() - export.Text.Split('\n').Count(l => l.StartsWith("Testtype:", StringComparison.Ordinal));
+        withoutType.Should().BeGreaterThan(0, "a case without a type gets no Testtype line (nothing is assumed)");
+    }
+
+    [Fact]
+    public async Task B33_Begge_is_refused_for_a_saved_case_and_nothing_is_written()
+    {
+        await using var db = Context();
+        var (service, plan, s42, _) = await PlanAsync(db);
+        var both = () => service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Both", null, null, ScenarioKey: s42, TestKind: ScenarioTestKind.Both), "anna", default);
+        (await both.Should().ThrowAsync<TestPlanException>()).Which.Should().Match<TestPlanException>(e => e.Status == 400 && e.Code == "invalid-test-kind");
+        (await Service(Context()).DraftAsync(plan.Id, default)).Revision.Should().Be(plan.Revision, "a refused add writes nothing");
+
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42 ? part with { Edits = part.Edits with { TestKind = ScenarioTestKind.Both } } : part), "anna", default);
+        plan.Cases.Single(c => c.Source.ScenarioId == s42).Edits.TestKind.Should().BeNull("a save never stores «Begge» on a case");
+    }
 }

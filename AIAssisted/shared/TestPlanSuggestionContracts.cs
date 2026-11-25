@@ -199,6 +199,10 @@ public sealed record TestCaseEdits
     /// <summary>The reviewer's classification (null = not classified yet; never inferred from the scenario text).</summary>
     public TestCaseType? TestType { get; init; }
     public TestExecutionMethod? ExecutionMethod { get; init; }
+    /// <summary>Manuell or Teknisk for THIS case, chosen by a person (2026-11-25). Null = «Ikke angitt» (older cases are never given a type they
+    /// were not given). Separate from the scenario's recommended approach (<see cref="ScenarioTestKindDecision"/>), from how the case is executed
+    /// (<see cref="ExecutionMethod"/>: Teknisk is not "automated"), and from review, readiness or results.</summary>
+    public ScenarioTestKind? TestKind { get; init; }
     /// <summary>Only meaningful for <see cref="TestCaseType.Performance"/>; kept if the type changes so nothing a tester wrote is lost.</summary>
     public PerformanceCaseDetails? Performance { get; init; }
     /// <summary>The expected result per edited step, parallel to <see cref="Steps"/> (only meaningful when Steps is set).</summary>
@@ -214,7 +218,7 @@ public sealed record TestCaseEdits
     /// <summary>Template values a person supplied (key → value), shown apart from the evidence.</summary>
     public Dictionary<string, string>? TemplateValues { get; init; }
     [JsonIgnore] public bool IsEmpty => Title is null && Preconditions is null && Steps is null && ExpectedResult is null && ObservationMethod is null && EnvironmentPrerequisites is null
-        && TestType is null && ExecutionMethod is null && (Performance is null || Performance.IsEmpty) && StepExpected is null && Purpose is null && Roles is null
+        && TestType is null && ExecutionMethod is null && TestKind is null && (Performance is null || Performance.IsEmpty) && StepExpected is null && Purpose is null && Roles is null
         && Dependencies is null && Priority is null && TestDataNeed is null && BlockedBy is null && (TemplateValues is null || TemplateValues.Count == 0);
 }
 

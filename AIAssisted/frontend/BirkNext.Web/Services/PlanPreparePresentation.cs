@@ -77,6 +77,8 @@ public static partial class PlanPreparePresentation
     /// <summary>Why a case counts as technical (null = shown by default). Never hides what needs a person's decision.</summary>
     public static string? TechnicalReason(TestCaseDraft c)
     {
+        // The saved case's own type decides first (2026-11-25): the list filters the entity it shows.
+        if (c.Edits.TestKind is { } chosen) return chosen == ScenarioTestKind.Technical ? "Testtypen er Teknisk" : null;
         if (c.Source.Kind == ScenarioSourceKind.Manual) return null;                       // written by a person
         if (c.HasUnresolvedConflict) return null;                                         // sources disagree: a person decides
         if (c.Review is TestCaseReviewState.Accepted or TestCaseReviewState.NeedsClarification or TestCaseReviewState.UnderReview) return null;
@@ -173,6 +175,14 @@ public static partial class PlanPreparePresentation
         public string Preconditions { get; set; } = "";
         public string ExpectedResult { get; set; } = "";
         public TestDataNeed TestDataNeed { get; set; }
+        /// <summary>Manuell or Teknisk for this case (null = «Ikke angitt»; an older case is never given one it was not given).</summary>
+        public ScenarioTestKind? TestKind { get; set; }
+        /// <summary>How the result is observed, written by a person (2026-11-25); the readiness «Verifiseringsmetode» needs it.</summary>
+        public string ObservationMethod { get; set; } = "";
+        /// <summary>Access, environment and systems the test needs, written by a person («Tilgang og miljø»).</summary>
+        public string EnvironmentPrerequisites { get; set; } = "";
+        /// <summary>What stops the test from starting now (responsible / note included as the tester writes it); empty = nothing recorded.</summary>
+        public string BlockedBy { get; set; } = "";
         public List<StepRow> Steps { get; set; } = [];
         /// <summary>Linked Test Data assets (immutable asset ids; values are never copied).</summary>
         public List<string> TestDataAssetIds { get; set; } = [];
@@ -210,6 +220,10 @@ public static partial class PlanPreparePresentation
             Preconditions = c.EffectivePreconditions ?? "",
             ExpectedResult = c.EffectiveExpected ?? "",
             TestDataNeed = c.EffectiveTestDataNeed,
+            TestKind = c.Edits.TestKind,
+            ObservationMethod = c.Edits.ObservationMethod ?? "",
+            EnvironmentPrerequisites = c.Edits.EnvironmentPrerequisites ?? "",
+            BlockedBy = c.Edits.BlockedBy ?? "",
             Steps = [.. c.EffectiveSteps.Select((s, i) => new StepRow { Action = s, Expected = c.EffectiveStepExpected.ElementAtOrDefault(i) ?? "" })],
         };
 
@@ -267,6 +281,10 @@ public static partial class PlanPreparePresentation
                 Steps = stepsSame ? null : actions,
                 StepExpected = stepsSame ? null : expected,
                 TestDataNeed = TestDataNeed == g.TestDataNeed ? null : TestDataNeed,
+                TestKind = TestKind,
+                ObservationMethod = Blank(ObservationMethod),
+                EnvironmentPrerequisites = Blank(EnvironmentPrerequisites),
+                BlockedBy = Blank(BlockedBy),
             };
         }
 
@@ -279,6 +297,10 @@ public static partial class PlanPreparePresentation
                 || !string.Equals(Preconditions.Trim(), now.Preconditions.Trim(), StringComparison.Ordinal)
                 || !string.Equals(ExpectedResult.Trim(), now.ExpectedResult.Trim(), StringComparison.Ordinal)
                 || TestDataNeed != now.TestDataNeed
+                || TestKind != now.TestKind
+                || !string.Equals(ObservationMethod.Trim(), now.ObservationMethod.Trim(), StringComparison.Ordinal)
+                || !string.Equals(EnvironmentPrerequisites.Trim(), now.EnvironmentPrerequisites.Trim(), StringComparison.Ordinal)
+                || !string.Equals(BlockedBy.Trim(), now.BlockedBy.Trim(), StringComparison.Ordinal)
                 || !TestDataAssetIds.Order(StringComparer.Ordinal).SequenceEqual(now.TestDataAssetIds.Order(StringComparer.Ordinal))
                 || !Kept.Select(s => (s.Action.Trim(), s.Expected.Trim())).SequenceEqual(now.Kept.Select(s => (s.Action.Trim(), s.Expected.Trim())))
                 || !ReferenceEquals(ToTranslation(saved), saved.Translation(ScenarioPlanning.Norwegian));
@@ -304,6 +326,61 @@ public static partial class PlanPreparePresentation
 /// <summary>Plan-level labels for Planlegg og klargjør and the saved-plan list.</summary>
 public static partial class PlanPreparePresentation
 {
+    /// <summary>A Test Data asset as the picker shows it: its name, whether it is approved, and the environment it is recorded for — what the catalogue
+    /// knows, nothing more (an asset in the catalogue is not proof the data exists in QA).</summary>
+    public static string TestDataOptionLabel(TestDataOption o) =>
+        $"{o.Alias}{(o.Label is { Length: > 0 } l ? $" — {l}" : "")} · {(string.Equals(o.Approval, "Approved", StringComparison.OrdinalIgnoreCase) ? "godkjent" : "ikke godkjent")}"
+        + (o.Environment is { Length: > 0 } env ? $" · miljø: {env}" : " · miljø ikke oppgitt");
+
+    public sealed record HistoryEntry(DateTimeOffset At, string By, string What);
+
+    /// <summary>A case's edit and review history in the tester's words, newest first (field names translated; anything else shown as recorded).</summary>
+    public static IReadOnlyList<HistoryEntry> CaseHistory(TestCaseDraft c) =>
+        c.EditHistory.Select(e => new HistoryEntry(e.At, e.Editor, "Endret: " + string.Join(", ", e.Fields.Select(FieldLabel))))
+            .Concat(c.ReviewHistory.Select(r => new HistoryEntry(r.At, r.Reviewer, $"Vurdering: {ReviewLabel(r.State)}{(string.IsNullOrWhiteSpace(r.Rationale) ? "" : $" — {r.Rationale}")}")))
+            .OrderByDescending(h => h.At).ToList();
+
+    public static string FieldLabel(string field) => field switch
+    {
+        "Title" => "tittel", "Purpose" => "formål", "Preconditions" => "forutsetninger", "Steps" => "teststeg", "Step results" => "forventet per steg",
+        "Expected result" => "forventet resultat", "Observation method" => "slik ser du resultatet", "Environment" => "tilgang og miljø", "Test type" => "type",
+        "Execution method" => "gjennomføringsmåte", "Manual or technical" => "testtype (manuell/teknisk)", "Test Data need" => "testdatabehov", "Blocked by" => "hindring",
+        "Priority" => "prioritet", "Roles" => "roller", "Dependencies" => "avhengigheter", "Template values" => "malverdier", "Performance" => "ytelse",
+        _ when field.StartsWith("Test type: ", StringComparison.Ordinal) => "testtype satt til " + (field.EndsWith("Technical", StringComparison.Ordinal) ? "teknisk" : "manuell"),
+        _ => field,
+    };
+
+    public static string CaseKindLabel(ScenarioTestKind? kind) => kind switch
+    {
+        ScenarioTestKind.Manual => "Manuell",
+        ScenarioTestKind.Technical => "Teknisk",
+        ScenarioTestKind.Both => "Begge",
+        _ => "Ikke angitt",
+    };
+
+    /// <summary>
+    /// What the scenario suggests for a case's type (2026-11-25), never a decision for the case: a reviewer's Manuell/Teknisk decision from Finn og
+    /// forstå (<see cref="Reviewed"/>; may be preselected), else the scenario's execution suitability as Finn og forstå shows it (labels only; nothing
+    /// is preselected, so «Manuell + teknisk» leaves both open). Null for a case written without a scenario.
+    /// </summary>
+    public sealed record KindSuggestion(ScenarioTestKind? Reviewed, string? ReviewedBy, IReadOnlyList<string> Approaches);
+
+    public static KindSuggestion? SuggestKind(TestCaseDraft? scenarioCase, ScenarioTestKindDecision? decision)
+    {
+        if (scenarioCase is null && decision is null) return null;
+        var approaches = scenarioCase is null ? [] : TestDesignAdvisor.Suitability(TestDesignAdvisor.FactsOf(scenarioCase)).Approaches
+            .Select(a => TestDesignAdvisor.ApproachLabel(a.Approach)).Distinct().Take(3).ToList();
+        return new KindSuggestion(decision?.Kind, decision?.By, approaches);
+    }
+
+    public static string SuggestionText(KindSuggestion? s) => s switch
+    {
+        { Reviewed: ScenarioTestKind.Both } => $"Scenarioet er vurdert som både manuelt og teknisk i Finn og forstå{(s.ReviewedBy is { Length: > 0 } both ? $" ({both})" : "")}. Velg testtype for dette testtilfellet.",
+        { Reviewed: { } k } => $"Scenarioet er vurdert som {CaseKindLabel(k).ToLowerInvariant()} i Finn og forstå{(s.ReviewedBy is { Length: > 0 } by ? $" ({by})" : "")}. Et forslag — du velger for testtilfellet.",
+        { Approaches.Count: > 0 } => $"Anbefalt for scenarioet: {string.Join(" · ", s.Approaches)}. Velg testtype for testtilfellet.",
+        _ => "Velg testtype for testtilfellet.",
+    };
+
     /// <summary>The translation's state in the tester's words, or null when the case has none.</summary>
     public static (string Text, string Tone)? TranslationStatus(TestCaseDraft c)
     {

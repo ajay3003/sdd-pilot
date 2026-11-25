@@ -373,8 +373,12 @@ public sealed partial class ManualTestingPlanTests : BunitContext
         var cut = Open();
 
         cut.Find("[data-testid=mtp-add-case]").Click();
+        // 2026-11-25: a short form first — the type is chosen before the case exists.
+        _api.Verify(x => x.AddManualCaseAsync(It.IsAny<Guid>(), It.IsAny<AddManualTestCaseRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        cut.Find("[data-testid=mtp-new-kind-option][data-kind=Manual]").Click();
+        cut.Find("[data-testid=mtp-new-create]").Click();
 
-        _api.Verify(x => x.AddManualCaseAsync(PlanId, It.Is<AddManualTestCaseRequest>(r => r.ScenarioKey == "c1" && r.BaseRevision == 3), It.IsAny<CancellationToken>()));
+        _api.Verify(x => x.AddManualCaseAsync(PlanId, It.Is<AddManualTestCaseRequest>(r => r.ScenarioKey == "c1" && r.BaseRevision == 3 && r.TestKind == ScenarioTestKind.Manual), It.IsAny<CancellationToken>()));
         cut.Find("[data-testid=mtp-title]").GetAttribute("value").Should().StartWith("Nytt testtilfelle");
         cut.Find("[data-testid=mtp-steps-none]").TextContent.Should().Contain("Ingen teststeg");
         cut.Find("[data-testid=mtp-scenario]").QuerySelectorAll("[data-testid=mtp-case]").Should().HaveCount(3, "several cases under one scenario");

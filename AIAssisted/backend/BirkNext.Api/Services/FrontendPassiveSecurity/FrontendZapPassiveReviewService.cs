@@ -77,7 +77,6 @@ public sealed class FrontendZapPassiveReviewService(
         var ready = await CheckReadinessAsync(ct);
         if (!ready.Available) return Fail(PassiveSecurityExecutionStatus.Skipped, SafeRequestedUrl(request.TargetUrl), started, ready.Error ?? ready.State.ToString(), PassiveSecurityOutcomeReason.ReadinessUnavailable);
 
-        var port = FreePort();
         var container = $"birknext-zap-passive-{Guid.NewGuid():N}";
         // A fresh key scopes the remotely reachable ZAP API to this one ephemeral run.
         // It is never returned, persisted, or logged.
@@ -86,10 +85,17 @@ public sealed class FrontendZapPassiveReviewService(
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(request.TimeoutSeconds, 10, 600)));
         try
         {
-            var args = BuildContainerArguments(container, port, apiKey, _containerNetwork, _resourceControllers);
+            var args = BuildContainerArguments(container, apiKey, _containerNetwork, _resourceControllers);
             var launch = await runner.RunAsync(_containerRuntime, args, 30000, timeout.Token);
             if (launch.TimedOut || launch.Cancelled) throw new OperationCanceledException(timeout.Token);
             if (launch.ExitCode != 0) return Fail(PassiveSecurityExecutionStatus.EngineError, SafeRequestedUrl(request.TargetUrl), started, "The isolated ZAP container could not be started.", PassiveSecurityOutcomeReason.EngineError);
+            // The runtime chose and bound the host port itself when it published the container (2026-11-25): it is read back, never picked here,
+            // released and reused — so no other process can take it in between.
+            var published = await runner.RunAsync(_containerRuntime, ["port", container, "8080/tcp"], 15000, timeout.Token);
+            if (published.TimedOut || published.Cancelled) throw new OperationCanceledException(timeout.Token);
+            if (published.ExitCode != 0 || ParsePublishedPort(published.Output) is not { } port)
+                return Fail(PassiveSecurityExecutionStatus.EngineError, SafeRequestedUrl(request.TargetUrl), started,
+                    "The isolated ZAP container's published port could not be determined.", PassiveSecurityOutcomeReason.EngineError);
             using var api = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}"), Timeout = TimeSpan.FromSeconds(5) };
             // ZAP identifies API requests by its container-side listener authority. With a
             // dynamic published host port, the default Host header is otherwise treated as
@@ -174,7 +180,7 @@ public sealed class FrontendZapPassiveReviewService(
 
     private static string Get(JsonElement e, string n) => e.TryGetProperty(n, out var p) ? p.ToString() : "";
     internal static string NormalizeRisk(string risk) => risk.StartsWith("High", StringComparison.OrdinalIgnoreCase) ? "High" : risk.StartsWith("Medium", StringComparison.OrdinalIgnoreCase) ? "Medium" : risk.StartsWith("Low", StringComparison.OrdinalIgnoreCase) ? "Low" : "Informational";
-    internal static List<string> BuildContainerArguments(string container, int port, string apiKey, string? network = null, IReadOnlySet<string>? controllers = null)
+    internal static List<string> BuildContainerArguments(string container, string apiKey, string? network = null, IReadOnlySet<string>? controllers = null)
     {
         if (string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < 32 || apiKey.Any(c => !Uri.IsHexDigit(c)))
             throw new ArgumentException("A per-run hexadecimal ZAP API key is required.", nameof(apiKey));
@@ -182,7 +188,8 @@ public sealed class FrontendZapPassiveReviewService(
         args.InsertRange(1, ["--detach", "--rm", "--name", container]);
         args.AddRange(["--label", "birknext.managed=true", "--label", "birknext.component=zap-passive", "--label", "birknext.engine=zap-passive"]);
         if (!string.IsNullOrWhiteSpace(network)) args.AddRange(["--network", network]);
-        args.AddRange(["-p", $"127.0.0.1:{port}:8080", Image, .. DaemonArguments, "-config", $"api.key={apiKey}"]);
+        // Loopback only, host port chosen and bound by the runtime (read back with `port`, see ParsePublishedPort).
+        args.AddRange(["-p", "127.0.0.1::8080", Image, .. DaemonArguments, "-config", $"api.key={apiKey}"]);
         return args;
     }
     internal static List<string> BuildProbeArguments(string container, IReadOnlySet<string>? controllers = null) =>
@@ -226,7 +233,20 @@ public sealed class FrontendZapPassiveReviewService(
         }
         return u.Uri.AbsoluteUri;
     }
-    private static int FreePort() { var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var p = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop(); return p; }
+    /// <summary>The loopback host port from `podman|docker port <container> 8080/tcp` ("127.0.0.1:49153", one line per binding). Only a loopback
+    /// binding counts (the container is published on 127.0.0.1 only); anything else, or no valid port, is null.</summary>
+    internal static int? ParsePublishedPort(string? output)
+    {
+        foreach (var line in (output ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var colon = line.LastIndexOf(':');
+            if (colon <= 0) continue;
+            var host = line[..colon].Trim('[', ']');
+            if (host is not ("127.0.0.1" or "localhost")) continue;
+            if (int.TryParse(line[(colon + 1)..], out var port) && port is > 0 and <= 65535) return port;
+        }
+        return null;
+    }
     private static string ParseVersion(string s)
     {
         var matches = System.Text.RegularExpressions.Regex.Matches(s, @"\d+\.\d+\.\d+");

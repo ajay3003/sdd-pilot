@@ -7,12 +7,19 @@ using BirkNext.Api.Services.AuthenticatedReview;
 using BirkNext.Api.Services.ManagedEdge;
 using BirkNext.ManagedEdge;
 using Microsoft.AspNetCore.Mvc;
+using BirkNext.Api.Tests.TestInfrastructure;
 using Microsoft.Extensions.Options;
 
 namespace BirkNext.Api.Tests.Services;
 
-public sealed class ManagedEdgePreflightTests
+public sealed class ManagedEdgePreflightTests : IDisposable
 {
+    // Ports where nothing may listen are reserved for the whole test (bound, not listening: connections are refused and no parallel test can
+    // take them). The old FreePort() released the port first, so another test's listener could answer this test's "closed" port (2026-11-25).
+    private readonly List<LoopbackPortReservation> _reserved = [];
+    private int ClosedPort() { var r = LoopbackPortReservation.Reserve(); _reserved.Add(r); return r.Port; }
+    public void Dispose() { foreach (var r in _reserved) r.Dispose(); }
+
     private const string Origin = "https://m2lbdev.bufetat.no";
     private const string TargetUrl = Origin + "/";
     private static readonly EdgeInstallation Installed = new(@"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", "152.0.4191.66");
@@ -29,17 +36,17 @@ public sealed class ManagedEdgePreflightTests
     /// <summary>Minimal loopback HTTP server that answers /json/version and /json/list; never redirects unless told to.</summary>
     private sealed class FakeCdpServer : IDisposable
     {
-        private readonly TcpListener _listener;
+        private readonly Socket _listener;
         private readonly CancellationTokenSource _stop = new();
         public int Port { get; }
         public string VersionResponse { get; set; }
         public string ListJson { get; set; } = "[]";
         public int Requests;
-        public FakeCdpServer(int port = 0, string? websocket = null)
+        public FakeCdpServer(string? websocket = null) : this(LoopbackPortReservation.Reserve(), websocket) { }
+        public FakeCdpServer(LoopbackPortReservation reservation, string? websocket = null)
         {
-            _listener = new TcpListener(IPAddress.Loopback, port);
-            _listener.Start();
-            Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+            Port = reservation.Port;
+            _listener = reservation.Listen();
             VersionResponse = Json("{\"Browser\":\"Edg/152.0.4191.66\",\"Protocol-Version\":\"1.3\",\"webSocketDebuggerUrl\":\"" + (websocket ?? $"ws://127.0.0.1:{Port}/devtools/browser/abc") + "\"}");
             _ = Task.Run(AcceptAsync);
         }
@@ -48,12 +55,11 @@ public sealed class ManagedEdgePreflightTests
         {
             while (!_stop.IsCancellationRequested)
             {
-                TcpClient client;
-                try { client = await _listener.AcceptTcpClientAsync(_stop.Token); } catch { return; }
+                Socket client;
+                try { client = await _listener.AcceptAsync(_stop.Token); } catch { return; }
                 _ = Task.Run(async () =>
                 {
-                    using var peer = client;
-                    var stream = peer.GetStream();
+                    using var stream = new NetworkStream(client, ownsSocket: true);
                     var buffer = new byte[8192];
                     var read = await stream.ReadAsync(buffer);
                     if (read == 0) return; // bare TCP reachability probe, not an HTTP request
@@ -64,17 +70,9 @@ public sealed class ManagedEdgePreflightTests
                 });
             }
         }
-        public void Dispose() { _stop.Cancel(); _listener.Stop(); }
+        public void Dispose() { _stop.Cancel(); _listener.Dispose(); }
     }
 
-    private static int FreePort()
-    {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
-    }
 
     private static ManagedEdgePreflightService Service(int port, EdgeInstallation? installation = null, EdgeRemoteDebuggingPolicyStatus policy = EdgeRemoteDebuggingPolicyStatus.NotConfigured,
         FakeLauncher? launcher = null, bool local = true, string? profileDirectory = null, int launchTimeoutSeconds = 1) =>
@@ -85,7 +83,7 @@ public sealed class ManagedEdgePreflightTests
     [Fact] // A
     public async Task EdgeNotInstalledIsReportedAndLaunchDisabled()
     {
-        var result = await Service(FreePort()).CheckAsync(TargetUrl);
+        var result = await Service(ClosedPort()).CheckAsync(TargetUrl);
         Assert.True(result.LocalBrowserIntegrationAvailable);
         Assert.False(result.EdgeInstalled);
         Assert.Null(result.EdgeExecutablePath);
@@ -96,7 +94,7 @@ public sealed class ManagedEdgePreflightTests
     [Fact] // B
     public async Task EdgeInstalledIsReportedWithVersion()
     {
-        var result = await Service(FreePort(), Installed).CheckAsync(TargetUrl);
+        var result = await Service(ClosedPort(), Installed).CheckAsync(TargetUrl);
         Assert.True(result.EdgeInstalled);
         Assert.Equal(Installed.ExecutablePath, result.EdgeExecutablePath);
         Assert.Equal("152.0.4191.66", result.EdgeVersion);
@@ -126,7 +124,7 @@ public sealed class ManagedEdgePreflightTests
     [InlineData(EdgeRemoteDebuggingPolicyStatus.Unknown)]
     public async Task NonBlockingPolicyPermitsLaunch(EdgeRemoteDebuggingPolicyStatus policy)
     {
-        var result = await Service(FreePort(), Installed, policy).CheckAsync(TargetUrl);
+        var result = await Service(ClosedPort(), Installed, policy).CheckAsync(TargetUrl);
         Assert.Equal(policy, result.RemoteDebuggingPolicyStatus);
         Assert.True(result.CanLaunchTestEdge);
         Assert.Equal(ManagedEdgePreflightService.EndpointInactiveReason, result.FailureReason);
@@ -135,7 +133,7 @@ public sealed class ManagedEdgePreflightTests
     [Fact] // G
     public async Task UnavailableEndpointIsNotActiveAndNotConnectable()
     {
-        var result = await Service(FreePort(), Installed).CheckAsync(TargetUrl);
+        var result = await Service(ClosedPort(), Installed).CheckAsync(TargetUrl);
         Assert.False(result.CdpEndpointReachable);
         Assert.False(result.CdpProtocolValid);
         Assert.False(result.RemoteDebuggingRuntimeActive);
@@ -193,7 +191,7 @@ public sealed class ManagedEdgePreflightTests
     [InlineData("wss://127.0.0.1:9222/devtools/browser/id")]
     public async Task WebSocketLeavingLoopbackOrPortIsRejected(string websocket)
     {
-        using var cdp = new FakeCdpServer(0, websocket);
+        using var cdp = new FakeCdpServer(websocket);
         var result = await Service(cdp.Port, Installed).CheckAsync(TargetUrl);
         Assert.True(result.CdpEndpointReachable);
         Assert.False(result.CdpProtocolValid);
@@ -264,7 +262,7 @@ public sealed class ManagedEdgePreflightTests
         Assert.True(ManagedEdgePreflightService.IsNormalEdgeProfile(directory));
         Assert.Throws<ArgumentException>(() => ManagedEdgePreflightService.BuildLaunchArguments(9222, directory, TargetUrl));
         var launcher = new FakeLauncher();
-        var result = await Service(FreePort(), Installed, launcher: launcher, profileDirectory: directory).LaunchAsync(TargetUrl);
+        var result = await Service(ClosedPort(), Installed, launcher: launcher, profileDirectory: directory).LaunchAsync(TargetUrl);
         Assert.Empty(launcher.Launches);
         Assert.False(result.EdgeStarted);
         Assert.Contains("normal Edge profile is never reused", result.FailureReason);
@@ -283,7 +281,7 @@ public sealed class ManagedEdgePreflightTests
     public async Task LaunchTimeoutIsReportedWithoutClaimingReadiness()
     {
         var launcher = new FakeLauncher();
-        var result = await Service(FreePort(), Installed, launcher: launcher, launchTimeoutSeconds: 1).LaunchAsync(TargetUrl);
+        var result = await Service(ClosedPort(), Installed, launcher: launcher, launchTimeoutSeconds: 1).LaunchAsync(TargetUrl);
         Assert.Single(launcher.Launches);
         Assert.True(result.EdgeStarted);
         Assert.False(result.RemoteDebuggingRuntimeActive);
@@ -294,9 +292,11 @@ public sealed class ManagedEdgePreflightTests
     [Fact]
     public async Task SuccessfulLaunchWaitsForVersionEndpointThenReportsReadiness()
     {
-        var port = FreePort();
+        // The port stays reserved until the fake Edge listens on it (handed over, never released in between).
+        using var reservation = LoopbackPortReservation.Reserve();
+        var port = reservation.Port;
         FakeCdpServer? cdp = null;
-        var launcher = new FakeLauncher { OnLaunch = () => { cdp = new FakeCdpServer(port); return true; } };
+        var launcher = new FakeLauncher { OnLaunch = () => { cdp = new FakeCdpServer(reservation); return true; } };
         try
         {
             var result = await Service(port, Installed, launcher: launcher, launchTimeoutSeconds: 10).LaunchAsync(TargetUrl);

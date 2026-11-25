@@ -153,13 +153,17 @@ public sealed class ExistingTestScenarioProvider : ITestScenarioCandidateProvide
                 context.Snapshot is null ? "No source snapshot is linked to this project." : "No xUnit test was discovered in the source.", "xUnit test discovery",
                 inventory?.Limitations), []));
         var links = D.TestLinks(inventory);
-        if (context.Workspace is { Requirements.Count: 0 })
+        var scenarioLinks = D.ScenarioLinks(inventory);
+        if (context.Workspace is { Requirements.Count: 0 } && scenarioLinks.Count == 0)
             return Task.FromResult(new CandidateProviderOutput(D.Capability(D.ExistingTests, DiscoveryCapabilityState.NotApplicable, 0,
                 $"{inventory.Definitions.Count} automated developer tests found. They are not manual test cases; they are shown on a scenario only when "
                 + "the project's specification has a requirement they name, and this project has no specification requirements.", "xUnit test discovery"), [], links));
+        var older = inventory.ScenarioReferenceRules == 0
+            ? new[] { "These tests were discovered before BirkNext read scenario references; import the source again to see which tests name a scenario." } : [];
         return Task.FromResult(new CandidateProviderOutput(D.Capability(D.ExistingTests, DiscoveryCapabilityState.Available, 0,
-            $"{inventory.Definitions.Count} tests discovered; {links.Select(l => l.Test.TestId).Distinct().Count()} reference a requirement explicitly. Shown on the candidates they reference.",
-            "xUnit test discovery", ["Only xUnit [Fact]/[Theory] are discovered; NUnit, MSTest, Jest and others are not listed individually.", .. inventory.Limitations]), [], links));
+            $"{inventory.Definitions.Count} tests discovered; {links.Select(l => l.Test.TestId).Distinct().Count()} reference a requirement explicitly, "
+            + $"{scenarioLinks.Select(l => l.Test.TestId).Distinct().Count()} name an acceptance scenario. Shown on the scenarios they name (and, as supporting evidence, on the ones sharing a requirement).",
+            "xUnit test discovery", ["Only xUnit [Fact]/[Theory] are discovered; NUnit, MSTest, Jest and others are not listed individually.", .. older, .. inventory.Limitations]), [], links, scenarioLinks));
     }
 }
 
@@ -266,6 +270,7 @@ public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources,
         var capabilities = new List<DiscoveryCapability>();
         var candidates = new List<DiscoveredScenario>();
         var links = new List<RequirementTestLink>();
+        var scenarioLinks = new List<ScenarioTestLink>();
         foreach (var provider in providers)
         {
             // The specification provider reads each specification of the basis; every other provider reads each source of the basis (or none).
@@ -283,6 +288,7 @@ public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources,
                     var origin = provider.CapabilityId == D.Specification ? basis?.SpecificationReference ?? "" : context.Snapshot?.Id.ToString() ?? "";
                     candidates.AddRange(output.Candidates.Select(c => c.SnapshotKey.Length > 0 ? c : c with { SnapshotKey = origin }));
                     if (output.TestLinks is { } l) links.AddRange(l);
+                    if (output.ScenarioLinks is { } sl) scenarioLinks.AddRange(sl);
                 }
                 catch (Exception e) when (e is not OperationCanceledException)
                 {
@@ -293,13 +299,14 @@ public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources,
             capabilities.Add(D.MergeCapabilities(outputs));
         }
         var snapshotKey = primary?.Id.ToString() ?? "";
-        var final = D.Finalize(projectKey, snapshotKey, candidates, links);
+        var final = D.Finalize(projectKey, snapshotKey, candidates, links, scenarioLinks);
         if (candidates.Count > D.MaxCandidates) limitations.Add($"Only the first {D.MaxCandidates} candidates are kept.");
         var fingerprint = E.Sha(string.Join("\n", final.Select(c => c.CandidateId + ":" + c.Fingerprint)));
         var result = new ScenarioDiscoveryResult
         {
             DiscoveryId = E.Sha($"{projectKey}|{basis?.Fingerprint ?? snapshotKey}|{fingerprint}|{D.RuleVersion}")[..24], ProjectKey = projectKey, ProjectName = name,
             SnapshotKey = snapshotKey,
+            TestsReadForScenarios = snapshots.Any(s => s.TestInventory is { ScenarioReferenceRules: >= 1, Definitions.Count: > 0 }),
             SnapshotLabel = primary is null ? null : $"{primary.Archive.FileName} · {primary.AnalyzedAt:yyyy-MM-dd HH:mm}",
             RuleVersion = D.RuleVersion, DiscoveredAt = (clock ?? TimeProvider.System).GetUtcNow(),
             Capabilities = [.. capabilities.Select(c => c.State == DiscoveryCapabilityState.Available ? c with { Candidates = final.Count(x => x.CapabilityId == c.Id) } : c)],

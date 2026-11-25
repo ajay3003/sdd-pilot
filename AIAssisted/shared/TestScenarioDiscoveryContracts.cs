@@ -132,7 +132,23 @@ public sealed record CandidateEvidenceRef(string Kind, string Reference, string?
 
 /// <summary>An existing test associated with a candidate through an explicit reference (requirement id in the test's traits/references), never by name.
 /// <see cref="Confirmed"/> false: the reference is inferred and needs review.</summary>
-public sealed record CandidateTestAssociation(string TestId, string Name, string? File, string Basis, bool Confirmed = true);
+public sealed record CandidateTestAssociation(string TestId, string Name, string? File, string Basis, bool Confirmed = true)
+{
+    /// <summary>How the test is tied to THIS scenario (2026-11-25): it names the scenario itself, or only a requirement the scenario also names
+    /// (supporting evidence — never shown as a link to the scenario).</summary>
+    public TestScenarioLinkOrigin Origin { get; init; } = TestScenarioLinkOrigin.SharedRequirement;
+    /// <summary>Unit / Integration / Contract / FrontendComponent / Unknown (from the test project; never inferred from the name).</summary>
+    public string? Layer { get; init; }
+    public string? Framework { get; init; }
+    public string? ClassName { get; init; }
+    public string? MethodName { get; init; }
+    /// <summary>SHA-256 of the test method's source: a reviewer decision made on another fingerprint must be reviewed again.</summary>
+    public string? SourceFingerprint { get; init; }
+}
+
+/// <summary>Whether a test names the scenario itself or only a requirement the scenario also names.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestScenarioLinkOrigin { SharedRequirement, Scenario }
 
 /// <summary>A type-specific template field (operation, trigger, producer, workload …). Value null = not in the evidence (never filled in).</summary>
 public sealed record CandidateTemplateField(string Key, string Label, string? Value);
@@ -314,6 +330,9 @@ public sealed record ScenarioDiscoveryResult
 {
     /// <summary>Identity of this result: project + snapshot + evidence fingerprint + rule version.</summary>
     public string DiscoveryId { get; init; } = "";
+    /// <summary>Whether the source's tests were read for scenario references (2026-11-25). False = no tests, or an older discovery: a scenario
+    /// without a linked test is then «ikke vurdert», never «ingen kjent automatisk test».</summary>
+    public bool TestsReadForScenarios { get; init; }
     public string ProjectKey { get; init; } = "";
     public string? ProjectName { get; init; }
     public string SnapshotKey { get; init; } = "";
@@ -351,9 +370,10 @@ public sealed record CreateProjectTestPlanRequest
 /// <summary>A test case a person writes by hand: title and purpose; steps are added while editing. <see cref="ScenarioKey"/> = write it under that
 /// scenario of the plan (it starts from the scenario's starting situation; expected results are never filled in). <see cref="CopyFrom"/> = a new
 /// case with its own identity, starting from that case's current text (review, history and Azure DevOps id are not copied).
-/// <see cref="Variant"/> = start from a variant the scenario's evidence supports (its key from the variant proposals).</summary>
+/// <see cref="Variant"/> = start from a variant the scenario's evidence supports (its key from the variant proposals).
+/// <see cref="TestKind"/> = Manuell or Teknisk chosen when creating the case (2026-11-25); a duplicate keeps its source case's type unless one is given.</summary>
 public sealed record AddManualTestCaseRequest(int BaseRevision, string Title, string? Purpose, ScenarioCandidateType? Type,
-    string? ScenarioKey = null, string? CopyFrom = null, string? Variant = null);
+    string? ScenarioKey = null, string? CopyFrom = null, string? Variant = null, ScenarioTestKind? TestKind = null);
 
 /// <summary>
 /// What changed in an application's scenarios with a new import (2026-11-23): the new import's discovery compared with the application's previous

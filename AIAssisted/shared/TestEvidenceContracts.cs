@@ -49,7 +49,17 @@ public sealed record SourceTestInventory
     /// that publishes TRX is not an imported execution.</summary>
     public List<TrxConfigurationEvidence> TrxConfiguration { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
+    /// <summary>Version of the scenario-reference rules this discovery applied (2026-11-25); 0 = an older discovery that did not look for scenario
+    /// references at all (its tests are "not assessed" per scenario, never "no test").</summary>
+    public int ScenarioReferenceRules { get; init; }
 }
+
+/// <summary>
+/// A user story acceptance scenario a test names (2026-11-25): «US5 scenario 9», «US5-AS9», or a <c>Scenario_9_…</c> method in a class whose summary
+/// names «US5 scenarios 1–9». Scoped to the story id and number; which specification it belongs to is decided later, within the test's module.
+/// Confirmed/StronglySupported = explicit for this test; Inferred = a candidate (class-level, or the number fits more than one story).
+/// </summary>
+public sealed record SourceTestScenarioReference(string StoryId, int Number, TestEvidenceConfidence Confidence, string Basis, int Line);
 
 public sealed record SourceTestProject
 {
@@ -101,6 +111,8 @@ public sealed record SourceTestDefinition
     public List<SourceTestTrait> Traits { get; init; } = [];
     public List<string> Categories { get; init; } = [];
     public List<SourceTestReference> References { get; init; } = [];
+    /// <summary>Acceptance scenarios the test names (empty for an older discovery; see <see cref="SourceTestInventory.ScenarioReferenceRules"/>).</summary>
+    public List<SourceTestScenarioReference> Scenarios { get; init; } = [];
     /// <summary>SHA-256 of the method's source text: a changed fingerprint for the same identity means the test itself changed.</summary>
     public string SourceFingerprint { get; init; } = "";
 }

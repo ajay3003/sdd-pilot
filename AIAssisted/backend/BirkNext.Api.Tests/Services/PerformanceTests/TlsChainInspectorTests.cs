@@ -176,11 +176,9 @@ public sealed class TlsChainInspectorTests : IDisposable
     [Fact]
     public async Task UnreachableAndHttpTargets_AreReportedWithoutAChain()
     {
-        var closed = new TcpListener(IPAddress.Loopback, 0);
-        closed.Start();
-        var port = ((IPEndPoint)closed.LocalEndpoint).Port;
-        closed.Stop();
-        (await Inspect(port, null)).Reached.Should().BeFalse();
+        // Reserved, not released: a parallel test can never answer this "closed" port (2026-11-25).
+        using var closed = BirkNext.Api.Tests.TestInfrastructure.LoopbackPortReservation.Reserve();
+        (await Inspect(closed.Port, null)).Reached.Should().BeFalse();
         (await TlsChainInspector.InspectAsync(new Uri("http://localhost/"), null, TimeSpan.FromSeconds(1))).Detail.Should().Contain("not HTTPS");
     }
 

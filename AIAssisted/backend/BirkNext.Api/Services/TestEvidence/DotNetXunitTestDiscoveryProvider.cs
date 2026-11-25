@@ -23,6 +23,8 @@ namespace BirkNext.Api.Services.TestEvidence;
 public static class DotNetXunitTestDiscoveryProvider
 {
     public const int Version = 1;
+    /// <summary>Scenario-reference rules (2026-11-25), recorded on the inventory so an older discovery is told apart from "no test names a scenario".</summary>
+    public const int ScenarioRules = 1;
     private const int MaxDefinitions = 20_000;
     private const int MaxReferencesPerTest = 50;
     private const int MaxTrxConfiguration = 200;
@@ -119,7 +121,7 @@ public static class DotNetXunitTestDiscoveryProvider
         {
             ProviderVersion = Version, SnapshotId = snapshotId, SnapshotFingerprint = snapshotFingerprint, RepositoryName = repositoryName is null ? null : Safe(repositoryName),
             Status = status, Projects = finalProjects, Definitions = definitions, TrxConfiguration = TrxConfiguration(workspace, finalProjects),
-            Limitations = limitations.Distinct().ToList(),
+            Limitations = limitations.Distinct().ToList(), ScenarioReferenceRules = ScenarioRules,
         };
     }
 
@@ -154,6 +156,7 @@ public static class DotNetXunitTestDiscoveryProvider
             HasDynamicData = attributes.Any(a => AttributeName(a) is "MemberData" or "ClassData"),
             Traits = traits, Categories = categories,
             References = References(method, types[^1], traits),
+            Scenarios = ScenarioReferences(method, types[^1], traits),
             SourceFingerprint = Hash(method.ToFullString().Replace("\r\n", "\n")),
         };
     }
@@ -206,6 +209,93 @@ public static class DotNetXunitTestDiscoveryProvider
             foreach (var id in RequirementReferenceParser.Extract(CommentText(trivia), requireUpperCase: true))
                 Add(id, KindOf(id), TestEvidenceConfidence.Inferred, "Mentioned in the test class comment (applies to the class, not established per test)", LineOf(trivia));
         return found.Values.OrderBy(r => r.Confidence).ThenBy(r => r.Id, StringComparer.Ordinal).ToList();
+    }
+
+    // «US5 scenario 9», «US5 scenarios 1–9», «US4 scenarios 1, 2, 4 and 5», «US8 scenarios 1 og 4»; «US5-AS9». A convention of Spec Kit test suites,
+    // read only from comments and traits (never from wording elsewhere). The number list ends at the first token that is not a number or a joiner.
+    private static readonly Regex StoryScenarios = new(@"\bUS(?<story>\d{1,3})\s+(?:scenarios?|scenarioer|scenario)\s+(?<list>\d{1,3}(?:\s*(?:[\u2013\u2014-]|,|\band\b|\bog\b)\s*\d{1,3})*)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex StoryScenarioId = new(@"\bUS(?<story>\d{1,3})-AS(?<number>\d{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    // A test method named for its scenario numbers: Scenario_4_… or Scenarios_2_and_8_and_9_…
+    private static readonly Regex MethodScenarios = new(@"^Scenarios?_(?<list>\d{1,3}(?:_and_\d{1,3})*)(?:_|$)", RegexOptions.CultureInvariant);
+
+    /// <summary>(story, number) pairs a text states. Ranges («1–9») are expanded (at most 50 numbers per statement).</summary>
+    internal static List<(string Story, int Number)> StatedScenarios(string text)
+    {
+        var found = new List<(string, int)>();
+        foreach (Match m in StoryScenarioId.Matches(text)) found.Add(($"US{int.Parse(m.Groups["story"].Value)}", int.Parse(m.Groups["number"].Value)));
+        foreach (Match m in StoryScenarios.Matches(text))
+        {
+            var story = $"US{int.Parse(m.Groups["story"].Value)}";
+            var numbers = new List<int>();
+            foreach (var part in Regex.Split(m.Groups["list"].Value, @"\s*(?:,|\band\b|\bog\b)\s*", RegexOptions.IgnoreCase))
+            {
+                var range = Regex.Match(part, @"^(?<a>\d{1,3})\s*[\u2013\u2014-]\s*(?<b>\d{1,3})$");
+                if (range.Success)
+                {
+                    int a = int.Parse(range.Groups["a"].Value), b = int.Parse(range.Groups["b"].Value);
+                    if (a <= b && b - a < 50) numbers.AddRange(Enumerable.Range(a, b - a + 1));
+                }
+                else if (int.TryParse(part.Trim(), out var n)) numbers.Add(n);
+            }
+            found.AddRange(numbers.Where(n => n > 0).Select(n => (story, n)));
+        }
+        return [.. found.Distinct()];
+    }
+
+    /// <summary>
+    /// The acceptance scenarios one test names (2026-11-25), strongest evidence per scenario:
+    /// a trait naming the scenario → Confirmed; the method's own documentation → StronglySupported; a <c>Scenario_N</c> method name whose number the
+    /// class summary assigns to exactly one story → StronglySupported; that number assigned to several stories, a mention in a comment in the body,
+    /// or a class that is about exactly one scenario → Inferred (a candidate). A class naming several scenarios never links all its tests to all of them.
+    /// </summary>
+    private static List<SourceTestScenarioReference> ScenarioReferences(MethodDeclarationSyntax method, TypeDeclarationSyntax type, List<SourceTestTrait> traits)
+    {
+        var found = new Dictionary<(string, int), SourceTestScenarioReference>();
+        void Add(string story, int number, TestEvidenceConfidence confidence, string basis, int line)
+        {
+            if (found.Count >= MaxReferencesPerTest && !found.ContainsKey((story, number))) return;
+            if (found.TryGetValue((story, number), out var existing) && existing.Confidence <= confidence) return;
+            found[(story, number)] = new SourceTestScenarioReference(story, number, confidence, basis, line);
+        }
+        int LineOf(SyntaxTrivia t) => t.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+        var methodLine = method.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+
+        foreach (var trait in traits.Where(t => AcceptanceTraitNames.Contains(t.Name)))
+            foreach (var (story, number) in StatedScenarios(trait.Value))
+                Add(story, number, TestEvidenceConfidence.Confirmed, $"[Trait(\"{trait.Name}\")] names {story} scenario {number}", methodLine);
+
+        var bodyStart = method.Body?.SpanStart ?? method.ExpressionBody?.SpanStart ?? method.Span.End;
+        foreach (var trivia in method.GetLeadingTrivia().Concat(method.DescendantTrivia(descendIntoTrivia: true)).Where(IsComment).Distinct())
+        {
+            var inBody = trivia.SpanStart >= bodyStart;
+            foreach (var (story, number) in StatedScenarios(CommentText(trivia)))
+                Add(story, number, inBody ? TestEvidenceConfidence.Inferred : TestEvidenceConfidence.StronglySupported,
+                    inBody ? $"Mentioned in a comment in the test body ({story} scenario {number})" : $"The test's own comment names {story} scenario {number}", LineOf(trivia));
+        }
+
+        var classStated = type.GetLeadingTrivia().Where(IsComment).SelectMany(t => StatedScenarios(CommentText(t)).Select(p => (p.Story, p.Number, Line: LineOf(t)))).ToList();
+        var named = MethodScenarios.Match(method.Identifier.ValueText);
+        if (named.Success)
+        {
+            foreach (var number in named.Groups["list"].Value.Split("_and_").Select(int.Parse).Distinct())
+            {
+                var stories = classStated.Where(c => c.Number == number).ToList();
+                var distinct = stories.Select(s => s.Story).Distinct().ToList();
+                if (distinct.Count == 1)
+                    Add(distinct[0], number, TestEvidenceConfidence.StronglySupported,
+                        $"The method name names scenario {number}; the class summary names {distinct[0]} scenario {number}", methodLine);
+                else
+                    foreach (var s in distinct)
+                        Add(s, number, TestEvidenceConfidence.Inferred, $"The method name names scenario {number}; the class summary names scenario {number} for several stories", methodLine);
+            }
+        }
+        else if (found.Count == 0 && classStated.Select(c => (c.Story, c.Number)).Distinct().Count() == 1)
+        {
+            var only = classStated[0];
+            Add(only.Story, only.Number, TestEvidenceConfidence.Inferred, $"The class summary names only {only.Story} scenario {only.Number} (not established per test)", only.Line);
+        }
+        return [.. found.Values.OrderBy(r => r.Confidence).ThenBy(r => r.StoryId, StringComparer.Ordinal).ThenBy(r => r.Number)];
     }
 
     private static CompilationUnitSyntax Parse(string text, CancellationToken ct) =>

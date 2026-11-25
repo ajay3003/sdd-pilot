@@ -54,6 +54,19 @@
                 <div class="@(clarify > 0 ? "is-warn" : null)"><dt>Trenger avklaring</dt><dd data-testid="mt-count-clarify">@clarify</dd></div>
                 <div><dt>Lagrede planer</dt><dd data-testid="mt-count-plans">@plans.Count</dd></div>
             </dl>
+            @* «Kan testene starte?» (2026-11-25): what is still missing in the prepared cases, from the saved plans' own counts — each with its denominator.
+               Readiness, execution and results are separate questions: execution and results live in Azure DevOps Test Plans and are not shown as numbers here. *@
+            @if (cases > 0)
+            {
+                var missingExpected = plans.Sum(p => p.MissingExpected); var missingData = plans.Sum(p => p.MissingTestData); var blocked = plans.Sum(p => p.Blocked);
+                <dl class="msb-counts msb-counts-wide" data-testid="mt-readiness-counts" aria-label="Hva mangler før testene kan starte">
+                    <div class="@(missingExpected > 0 ? "is-warn" : null)"><dt>Mangler forventet resultat</dt><dd data-testid="mt-count-missing-expected">@missingExpected av @cases</dd></div>
+                    <div class="@(missingData > 0 ? "is-warn" : null)"><dt>Uten koblet testdata</dt><dd data-testid="mt-count-missing-data">@missingData av @cases</dd></div>
+                    <div class="@(blocked > 0 ? "is-warn" : null)"><dt>Ikke klar til kjøring</dt><dd data-testid="mt-count-blocked">@blocked av @cases</dd></div>
+                    <div><dt>Gjennomført / bestått</dt><dd data-testid="mt-count-executed">Registreres i Azure DevOps</dd></div>
+                </dl>
+                <p class="mt-muted msb-small" data-testid="mt-readiness-basis">Av alle testtilfeller i lagrede planer; utelatte testtilfeller telles ikke som mangler. «Uten koblet testdata» gjelder også testtilfeller som ikke trenger testdata.</p>
+            }
 
             @if (_ws.Plans is { } workspace)
             {

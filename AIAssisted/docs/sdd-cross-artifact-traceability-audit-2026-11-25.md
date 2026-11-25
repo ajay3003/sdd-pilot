@@ -528,3 +528,11 @@ Eight checks; **seven pass**:
 **The write path was not exercised in the browser.** The project's only other specification is a docs file without user stories, so there was no disposable place to save a choice. Writing into the SkoleService 001 grouping would add entries to the person's own decision history, so it was not done without asking. The write path is covered by the engine, service and page tests above.
 
 The page's own workspace auto-save ran when the specification changed and was restored. Plan fingerprints are unchanged (`e20566b3…`).
+
+### FV10. Correction (2026-11-25, 10:55): CI_DEF_3
+
+FV9 named a stray client on a reused loopback port as CI_DEF_3's root cause. The next full run that failed (final8, which stopped at the memory floor) contradicts that: the test's **own request was answered and there were no stray connections**, yet the client still timed out after 25.5 s.
+
+- **What is known:** the cause is **not established**. The evidence fits the test process stalling under memory pressure; the answer arrives but is read after the 20 s timeout fires.
+- **The port fix still stands:** the race is real and closed, and is verified (see `test-case-type-and-port-reliability-2026-11-25.md`). It is not proven to be CI_DEF_3's cause.
+- **Status:** CI_DEF_3 is still an intermittent failure under full-suite memory pressure.

@@ -328,8 +328,12 @@ public static partial class TestDesignAdvisor
         checks.Add(new("Tilgang og miljø", string.IsNullOrWhiteSpace(c.Edits.EnvironmentPrerequisites) ? Tri.Unknown : Tri.Yes,
             string.IsNullOrWhiteSpace(c.Edits.EnvironmentPrerequisites) ? "Ikke registrert." : "Registrert av en person."));
         checks.Add(new("Gjennomgang", c.Review == TestCaseReviewState.Accepted ? Tri.Yes : Tri.No, c.Review == TestCaseReviewState.Accepted ? "Godkjent." : "Ikke godkjent ennå."));
+        // A hindrance a person recorded (2026-11-25): the case cannot start until it is resolved. Only what was recorded — a dependency in the
+        // specification never blocks a case by itself.
+        var hindrance = c.Edits.BlockedBy is { Length: > 0 } blockedBy && !string.IsNullOrWhiteSpace(blockedBy) ? blockedBy.Trim() : null;
+        if (hindrance is not null) checks.Add(new("Hindring", Tri.No, hindrance));
 
-        var level = c.SourceState is CaseSourceState.Removed || c.HasUnresolvedConflict || checks.Any(x => x.Name == "Testdata" && x.Satisfied == Tri.No) ? ReadinessLevel.Blocked
+        var level = c.SourceState is CaseSourceState.Removed || c.HasUnresolvedConflict || hindrance is not null || checks.Any(x => x.Name == "Testdata" && x.Satisfied == Tri.No) ? ReadinessLevel.Blocked
             : c.Review == TestCaseReviewState.Accepted ? (checks.All(x => x.Satisfied == Tri.Yes) ? ReadinessLevel.ReadyToRun : ReadinessLevel.NeedsPreparation)
             : c.Review == TestCaseReviewState.UnderReview ? ReadinessLevel.ReadyForReview
             : c.Review == TestCaseReviewState.NeedsClarification ? ReadinessLevel.NeedsPreparation

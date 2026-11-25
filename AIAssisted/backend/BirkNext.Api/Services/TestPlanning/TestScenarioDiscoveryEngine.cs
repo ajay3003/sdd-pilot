@@ -12,7 +12,11 @@ using E = BirkNext.Api.Services.TestPlanning.TestPlanSuggestionEngine;
 namespace BirkNext.Api.Services.TestPlanning;
 
 /// <summary>A provider's contribution: its capability state, its candidates and (existing tests) explicit requirement → test links.</summary>
-public sealed record CandidateProviderOutput(DiscoveryCapability Capability, IReadOnlyList<DiscoveredScenario> Candidates, IReadOnlyList<RequirementTestLink>? TestLinks = null);
+public sealed record CandidateProviderOutput(DiscoveryCapability Capability, IReadOnlyList<DiscoveredScenario> Candidates, IReadOnlyList<RequirementTestLink>? TestLinks = null,
+    IReadOnlyList<ScenarioTestLink>? ScenarioLinks = null);
+
+/// <summary>A test that names a user story acceptance scenario (story id + number) within its module (the first folder of its path).</summary>
+public sealed record ScenarioTestLink(string Module, string StoryId, int Number, CandidateTestAssociation Test);
 
 /// <summary>An existing test that names a requirement id explicitly (trait or reference in its source).</summary>
 public sealed record RequirementTestLink(string RequirementId, CandidateTestAssociation Test);
@@ -592,8 +596,28 @@ public static class TestScenarioDiscoveryEngine
     /// <summary>Explicit requirement references of discovered tests (Confirmed/StronglySupported link; Inferred ones are candidates needing review).</summary>
     public static List<RequirementTestLink> TestLinks(SourceTestInventory inventory) => [.. inventory.Definitions.SelectMany(d => d.References
         .Where(r => r.Kind == TestReferenceKind.Requirement && r.Confidence != TestEvidenceConfidence.Unresolved)
-        .Select(r => new RequirementTestLink(r.Id, new CandidateTestAssociation(d.TestDefinitionId, d.DisplayName ?? d.MethodName, $"{d.FilePath}:{d.Line}",
-            $"The test references {r.Id} ({r.Basis})", r.Confidence is TestEvidenceConfidence.Confirmed or TestEvidenceConfidence.StronglySupported))))];
+        .Select(r => new RequirementTestLink(r.Id, Association(d, $"The test references {r.Id} ({r.Basis})",
+            r.Confidence is TestEvidenceConfidence.Confirmed or TestEvidenceConfidence.StronglySupported, TestScenarioLinkOrigin.SharedRequirement))))];
+
+    /// <summary>The acceptance scenarios discovered tests name (2026-11-25), each scoped to the test's module.</summary>
+    public static List<ScenarioTestLink> ScenarioLinks(SourceTestInventory inventory) => [.. inventory.Definitions.SelectMany(d => d.Scenarios
+        .Where(r => r.Confidence != TestEvidenceConfidence.Unresolved)
+        .Select(r => new ScenarioTestLink(ModuleOf(d.FilePath), r.StoryId, r.Number, Association(d, r.Basis,
+            r.Confidence is TestEvidenceConfidence.Confirmed or TestEvidenceConfidence.StronglySupported, TestScenarioLinkOrigin.Scenario))))];
+
+    private static CandidateTestAssociation Association(SourceTestDefinition d, string basis, bool confirmed, TestScenarioLinkOrigin origin) =>
+        new(d.TestDefinitionId, d.DisplayName ?? d.MethodName, $"{d.FilePath}:{d.Line}", basis, confirmed)
+        {
+            Origin = origin, Layer = d.Kind.ToString(), Framework = d.Framework, ClassName = d.ClassName, MethodName = d.MethodName, SourceFingerprint = d.SourceFingerprint,
+        };
+
+    /// <summary>The module a path belongs to: its first folder ("SkoleService/tests/…" → "SkoleService"); "" for a file at the root.</summary>
+    public static string ModuleOf(string? path)
+    {
+        var p = (path ?? "").Replace('\\', '/').TrimStart('/');
+        var slash = p.IndexOf('/');
+        return slash > 0 ? p[..slash] : "";
+    }
 
     // ── Finalisation ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -602,7 +626,8 @@ public static class TestScenarioDiscoveryEngine
     /// requirement id, and notes "possible duplicate" between candidates of different sources that name the same requirement — never merged.
     /// Order: by source category, area, title.
     /// </summary>
-    public static List<DiscoveredScenario> Finalize(string projectKey, string snapshotKey, IEnumerable<DiscoveredScenario> candidates, IEnumerable<RequirementTestLink> links)
+    public static List<DiscoveredScenario> Finalize(string projectKey, string snapshotKey, IEnumerable<DiscoveredScenario> candidates, IEnumerable<RequirementTestLink> links,
+        IEnumerable<ScenarioTestLink>? scenarioLinks = null)
     {
         var merged = candidates.Where(c => c.ProjectKey == projectKey).GroupBy(c => c.CandidateId, StringComparer.Ordinal).Select(g => g.Skip(1).Aggregate(g.First(), (a, b) => a with
         {
@@ -618,10 +643,21 @@ public static class TestScenarioDiscoveryEngine
         // Cross-source consolidation: exact duplicates merged (evidence kept), equivalent/related/variant noted, conflicting expected results recorded.
         merged = ScenarioConsolidation.Apply(merged);
         var byRequirement = links.GroupBy(l => Norm(l.RequirementId)).ToDictionary(g => g.Key, g => g.Select(l => l.Test).ToList(), StringComparer.Ordinal);
+        // Scenario links (2026-11-25): a test naming «US5 scenario 9» belongs to the scenario numbered 9 under US5 in a specification of the test's own
+        // module. When that (module, story, number) exists in more than one specification, every match stays a candidate (never chosen by guesswork).
+        static string? ScenarioKey(DiscoveredScenario c) => c.Story is { StoryId: { Length: > 0 } sid, SpecificationPath: var spec } && c.NumberInStory is { } n
+            ? $"{ModuleOf(spec)}|{sid.ToUpperInvariant()}|{n}" : null;
+        var scenarioHolders = merged.Select(c => ScenarioKey(c)).OfType<string>().GroupBy(k => k, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+        var byScenario = (scenarioLinks ?? []).GroupBy(l => $"{l.Module}|{l.StoryId.ToUpperInvariant()}|{l.Number}", StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Select(l => l.Test).ToList(), StringComparer.OrdinalIgnoreCase);
         var sharing = merged.SelectMany(c => c.RequirementIds.Select(r => (Req: Norm(r), c.CandidateId, c.CapabilityId))).GroupBy(x => x.Req).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
         return [.. merged.Select(c =>
         {
-            var tests = c.RequirementIds.SelectMany(r => byRequirement.GetValueOrDefault(Norm(r)) ?? []).DistinctBy(t => t.TestId).Take(20).ToList();
+            var key = ScenarioKey(c);
+            var named = key is not null && byScenario.TryGetValue(key, out var found) ? found : [];
+            if (key is not null && scenarioHolders.GetValueOrDefault(key) > 1)
+                named = [.. named.Select(t => t with { Confirmed = false, Basis = t.Basis + " — the module has this story and scenario number in more than one specification" })];
+            var tests = named.Concat(c.RequirementIds.SelectMany(r => byRequirement.GetValueOrDefault(Norm(r)) ?? [])).DistinctBy(t => t.TestId).Take(20).ToList();
             var duplicates = c.RequirementIds.SelectMany(r => sharing.GetValueOrDefault(Norm(r)) ?? []).Where(x => x.CandidateId != c.CandidateId && x.CapabilityId != c.CapabilityId)
                 .Select(x => x.CandidateId).Distinct(StringComparer.Ordinal).Take(5).ToList();
             return c with { ExistingTests = tests, PossibleDuplicates = duplicates };
