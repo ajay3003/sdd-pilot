@@ -22,6 +22,7 @@ Branch `008-traceability-first`. Every part is committed locally as you asked (c
 | `a6f64013` | Testoversikt dashboard, shared scope, System Settings → Manual Testing |
 | `f7914edd` | Overfør testplan: Norwegian check messages, folded empty panels |
 | `eb9241ae` | Versjoner: «Se endringer», restore confirmation |
+| `22133b42` | Found by the walkthrough: specification from any evidence reference; «Se endringer» covers «Før du starter» |
 
 ## B. Shared scope (IMPLEMENTED)
 
@@ -141,7 +142,7 @@ All are in `ManualTestingOverviewPresentation`, shared by every card, chart and 
 
 ## H. Tests
 
-- **Frontend:** **9,734 passed / 0 failed** (full suite, after the last commit).
+- **Frontend:** **9,735 passed / 0 failed** (full suite, final code).
 - **Backend:** TestPlanning + TestEvidence **578 passed / 3 skipped / 0 failed** after the dashboard. The earlier source-status round ran 633 / 3 / 0 with the reset suites.
 - **New tests:**
   - dashboard settings store (defaults, merge, unknown refused, reset, restart);
@@ -156,7 +157,28 @@ All are in `ManualTestingOverviewPresentation`, shared by every card, chart and 
 
 ## I. Browser walkthrough (isolated: fresh database, own App_Data, offline translator, M2LB imported)
 
-*Filled in from the walkthrough's results below.*
+Two full runs on fresh databases. M2LB.zip was imported (392 s), the translator was the packaged offline engine, and no Podman or internet was used. The second run is on the final code (`22133b42`).
+
+| Check | Result |
+|---|---|
+| D1–D4 Finn og forstå: drawer closed on load; selecting does not open it; «Vis detaljer» opens it on «Barnet finnes ikke»; Escape closes it and keeps the selection | PASS |
+| D5 No bare «?» in the readiness list | PASS |
+| T0 «Oversett alle» is gone | PASS |
+| T1 Missing Norwegian text translated automatically, offline, marked «Maskinoversatt — ikke gjennomgått» (23.7 s) | PASS in run 1 (spinner seen). In run 2 the translation had already started on the first opening, so the spinner was over before the check (timing only; result identical) |
+| L1 Left list: scenario title once, case shown as «Testtilfellet» | PASS. This scenario has no AC in the source, so no AC badge |
+| V1 Versjoner → «Se endringer»: «Endret: slik ser du resultatet.» | PASS (run 2, after the fix found in run 1) |
+| S1 The SkoleService test plan opened while Frontend 002 is selected | **No «Kilde mangler», no «annen spesifikasjon» banner** (screenshot). The neutral source line is not shown for this case because the scenario records no specification file at all (it comes from a source marked «ikke gjennomgått»). Honest, not a false warning. |
+| O1 Testoversikt: 1,472 scenario proposals (39 stored specifications), 1 test case, 0 approved, 0 ready; no «Neste steg», no execution words | PASS |
+| O2 Module table lists every module with its own scenario count | PASS |
+| O3 «Valgt spesifikasjon» follows the shared choice (Frontend 002): the SkoleService case is not counted | PASS |
+| C1 A chart switched off in System Settings is not shown (then defaults restored) | PASS |
+| X1 Missing Area Path in Norwegian with «Åpne Azure DevOps-innstillinger» | PASS |
+| X2 Empty transfer history folded | PASS |
+| Q / R No browser console errors, no API errors | PASS |
+
+**Measured:**
+- open Testoversikt: 11.6–12.0 s;
+- automatic translation of a new plan: 23.4–23.7 s, offline, on CPU.
 
 ## J. Data safety
 
