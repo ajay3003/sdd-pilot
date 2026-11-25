@@ -137,6 +137,7 @@
     <Compile Include="../../shared/SystemUnderstandingContracts.cs" Link="Models/SystemUnderstandingContracts.cs" />
     <Compile Include="../../shared/TestPlanSuggestionContracts.cs" Link="Models/TestPlanSuggestionContracts.cs" />
     <Compile Include="../../shared/ScenarioCentricPlanning.cs" Link="Models/ScenarioCentricPlanning.cs" />
+    <Compile Include="../../shared/ManualTestingDashboardContracts.cs" Link="Models/ManualTestingDashboardContracts.cs" />
     <Compile Include="../../shared/TestDesignAdvice.cs" Link="Models/TestDesignAdvice.cs" />
     <Compile Include="../../shared/RequirementSections.cs" Link="Models/RequirementSections.cs" />
     <Compile Include="../../shared/StoryGrouping.cs" Link="Models/StoryGrouping.cs" />

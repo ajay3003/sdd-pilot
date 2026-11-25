@@ -561,6 +561,31 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task The_overview_attributes_each_case_to_its_own_specification_and_module_and_writes_nothing()
+    {
+        await using var db = Context();
+        var x = Services(db);
+        _discoveries.Store(Selected("d-skole", DateTimeOffset.UtcNow.AddMinutes(-20), SkoleSpec, InSpec("s1", SkoleSpec, "US2", "f1")));
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-skole", CandidateIds = ["s1"] }, "t", default);
+        _discoveries.Store(Selected("d-front", DateTimeOffset.UtcNow.AddMinutes(-10), FrontendSpec, InSpec("f1", FrontendSpec, "US1", "g1")));
+        plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-front", CandidateIds = ["f1"], DraftId = plan.Id, BaseRevision = plan.Revision }, "t", default);
+        plan = await x.Plans.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Skole: report twice", null, null, ScenarioKey: "s1"), "t", default);
+        plan = await x.Plans.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Free text check", null, null), "t", default);
+        var revisions = (await x.Plans.RevisionsAsync(plan.Id, default)).Count;
+
+        var overview = await x.Plans.OverviewAsync("import:m", default);
+
+        overview.Cases.Should().HaveCount(4);
+        overview.Cases.Single(c => c.CaseId == "s1").Module.Should().Be("SkoleService");
+        overview.Cases.Single(c => c.CaseId == "f1").Module.Should().Be("Frontend");
+        overview.Cases.Single(c => c.Title == "Skole: report twice").Should().Match<OverviewCase>(c => c.Module == "SkoleService" && c.ScenarioIdentity == "tss-s1",
+            "a hand-written case under a scenario counts for that scenario");
+        overview.Cases.Single(c => c.Title == "Free text check").Module.Should().Be(TestPlanSuggestionService.NoModule, "a case without a source is kept, not dropped");
+        overview.Plans.Single().Modules.Should().BeEquivalentTo(["Frontend", "SkoleService", TestPlanSuggestionService.NoModule]);
+        (await x.Plans.RevisionsAsync(plan.Id, default)).Should().HaveCount(revisions, "reading the overview writes nothing");
+    }
+
+    [Fact]
     public async Task A_historical_inspection_can_never_extend_a_plan_or_move_its_basis()
     {
         await using var db = Context();

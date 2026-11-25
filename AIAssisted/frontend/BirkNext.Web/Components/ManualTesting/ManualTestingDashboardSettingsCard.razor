@@ -1,0 +1,102 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* System Settings → Manual Testing → Testoversikt (2026-11-25), in Git Sources' design. Which parts of the Testoversikt dashboard are shown, per
+   switch; the names are the ones testers see on the dashboard (Norwegian), the section chrome is English like every System Settings section.
+   Installation-wide; saved on «Save changes» (server-side permission check; unknown parts refused). Restoring the defaults resets only this setup —
+   never plans, cases or source data — and no change here writes a test plan revision. *@
+<section class="gsx mtds" aria-labelledby="mtds-title" data-testid="mtds">
+    <header class="gsx-header">
+        <div>
+            <h2 id="mtds-title" class="gsx-title">Manual Testing — Testoversikt</h2>
+            <p class="gsx-subtitle">Choose which key figures, charts and follow-up panels the Testoversikt dashboard shows. Execution results are never part of it.</p>
+        </div>
+    </header>
+    @if (_saved is null)
+    {
+        <p class="gsx-muted" role="status" data-testid="mtds-loading">@(_loadError ?? "Reading the settings…")</p>
+        @if (_loadError is not null) { <button type="button" class="btn-secondary btn-sm" @onclick="LoadAsync" data-testid="mtds-retry">Retry</button> }
+    }
+    else
+    {
+        @foreach (var group in ManualTestingDashboard.Widgets.GroupBy(w => w.Group))
+        {
+            <div class="gsx-panel" data-testid="mtds-group" data-group="@group.Key">
+                <div class="gsx-panel-head"><h3 class="gsx-panel-title">@group.Key</h3></div>
+                <ul class="mtds-list">
+                    @foreach (var w in group)
+                    {
+                        var widget = w;
+                        <li>
+                            <label class="mtds-switch">
+                                <input type="checkbox" role="switch" checked="@IsOn(widget.Id)" disabled="@_busy" @onchange="e => _edits[widget.Id] = e.Value is true" data-testid="mtds-toggle" data-widget="@widget.Id" />
+                                <span><strong>@widget.Title</strong><span class="gsx-muted mtds-desc">@widget.Description</span></span>
+                            </label>
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
+        @if (_error is { } err) { <p class="gsx-error" role="alert" data-testid="mtds-error">The setup could not be saved. @err <button type="button" class="btn-secondary btn-sm" @onclick="SaveAsync">Retry</button></p> }
+        @if (_notice is { } n) { <p class="gsx-muted" role="status" data-testid="mtds-notice">@n</p> }
+        <div class="mtds-actions">
+            <button type="button" class="btn-primary btn-sm" disabled="@(_busy || !Dirty)" @onclick="SaveAsync" data-testid="mtds-save">Save changes</button>
+            @if (_confirmReset)
+            {
+                <span class="gsx-muted">Restore the default dashboard? Only this setup changes.</span>
+                <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="ResetAsync" data-testid="mtds-reset-yes">Restore defaults</button>
+                <button type="button" class="btn-secondary btn-sm" @onclick="() => _confirmReset = false" data-testid="mtds-reset-no">Cancel</button>
+            }
+            else { <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => _confirmReset = true" data-testid="mtds-reset">Restore defaults…</button> }
+        </div>
+    }
+</section>
+
+@code {
+    private ManualTestingDashboardSettings? _saved;
+    private readonly Dictionary<string, bool> _edits = new(StringComparer.Ordinal);
+    private bool _busy, _confirmReset;
+    private string? _loadError, _error, _notice;
+    private ITestPlanSuggestionsApiService? Api => Services.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
+
+    private bool IsOn(string id) => _edits.TryGetValue(id, out var on) ? on : _saved!.IsOn(id);
+    private bool Dirty => _saved is not null && _edits.Any(e => e.Value != _saved.IsOn(e.Key));
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        if (Api is not { } api) { _loadError = "The settings service is not available."; return; }
+        var (settings, error) = await api.DashboardSettingsAsync();
+        _saved = settings;
+        _loadError = settings is null ? error ?? "The settings could not be read." : null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Api is not { } api || !Dirty) return;
+        _busy = true; _error = null; _notice = null;
+        try
+        {
+            var changed = _edits.Where(e => e.Value != _saved!.IsOn(e.Key)).ToDictionary(e => e.Key, e => e.Value, StringComparer.Ordinal);
+            var (settings, error) = await api.SaveDashboardSettingsAsync(new SaveManualTestingDashboardSettingsRequest(changed));
+            if (settings is null) { _error = error; return; }
+            _saved = settings; _edits.Clear(); _notice = "Saved. The dashboard uses the new setup the next time it is opened.";
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ResetAsync()
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null; _notice = null;
+        try
+        {
+            var (settings, error) = await api.SaveDashboardSettingsAsync(new SaveManualTestingDashboardSettingsRequest(null, ResetToDefaults: true));
+            if (settings is null) { _error = error; return; }
+            _saved = settings; _edits.Clear(); _confirmReset = false; _notice = "The default dashboard is restored.";
+        }
+        finally { _busy = false; }
+    }
+}

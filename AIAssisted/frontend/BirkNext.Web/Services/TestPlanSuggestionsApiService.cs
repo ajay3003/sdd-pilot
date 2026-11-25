@@ -67,6 +67,14 @@ public interface ITestPlanSuggestionsApiService
     /// <summary>Excludes a whole scenario with one reason (every case under it; nothing deleted).</summary>
     Task<(TestPlanDraft? Draft, string? Error)> ExcludeScenarioAsync(Guid id, ExcludeScenarioRequest request, CancellationToken ct = default) =>
         Task.FromResult<(TestPlanDraft?, string?)>((null, NotAvailable));
+    /// <summary>Testoversikt: the project's saved test work and its specifications' scenarios (read-only).</summary>
+    Task<(ManualTestingOverview? Overview, string? Error)> OverviewAsync(string projectKey, CancellationToken ct = default) =>
+        Task.FromResult<(ManualTestingOverview?, string?)>((null, NotAvailable));
+    /// <summary>System Settings → Manuell testing → Testoversikt: which dashboard parts are shown.</summary>
+    Task<(ManualTestingDashboardSettings? Settings, string? Error)> DashboardSettingsAsync(CancellationToken ct = default) =>
+        Task.FromResult<(ManualTestingDashboardSettings?, string?)>((null, NotAvailable));
+    Task<(ManualTestingDashboardSettings? Settings, string? Error)> SaveDashboardSettingsAsync(SaveManualTestingDashboardSettingsRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(ManualTestingDashboardSettings?, string?)>((null, NotAvailable));
     /// <summary>Translate all: every scenario of the plan with its user story and linked requirement wording (one saved revision).</summary>
     Task<(TranslateScenarioResult? Result, string? Error)> TranslateAllAsync(Guid id, TranslatePlanRequest request, CancellationToken ct = default) =>
         Task.FromResult<(TranslateScenarioResult?, string?)>((null, NotAvailable));
@@ -235,6 +243,15 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
 
     public Task<(TestPlanDraft?, string?)> ExcludeScenarioAsync(Guid id, ExcludeScenarioRequest request, CancellationToken ct = default) =>
         Send<TestPlanDraft>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/exclude-scenario", request, Json, ct), ct);
+
+    public Task<(ManualTestingOverview?, string?)> OverviewAsync(string projectKey, CancellationToken ct = default) =>
+        Send<ManualTestingOverview>(() => http.GetAsync($"{Base}/project/overview?projectKey={Uri.EscapeDataString(projectKey)}", ct), ct);
+
+    public Task<(ManualTestingDashboardSettings?, string?)> DashboardSettingsAsync(CancellationToken ct = default) =>
+        Send<ManualTestingDashboardSettings>(() => http.GetAsync($"{Base}/dashboard-settings", ct), ct);
+
+    public Task<(ManualTestingDashboardSettings?, string?)> SaveDashboardSettingsAsync(SaveManualTestingDashboardSettingsRequest request, CancellationToken ct = default) =>
+        Send<ManualTestingDashboardSettings>(() => http.PutAsJsonAsync($"{Base}/dashboard-settings", request, Json, ct), ct);
 
     public Task<(TranslateScenarioResult?, string?)> TranslateAllAsync(Guid id, TranslatePlanRequest request, CancellationToken ct = default) =>
         Send<TranslateScenarioResult>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/translate-all", request, Json, ct), ct);

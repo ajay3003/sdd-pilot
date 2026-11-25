@@ -841,6 +841,9 @@ builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestPlanning.Trans
     // The tester package (native runners, no Podman) cannot run LibreTranslate: its default is the packaged offline translator.
     canManageLibreTranslate: !BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions.From(sp.GetRequiredService<IConfiguration>()).UsesNativeRunner));
 builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.TestCaseTranslatorResolver>();
+// System Settings → Manuell testing → Testoversikt: which dashboard parts are shown (installation-wide, App_Data; never touches test data).
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestPlanning.ManualTestingDashboardSettingsStore(
+    BirkNext.Api.Services.TestPlanning.ManualTestingDashboardSettingsStore.DefaultDirectory(sp.GetRequiredService<IHostEnvironment>())));
 builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.LibreTranslateServiceManager>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.IScenarioReviewSource>(sp => sp.GetRequiredService<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>());
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.RequirementCoverageService>();

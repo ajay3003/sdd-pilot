@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using M = BirkNext.Web.Services.ManualTestingPresentation;
+using O = BirkNext.Web.Services.ManualTestingOverviewPresentation;
 
 namespace BirkNext.Web.Tests.Pages;
 
@@ -119,36 +120,6 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
     // ── Home ─────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void The_home_is_the_Manuell_testing_overview_with_one_next_step_three_step_cards_and_the_counts_collapsed()
-    {
-        // UX pass (2026-11-25): «Manuell testing» was the Testplaner page with «3. Testplaner» marked — the tab never showed as current.
-        Setup([Summary()], Discovery(3));
-        var cut = Open<ManualTesting>("manual-testing");
-
-        cut.Find("[data-testid=twh-project]").TextContent.Should().Contain("Library");
-        cut.Find("[data-testid=twh-stage][data-stage=home]").GetAttribute("aria-current").Should().Be("page", "the overview is its own page");
-        cut.Find("[data-testid=twh-stage][data-stage=plans]").GetAttribute("aria-current").Should().BeNull();
-        cut.Find("[data-testid=twh-title]").TextContent.Should().Be("Manuell testing");
-        cut.FindAll("[data-testid=twh-stage]").Select(a => a.GetAttribute("href")).Should().Equal("manual-testing", "manual-testing/discover", "manual-testing/plan", "manual-testing/plans");
-        cut.Find("[data-testid=mt-next-action]").Should().Match<AngleSharp.Dom.IElement>(a => a.TextContent == "Overfør testplan"
-            && a.GetAttribute("href") == $"manual-testing/plans?transfer={PlanId}");
-        cut.FindAll("[data-testid=mt-step]").Select(a => (a.GetAttribute("data-stage"), a.GetAttribute("href"))).Should().Equal(
-            ("discover", "manual-testing/discover"), ("plan", "manual-testing/plan"), ("plans", "manual-testing/plans"));
-        cut.Find("[data-testid=mt-step][data-stage=plan]").TextContent.Should().Contain("2 testtilfeller · 1 godkjent");
-        cut.FindAll("[data-testid=mt-plan]").Should().BeEmpty("the saved test plans are on «3. Testplaner»");
-        cut.FindAll("[data-testid=mt-new-plan]").Should().BeEmpty();
-
-        var status = cut.Find("[data-testid=mt-status]");
-        status.HasAttribute("open").Should().BeFalse("the counts are collapsed; the summary says the essentials");
-        cut.Find("[data-testid=mt-status-summary]").TextContent.Should().StartWith("2 testtilfeller · 1 godkjent");
-        cut.Find("[data-testid=mt-count-suggestions]").TextContent.Should().Be("3", "suggestions are counted as suggestions");
-        cut.Find("[data-testid=mt-count-cases]").TextContent.Should().Be("2", "and saved test cases as test cases — never one for the other");
-        cut.FindAll("[data-testid=mt-runs]").Should().BeEmpty("BirkNext records no manual runs");
-        cut.Find("[data-testid=mt-count-executed]").TextContent.Should().Be("Registreres i Azure DevOps", "a prepared, approved or transferred case is not an executed test");
-        cut.Markup.Should().NotContain("manual-testing/execute");
-    }
-
-    [Fact]
     public void Testplaner_lists_creates_and_transfers_test_plans_and_leaves_the_status_to_the_overview()
     {
         Setup([Summary()], Discovery(3));
@@ -172,19 +143,6 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.WaitForAssertion(() => navigation.Uri.Should().Be(navigation.BaseUri + $"manual-testing/plans?transfer={PlanId}"));
     }
 
-    [Fact]
-    public void Without_a_project_the_home_says_how_to_start_and_shows_no_counts()
-    {
-        Setup(project: false);
-        var cut = Open<ManualTesting>("manual-testing");
-
-        cut.Find("[data-testid=mt-next-action]").GetAttribute("href").Should().Be("project-import");
-        cut.FindAll("[data-testid=mt-plans]").Should().BeEmpty();
-        cut.Find("[data-testid=twh-project]").TextContent.Should().Contain("No project selected");
-    }
-
-    // ── Retired Execute & document links ─────────────────────────────────────────────────────────────────────
-
     [Theory]
     [InlineData("manual-testing/execute?draft=44444444-4444-4444-4444-444444444444&case=tsc-borrow", "manual-testing/plan?draft=44444444-4444-4444-4444-444444444444&case=tsc-borrow")]
     [InlineData("manual-testing/execute?run=55555555-5555-5555-5555-555555555555", "manual-testing")]
@@ -199,30 +157,109 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.WaitForAssertion(() => navigation.Uri.Should().Be(navigation.BaseUri + to));
     }
 
-    [Fact]
-    public void The_landing_page_shows_what_is_missing_before_tests_can_start_with_denominators_and_never_an_execution_number()
+    // ── Testoversikt (2026-11-25) ─────────────────────────────────────────────────────────────────────────────────
+
+    private const string Skole = "SkoleService/specs/001-skoleservice/spec.md", Front = "Frontend/specs/002-child-search-profile/spec.md";
+
+    private static ManualTestingOverview Overview() => new()
     {
-        Setup([new(PlanId, "project:library", "Library – test plan", null, 3, 10, 4, 1, 2, 6, 7, "anna", DateTimeOffset.UtcNow)], Discovery(4));
-        var cut = Open<ManualTesting>("manual-testing");
-        cut.Find("[data-testid=mt-count-missing-expected]").TextContent.Should().Be("2 av 10");
-        cut.Find("[data-testid=mt-count-missing-data]").TextContent.Should().Be("6 av 10");
-        cut.Find("[data-testid=mt-count-blocked]").TextContent.Should().Be("7 av 10");
-        cut.Find("[data-testid=mt-readiness-counts]").TextContent.Should().Contain("Ikke klar til kjøring").And.Contain("Uten koblet testdata");
-        cut.Find("[data-testid=mt-count-executed]").TextContent.Should().Be("Registreres i Azure DevOps", "no execution or pass count is invented");
+        ProjectKey = "library", ScenariosAvailable = true,
+        Specifications =
+        [
+            new(Skole, "SkoleService", "001-skoleservice", [new("tss-1", "k1", "US1", "Report", 1, "P1", "A"), new("tss-2", "k1", "US1", "Report", 2, "P1", "B"), new("tss-3", "k2", "US2", "Lock", 1, "P2", "C")]),
+            new(Front, "Frontend", "002-child-search-profile", [new("tss-f1", "f1", "US1", "Search", 1, null, "F")]),
+        ],
+        Cases =
+        [
+            // Five cases for one scenario = one covered scenario; one approved and ready, one with a hindrance.
+            .. Enumerable.Range(1, 5).Select(i => new OverviewCase { PlanId = PlanId, CaseId = $"s1-{i}", Title = "A", SpecificationPath = Skole, Module = "SkoleService",
+                ScenarioIdentity = "tss-1", StoryKey = "k1", Priority = "P1", Review = i == 1 ? TestCaseReviewState.Accepted : TestCaseReviewState.Generated, Ready = i == 1, Hindrance = i == 2 }),
+            new OverviewCase { PlanId = PlanId, CaseId = "f1", Title = "F", SpecificationPath = Front, Module = "Frontend", ScenarioIdentity = "tss-f1", StoryKey = "f1",
+                Review = TestCaseReviewState.Accepted, Ready = false, SourceState = CaseSourceState.Changed },
+            new OverviewCase { PlanId = PlanId, CaseId = "free", Title = "Free", Module = "Uten modultilknytning", Review = TestCaseReviewState.Generated },
+        ],
+        Plans = [new(PlanId, "Library – test plan", 7, 2, 5, 1, ["Frontend", "SkoleService", "Uten modultilknytning"], DateTimeOffset.UtcNow)],
+    };
+
+    private void SetupOverview(ManualTestingDashboardSettings? settings = null)
+    {
+        _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((Overview(), (string?)null));
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((settings ?? new ManualTestingDashboardSettings(), (string?)null));
     }
 
     [Fact]
-    public void V1_with_execution_in_BirkNext_on_the_landing_page_says_results_are_also_in_BirkNext_and_still_shows_no_pass_number()
+    public void Testoversikt_is_the_landing_page_with_project_figures_no_next_step_and_no_execution_results()
     {
-        // v1.0 acceptance (2026-11-25): «Registreres i Azure DevOps» was shown even when testers record runs in BirkNext.
-        var runs = new Moq.Mock<IManualTestRunsApiService>();
-        runs.Setup(x => x.AvailabilityAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        Services.AddSingleton(runs.Object);
-        Setup([new(PlanId, "project:library", "Library – test plan", null, 3, 10, 4, 1, 2, 6, 7, "anna", DateTimeOffset.UtcNow)], Discovery(4));
+        Setup([Summary()], Discovery(3));
+        SetupOverview();
         var cut = Open<ManualTesting>("manual-testing");
 
-        var executed = cut.Find("[data-testid=mt-count-executed]");
-        executed.TextContent.Should().StartWith("Registreres i Azure DevOps og i BirkNext").And.NotMatchRegex(@"\d");
-        cut.Find("[data-testid=mt-run-history]").GetAttribute("href").Should().Be("manual-testing/run");
+        cut.Find("[data-testid=twh-title]").TextContent.Should().Be("Testoversikt");
+        cut.Find("[data-testid=twh-stage][data-stage=home]").GetAttribute("aria-current").Should().Be("page");
+        cut.FindAll("[data-testid=mt-next]").Should().BeEmpty("«Neste steg» is removed");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
+        cut.Find("[data-testid=mto-scope]").TextContent.Should().Be("Hele prosjektet");
+        string Kpi(string id) => cut.Find($"[data-testid=mto-kpi][data-widget='{id}'] .mto-kpi-v").TextContent;
+        Kpi("metric.scenarios").Should().Be("4");
+        Kpi("metric.testCases").Should().Be("7", "the hand-written case without a source is counted, not dropped");
+        Kpi("metric.approved").Should().Be("2");
+        Kpi("metric.ready").Should().Be("1", "approved is not ready");
+        cut.FindAll("[data-testid=mto-kpi][data-widget='metric.testPlans']").Should().BeEmpty("off by default");
+        cut.Markup.Should().NotContain("Gjennomført").And.NotContain("Bestått").And.NotContain("Feilet");
+        cut.FindAll("[data-testid=mto-row]").Select(r => r.GetAttribute("data-key")).Should().Equal("Frontend", "SkoleService", "Uten modultilknytning");
+        var skole = cut.Find("[data-testid=mto-row][data-key=SkoleService]").QuerySelectorAll("td").Select(td => td.TextContent).ToList();
+        skole.Should().Equal("SkoleService", "3", "1", "5", "1", "4");
+        cut.FindAll("[data-testid=mto-widget][data-widget='chart.history']").Should().BeEmpty("optional charts are off by default");
     }
+
+    [Fact]
+    public void A_switched_off_part_is_not_rendered_and_an_optional_history_chart_says_honestly_that_there_is_no_history()
+    {
+        Setup([Summary()], Discovery(3));
+        var settings = new ManualTestingDashboardSettings { Visible = new() { ["chart.priority"] = false, ["chart.history"] = true, ["metric.approved"] = false } };
+        SetupOverview(settings);
+        var cut = Open<ManualTesting>("manual-testing");
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
+        cut.FindAll("[data-testid=mto-widget][data-widget='chart.priority']").Should().BeEmpty();
+        cut.FindAll("[data-testid=mto-kpi][data-widget='metric.approved']").Should().BeEmpty();
+        cut.Find("[data-testid=mto-history-unavailable]").TextContent.Should().StartWith("Historiske tall er ikke tilgjengelige");
+        cut.Find("[data-testid=mto-widget][data-widget='chart.preparation']").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Without_a_project_Testoversikt_asks_for_one_and_shows_no_figures()
+    {
+        Setup(project: false);
+        var cut = Open<ManualTesting>("manual-testing");
+
+        cut.Find("[data-testid=mt-no-project]").TextContent.Should().StartWith("Velg et prosjekt for å se testarbeidet.");
+        cut.FindAll("[data-testid=mto-kpis]").Should().BeEmpty();
+        cut.FindAll("[data-testid=mt-next]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void The_figures_count_unique_scenarios_and_cases_per_scope_and_never_add_overlapping_milestones()
+    {
+        var o = Overview();
+        var project = O.Of(o, O.Scope.Project);
+        var f = O.Compute(project, o.Plans);
+        f.Should().Be(new O.Figures(4, 2, 7, 2, 1, 0, 1), "five cases for tss-1 cover ONE scenario");
+
+        var module = O.Of(o, new O.Scope(O.Level.Module, "SkoleService", null));
+        O.Compute(module, o.Plans).Should().Be(new O.Figures(3, 1, 5, 1, 1, 0, 1));
+        var spec = O.Of(o, new O.Scope(O.Level.Specification, "Frontend", Front));
+        O.Compute(spec, o.Plans).Should().Be(new O.Figures(1, 1, 1, 1, 0, 0, 1));
+
+        O.Coverage(project, O.Level.Project).Select(b => (b.Label, b.Value)).Should().Equal(("Frontend (1/1)", 100), ("SkoleService (1/3)", 33));
+        O.Coverage(module, O.Level.Module).Should().ContainSingle().Which.Label.Should().Be("001-skoleservice (1/3)", "one module: per specification, never a one-bar module chart");
+        O.Gaps(project).Select(b => (b.Key, b.Value)).Should().Equal(("P1", 1), ("P2", 1));
+        O.Preparation(project).Select(b => b.Value).Should().Equal(7, 7, 2, 1);
+        O.Blockers(project).Single(b => b.Key == "hindrance").Value.Should().Be(1);
+        O.NotReady(project).Should().Be(6);
+        O.SourceChanges(project).Should().ContainSingle(b => b.Key == "changed" && b.Value == 1);
+        O.P1Attention(project).Select(a => a.Key).Should().Contain(["p1-uncovered", "p1-approval", "p1-ready"]);
+        O.Rows(spec, O.Level.Specification).Should().ContainSingle(r => r.Label == "US1 Search" && r.Covered == 1);
+    }
+
 }

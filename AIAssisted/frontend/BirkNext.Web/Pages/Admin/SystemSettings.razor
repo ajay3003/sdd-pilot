@@ -573,6 +573,11 @@ else if (_settings is not null)
                 <GitSourcesSettingsCard />
             }
 
+            @if (_activeSection == "manual-testing")
+            {
+                <BirkNext.Web.Components.ManualTesting.ManualTestingDashboardSettingsCard />
+            }
+
             @if (_activeSection == "azure-devops-test-plans")
             {
                 <BirkNext.Web.Components.AzureDevOps.AdoTestPlansSettingsCard />

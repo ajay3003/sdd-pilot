@@ -819,3 +819,29 @@
 .mtp-case-group[open] > summary:not(.is-static)::before { content: "▾ "; }
 .mtp-case.is-selected { border-color: var(--clr-accent, #7c3aed); background: var(--msb-surface); }
 .mtp-case-title.is-same { color: var(--clr-text-muted, #57606a); }
+
+/* Testoversikt (2026-11-25): compact KPI cards, a two-column chart grid that reflows when parts are switched off, and a slim breakdown table. */
+.mto-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin: 0.4rem 0 0.8rem; }
+.mto-customize { margin-left: auto; }
+.mto-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.6rem; margin-bottom: 0.9rem; }
+.mto-kpi { display: grid; gap: 0.1rem; padding: 0.7rem 0.9rem; border: 1px solid var(--msb-border); border-radius: var(--msb-radius); background: var(--msb-surface);
+    color: inherit; text-decoration: none; }
+a.mto-kpi:hover, a.mto-kpi:focus-visible { border-color: var(--msb-accent); }
+.mto-kpi-k { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--clr-text-muted, #57606a); }
+.mto-kpi-v { font-size: 1.6rem; font-weight: 700; line-height: 1.15; }
+.mto-kpi-e { font-size: 0.8rem; color: var(--clr-text-muted, #57606a); }
+.mto-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); gap: 0.8rem; align-items: start; }
+.mto-card { padding: 0.8rem 1rem; border: 1px solid var(--msb-border); border-radius: var(--msb-radius); background: var(--msb-surface); min-width: 0; }
+.mto-card-h { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.6rem; }
+.mto-card .dd-bars li { grid-template-columns: minmax(7rem, 14rem) 1fr 3.2rem; }
+.mto-attention ul, .mto-plans { margin: 0 0 0.4rem; padding-left: 1.1rem; display: grid; gap: 0.25rem; }
+.mto-table-card { margin-top: 0.8rem; overflow-x: auto; }
+.mto-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.mto-table th, .mto-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--msb-border); text-align: right; }
+.mto-table th:first-child, .mto-table td:first-child { text-align: left; }
+.mto-table thead th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--clr-text-muted, #57606a); }
+.mtds-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+.mtds-switch { display: flex; gap: 0.6rem; align-items: flex-start; cursor: pointer; }
+.mtds-switch input { margin-top: 0.2rem; }
+.mtds-desc { display: block; font-size: 0.82rem; }
+.mtds-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.8rem; }

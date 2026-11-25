@@ -162,6 +162,25 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     [HttpGet("drafts/{id:guid}/variants")]
     public Task<ActionResult> Variants(Guid id, [FromQuery] string scenario, CancellationToken ct) => Run(async () => Ok(await service.VariantsAsync(id, scenario ?? "", ct)));
 
+    /// <summary>Testoversikt (2026-11-25): the project's saved test work and its specifications' scenarios, read-only (no discovery, no write).</summary>
+    [HttpGet("project/overview")]
+    public Task<ActionResult> Overview([FromQuery] string projectKey, CancellationToken ct) => Run(async () => Ok(await service.OverviewAsync(projectKey, ct)));
+
+    /// <summary>System Settings → Manuell testing → Testoversikt: which dashboard parts are shown (readable by everyone who sees the dashboard).</summary>
+    [HttpGet("dashboard-settings")]
+    public ActionResult DashboardSettings([FromServices] BirkNext.Api.Services.TestPlanning.ManualTestingDashboardSettingsStore store) => Ok(store.Read());
+
+    /// <summary>Saves the dashboard setup (settings write permission; unknown widget ids are refused; plans and cases are never touched).</summary>
+    [HttpPut("dashboard-settings")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public ActionResult SaveDashboardSettings([FromBody] SaveManualTestingDashboardSettingsRequest request,
+        [FromServices] BirkNext.Api.Services.TestPlanning.ManualTestingDashboardSettingsStore store)
+    {
+        try { return Ok(store.Save(request, Actor, DateTimeOffset.UtcNow)); }
+        catch (ArgumentException e) { return BadRequest(new { code = "dashboard-widget-unknown", message = e.Message }); }
+        catch (IOException) { return StatusCode(500, new { code = "dashboard-settings-not-saved", message = "Kunne ikke lagre oppsettet." }); }
+    }
+
     /// <summary>Which translator the current settings choose and its languages (System Settings → Translation; no call is made to find out).</summary>
     [HttpGet("translation")]
     public ActionResult Translation([FromServices] BirkNext.Api.Services.TestPlanning.TestCaseTranslatorResolver translators)

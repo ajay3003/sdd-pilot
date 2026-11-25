@@ -4,6 +4,7 @@
 @using BirkNext.Web.Services
 @using M = BirkNext.Web.Services.ManualTestingPresentation
 @using P = BirkNext.Web.Services.PlanPreparePresentation
+@using O = BirkNext.Web.Services.ManualTestingOverviewPresentation
 @implements IDisposable
 @inject IServiceProvider ServiceProvider
 @inject NavigationManager Nav
@@ -16,12 +17,12 @@
 @* UX pass (2026-11-25): /manual-testing is the workspace OVERVIEW («Manuell testing»: one next step, the three steps with their status, the
    counts collapsed); /manual-testing/plans is «3. Testplaner» (create, list, transfer). Before, both addresses showed the Testplaner page, so the
    «Manuell testing» tab led to «Testplaner» and was never marked as the current page. *@
-<PageTitle>@(IsHome ? "Manuell testing" : "Testplaner — Manuell testing")</PageTitle>
+<PageTitle>@(IsHome ? "Testoversikt — Manuell testing" : "Testplaner — Manuell testing")</PageTitle>
 
 <div class="mt msb-page" data-testid="mt" aria-busy="@(_loading ? "true" : "false")">
-    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="@(IsHome ? null : "plans")" Title="@(IsHome ? "Manuell testing" : "Testplaner")"
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="@(IsHome ? null : "plans")" Title="@(IsHome ? "Testoversikt" : "Testplaner")"
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
-        Lead="@(IsHome ? "Oversikt: hva er neste steg, og hvor står testarbeidet? Arbeidet gjøres i de tre stegene under." : "Opprett, åpne og overfør testplanene for applikasjonen. Testtilfellene forberedes i Planlegg og klargjør.")">
+        Lead="@(IsHome ? "Hvor står testforberedelsen? Velg modul og spesifikasjon her; Finn og forstå viser det samme utvalget." : "Opprett, åpne og overfør testplanene for applikasjonen. Testtilfellene forberedes i Planlegg og klargjør.")">
         <Help><BirkNext.Web.Components.HelpLink Topic="manual-testing" Text="Slik fungerer det" /></Help>
     </BirkNext.Web.Components.TestingWorkspaceHeader>
 
@@ -44,49 +45,119 @@
 
         @if (facts.ProjectKey is not null && IsHome)
         {
-            var plans = facts.Plans;
-            var cases = plans.Sum(p => p.Cases);
-            var approved = plans.Sum(p => p.Accepted);
-            var clarify = plans.Sum(p => p.NeedsClarification);
-            var notReady = plans.Sum(p => p.Blocked);
-            <section class="msb-next" aria-labelledby="mt-next-title" data-testid="mt-next">
-                <div>
-                    <h2 id="mt-next-title" class="msb-h">Neste steg</h2>
-                    <p class="mt-muted" data-testid="mt-next-why">@next.Why</p>
+            @* Testoversikt (2026-11-25): the shared selection (module → specification, the same one Finn og forstå reads), the scope the figures use,
+               and the parts System Settings → Manuell testing → Testoversikt switches on. Preparation, coverage, readiness, approval and source status
+               only — never execution results. *@
+            <BirkNext.Web.Components.SpecificationScopePicker Changed="OnScopeChangedAsync" ShowDiscoverLink="false" />
+            <div class="mto-head">
+                <div class="mtp-seg" role="radiogroup" aria-label="Tallene gjelder" data-testid="mto-level">
+                    @foreach (var (level, text, enabled) in new[] { (O.Level.Project, "Hele prosjektet", true), (O.Level.Module, "Valgt modul", _module is not null), (O.Level.Specification, "Valgt spesifikasjon", _specPath is not null) })
+                    {
+                        var l = level;
+                        <button type="button" role="radio" class="mtp-seg-btn @(_level == l ? "is-on" : null)" aria-checked="@(_level == l ? "true" : "false")" disabled="@(!enabled)"
+                                @onclick="() => SetLevel(l)" data-level="@l" data-testid="mto-level-option">@text</button>
+                    }
                 </div>
-                <a class="btn btn-primary" href="@next.Href" data-testid="mt-next-action">@next.Label</a>
-            </section>
-            @* The three steps as destinations, each with one line of status from the stored records. *@
-            <nav class="mt-steps" aria-label="Stegene i manuell testing" data-testid="mt-steps">
-                <a class="mt-step-card" href="@M.DiscoverRoute" data-testid="mt-step" data-stage="discover"><span class="twh-n" aria-hidden="true">1</span>
-                    <strong>Finn og forstå</strong><span class="mt-muted msb-small">@DiscoverStatus(facts)</span></a>
-                <a class="mt-step-card" href="@M.PlanRoute" data-testid="mt-step" data-stage="plan"><span class="twh-n" aria-hidden="true">2</span>
-                    <strong>Planlegg og klargjør</strong><span class="mt-muted msb-small">@(cases == 0 ? "Ingen testtilfeller ennå" : $"{cases} testtilfelle{(cases == 1 ? "" : "r")} · {approved} godkjent")</span></a>
-                <a class="mt-step-card" href="@M.PlansRoute" data-testid="mt-step" data-stage="plans"><span class="twh-n" aria-hidden="true">3</span>
-                    <strong>Testplaner</strong><span class="mt-muted msb-small">@(plans.Count == 0 ? "Ingen testplaner ennå" : $"{plans.Count} testplan{(plans.Count == 1 ? "" : "er")} · overfør til Azure DevOps")</span></a>
-            </nav>
-            <details class="mt-status" data-testid="mt-status">
-                <summary><span class="msb-h">Status for testarbeidet</span> <span class="mt-muted msb-small" data-testid="mt-status-summary">@StatusSummary(cases, approved, notReady)</span></summary>
-            <dl class="msb-counts msb-counts-wide" data-testid="mt-counts" aria-label="Status for applikasjonen">
-                <div title="Scenarioer funnet for valgt modul og spesifikasjon — ikke testtilfeller"><dt>Forslag</dt><dd data-testid="mt-count-suggestions">@(_ws.Discovery?.Candidates.Count.ToString() ?? "—")</dd></div>
-                <div><dt>Testtilfeller</dt><dd data-testid="mt-count-cases">@cases</dd></div>
-                <div><dt>Godkjent</dt><dd data-testid="mt-count-approved">@approved</dd></div>
-                <div class="@(clarify > 0 ? "is-warn" : null)"><dt>Trenger avklaring</dt><dd data-testid="mt-count-clarify">@clarify</dd></div>
-                <div><dt>Lagrede testplaner</dt><dd data-testid="mt-count-plans">@plans.Count</dd></div>
-            </dl>
-            @if (cases > 0)
+                <span class="mt-muted msb-small" data-testid="mto-scope">@O.ScopeLabel(CurrentScope)</span>
+                @if (CanWrite) { <a class="msb-link msb-small mto-customize" href="admin/system-settings?section=manual-testing" data-testid="mto-customize">Tilpass oversikten</a> }
+            </div>
+            @if (_overviewLoading)
             {
-                var missingExpected = plans.Sum(p => p.MissingExpected); var missingData = plans.Sum(p => p.MissingTestData);
-                <dl class="msb-counts msb-counts-wide" data-testid="mt-readiness-counts" aria-label="Hva mangler før testene kan starte">
-                    <div class="@(missingExpected > 0 ? "is-warn" : null)"><dt>Mangler forventet resultat</dt><dd data-testid="mt-count-missing-expected">@missingExpected av @cases</dd></div>
-                    <div class="@(missingData > 0 ? "is-warn" : null)"><dt>Uten koblet testdata</dt><dd data-testid="mt-count-missing-data">@missingData av @cases</dd></div>
-                    <div class="@(notReady > 0 ? "is-warn" : null)"><dt>Ikke klar til kjøring</dt><dd data-testid="mt-count-blocked">@notReady av @cases</dd></div>
-                    <div><dt>Gjennomført / bestått</dt><dd data-testid="mt-count-executed">@if (_executionEnabled) { <text>Registreres i Azure DevOps og i BirkNext · </text><a href="manual-testing/run" data-testid="mt-run-history">Se kjøringshistorikk</a> } else { <text>Registreres i Azure DevOps</text> }</dd></div>
-                </dl>
-                <p class="mt-muted msb-small" data-testid="mt-readiness-basis">Av alle testtilfeller i lagrede testplaner; utelatte testtilfeller telles ikke som mangler. «Uten koblet testdata» gjelder også testtilfeller som ikke trenger testdata.</p>
+                <InlineLoading Text="Henter testoversikt …" Class="mt-muted" TestId="mto-loading" />
             }
-            <p class="mt-muted msb-small mt-boundary">Tallene kommer fra lagrede data. Et forslag er ikke et testtilfelle, og et forberedt, godkjent eller overført testtilfelle er ikke en kjørt test: manuelle tester kjøres, og resultatene registreres, i Azure DevOps Test Plans@(_executionEnabled ? " eller i BirkNext (Testgjennomføring er slått på)" : "").</p>
-            </details>
+            else if (_overviewError is { } oe)
+            {
+                <p class="mt-alert" role="alert" data-testid="mto-error">Kunne ikke hente testoversikten. @oe <button type="button" class="msb-link" @onclick="LoadOverviewAsync" data-testid="mto-retry">Prøv igjen</button></p>
+            }
+            else if (_overview is { } ov)
+            {
+                var slice = O.Of(ov, CurrentScope);
+                var fig = O.Compute(slice, ov.Plans);
+                var explain = On("display.explanations");
+                <section class="mto-kpis" aria-label="Nøkkeltall" data-testid="mto-kpis">
+                    @if (On("metric.scenarios"))
+                    {
+                        <a class="mto-kpi" href="@M.DiscoverRoute" data-testid="mto-kpi" data-widget="metric.scenarios"><span class="mto-kpi-k">Scenarioforslag</span>
+                            <span class="mto-kpi-v">@(fig.Scenarios?.ToString() ?? "—")</span>
+                            @if (explain) { <span class="mto-kpi-e">@(fig.Scenarios is null ? "Ikke tilgjengelig: spesifikasjonen er ikke lagret for prosjektet" : fig.Covered is { } cov ? $"{cov} har testtilfeller" : "")</span> }</a>
+                    }
+                    @if (On("metric.testCases"))
+                    {
+                        <a class="mto-kpi" href="@M.PlanRoute" data-testid="mto-kpi" data-widget="metric.testCases"><span class="mto-kpi-k">Testtilfeller</span><span class="mto-kpi-v">@fig.Cases</span>
+                            @if (explain) { <span class="mto-kpi-e">Lagret i aktive testplaner</span> }</a>
+                    }
+                    @if (On("metric.approved"))
+                    {
+                        <div class="mto-kpi" data-testid="mto-kpi" data-widget="metric.approved"><span class="mto-kpi-k">Godkjente</span><span class="mto-kpi-v">@fig.Approved</span>
+                            @if (explain) { <span class="mto-kpi-e">@fig.Approved av @fig.Cases testtilfeller</span> }</div>
+                    }
+                    @if (On("metric.ready"))
+                    {
+                        <div class="mto-kpi" data-testid="mto-kpi" data-widget="metric.ready"><span class="mto-kpi-k">Klar til testing</span><span class="mto-kpi-v">@fig.Ready</span>
+                            @if (explain) { <span class="mto-kpi-e">@fig.Ready av @fig.Cases · godkjent er ikke det samme som klar</span> }</div>
+                    }
+                    @if (On("metric.testPlans"))
+                    {
+                        <a class="mto-kpi" href="@M.PlansRoute" data-testid="mto-kpi" data-widget="metric.testPlans"><span class="mto-kpi-k">Testplaner</span><span class="mto-kpi-v">@fig.Plans</span>
+                            @if (explain) { <span class="mto-kpi-e">Med testtilfeller i utvalget</span> }</a>
+                    }
+                </section>
+                <div class="mto-grid">
+                    @Chart("chart.preparation", "Testforberedelse", O.Preparation(slice), "Trinnene overlapper og summeres ikke.", false)
+                    @Chart("chart.moduleCoverage", _level switch { O.Level.Project => "Testdekning per modul", O.Level.Module => "Testdekning per spesifikasjon", _ => "Testdekning per brukerhistorie" },
+                        O.Coverage(slice, _level), slice.ScenariosAvailable ? "Andel scenarioer med minst ett lagret testtilfelle." : "Ikke tilgjengelig: spesifikasjonen er ikke lagret for prosjektet.", true)
+                    @Chart("chart.priority", "Scenarioer etter prioritet", O.Priority(slice), "Prioritet slik spesifikasjonen oppgir den.", false)
+                    @Chart("chart.coverageGaps", "Manglende testdekning", O.Gaps(slice), "Scenarioer uten lagret testtilfelle.", false)
+                    @Chart("chart.blockers", "Testbarhet og blokkeringer", O.Blockers(slice), $"{O.NotReady(slice)} av {fig.Cases} testtilfeller er ikke klare. Ett testtilfelle kan ha flere årsaker.", false)
+                    @Chart("chart.sourceChanges", "Kildeendringer", O.SourceChanges(slice), "Sammenlignet med testtilfellets egen spesifikasjon.", false)
+                    @Chart("chart.manualTechnical", "Manuelle og tekniske testtilfeller", O.ManualTechnical(slice), "Testtypen som er valgt for testtilfellet.", false)
+                    @Chart("chart.moduleApproval", "Godkjenning per modul", O.ModuleApproval(slice), "Godkjente av lagrede testtilfeller.", false)
+                    @if (On("chart.history"))
+                    {
+                        <section class="mto-card" data-testid="mto-widget" data-widget="chart.history"><h3 class="mto-card-h">Utvikling i testforberedelse</h3>
+                            <p class="mt-muted msb-small" data-testid="mto-history-unavailable">Historiske tall er ikke tilgjengelige: tilstanden på tidligere tidspunkter lagres ikke, og tall beregnes aldri bakover.</p></section>
+                    }
+                    @if (On("panel.p1Attention") && O.P1Attention(slice) is { Count: > 0 } attention)
+                    {
+                        <section class="mto-card mto-attention" data-testid="mto-widget" data-widget="panel.p1Attention"><h3 class="mto-card-h">Viktig å følge opp</h3>
+                            <ul>@foreach (var (k, text) in attention) { <li data-key="@k">@text</li> }</ul>
+                            <p class="msb-small"><a href="@M.DiscoverRoute">Se scenarioer</a> · <a href="@M.PlanRoute">Se testtilfeller</a></p></section>
+                    }
+                    @if (On("panel.testPlans") && ov.Plans.Count > 0)
+                    {
+                        <section class="mto-card" data-testid="mto-widget" data-widget="panel.testPlans"><h3 class="mto-card-h">Testplaner <span class="mt-muted msb-small">(hele prosjektet)</span></h3>
+                            <ul class="mto-plans">@foreach (var pl in ov.Plans.Take(6)) { <li><a href="@($"{M.PlanRoute}?draft={pl.Id}")">@pl.Name</a> <span class="mt-muted msb-small">@pl.Cases testtilfeller · @pl.Approved godkjent@(pl.SourceAttention > 0 ? $" · {pl.SourceAttention} med kildeendring" : "")</span></li> }</ul>
+                            <p class="msb-small"><a href="@M.PlansRoute">Alle testplaner</a></p></section>
+                    }
+                    @if (On("panel.recentChanges") && ov.RecentRevisions.Count > 0)
+                    {
+                        <section class="mto-card" data-testid="mto-widget" data-widget="panel.recentChanges"><h3 class="mto-card-h">Siste endringer</h3>
+                            <ul class="mto-plans">@foreach (var r in ov.RecentRevisions.Take(8)) { <li>@r.SavedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · <a href="@($"{M.PlanRoute}?draft={r.PlanId}")">@r.PlanName</a> <span class="mt-muted msb-small">versjon @r.Revision · @r.Reason · @r.SavedBy</span></li> }</ul></section>
+                    }
+                    @Chart("panel.translationReview", "Oversettelser til gjennomgang", O.Translations(slice), "Fra lagret oversettelsesstatus; ingenting oversettes for å vise dette.", false)
+                </div>
+                @if (On("display.moduleOverview") && O.Rows(slice, _level) is { Count: > 0 } rows)
+                {
+                    <section class="mto-card mto-table-card" data-testid="mto-widget" data-widget="display.moduleOverview">
+                        <h3 class="mto-card-h">@(_level switch { O.Level.Project => "Oversikt per modul", O.Level.Module => "Oversikt per spesifikasjon", _ => "Oversikt per brukerhistorie" })</h3>
+                        <table class="mto-table">
+                            <thead><tr><th scope="col">@(_level switch { O.Level.Project => "Modul", O.Level.Module => "Spesifikasjon", _ => "Brukerhistorie" })</th><th scope="col">Scenarioer</th><th scope="col">Med testtilfeller</th><th scope="col">Testtilfeller</th><th scope="col">Godkjent</th><th scope="col">Trenger oppfølging</th></tr></thead>
+                            <tbody>
+                                @foreach (var row in rows)
+                                {
+                                    var r = row;
+                                    <tr data-testid="mto-row" data-key="@row.Key">
+                                        <td>@if (_level == O.Level.Project && row.Module is { } mod && mod != "Uten modultilknytning" && _modules.Contains(mod))
+                                            { <button type="button" class="msb-link" @onclick="() => OpenModuleAsync(mod)" data-testid="mto-row-open">@row.Label</button> }
+                                            else { @row.Label }</td>
+                                        <td>@(row.Scenarios?.ToString() ?? "—")</td><td>@(row.Covered?.ToString() ?? "—")</td><td>@row.Cases</td><td>@row.Approved</td><td>@row.FollowUp</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </section>
+                }
+            }
         }
         else if (facts.ProjectKey is not null)
         {
@@ -149,13 +220,7 @@
         }
         else
         {
-            <section class="msb-next" aria-labelledby="mt-next-title" data-testid="mt-next">
-                <div>
-                    <h2 id="mt-next-title" class="msb-h">Neste steg</h2>
-                    <p class="mt-muted" data-testid="mt-next-why">@next.Why</p>
-                </div>
-                <a class="btn btn-primary" href="@next.Href" data-testid="mt-next-action">@next.Label</a>
-            </section>
+            <p class="msb-empty" data-testid="mt-no-project">Velg et prosjekt for å se testarbeidet. <a href="@next.Href" data-testid="mt-no-project-link">@next.Label</a></p>
         }
     }
 </div>
@@ -170,6 +235,89 @@
 
     /// <summary>Execution in BirkNext is switched on (System settings; off by default): results are then recorded in BirkNext too.</summary>
     private bool _executionEnabled;
+    // ── Testoversikt ──
+    private ManualTestingOverview? _overview;
+    private ManualTestingDashboardSettings _dashboard = new();
+    private bool _overviewLoading;
+    private string? _overviewError, _module, _specPath;
+    private HashSet<string> _modules = new(StringComparer.Ordinal);
+    private O.Level _level = O.Level.Project;
+    private int _overviewGeneration;
+
+    private bool On(string id) => _dashboard.IsOn(id);
+
+    private O.Scope CurrentScope => _level switch
+    {
+        O.Level.Module when _module is not null => new(O.Level.Module, _module, null),
+        O.Level.Specification when _specPath is not null => new(O.Level.Specification, _module, _specPath),
+        _ => O.Scope.Project,
+    };
+
+    private void SetLevel(O.Level level) => _level = level;
+
+    /// <summary>One chart card from the registry: not rendered when switched off, or empty while «Skjul tomme grafer» is on.</summary>
+    private RenderFragment Chart(string id, string title, IReadOnlyList<DeliveryBar> bars, string note, bool percent) => builder =>
+    {
+        if (!On(id) || (bars.Count == 0 && On("display.hideEmpty"))) return;
+        builder.OpenElement(0, "section"); builder.AddAttribute(1, "class", "mto-card"); builder.AddAttribute(2, "data-testid", "mto-widget"); builder.AddAttribute(3, "data-widget", id);
+        builder.OpenElement(4, "h3"); builder.AddAttribute(5, "class", "mto-card-h"); builder.AddContent(6, title); builder.CloseElement();
+        builder.OpenComponent<BirkNext.Web.Components.DeliveryBarChart>(7);
+        builder.AddAttribute(8, "Bars", bars); builder.AddAttribute(9, "TestId", "mto-bar"); builder.AddAttribute(10, "Label", title); builder.AddAttribute(11, "Percent", percent);
+        builder.AddAttribute(12, "Empty", "Ingen data i utvalget.");
+        builder.CloseComponent();
+        builder.OpenElement(13, "p"); builder.AddAttribute(14, "class", "mt-muted msb-small"); builder.AddContent(15, note); builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    /// <summary>The figures for the project, read once (one request); a newer request makes an older answer irrelevant.</summary>
+    private async Task LoadOverviewAsync()
+    {
+        if (_ws?.ProjectKey is not { } key || Api is not { } api) return;
+        var generation = ++_overviewGeneration;
+        _overviewLoading = true; _overviewError = null;
+        try
+        {
+            var settingsTask = api.DashboardSettingsAsync();
+            var (overview, error) = await api.OverviewAsync(key);
+            var (settings, _) = await settingsTask;
+            if (generation != _overviewGeneration) return;
+            _overview = overview; _overviewError = overview is null ? error ?? "Ukjent feil." : null;
+            _dashboard = settings ?? new();
+        }
+        finally { if (generation == _overviewGeneration) _overviewLoading = false; }
+        await ReadScopeAsync();
+    }
+
+    /// <summary>The shared module and specification (the same choice Finn og forstå uses).</summary>
+    private async Task ReadScopeAsync()
+    {
+        if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) is not BirkNext.Web.Services.Explorers.IArtifactExplorerContext explorer) return;
+        try
+        {
+            var state = await explorer.GetStateAsync(BirkNext.Web.Services.WorkspaceArtifactType.Specification);
+            _module = string.IsNullOrEmpty(state.Module) ? null : state.Module;
+            _specPath = state.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.Loaded ? state.Selected?.SourcePath : null;
+            _modules = [.. (state.Modules ?? []).Select(m => m.Module).Where(m => m.Length > 0)];
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { }
+        if (_level == O.Level.Specification && _specPath is null) _level = _module is null ? O.Level.Project : O.Level.Module;
+        if (_level == O.Level.Module && _module is null) _level = O.Level.Project;
+    }
+
+    private async Task OnScopeChangedAsync()
+    {
+        await ReadScopeAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>A module row: select it in the shared choice and open Finn og forstå on it (its specification is chosen there when it has several).</summary>
+    private async Task OpenModuleAsync(string module)
+    {
+        if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) is BirkNext.Web.Services.Explorers.IArtifactExplorerContext explorer)
+            try { await explorer.SelectModuleAsync(module); } catch (Exception e) when (e is not OperationCanceledException) { }
+        Nav.NavigateTo(M.DiscoverRoute);
+    }
+
     /// <summary>The workspace overview (/manual-testing) rather than «3. Testplaner» (/manual-testing/plans).</summary>
     private bool IsHome => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/').Equals(M.HomeRoute, StringComparison.OrdinalIgnoreCase);
 
@@ -206,6 +354,12 @@
     private bool _transferLoading;
     private string? _transferError;
 
+    /// <summary>Back on Testoversikt from Testplaner (the same page component): read the figures when they are not there yet.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsHome && !_loading && _ws is not null && _overview is null && !_overviewLoading && _overviewError is null) await LoadOverviewAsync();
+    }
+
     protected override async Task OnInitializedAsync()
     {
         // An older link to the overview with a Testplaner action (?transfer=, ?create=, ?plans=) belongs on «3. Testplaner».
@@ -231,6 +385,7 @@
             // v1.0 acceptance (2026-11-25): with execution in BirkNext switched on, results are not only in Azure DevOps — say where they are.
             if (ServiceProvider.GetService(typeof(IManualTestRunsApiService)) is IManualTestRunsApiService runs)
                 try { _executionEnabled = await runs.AvailabilityAsync(); } catch (Exception e) when (e is not OperationCanceledException) { _executionEnabled = false; }
+            if (IsHome) await LoadOverviewAsync();
         }
         finally { _loading = false; }
     }
