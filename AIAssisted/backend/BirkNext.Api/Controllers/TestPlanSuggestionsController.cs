@@ -135,11 +135,12 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     /// result changes the bytes and therefore the ETag. Cache-Control no-cache: always revalidated, never served stale.
     /// </remarks>
     [HttpGet("discover/last")]
-    public Task<ActionResult> LastDiscovery([FromQuery] string projectKey, [FromQuery] Guid? snapshotId, [FromServices] TestScenarioDiscoveryService discovery,
+    public Task<ActionResult> LastDiscovery([FromQuery] string projectKey, [FromQuery] Guid? snapshotId, [FromQuery] string? scope, [FromServices] TestScenarioDiscoveryService discovery,
         [FromServices] Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Mvc.JsonOptions> json, CancellationToken ct) =>
         Run(async () =>
         {
-            if (await discovery.LastAsync(projectKey, snapshotId, ct) is not { } result) return NoContent();
+            // With a scope (module + specification, DiscoveryScope): only a result computed for exactly that selection (2026-11-25).
+            if (await discovery.LastAsync(projectKey, snapshotId, ct, scope) is not { } result) return NoContent();
             var body = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(result, json.Value.JsonSerializerOptions);
             var etag = $"\"{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(body))}\"";
             Response.Headers.ETag = etag;

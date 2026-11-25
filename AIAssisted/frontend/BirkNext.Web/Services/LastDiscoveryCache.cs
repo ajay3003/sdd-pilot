@@ -15,7 +15,7 @@ public sealed class LastDiscoveryCache
     private readonly Dictionary<string, (string ETag, ScenarioDiscoveryResult Result)> _entries = new(StringComparer.Ordinal);
     private readonly Queue<string> _order = new();
 
-    public static string KeyOf(string projectKey, Guid? snapshotId) => $"{projectKey}\n{snapshotId}";
+    public static string KeyOf(string projectKey, Guid? snapshotId, string? scope = null) => $"{projectKey}\n{snapshotId}\n{scope}";
 
     public bool TryGet(string key, out string etag, out ScenarioDiscoveryResult result)
     {

@@ -162,6 +162,21 @@ public static partial class PlanPreparePresentation
             .Concat(c.RequirementLinks.Select(l => l.RequirementId))
             .Where(r => !string.IsNullOrWhiteSpace(r)).Distinct(StringComparer.OrdinalIgnoreCase)];
 
+    /// <summary>
+    /// The specifications a saved plan's cases were prepared from, when none of them is the specification selected now (2026-11-25): a plan prepared for
+    /// SkoleService stays as it is, but it is never presented as belonging to HendelseAdapter. Null when nothing is selected, the plan names no
+    /// specification, or the selected one is among them.
+    /// </summary>
+    public static IReadOnlyList<string>? OtherSpecifications(TestPlanDraft plan, string? selectedPath)
+    {
+        if (string.IsNullOrWhiteSpace(selectedPath)) return null;
+        static string N(string p) => p.Replace('\\', '/').Trim().ToLowerInvariant();
+        var paths = plan.Cases.Select(c => c.Generated.Story?.SpecificationPath).OfType<string>().Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (paths.Count == 0) return null;
+        var selected = N(selectedPath);
+        return paths.Any(p => N(p) == selected || N(p).EndsWith("/" + selected, StringComparison.Ordinal) || selected.EndsWith("/" + N(p), StringComparison.Ordinal)) ? null : paths;
+    }
+
     /// <summary>Stable id of a case within a plan (the server's own identity: scenario id of its source).</summary>
     public static string IdOf(TestCaseDraft c) => c.Source.ScenarioId;
 

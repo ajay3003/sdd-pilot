@@ -55,7 +55,7 @@ public sealed class ScenarioInventoryPerformanceTests(ITestOutputHelper output) 
         var api = new Mock<ITestPlanSuggestionsApiService>();
         api.Setup(a => a.ProjectAsync("perf", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new TestPlanWorkspace { ProjectKey = "perf", GuideKey = "project:perf", CanWrite = true, RuleVersion = "tps-1" }, (string?)null));
-        api.Setup(a => a.LastDiscoveryAsync("perf", It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        api.Setup(a => a.LastDiscoveryAsync("perf", It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new ScenarioDiscoveryResult { DiscoveryId = "d", ProjectKey = "perf", RuleVersion = "tsd-1", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = candidates }, (string?)null));
         Services.AddSingleton(api.Object);
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "perf", "Perf")).Object);
@@ -98,7 +98,7 @@ public sealed class ScenarioInventoryPerformanceTests(ITestOutputHelper output) 
         var memory = GC.GetTotalMemory(forceFullCollection: false) / 1024 / 1024;
         output.WriteLine($"PERF n={count} classify={classify:F1}ms initial={initial:F0}ms view={viewSwitch:F0}ms search={search:F0}ms select={select:F0}ms preview={preview:F0}ms expand={expand:F0}ms details={details:F0}ms heap={memory}MB");
         api.Verify(a => a.DiscoverAsync(It.IsAny<ScenarioDiscoveryRequest>(), It.IsAny<CancellationToken>()), Times.Never(), "views, filters and search never re-run discovery");
-        api.Verify(a => a.LastDiscoveryAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Once(), "no per-row or per-filter backend request");
+        api.Verify(a => a.LastDiscoveryAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once(), "no per-row or per-filter backend request");
         classify.Should().BeLessThan(2000);
         new[] { viewSwitch, search, select, preview, expand, details }.Should().OnlyContain(ms => ms < 5000);
     }

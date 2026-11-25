@@ -326,8 +326,28 @@ public sealed record ScenarioConflict
     public string Explanation { get; init; } = "";
 }
 
+/// <summary>
+/// The selection a discovery is computed for (2026-11-25): the module scope and the selected specification of the workspace evidence the discovery
+/// reads, or «all specifications» when no feature is chosen. A result is shown only for the selection it was computed for, so another module's
+/// scenarios are never shown as the current module's. Derived from the same evidence the request sends (no second identity).
+/// </summary>
+public static class DiscoveryScope
+{
+    public const string AllSpecifications = "*";
+
+    public static string Of(BirkNext.TestCoverage.CoverageWorkspaceEvidence? workspace)
+    {
+        var module = (workspace?.ArtifactScope ?? "").Trim().Replace('\\', '/').ToLowerInvariant();
+        var spec = workspace?.SpecificationArtifacts.FirstOrDefault()?.Path is { Length: > 0 } path ? path.Trim().Replace('\\', '/').ToLowerInvariant() : AllSpecifications;
+        return module + "|" + spec;
+    }
+}
+
 public sealed record ScenarioDiscoveryResult
 {
+    /// <summary>The selection (<see cref="DiscoveryScope"/>) this result was computed for; null for results stored before 2026-11-25 (never shown
+    /// for a scoped request, so they are recomputed once).</summary>
+    public string? SelectionScope { get; init; }
     /// <summary>Identity of this result: project + snapshot + evidence fingerprint + rule version.</summary>
     public string DiscoveryId { get; init; } = "";
     /// <summary>Whether the source's tests were read for scenario references (2026-11-25). False = no tests, or an older discovery: a scenario

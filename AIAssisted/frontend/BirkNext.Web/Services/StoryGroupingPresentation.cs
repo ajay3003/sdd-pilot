@@ -20,9 +20,9 @@ public static class StoryGroupingPresentation
         Mode.Business => "Forretningsområder", Mode.Functional => "Funksjonelle områder", Mode.Stories => "Brukerhistorier", _ => "Ingen gruppering",
     };
 
-    /// <summary>The default: business groups when people have made some, else functional areas when the specification has FR sections, else stories.</summary>
-    public static Mode DefaultMode(StoryGroupingDocument? doc, RequirementSectionMap sections) =>
-        doc is { Groups.Count: > 0 } ? Mode.Business : sections.Sections.Count > 0 ? Mode.Functional : Mode.Stories;
+    /// <summary>The default display grouping (2026-11-25): always «Brukerhistorier». Functional areas and business groups stay available in «Grupper
+    /// etter»; this is display only — area assignments and reviewed grouping decisions are not changed.</summary>
+    public static Mode DefaultMode(StoryGroupingDocument? doc, RequirementSectionMap sections) => Mode.Stories;
 
     /// <summary>
     /// The stories with everything the engine reads. The discovery story is enriched with the browser's own evidence of the same story (its tasks.md

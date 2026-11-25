@@ -43,8 +43,9 @@ public interface ITestPlanSuggestionsApiService
     /// <summary>Runs discovery for one project (POST discover). Explicit only.</summary>
     Task<(ScenarioDiscoveryResult? Result, string? Error)> DiscoverAsync(ScenarioDiscoveryRequest request, CancellationToken ct = default) =>
         Task.FromResult<(ScenarioDiscoveryResult?, string?)>((null, NotAvailable));
-    /// <summary>The last discovery result of the project (and snapshot) — no analyzer runs; (null, null) when there is none.</summary>
-    Task<(ScenarioDiscoveryResult? Result, string? Error)> LastDiscoveryAsync(string projectKey, Guid? snapshotId, CancellationToken ct = default) =>
+    /// <summary>The last discovery result of the project (and snapshot) — no analyzer runs; (null, null) when there is none. With
+    /// <paramref name="scope"/> (<see cref="DiscoveryScope"/>): only a result computed for exactly that module + specification.</summary>
+    Task<(ScenarioDiscoveryResult? Result, string? Error)> LastDiscoveryAsync(string projectKey, Guid? snapshotId, string? scope = null, CancellationToken ct = default) =>
         Task.FromResult<(ScenarioDiscoveryResult?, string?)>((null, null));
     /// <summary>The plan compared with its application's current source basis (changed, removed, unavailable, new). Read-only.</summary>
     Task<(PlanImpactAnalysis? Impact, string? Error)> ImpactAsync(Guid id, CancellationToken ct = default) =>
@@ -154,12 +155,12 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
     public Task<(ScenarioDiscoveryResult?, string?)> DiscoverAsync(ScenarioDiscoveryRequest request, CancellationToken ct = default) =>
         Send<ScenarioDiscoveryResult>(() => http.PostAsJsonAsync($"{Base}/discover", request, Json, ct), ct);
 
-    public async Task<(ScenarioDiscoveryResult?, string?)> LastDiscoveryAsync(string projectKey, Guid? snapshotId, CancellationToken ct = default)
+    public async Task<(ScenarioDiscoveryResult?, string?)> LastDiscoveryAsync(string projectKey, Guid? snapshotId, string? scope = null, CancellationToken ct = default)
     {
-        var key = LastDiscoveryCache.KeyOf(projectKey, snapshotId);
+        var key = LastDiscoveryCache.KeyOf(projectKey, snapshotId, scope);
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"{Base}/discover/last?projectKey={Uri.EscapeDataString(projectKey)}{(snapshotId is { } id ? $"&snapshotId={id}" : "")}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{Base}/discover/last?projectKey={Uri.EscapeDataString(projectKey)}{(snapshotId is { } id ? $"&snapshotId={id}" : "")}{(scope is { } sc ? $"&scope={Uri.EscapeDataString(sc)}" : "")}");
             // Revalidate the result already parsed in this session: 304 = byte-identical, reuse it (see LastDiscoveryCache).
             ScenarioDiscoveryResult? cached = null;
             if (lastDiscoveries is not null && lastDiscoveries.TryGet(key, out var etag, out var held))

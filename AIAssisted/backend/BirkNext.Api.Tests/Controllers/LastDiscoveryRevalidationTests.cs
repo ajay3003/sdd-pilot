@@ -31,7 +31,7 @@ public sealed class LastDiscoveryRevalidationTests
         var http = new DefaultHttpContext();
         if (ifNoneMatch is not null) http.Request.Headers.IfNoneMatch = ifNoneMatch;
         var controller = new TestPlanSuggestionsController(null!, null!) { ControllerContext = new ControllerContext { HttpContext = http } };
-        var result = await controller.LastDiscovery("project-a", null, Discovery(),
+        var result = await controller.LastDiscovery("project-a", null, null, Discovery(),
             Microsoft.Extensions.Options.Options.Create(new JsonOptions { JsonSerializerOptions = { PropertyNamingPolicy = JsonNamingPolicy.CamelCase } }), default);
         return (result, http);
     }

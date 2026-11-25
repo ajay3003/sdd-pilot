@@ -136,6 +136,11 @@ public sealed class ManualTestingRailAndBadgesWorkflowTests : IAsyncLifetime
             var draftId = Regex.Match(page.Url, @"[?&]draft=([^&]+)").Groups[1].Value;
             // ── Finn og forstå: functional areas and user stories.
             await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/manual-testing/discover", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+            // Scenarios load by themselves (no «Oppdag»), and «Brukerhistorier» is the default grouping; the tester switches to functional areas.
+            await Assertions.Expect(page.GetByTestId("mtd-story").First).ToBeVisibleAsync(new() { Timeout = 240000 });
+            (await page.GetByTestId("mtd-discover").CountAsync()).Should().Be(0, "no manual discovery button");
+            await Assertions.Expect(page.Locator("[data-testid=mtd-group-mode] option:checked")).ToHaveTextAsync("Brukerhistorier");
+            await page.GetByTestId("mtd-group-mode").SelectOptionAsync("Functional");
             var groups = page.GetByTestId("mtd-group");
             try { await Assertions.Expect(groups.First).ToBeVisibleAsync(new() { Timeout = 120000 }); }
             catch (PlaywrightException) { await ShotAsync(page, "00-failed-no-areas"); throw; }

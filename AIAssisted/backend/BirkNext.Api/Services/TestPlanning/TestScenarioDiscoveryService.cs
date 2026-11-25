@@ -185,6 +185,7 @@ public sealed class ScenarioDiscoveryCache
     {
         _byId[result.DiscoveryId] = result;
         _latest[$"{result.ProjectKey}|{result.SnapshotKey}"] = result.DiscoveryId;
+        RememberScoped(result);
         if (result.IsCurrent)
         {
             _latest[result.ProjectKey] = result.DiscoveryId;
@@ -202,6 +203,21 @@ public sealed class ScenarioDiscoveryCache
 
     /// <summary>True the first time an application's stored results are restored in this process (later calls skip the read).</summary>
     public bool FirstApplicationRestore(string applicationKey) => _applicationsRestored.TryAdd(applicationKey, true);
+
+    private static string Scoped(string projectKey, string scope) => $"{projectKey}|@scope|{scope}";
+
+    /// <summary>Holds a result as the newest for its selection scope (module + specification) without making it the project's latest.</summary>
+    public void RememberScoped(ScenarioDiscoveryResult result)
+    {
+        if (result.SelectionScope is not { } scope || !result.IsCurrent) return;
+        _byId[result.DiscoveryId] = result;
+        var key = Scoped(result.ProjectKey, scope);
+        if (Newer(key, result)) _latest[key] = result.DiscoveryId;
+    }
+
+    /// <summary>The newest current result computed for exactly this selection scope; null when none (never another module's or specification's).</summary>
+    public ScenarioDiscoveryResult? LatestForScope(string projectKey, string scope) =>
+        _latest.TryGetValue(Scoped(projectKey, scope), out var id) && _byId.TryGetValue(id, out var r) && r.ProjectKey == projectKey && r.SelectionScope == scope ? r : null;
 
     /// <summary>Holds a result (read back from storage) for lookup by id without making it the project's latest.</summary>
     public void Remember(ScenarioDiscoveryResult result) => _byId.TryAdd(result.DiscoveryId, result);
@@ -302,9 +318,12 @@ public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources,
         var final = D.Finalize(projectKey, snapshotKey, candidates, links, scenarioLinks);
         if (candidates.Count > D.MaxCandidates) limitations.Add($"Only the first {D.MaxCandidates} candidates are kept.");
         var fingerprint = E.Sha(string.Join("\n", final.Select(c => c.CandidateId + ":" + c.Fingerprint)));
+        // The selection it was computed for is part of its identity: two modules with the same scenarios are still two results.
+        var selectionScope = DiscoveryScope.Of(request.Workspace);
         var result = new ScenarioDiscoveryResult
         {
-            DiscoveryId = E.Sha($"{projectKey}|{basis?.Fingerprint ?? snapshotKey}|{fingerprint}|{D.RuleVersion}")[..24], ProjectKey = projectKey, ProjectName = name,
+            DiscoveryId = E.Sha($"{projectKey}|{selectionScope}|{basis?.Fingerprint ?? snapshotKey}|{fingerprint}|{D.RuleVersion}")[..24], ProjectKey = projectKey, ProjectName = name,
+            SelectionScope = selectionScope,
             SnapshotKey = snapshotKey,
             TestsReadForScenarios = snapshots.Any(s => s.TestInventory is { ScenarioReferenceRules: >= 1, Definitions.Count: > 0 }),
             SnapshotLabel = primary is null ? null : $"{primary.Archive.FileName} · {primary.AnalyzedAt:yyyy-MM-dd HH:mm}",
@@ -331,9 +350,15 @@ public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources,
 
     /// <summary>The last result for the project (and snapshot), restored from storage after a restart; null when the project was never discovered.
     /// Without a snapshot: the project's current result — a historical inspection is never returned as current.</summary>
-    public async Task<ScenarioDiscoveryResult?> LastAsync(string projectKey, Guid? snapshotId, CancellationToken ct)
+    public async Task<ScenarioDiscoveryResult?> LastAsync(string projectKey, Guid? snapshotId, CancellationToken ct, string? scope = null)
     {
         var key = Key(projectKey);
+        if (scope is not null)
+        {
+            // Only a result computed for this exact module + specification (2026-11-25): another selection's scenarios are never returned as current.
+            var scoped = cache.LatestForScope(key, scope) ?? (store is not null ? await store.FindScopedAsync(key, scope, ct) : null);
+            return scoped;
+        }
         if (store is not null) await store.RestoreAsync(key, snapshotId?.ToString(), ct);
         return cache.Latest(key, snapshotId?.ToString());
     }

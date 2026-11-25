@@ -53,7 +53,7 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         var api = new Mock<ITestPlanSuggestionsApiService>();
         api.Setup(x => x.ProjectAsync("m2lb", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new TestPlanWorkspace { ProjectKey = "m2lb", GuideKey = "project:m2lb", CanWrite = true }, (string?)null));
-        api.Setup(x => x.LastDiscoveryAsync("m2lb", It.IsAny<Guid?>(), It.IsAny<CancellationToken>())).ReturnsAsync((new ScenarioDiscoveryResult
+        api.Setup(x => x.LastDiscoveryAsync("m2lb", It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync((new ScenarioDiscoveryResult
         {
             DiscoveryId = "d1", ProjectKey = "m2lb", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = [.. candidates], TestsReadForScenarios = true,
         }, (string?)null));

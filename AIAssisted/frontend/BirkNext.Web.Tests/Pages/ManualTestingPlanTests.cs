@@ -71,7 +71,7 @@ public sealed partial class ManualTestingPlanTests : BunitContext
             TestData = [new TestDataOption("asset-1", "gyldig-rapport", "Gyldig rapport", "Json", "Approved", "Valid", null, null, null, null)],
             PlanStatus = new() { [PlanId] = new PlanSourceStatus { State = "Må gjennomgås", Message = "1 scenario er endret i kilden.", Changed = 1 } },
         }, (string?)null));
-        _api.Setup(x => x.LastDiscoveryAsync("library", It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        _api.Setup(x => x.LastDiscoveryAsync("library", It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new ScenarioDiscoveryResult { DiscoveryId = "d1", ProjectKey = "library", Candidates = [new DiscoveredScenario { CandidateId = "c7", ProjectKey = "library", Title = "Scenario 7" }] }, (string?)null));
         _api.Setup(x => x.DraftAsync(PlanId, It.IsAny<CancellationToken>())).ReturnsAsync((plan, (string?)null));
         _api.Setup(x => x.TranslationAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new TranslationAvailability(true, "offline", ""));

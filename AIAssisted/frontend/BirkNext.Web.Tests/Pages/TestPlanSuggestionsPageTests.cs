@@ -93,7 +93,7 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         { ProjectReads.Add(projectKey); return Task.FromResult<(TestPlanWorkspace?, string?)>((Project, Project is null ? "n/a" : null)); }
         public Task<(ScenarioDiscoveryResult?, string?)> DiscoverAsync(ScenarioDiscoveryRequest request, CancellationToken ct = default)
         { Discovered = request; return Task.FromResult<(ScenarioDiscoveryResult?, string?)>((Discovery, Discovery is null ? "n/a" : null)); }
-        public Task<(ScenarioDiscoveryResult?, string?)> LastDiscoveryAsync(string projectKey, Guid? snapshotId, CancellationToken ct = default) =>
+        public Task<(ScenarioDiscoveryResult?, string?)> LastDiscoveryAsync(string projectKey, Guid? snapshotId, string? scope = null, CancellationToken ct = default) =>
             Task.FromResult<(ScenarioDiscoveryResult?, string?)>((Last, null));
         public Task<(TestPlanDraft?, string?)> CreateProjectAsync(CreateProjectTestPlanRequest request, CancellationToken ct = default)
         { CreatedProject = request; return Task.FromResult<(TestPlanDraft?, string?)>((ProjectDraft(request.ProjectKey, request.ManualCaseTitle), null)); }

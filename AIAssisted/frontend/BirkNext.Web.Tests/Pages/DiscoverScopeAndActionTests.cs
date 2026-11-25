@@ -14,9 +14,10 @@ using Q = BirkNext.TestPlanning.ScenarioWorkQueue;
 namespace BirkNext.Web.Tests.Pages;
 
 /// <summary>
-/// Finn og forstå (2026-11-24): «Oppdag på nytt» sits beside the Module / Specification choice (not in the status bar), runs once at a time, and
-/// keeps every selection (queue, filters, selected scenarios); the page says plainly when the shown scenarios come from another specification
-/// than the chosen one, or when the chosen one gave none — it never runs discovery by itself and never switches the specification back.
+/// Finn og forstå: since 2026-11-25 the scenarios of the chosen module + specification load by themselves (no «Oppdag» / «Oppdag på nytt» for the
+/// tester). The page asks for the discovery of exactly its selection; when there is none it is fetched once (a spinner meanwhile), a failure says
+/// «Kunne ikke hente scenarioer.» with «Prøv igjen», and every selection (queue, filters, selected scenarios, the chosen specification) is kept. The
+/// page still says plainly when the chosen specification gave no scenarios of its own, and never switches the specification back.
 /// </summary>
 public sealed class DiscoverScopeAndActionTests : BunitContext
 {
@@ -30,6 +31,9 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
         CandidateId = id, ProjectKey = "library", CapabilityId = capability, SourceCategory = capability, Area = "Rapporter", Title = title, Purpose = "Formål",
         Type = ScenarioCandidateType.BusinessFunctional, Confidence = CandidateConfidence.ExplicitSpecification, ExpectedBehaviour = "Vises", CanonicalKey = "k:" + id,
         Story = capability == "specification" ? MainStory : null, SourceIdentity = "tss-" + id,
+        Template = capability == "specification"
+            ? [new("given", "Gitt", $"a report for {id}"), new("when", "Når", "the report is submitted"), new("then", "Så", $"the report {id} is stored exactly as sent")]
+            : [],
     };
 
     private static readonly DiscoveredScenario Spec1 = C("c-1", "A user submits a valid report");
@@ -41,9 +45,15 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
     private readonly Mock<ITestPlanSuggestionsApiService> _api = new();
     private Mock<ICurrentWorkspaceProjection> _projection = null!;
     private TaskCompletionSource<(ScenarioDiscoveryResult?, string?)>? _discovery;
+    /// <summary>False = the server has no discovery for the page's selection yet (until a discovery completes).</summary>
+    private bool _known = true;
+    private readonly List<string?> _scopes = [];
 
-    private IRenderedComponent<ManualTestingDiscover> Open(string? selectedSpecification, params DiscoveredScenario[] candidates)
+    private IRenderedComponent<ManualTestingDiscover> Open(string? selectedSpecification, params DiscoveredScenario[] candidates) => Open(selectedSpecification, true, candidates);
+
+    private IRenderedComponent<ManualTestingDiscover> Open(string? selectedSpecification, bool known, params DiscoveredScenario[] candidates)
     {
+        _known = known;
         _projection = BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "library", "Library"));
         Services.AddSingleton(_projection.Object);
         if (selectedSpecification is not null)
@@ -61,8 +71,9 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
         }
         _api.Setup(x => x.ProjectAsync("library", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new TestPlanWorkspace { ProjectKey = "library", GuideKey = "project:library", CanWrite = true }, (string?)null));
-        _api.Setup(x => x.LastDiscoveryAsync("library", It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((new ScenarioDiscoveryResult { DiscoveryId = "d1", ProjectKey = "library", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = [.. candidates] }, (string?)null));
+        _api.Setup(x => x.LastDiscoveryAsync("library", It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, Guid?, string?, CancellationToken>((_, _, scope, _) => _scopes.Add(scope))
+            .ReturnsAsync(() => _known ? (new ScenarioDiscoveryResult { DiscoveryId = "d1", ProjectKey = "library", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = [.. candidates] }, (string?)null) : (null, null));
         _api.Setup(x => x.WorkQueuesAsync("library", "d1", It.IsAny<CancellationToken>())).ReturnsAsync((new ScenarioWorkQueueView
         {
             DiscoveryId = "d1", DiscoveryCurrent = true, CoverageComplete = true,
@@ -74,65 +85,74 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.GetRequiredService<NavigationManager>().NavigateTo("manual-testing/discover");
         var cut = Render<ManualTestingDiscover>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd]").GetAttribute("aria-busy").Should().Be("false"));
+        if (known) cut.WaitForAssertion(() => cut.Find("[data-testid=mtd]").GetAttribute("aria-busy").Should().Be("false"));
         return cut;
     }
 
     [Fact]
-    public void The_discovery_action_sits_beside_the_module_and_specification_and_not_in_the_status_bar()
+    public void No_discovery_button_is_needed_and_a_known_selection_is_shown_without_fetching()
     {
         var cut = Open(MainPath, Spec1, Spec2, Ui);
 
-        cut.FindAll("[data-testid=mtd-discover]").Should().ContainSingle("one discovery action on the page");
-        cut.Find("[data-testid=ssp-actions] [data-testid=mtd-discover]").TextContent.Should().Be("Oppdag på nytt");
-        cut.Find(".ssp-row [data-testid=ssp-specification]").Should().NotBeNull("the button shares the row with the specification choice");
+        cut.FindAll("[data-testid=mtd-discover]").Should().BeEmpty("the tester never has to press «Oppdag» or «Oppdag på nytt»");
+        cut.Markup.Should().NotContain("Oppdag scenarioer").And.NotContain("Oppdag på nytt");
+        cut.FindAll("[data-testid=mtd-discovering]").Should().BeEmpty("nothing is loading");
+        cut.Find(".ssp-row [data-testid=ssp-specification]").Should().NotBeNull();
         cut.Find("[data-testid=mtd-context]").QuerySelector("button").Should().BeNull("the status bar holds no actions");
         cut.FindAll("[data-testid=ssp-discover]").Should().BeEmpty("the picker's own link to another page is not used here");
+        _api.Verify(x => x.DiscoverAsync(It.IsAny<ScenarioDiscoveryRequest>(), It.IsAny<CancellationToken>()), Times.Never, "a discovery for this selection exists");
+        _scopes.Should().NotBeEmpty().And.OnlyContain(s => s != null, "the page always asks for the discovery of its own selection");
     }
 
     [Fact]
-    public void Discovery_runs_once_at_a_time_and_keeps_every_selection()
+    public void Without_a_discovery_for_the_selection_scenarios_are_fetched_once_with_a_spinner_and_every_selection_is_kept()
     {
-        var cut = Open(MainPath, Spec1, Spec2, Ui);
+        var cut = Open(MainPath, known: false, Spec1, Spec2, Ui);
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-discovering]").TextContent.Should().Contain("Henter scenarioer"));
+        _api.Verify(x => x.DiscoverAsync(It.IsAny<ScenarioDiscoveryRequest>(), It.IsAny<CancellationToken>()), Times.Once, "fetched by itself");
+        cut.FindAll("[data-testid=mtd-scenario]").Should().BeEmpty("nothing old is shown while the selection's scenarios load");
+
+        _known = true;
+        cut.InvokeAsync(() => _discovery!.SetResult((new ScenarioDiscoveryResult { DiscoveryId = "d1", ProjectKey = "library" }, null)));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Should().NotBeEmpty());
+        cut.FindAll("[data-testid=mtd-discovering]").Should().BeEmpty("the spinner is gone after success");
+        _api.Verify(x => x.DiscoverAsync(It.IsAny<ScenarioDiscoveryRequest>(), It.IsAny<CancellationToken>()), Times.Once, "once per selection: no loop");
+        cut.Find("[data-testid=ssp-specification]").GetAttribute("value").Should().Be("s1", "discovery never changes the chosen specification");
+
         cut.FindAll("[data-testid=mtd-queue]").Single(e => e.GetAttribute("data-queue") == "NeedsClarification").Click();
         cut.FindAll("[data-testid=mtd-scenario]").Single().QuerySelector("[data-testid=mtd-select]")!.Change(true);
-
-        cut.Find("[data-testid=mtd-discover]").Click();
-        cut.Find("[data-testid=mtd-discover]").HasAttribute("disabled").Should().BeTrue();
-        cut.Find("[data-testid=mtd-discover]").TextContent.Should().Be("Finner scenarioer …");
-        cut.Find("[data-testid=mtd-discover]").Click(); // a second click that slips through is ignored
-        _api.Verify(x => x.DiscoverAsync(It.IsAny<ScenarioDiscoveryRequest>(), It.IsAny<CancellationToken>()), Times.Once);
-
-        _discovery!.SetResult((new ScenarioDiscoveryResult { DiscoveryId = "d1", ProjectKey = "library" }, null));
-        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-discover]").HasAttribute("disabled").Should().BeFalse());
-
-        cut.FindAll("[data-testid=mtd-queue]").Single(e => e.GetAttribute("aria-pressed") == "true").GetAttribute("data-queue").Should().Be("NeedsClarification");
         cut.Find("[data-testid=mtd-count-selected]").TextContent.Should().Be("1");
-        cut.Find("[data-testid=ssp-specification]").GetAttribute("value").Should().Be("s1", "discovery never changes the chosen specification");
     }
 
     [Fact]
-    public void A_failed_discovery_is_explained_and_changes_no_selection()
+    public void A_failed_fetch_says_so_offers_a_safe_retry_and_the_spinner_ends()
     {
-        var cut = Open(MainPath, Spec1, Spec2, Ui);
-        cut.FindAll("[data-testid=mtd-scenario]").First().QuerySelector("[data-testid=mtd-select]")!.Change(true);
+        var cut = Open(MainPath, known: false, Spec1, Spec2, Ui);
+        cut.WaitForAssertion(() => (_discovery is not null).Should().BeTrue());
+        var first = _discovery!;
+        cut.InvokeAsync(() => first.SetResult((null, "Kilden kunne ikke leses.")));
 
-        cut.Find("[data-testid=mtd-discover]").Click();
-        _discovery!.SetResult((null, "Kilden kunne ikke leses."));
-
-        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-discover-error]").TextContent.Should().Be("Kilden kunne ikke leses."));
-        cut.Find("[data-testid=mtd-count-selected]").TextContent.Should().Be("1");
-        cut.FindAll("[data-testid=mtd-queue]").Single(e => e.GetAttribute("aria-pressed") == "true").GetAttribute("data-queue").Should().Be("Recommended");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-discover-error]").TextContent.Should().StartWith("Kunne ikke hente scenarioer.").And.Contain("Kilden kunne ikke leses."));
+        cut.FindAll("[data-testid=mtd-discovering]").Should().BeEmpty("the spinner ends after a failure");
+        cut.Find("[data-testid=mtd-discover-retry]").Click();
+        _api.Verify(x => x.DiscoverAsync(It.IsAny<ScenarioDiscoveryRequest>(), It.IsAny<CancellationToken>()), Times.Exactly(2), "«Prøv igjen» runs the same safe read again");
+        _known = true;
+        var second = _discovery!;
+        ReferenceEquals(second, first).Should().BeFalse("a new attempt");
+        cut.InvokeAsync(() => second.SetResult((new ScenarioDiscoveryResult { DiscoveryId = "d1", ProjectKey = "library" }, null)));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Should().NotBeEmpty());
+        cut.FindAll("[data-testid=mtd-discover-error]").Should().BeEmpty();
     }
 
     [Fact]
-    public void Scenarios_from_another_specification_are_labelled_and_discovery_is_not_run_automatically()
+    public void Scenarios_from_another_specification_are_labelled_without_asking_the_tester_to_discover()
     {
         var cut = Open(DependenciesPath, Spec1, Spec2, Ui);
 
         var note = cut.Find("[data-testid=mtd-spec-context]");
-        note.GetAttribute("data-state").Should().Be("stale");
-        note.TextContent.Should().Contain($"funnet i {MainPath}").And.Contain("ikke i valgt «Avhengigheter for SkoleService før go-live»").And.Contain("Oppdag på nytt");
+        note.GetAttribute("data-state").Should().Be("other");
+        note.TextContent.Should().Contain($"kommer fra {MainPath}").And.Contain("«Avhengigheter for SkoleService før go-live» ga ingen egne testscenarioer").And.NotContain("Oppdag");
         cut.Find("[data-testid=ssp-specification]").GetAttribute("value").Should().Be("s2", "the chosen specification is never switched back");
         _api.Verify(x => x.DiscoverAsync(It.IsAny<ScenarioDiscoveryRequest>(), It.IsAny<CancellationToken>()), Times.Never);
         cut.Find("[data-testid=mtd-count-spec]").TextContent.Should().Be("2");
@@ -269,5 +289,45 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
         cut.Find("[data-testid=mtd-count-selected]").TextContent.Should().Be("1", "the same project keeps the tester's selection");
         cut.FindAll("[data-testid=mtd-queue]").Single(e => e.GetAttribute("aria-pressed") == "true").GetAttribute("data-queue").Should().Be("NeedsClarification");
         cut.FindAll("[data-testid=mtd-no-project]").Should().BeEmpty();
+    }
+    // ── «Fra kilden (ordrett)» collapsed by default (2026-11-25) ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Fra_kilden_starts_collapsed_opens_and_closes_keeps_the_original_text_and_is_collapsed_again_for_another_scenario()
+    {
+        var cut = Open(MainPath, Spec1, Spec2, Ui);
+        var toggle = cut.Find("[data-testid=mtd-source-toggle]");
+        toggle.TextContent.Should().Be("Fra kilden (ordrett)");
+        toggle.GetAttribute("aria-expanded").Should().Be("false");
+        toggle.GetAttribute("aria-controls").Should().Be("mtd-source-body");
+        cut.Find("[data-testid=mtd-source-body]").HasAttribute("hidden").Should().BeTrue("collapsed by default");
+        var text = cut.Find("[data-testid=mtd-source-body]").TextContent;
+        text.Should().Contain("Gitt").And.Contain("a report for c-1").And.Contain("Når").And.Contain("Så").And.Contain("the report c-1 is stored exactly as sent", "the original text is kept, only hidden");
+
+        toggle.Click();
+        cut.Find("[data-testid=mtd-source-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        cut.Find("[data-testid=mtd-source-body]").HasAttribute("hidden").Should().BeFalse();
+        cut.Find("[data-testid=mtd-source-toggle]").Click();
+        cut.Find("[data-testid=mtd-source-body]").HasAttribute("hidden").Should().BeTrue("a second click collapses it");
+
+        cut.Find("[data-testid=mtd-source-toggle]").Click();
+        cut.FindAll("[data-testid=mtd-queue]").Single(e => e.GetAttribute("data-queue") == "All").Click();
+        cut.FindAll("[data-testid=mtd-scenario]").Single(e => e.GetAttribute("data-id") == "c-2").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-source-body]").TextContent.Should().Contain("a report for c-2"));
+        cut.Find("[data-testid=mtd-source-toggle]").GetAttribute("aria-expanded").Should().Be("false", "another acceptance scenario starts collapsed");
+
+        cut.Find("[data-testid=mtd-source-toggle]").Click();
+        cut.Find($"[data-testid=mtd-story][data-story='{MainStory.Key}']").Click();
+        cut.Find("[data-testid=mtd-source-toggle]").GetAttribute("aria-expanded").Should().Be("false", "choosing a user story starts collapsed");
+    }
+
+    [Fact]
+    public void Brukerhistorier_is_the_default_grouping()
+    {
+        var cut = Open(MainPath, Spec1, Spec2, Ui);
+        // The plain story list (no functional areas) is shown by default; with grouping inputs the select starts on «Brukerhistorier».
+        cut.FindAll("[data-testid=mtd-group]").Should().BeEmpty("no area grouping unless the tester chooses it");
+        if (cut.FindAll("[data-testid=mtd-group-mode]").Count > 0) cut.Find("[data-testid=mtd-group-mode] option[selected]").TextContent.Should().Be("Brukerhistorier");
+        cut.FindAll("[data-testid=mtd-story]").Should().Contain(s => s.GetAttribute("data-story") == MainStory.Key);
     }
 }

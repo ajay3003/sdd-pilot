@@ -17,7 +17,7 @@ public sealed class TechnicalCandidateSummaryTests : BunitContext
     private Mock<ITestPlanSuggestionsApiService> Api(ScenarioDiscoveryResult? last)
     {
         var api = new Mock<ITestPlanSuggestionsApiService>();
-        api.Setup(a => a.LastDiscoveryAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>())).ReturnsAsync((last, (string?)null));
+        api.Setup(a => a.LastDiscoveryAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync((last, (string?)null));
         Services.AddSingleton(api.Object);
         return api;
     }

@@ -123,7 +123,7 @@ public sealed partial class ManualTestingPlanTests
         Panel().Should().Be(norsk);
         Choose(cut, EditorLanguage.Compare);
         Panel().Should().Be(norsk);
-        _api.Verify(x => x.LastDiscoveryAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Once(), "switching language never re-reads the source");
+        _api.Verify(x => x.LastDiscoveryAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once(), "switching language never re-reads the source");
     }
 
     [Fact]

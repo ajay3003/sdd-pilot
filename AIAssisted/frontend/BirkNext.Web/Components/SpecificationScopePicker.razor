@@ -43,6 +43,9 @@
                         }
                     </select></label>
             }
+            @* A module / feature / specification change rebuilds the review context before the new choice is shown (2026-11-25: it could take seconds
+               on a large workspace with no sign of life): say what is happening beside the dropdowns. *@
+            @if (_busy) { <InlineLoading Text="Henter spesifikasjoner …" Class="ssp-busy" TestId="ssp-busy" /> }
             @if (Actions is not null) { <div class="ssp-actions" data-testid="ssp-actions">@Actions</div> }
         </div>
         <p class="ssp-current" role="status" data-testid="ssp-current" data-state="@CurrentState(s)">

@@ -85,8 +85,9 @@ public sealed class StoryGroupingPresentationTests
         tree.Select(n => n.Title).Should().Equal("Mottak og behandling", "Leveranse", "Uten gruppe");
         tree[0].Stories.Single().StoryKey.Should().Be(Us1.Key);
         tree[2].Stories.Select(p => p.StoryKey).Should().Equal(Us2.Key, Us3.Key);
-        G.DefaultMode(doc, Sections).Should().Be(G.Mode.Business);
-        G.DefaultMode(null, Sections).Should().Be(G.Mode.Functional);
+        // «Brukerhistorier» is the default display grouping (2026-11-25), also when business groups or functional areas exist.
+        G.DefaultMode(doc, Sections).Should().Be(G.Mode.Stories);
+        G.DefaultMode(null, Sections).Should().Be(G.Mode.Stories);
         G.DefaultMode(null, RequirementSectionMap.Empty).Should().Be(G.Mode.Stories);
     }
 

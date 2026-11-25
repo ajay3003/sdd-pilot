@@ -115,7 +115,7 @@ public sealed class ScenarioBrowserTests : BunitContext
         var api = new Mock<ITestPlanSuggestionsApiService>();
         api.Setup(x => x.ProjectAsync("library", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new TestPlanWorkspace { ProjectKey = "library", GuideKey = "project:library", CanWrite = true }, (string?)null));
-        api.Setup(x => x.LastDiscoveryAsync("library", It.IsAny<Guid?>(), It.IsAny<CancellationToken>())).ReturnsAsync((new ScenarioDiscoveryResult
+        api.Setup(x => x.LastDiscoveryAsync("library", It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync((new ScenarioDiscoveryResult
         {
             DiscoveryId = "d1", ProjectKey = "library", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = [.. candidates],
             Basis = new DiscoverySourceBasis { ApplicationKey = "repo:library", Kind = DiscoveryBasisKind.Current, SpecificationOrigin = SpecificationOrigin.ImportedSnapshot,

@@ -25,6 +25,10 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
 
         /// <summary>The Specification role as the explorers resolve it: says whether a specification still has to be chosen (a monorepo's modules).</summary>
         public ArtifactExplorerState? Specification { get; init; }
+
+        /// <summary>The module + specification selection the shown discovery belongs to (<see cref="BirkNext.TestPlanning.DiscoveryScope"/>, 2026-11-25).
+        /// <see cref="Discovery"/> is only ever a result computed for exactly this selection — never another module's.</summary>
+        public string? DiscoveryScope { get; init; }
     }
 
     private T? Get<T>() where T : class => services.GetService(typeof(T)) as T;
@@ -45,14 +49,18 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
         string? error = null;
         TestPlanWorkspace? plans = null;
         ScenarioDiscoveryResult? last = null;
+        // The selected module + specification first (2026-11-25): the discovery shown is the one computed for exactly this selection, so a module
+        // switch (SkoleService → HendelseAdapter) never keeps showing the previous module's scenarios.
+        var (evidence, specification) = requirements || discovery ? await EvidenceWithStateAsync(name) : (null, null);
+        var scope = BirkNext.TestPlanning.DiscoveryScope.Of(evidence);
         if (Get<ITestPlanSuggestionsApiService>() is { } api)
         {
             (plans, error) = await api.ProjectAsync(key, environment, ct);
-            if (discovery) { var (d, _) = await api.LastDiscoveryAsync(key, snapshotId, ct); last = d?.ProjectKey == key ? d : null; }
+            if (discovery) { var (d, _) = await api.LastDiscoveryAsync(key, snapshotId, scope, ct); last = d?.ProjectKey == key ? d : null; }
         }
         else error = "Test Plan Suggestions is not available in this host.";
-        var (evidence, specification) = requirements ? await EvidenceWithStateAsync(name) : (null, null);
-        return new(key, name, environment, snapshotId, basis, plans, last, evidence, RequirementLinkPresentation.Options(evidence), error) { Specification = specification };
+        return new(key, name, environment, snapshotId, basis, plans, last, requirements ? evidence : null, requirements ? RequirementLinkPresentation.Options(evidence) : null, error)
+            { Specification = specification, DiscoveryScope = discovery ? scope : null };
     }
 
     private async Task<(string? Key, string? Name)> ProjectAsync()

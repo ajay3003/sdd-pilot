@@ -31,14 +31,14 @@
     {
         <BirkNext.Web.Components.SpecificationScopePicker Changed="OnScopeChangedAsync" ShowDiscoverLink="false">
             <Actions>
-                <button type="button" class="btn btn-primary btn-sm mtd-discover" disabled="@(_discovering || _loading)" aria-busy="@(_discovering ? "true" : "false")"
-                        @onclick="DiscoverAsync" data-testid="mtd-discover">@(_discovering ? "Finner scenarioer …" : _ws?.Discovery is null ? "Oppdag scenarioer" : "Oppdag på nytt")</button>
+                @* Scenarios load by themselves for the chosen module and specification (2026-11-25): no «Oppdag» step for the tester. *@
+                @if (_discovering) { <InlineLoading Text="Henter scenarioer …" Class="mt-muted msb-small" TestId="mtd-discovering" /> }
             </Actions>
         </BirkNext.Web.Components.SpecificationScopePicker>
     }
     @if (_loading)
     {
-        <div class="msb-skeleton" role="status" data-testid="mtd-loading"><span>Laster scenarioer …</span></div>
+        <div class="msb-skeleton" role="status" data-testid="mtd-loading"><span>@(_discovering ? "Henter scenarioer …" : "Laster scenarioer …")</span></div>
     }
     else if (_ws?.ProjectKey is null)
     {
@@ -77,7 +77,11 @@
                     <span><b data-testid="mtd-count-selected">@_selected.Count</b> valgt</span>
                 </p>
             }
-            @if (_discoverError is { } discoverError) { <p class="mt-alert" role="alert" data-testid="mtd-discover-error">@discoverError</p> }
+            @if (_discoverError is { } discoverError)
+            {
+                <p class="mt-alert" role="alert" data-testid="mtd-discover-error">Kunne ikke hente scenarioer. @discoverError
+                    <button type="button" class="msb-link" disabled="@_discovering" @onclick="RetryDiscoveryAsync" data-testid="mtd-discover-retry">Prøv igjen</button></p>
+            }
         </section>
 
         @if (discovery is not null && SpecificationNotice() is { } specNotice)
@@ -90,7 +94,12 @@
         }
         @if (discovery is null)
         {
-            <p class="msb-empty" data-testid="mtd-sug-none">Ingen scenarioer er oppdaget ennå. Oppdagelsen leser bare denne applikasjonens egne kilder (spesifikasjon, kildekode, kontrakter, flyter og tester), og kjører bare når du ber om det: velg «Oppdag scenarioer» ved spesifikasjonsvalget over.</p>
+            @if (_discovering) { <InlineLoading Text="Henter scenarioer …" Class="msb-empty" TestId="mtd-sug-loading" /> }
+            else if (_discoverError is null)
+            {
+                <p class="msb-empty" data-testid="mtd-sug-none">Ingen scenarioer er funnet for valgt modul og spesifikasjon ennå.
+                    <button type="button" class="msb-link" @onclick="RetryDiscoveryAsync" data-testid="mtd-discover-retry-empty">Hent på nytt</button></p>
+            }
         }
         else
         {
@@ -791,9 +800,15 @@
                         var gwt = SourceGwt(c);
                         @if (gwt.Count > 0)
                         {
-                            <section class="mtw-section mtw-source" aria-label="Fra kilden" data-testid="mtd-detail-source">
-                                <span class="mtp-ctx-label">Fra kilden (ordrett)</span>
-                                <dl class="mtw-gwt">@foreach (var (label, text) in gwt) { <dt>@label</dt><dd>@text</dd> }</dl>
+                            @* «Fra kilden (ordrett)» collapsed by default (2026-11-25), the same accordion as «Kildegrunnlag» in Planlegg og klargjør: open only for the
+                               scenario it was opened on (another scenario, story, specification, module or project starts collapsed). The text is unchanged. *@
+                            var sourceOpen = _sourceOpenFor == active.Id;
+                            <section class="mtw-section mtw-source" aria-label="Fra kilden" data-testid="mtd-detail-source" data-open="@(sourceOpen ? "true" : "false")">
+                                <span class="mtp-ctx-label mtp-context-head"><button type="button" class="mtp-context-toggle" aria-expanded="@(sourceOpen ? "true" : "false")" aria-controls="mtd-source-body"
+                                        @onclick="() => _sourceOpenFor = sourceOpen ? null : active.Id" data-testid="mtd-source-toggle">Fra kilden (ordrett)</button></span>
+                                <div id="mtd-source-body" class="mtp-context-body" hidden="@(!sourceOpen)" data-testid="mtd-source-body">
+                                    <dl class="mtw-gwt">@foreach (var (label, text) in gwt) { <dt>@label</dt><dd>@text</dd> }</dl>
+                                </div>
                             </section>
                         }
 
@@ -1030,15 +1045,37 @@
 
     /// <summary>Runs discovery for the selected application here (explicit only; the same request the planning service always used): one consistent
     /// source basis of the project's own sources, the specification captured at import. The result replaces the list; the selection is kept.</summary>
-    /// <summary>The module or specification changed: read the workspace again (requirements and context follow the choice). Discovery is not run
-    /// automatically — the scenarios shown stay those of the last discovery until the tester asks again, and the page says so.</summary>
-    private Task OnScopeChangedAsync() => LoadAsync();
-
-    private async Task DiscoverAsync()
+    /// <summary>The module or specification changed (2026-11-25): everything shown for the previous selection is dropped at once (never shown as the
+    /// new one's), then the workspace is read again and the new selection's scenarios load by themselves.</summary>
+    private Task OnScopeChangedAsync()
     {
-        // One discovery at a time: the button is disabled while it runs, and a second click that slips through is ignored.
-        if (_discovering) return;
+        _items = []; _stories = []; _requirementIds = []; _areas = []; _types = []; _priorities = []; _trace = null; _workView = null; _workError = null;
+        _active = null; _activeTitle = null; _missingScenario = null; _discoverError = null; _drillGroup = null;
+        // Another module or specification starts with the default display grouping («Brukerhistorier»), never an earlier choice.
+        (_groupMode, _groupModeChosen) = (G.Mode.Stories, false);
+        _sourceOpenFor = null;
+        if (_ws is not null) _ws = _ws with { Discovery = null };
+        return LoadAsync();
+    }
+
+    /// <summary>Selections whose scenarios were already fetched automatically on this page (one automatic attempt per selection: no loop).</summary>
+    private readonly HashSet<string> _autoDiscovered = new(StringComparer.Ordinal);
+    /// <summary>The scenario whose «Fra kilden (ordrett)» is open (null = collapsed); every other scenario shows it collapsed.</summary>
+    private string? _sourceOpenFor;
+    private int _discoveryAttempt;
+
+    /// <summary>«Prøv igjen» / «Hent på nytt»: the same safe read again for the current selection.</summary>
+    private Task RetryDiscoveryAsync() => DiscoverAsync(_loadGeneration);
+
+    /// <summary>
+    /// Fetches the scenarios of the current selection (2026-11-25: automatic, no «Oppdag» button): the same request the planning service always used —
+    /// it computes and stores a derived discovery result and changes no plan, test case or decision. Tied to the load that started it: when the tester
+    /// chose another module or specification meanwhile, a late answer is not shown and does not reload the page.
+    /// </summary>
+    private async Task DiscoverAsync(int generation)
+    {
         if (_ws?.ProjectKey is not { } key || ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) return;
+        var attempt = ++_discoveryAttempt;
         _discovering = true; _discoverError = null;
         _discoveredWith = SelectedSpecificationPath;
         try
@@ -1048,10 +1085,13 @@
                 ProjectKey = key, ProjectName = _ws.ProjectName, SnapshotId = _ws.SnapshotId, EnvironmentId = _ws.EnvironmentId, Workspace = _ws.Evidence,
                 MemberSnapshotIds = [.. ManualTestingWorkspace.MemberSnapshots(ServiceProvider)],
             });
-            if (result is null) { _discoverError = error ?? "Oppdagelsen feilet."; return; }
+            if (generation != _loadGeneration) return;
+            if (result is null) { _discoverError = error ?? "Ukjent feil."; return; }
+            _discovering = false;
             await LoadAsync();
         }
-        finally { _discovering = false; }
+        // The spinner belongs to the newest attempt: an older one that ends late never hides the spinner of a newer one.
+        finally { if (attempt == _discoveryAttempt) _discovering = false; }
     }
     private PreparedCaseTraceView? _trace;
     private List<S.Item> _items = [];
@@ -1118,9 +1158,8 @@
         var found = DiscoveredSpecificationPaths;
         if (found.Count == 0 || found.Any(f => string.Equals(f, selected, StringComparison.OrdinalIgnoreCase))) return null;
         var from = string.Join(", ", found);
-        return string.Equals(_discoveredWith, selected, StringComparison.OrdinalIgnoreCase)
-            ? ("other", $"Scenarioene fra spesifikasjonen kommer fra {from}. «{name}» ga ingen egne testscenarioer ved siste oppdagelse.")
-            : ("stale", $"Scenarioene fra spesifikasjonen er funnet i {from}, ikke i valgt «{name}». Velg «Oppdag på nytt» for å finne scenarioer fra den.");
+        // The discovery shown is always the one computed for this selection (DiscoveryScope), so a «stale» list from another one cannot occur.
+        return ("other", $"Scenarioene fra spesifikasjonen kommer fra {from}. «{name}» ga ingen egne testscenarioer.");
     }
 
     private S.Filter DefaultFilter => _workView is null ? new S.Filter() : S.DefaultView;
@@ -1209,6 +1248,12 @@
             if (_active is not null && _items.All(i => i.Id != _active)) { _missingScenario = _activeTitle ?? "ukjent scenario"; _active = null; }
             if (_active is null && _missingScenario is null) _active = S.Apply(_items, _filter).Shown.FirstOrDefault()?.Id;
             _activeTitle = _items.FirstOrDefault(i => i.Id == _active)?.Title ?? _activeTitle;
+            // No discovery for this exact selection yet: fetch it now, once per selection (the tester never has to press «Oppdag»).
+            if (_ws.Discovery is null && _ws.DiscoveryScope is { } scopeKey && api is not null && _autoDiscovered.Add($"{_ws.ProjectKey}|{scopeKey}"))
+            {
+                await DiscoverAsync(generation);
+                return;
+            }
             await LoadGroupingAsync(api, generation);
             if (generation != _loadGeneration) return;
             if (_ws.ProjectKey is { } key)
@@ -1574,6 +1619,7 @@
     private void SelectStory(string? key)
     {
         _storyDetails = false;
+        _sourceOpenFor = null; // «Fra kilden (ordrett)» starts collapsed for another story
         // The area of a newly chosen story is shown open again (it may have been collapsed earlier).
         if (key is not null && _profiles.FirstOrDefault(p => p.StoryKey == key) is { } chosen) _closedGroups.Remove(NodeKeyOf(chosen));
         Set(_filter with { Story = key, Queue = key is null ? _filter.Queue : null });
@@ -1687,7 +1733,7 @@
     {
         var before = _ws?.ProjectKey;
         var key = (await new ManualTestingWorkspace(ServiceProvider).LoadAsync(discovery: false, requirements: false)).ProjectKey;
-        if (!string.Equals(before, key, StringComparison.Ordinal)) { _ws = null; _trace = null; _items = []; _selected.Clear(); _active = null; _filter = S.DefaultView; _missingScenario = null; _activeTitle = null; _tab = W.Tabs.Scenarios; }
+        if (!string.Equals(before, key, StringComparison.Ordinal)) { _ws = null; _trace = null; _items = []; _selected.Clear(); _active = null; _filter = S.DefaultView; _missingScenario = null; _activeTitle = null; _tab = W.Tabs.Scenarios; (_groupMode, _groupModeChosen) = (G.Mode.Stories, false); _sourceOpenFor = null; }
         await LoadAsync();
         StateHasChanged();
     });

@@ -120,7 +120,7 @@ public sealed class RecommendedScenariosTests : BunitContext
         var api = new Mock<ITestPlanSuggestionsApiService>();
         api.Setup(a => a.ProjectAsync("rec", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new TestPlanWorkspace { ProjectKey = "rec", GuideKey = "project:rec", CanWrite = true, RuleVersion = "tps-1" }, (string?)null));
-        api.Setup(a => a.LastDiscoveryAsync("rec", It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        api.Setup(a => a.LastDiscoveryAsync("rec", It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new ScenarioDiscoveryResult { DiscoveryId = "d", ProjectKey = "rec", RuleVersion = "tsd-1", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = candidates }, (string?)null));
         Services.AddSingleton(api.Object);
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "rec", "Rec")).Object);

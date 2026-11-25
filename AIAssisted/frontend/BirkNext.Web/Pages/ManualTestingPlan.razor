@@ -130,7 +130,12 @@
                     @if (CanWrite) { <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="UnarchiveAsync" data-testid="mtp-unarchive">Gjenopprett</button> }
                 </p>
             }
-            else if (status is not null && status.State is not ("Klar" or "Ikke sammenlignet"))
+            @if (P.OtherSpecifications(plan, _ws?.Specification is { Selected: { } selSpec } ? selSpec.SourcePath ?? selSpec.FileName : null) is { } otherSpecs)
+            {
+                <p class="mtp-source-banner" role="status" data-testid="mtp-scope-differs"><strong>Testplanen hører til en annen spesifikasjon.</strong>
+                    Den er laget fra @string.Join(", ", otherSpecs.Select(p => $"«{p}»")), ikke fra valgt «@(_ws!.Specification!.Selected!.DisplayName)». Testtilfellene vises slik de er lagret i testplanen.</p>
+            }
+            @if (!ReadOnlyPlan && status is not null && status.State is not ("Klar" or "Ikke sammenlignet"))
             {
                 <p class="mtp-source-banner" role="status" data-testid="mtp-source-changed">
                     <strong>Kildegrunnlaget er endret.</strong> @status.Message
