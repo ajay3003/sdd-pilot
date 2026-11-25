@@ -314,8 +314,11 @@ public static class ScenarioWorkspacePresentation
         var review = Get("Gjennomgang");
         // Confirmed means a person approved it; an expected result that is only stated in the source is not yet confirmed.
         var confirmed = Worst(source, expected) == Tri.Yes && review?.Satisfied != Tri.Yes ? Tri.Unknown : Worst(source, expected);
+        // A hindrance a person recorded comes first: it is why the case is «Blokkert» (2026-11-25).
+        List<ChecklistItem> hindrance = Get("Hindring") is { } h ? [new("hindrance", "Ingen kjent hindring stopper testen", Tri.No, h.Detail, "Den som eier hindringen")] : [];
         return
         [
+            .. hindrance,
             new("source", "Kilde og forventet atferd er bekreftet", confirmed,
                 confirmed == Tri.Unknown && Worst(source, expected) == Tri.Yes ? "Står i kilden; bekreftes når testtilfellet godkjennes." : $"{source?.Detail} {expected?.Detail}".Trim(),
                 "Produkteier / fagperson"),

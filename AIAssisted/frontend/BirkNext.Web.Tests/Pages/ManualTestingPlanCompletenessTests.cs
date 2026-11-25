@@ -51,6 +51,10 @@ public sealed partial class ManualTestingPlanTests
         after.Level.Should().Be(ReadinessLevel.Blocked);
         after.Checks.Single(x => x.Name == "Hindring").Should().Match<ReadinessCheck>(x => x.Satisfied == Tri.No && x.Detail == "Venter på testdata fra Person-teamet");
         after.Checks.Single(x => x.Name == "Tilgang og miljø").Satisfied.Should().Be(Tri.Yes);
+        var list = BirkNext.Web.Services.ScenarioWorkspacePresentation.Checklist(after);
+        list[0].Should().Match<BirkNext.Web.Services.ScenarioWorkspacePresentation.ChecklistItem>(i => i.Key == "hindrance" && i.State == Tri.No && i.Detail == "Venter på testdata fra Person-teamet",
+            "the tester sees why the case is blocked, first");
+        BirkNext.Web.Services.ScenarioWorkspacePresentation.Checklist(before).Should().NotContain(i => i.Key == "hindrance");
     }
 
     [Fact]
