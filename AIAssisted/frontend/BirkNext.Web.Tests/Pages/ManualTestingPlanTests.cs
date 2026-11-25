@@ -435,6 +435,9 @@ public sealed partial class ManualTestingPlanTests : BunitContext
         cut.Find("[data-testid=mtp-tool][data-tool=versions]").Click();
         cut.FindAll("[data-testid=mtp-version]").Should().HaveCount(2);
         cut.Find("[data-testid=mtp-version][data-revision='1'] [data-testid=mtp-version-restore]").Click();
+        _api.Verify(x => x.RestoreRevisionAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never, "restoring asks first");
+        cut.Find("[data-testid=mtp-version-confirm]").TextContent.Should().Contain("ny gjeldende versjon").And.Contain("Ingen versjoner slettes");
+        cut.Find("[data-testid=mtp-version-restore-yes]").Click();
 
         _api.Verify(x => x.RestoreRevisionAsync(PlanId, 3, 1, It.IsAny<CancellationToken>()));
         cut.Find("[data-testid=mtp-notice]").TextContent.Should().Contain("revisjon 4");

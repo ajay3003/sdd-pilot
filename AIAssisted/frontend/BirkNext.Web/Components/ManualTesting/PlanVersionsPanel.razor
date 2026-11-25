@@ -15,8 +15,10 @@
     else
     {
         <ol class="mtp-versions">
-            @foreach (var r in _revisions.Take(_limit))
+            @for (var i = 0; i < Math.Min(_limit, _revisions.Count); i++)
             {
+                var r = _revisions[i];
+                var previous = i + 1 < _revisions.Count ? _revisions[i + 1] : null;
                 <li class="mtp-version @(r.Current ? "is-current" : null)" data-testid="mtp-version" data-revision="@r.Revision">
                     <span class="mtp-version-no">@r.Revision</span>
                     <span class="mtp-version-main"><strong>@r.Reason</strong> <span class="mt-muted msb-small">@r.SavedBy · @r.SavedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @r.Cases testtilfelle@(r.Cases == 1 ? "" : "r")</span></span>
@@ -27,7 +29,28 @@
                     else if (CanWrite && !ReadOnly)
                     {
                         <button type="button" class="msb-link" disabled="@(_busy || Dirty)" title="@(Dirty ? "Lagre eller forkast endringene først." : null)"
-                                @onclick="() => RestoreAsync(r.Revision)" data-testid="mtp-version-restore">Gjenopprett</button>
+                                @onclick="() => _confirm = r.Revision" data-testid="mtp-version-restore">Gjenopprett</button>
+                    }
+                    @if (previous is not null)
+                    {
+                        <button type="button" class="msb-link" @onclick="() => ShowChangesAsync(previous.Revision, r.Revision)" data-testid="mtp-version-changes">Se endringer</button>
+                    }
+                    @if (_confirm == r.Revision)
+                    {
+                        <span class="mtp-version-confirm" role="alertdialog" data-testid="mtp-version-confirm">Gjenoppretting lager en ny gjeldende versjon basert på versjon @r.Revision. Ingen versjoner slettes.
+                            <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => RestoreAsync(r.Revision)" data-testid="mtp-version-restore-yes">Gjenopprett</button>
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _confirm = null" data-testid="mtp-version-restore-no">Avbryt</button></span>
+                    }
+                    @if (_changesFor == r.Revision)
+                    {
+                        <div class="mtp-version-changes" data-testid="mtp-version-diff">
+                            @if (_changes is null) { <span class="mt-muted msb-small">@(_changesError ?? "Henter endringer …")</span> }
+                            else if (_changes.Count == 0) { <span class="mt-muted msb-small">Ingen endringer i testtilfellene sammenlignet med versjon @previous?.Revision.</span> }
+                            else
+                            {
+                                <ul>@foreach (var ch in _changes) { <li data-testid="mtp-version-change">@(ch.CaseTitle is { } t ? $"«{t}»: " : "")@ch.Text</li> }</ul>
+                            }
+                        </div>
                     }
                 </li>
             }
@@ -50,6 +73,21 @@
     private bool _busy;
     private int _limit = 10;
     private (Guid, int) _loaded;
+    private int? _confirm, _changesFor;
+    private IReadOnlyList<PlanRevisionDiff.Change>? _changes;
+    private string? _changesError;
+
+    /// <summary>«Se endringer»: the two stored revisions, compared per case and field (toggles off when shown).</summary>
+    private async Task ShowChangesAsync(int older, int newer)
+    {
+        if (_changesFor == newer) { _changesFor = null; return; }
+        (_changesFor, _changes, _changesError) = (newer, null, null);
+        var (a, errA) = await Api.RevisionAsync(Draft.Id, older);
+        var (b, errB) = await Api.RevisionAsync(Draft.Id, newer);
+        if (_changesFor != newer) return;
+        if (a is null || b is null) { _changesError = "Versjonene kunne ikke sammenlignes. " + (errA ?? errB); return; }
+        _changes = PlanRevisionDiff.Compare(a, b);
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -67,6 +105,7 @@
         {
             var (draft, error) = await Api.RestoreRevisionAsync(Draft.Id, Draft.Revision, revision);
             if (draft is null) { _error = PlanPreparePresentation.Friendly(error, "Versjonen kunne ikke gjenopprettes."); return; }
+            _confirm = null;
             await Restored.InvokeAsync(draft);
         }
         finally { _busy = false; }
