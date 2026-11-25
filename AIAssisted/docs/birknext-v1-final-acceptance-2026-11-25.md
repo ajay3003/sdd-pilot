@@ -98,7 +98,7 @@ A, B, E, H, J, K, M, N, O, P, R (after D1), U (after D3/D4), V, Y, Z, AA, AC. Al
 
 **Frontend** (`BirkNext.Web.Tests`, run in place):
 - Baseline at HEAD: **9,711 passed / 0 failed**.
-- After the fixes: the affected suites (Manual Testing workspace, hardening, plan, Testplaner) pass, **128 / 128**. A full frontend run of the final tree is **pending at the time of this commit**.
+- After the fixes: **9,714 passed / 0 failed** (full suite, final tree).
 
 **Backend** (`BirkNext.Api.Tests`):
 
@@ -172,7 +172,7 @@ Navigation stayed inside Manual Testing's three tabs plus the run page; System S
 - the one grouping record (revision 5, 7 history entries);
 - an md5 over all test plans and all 32 revisions.
 
-**Result:** the after-comparison is **pending at the time of this commit**. This task never connected to `birknext` except for the read-only probe; every write went to `birknext_adoverify_*`.
+**Result: IDENTICAL.** Every row count, the 7 test plans, the grouping record and both md5 fingerprints match before and after (`diff` empty). Every write went to `birknext_adoverify_*`.
 
 **Isolated walkthroughs:** wrote only to their own `birknext_adoverify_*` databases and App_Data.
 
@@ -199,7 +199,10 @@ Navigation stayed inside Manual Testing's three tabs plus the run page; System S
 - **Re-check 1:** the module was read only from a scenario's user story. Requirement-derived scenarios («FR-025: …») have none; their specification is in the requirement evidence (`SkoleService/specs/001-skoleservice/spec.md#FR-025`). Fix: fall back to that.
 - **Re-check 2:** «is this a monorepo» was decided from the discovered scenarios. A discovery covers only the chosen specification, so it saw one module and filtered nothing. Fix: decide per scenario. A scenario is scoped when its specification is in `<M>/specs/`, module M has tests of its own, and tests exist in at least two modules.
 - **Unit tests:** both cases are in `V1_the_same_FR_number_in_two_modules…`, together with the `MyApp/specs` + `MyApp.Tests` layout, which stays unchanged. TestPlanning + TestEvidence + TestCoverage: **591 / 3 skipped / 0 failed**.
-- **Real-data re-check 3:** **pending at the time of this commit**.
+- **Real-data re-check 3 (fresh isolated instance, final code): PASS.**
+  - SkoleService FR-025 scenarios list only `SkoleService/…` tests.
+  - FR-024 went from 20 to 14 tests: the SkoleAdapter test no longer appears.
+  - F2, F3 and F4 pass again; no console or API errors.
 
 No word-overlap heuristics or hard-coded FR mappings were added. No `spec.md` was changed.
 
@@ -356,7 +359,7 @@ See S (9 files changed, 1 added; +111/−12 before the D1 refinement). Report: t
 | 03 Manual tester workflow | VERIFIED by simulated walkthrough (G); human pending |
 | 04 Technical tester workflow | VERIFIED (H) |
 | 05 Test lead workflow | VERIFIED after D3/D4 (I) |
-| 06 Spec source relationships accurate | FIXED (D1) in unit tests; real-data re-check pending (K.1) |
+| 06 Spec source relationships accurate | FIXED (D1), verified on real M2LB (K.1) |
 | 07 Saved plans and cases preserved | VERIFIED (J) |
 | 08 Plan revisions preserved | VERIFIED (J) |
 | 09 Technical coverage evidence correct | FIXED (D1) |
