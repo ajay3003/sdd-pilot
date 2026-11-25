@@ -781,7 +781,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         var current = Read(row);
         if (string.IsNullOrWhiteSpace(request.ScenarioKey) || current.Cases.All(c => c.ParentScenario != request.ScenarioKey || c.Review == TestCaseReviewState.Superseded))
             throw new TestPlanException(404, "scenario-not-found", "That scenario has no test case in this plan.");
-        return await TranslateAsync(row, current, [request.ScenarioKey], request.Target, request.Overwrite, translator, settings, actor, ct);
+        return await TranslateAsync(row, current, [request.ScenarioKey], request.Target, request.Overwrite, translator, settings, actor, ct, onlyMissing: false);
     }
 
     /// <summary>Translate all: every scenario of the plan (with its user story and linked requirement wording), saved as one revision.</summary>
@@ -793,19 +793,26 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         var current = Read(row);
         if (current.ProjectKey is null) throw new TestPlanException(400, "not-a-project-plan", "Translation is available for project plans.");
         var scenarios = current.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).Select(c => c.ParentScenario ?? "").Distinct(StringComparer.Ordinal).ToList();
-        return await TranslateAsync(row, current, scenarios, request.Target, request.Overwrite, translator, settings, actor, ct);
+        return await TranslateAsync(row, current, scenarios, request.Target, request.Overwrite && !request.OnlyMissing, translator, settings, actor, ct, request.OnlyMissing);
     }
 
     private async Task<TranslateScenarioResult> TranslateAsync(TestPlanDraftRecord row, TestPlanDraft current, List<string> scenarioKeys, string? requestedTarget, bool overwrite,
-        ITestCaseTranslator translator, TranslationSettings settings, string actor, CancellationToken ct)
+        ITestCaseTranslator translator, TranslationSettings settings, string actor, CancellationToken ct, bool onlyMissing)
     {
         var target = string.IsNullOrWhiteSpace(requestedTarget) ? settings.DefaultTarget : requestedTarget.Trim();
         if (!TranslationLanguages.IsCode(target) || string.Equals(target, settings.SourceLanguage, StringComparison.OrdinalIgnoreCase))
             throw new TestPlanException(400, "translation-language", "Choose a language to translate into that differs from the original's.");
         var name = TranslationLanguages.Name(target);
-        if (!translator.Availability.Available) throw NoTranslationService(translator.Availability.Reason, name);
         var keys = scenarioKeys.ToHashSet(StringComparer.Ordinal);
         var cases = current.Cases.Where(c => keys.Contains(c.ParentScenario ?? "") && c.Review != TestCaseReviewState.Superseded).ToList();
+        if (onlyMissing)
+        {
+            var storiesHeld = (current.StoryTranslations ?? []).Where(t => t.Language == target).Select(t => t.StoryKey).ToHashSet(StringComparer.Ordinal);
+            var missing = cases.Count(c => c.Translation(target) is null)
+                + cases.Select(c => c.Generated.Story).OfType<BirkNext.TestCoverage.CoverageUserStory>().DistinctBy(st => st.Key).Count(st => !storiesHeld.Contains(st.Key));
+            if (missing == 0) return new TranslateScenarioResult(null, [], [], [], "Nothing is missing a translation.", target, null);
+        }
+        if (!translator.Availability.Available) throw NoTranslationService(translator.Availability.Reason, name);
 
         var translated = new List<string>(); var kept = new List<string>(); var failed = new List<string>();
         var updated = new Dictionary<string, TestCaseDraft>(StringComparer.Ordinal);
@@ -851,6 +858,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
 
         foreach (var c in cases)
         {
+            if (onlyMissing && c.Translation(target) is not null) continue; // existing text (also from an older original) stays as it is
             if (c.Translation(target) is { Origin: TranslationOrigin.Manual or TranslationOrigin.MachineEdited } && !overwrite) { kept.Add(c.EffectiveTitle); continue; }
             var (texts, problem) = await Translate(ScenarioPlanning.TranslatableFields(c));
             var translation = texts is null ? null : ScenarioPlanning.FromFields(c, texts, TranslationOrigin.Machine, provider, actor, Now, target);
@@ -867,6 +875,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         foreach (var story in cases.Select(c => c.Generated.Story).OfType<BirkNext.TestCoverage.CoverageUserStory>().DistinctBy(s => s.Key))
         {
             var held = storyTranslations.FirstOrDefault(t => t.StoryKey == story.Key && t.Language == target);
+            if (onlyMissing && held is not null) continue;
             if (held is { Origin: TranslationOrigin.Manual or TranslationOrigin.MachineEdited } && !overwrite) continue;
             if (held is not null && held.SourceFingerprint == StoryFingerprint(story) && !overwrite) continue;
             var (texts, problem) = await Translate([story.Title, story.Description, story.WhyThisPriority, story.IndependentTest]);
@@ -894,7 +903,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         foreach (var l in (current.StoryRequirementLinks ?? []).Where(l => cases.Any(c => c.Generated.Story?.Key == l.StoryKey) && !string.IsNullOrWhiteSpace(l.Link.Title)))
             wording.TryAdd(LinkKey(l.Link.RequirementId, l.Link.SpecificationPath), (l.Link.RequirementId, l.Link.SpecificationPath, l.Link.Title));
         var pending = wording.Values.Where(w => !requirementTranslations.Any(t => t.Language == target && LinkKey(t.RequirementId, t.SpecificationPath) == LinkKey(w.Id, w.Path)
-            && t.SourceSha256 == ScenarioPlanning.Sha(w.Text))).Take(200).ToList();
+            && (onlyMissing || t.SourceSha256 == ScenarioPlanning.Sha(w.Text)))).Take(200).ToList();
         if (pending.Count > 0)
         {
             var (texts, problem) = await Translate([.. pending.Select(p => (string?)p.Text)]);

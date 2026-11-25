@@ -36,6 +36,7 @@ public static class PlanSourcePresentation
         CaseSourceState.Removed => new("Utgått scenario", "bad"),
         CaseSourceState.Changed => new("Kildegrunnlag endret", "warn"),
         CaseSourceState.SourceUnavailable => new("Kilde mangler", "muted"),
+        CaseSourceState.NotCompared => new("Ikke sammenlignet", "muted"),
         _ => null,
     };
 }

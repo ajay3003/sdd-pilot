@@ -68,8 +68,11 @@ public sealed record RequirementTextTranslation(string RequirementId, string Spe
 /// <summary>Exclude a whole scenario: every test case under it is excluded with the same reason (one saved revision; history kept).</summary>
 public sealed record ExcludeScenarioRequest(int BaseRevision, string ScenarioKey, string Rationale);
 
-/// <summary>Translate every scenario of the plan (and their user stories and linked requirement wording) into <see cref="Target"/>.</summary>
-public sealed record TranslatePlanRequest(int BaseRevision, bool Overwrite = false, string? Target = null);
+/// <summary>Translate every scenario of the plan (and their user stories and linked requirement wording) into <see cref="Target"/>.
+/// <see cref="OnlyMissing"/> (automatic translation when Planlegg og klargjør opens, 2026-11-25): only text with NO translation in the target
+/// language is translated — an existing translation (machine, edited, person-written or made from an older original) is never replaced, and
+/// nothing is saved when nothing is missing.</summary>
+public sealed record TranslatePlanRequest(int BaseRevision, bool Overwrite = false, string? Target = null, bool OnlyMissing = false);
 
 /// <summary>Whether a case's translated text matches its current original.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]

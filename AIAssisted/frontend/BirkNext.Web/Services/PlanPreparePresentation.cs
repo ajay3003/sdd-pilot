@@ -45,6 +45,7 @@ public static partial class PlanPreparePresentation
         CaseSourceState.Changed => "Kildegrunnlaget er endret",
         CaseSourceState.Removed => "Utgått scenario",
         CaseSourceState.SourceUnavailable => "Kilde mangler",
+        CaseSourceState.NotCompared => null, // another specification is selected in Finn og forstå: not a source problem (shown as saved)
         _ => c.SourceChanged ? "Kildegrunnlaget er endret" : null,
     };
 
@@ -167,6 +168,29 @@ public static partial class PlanPreparePresentation
     /// SkoleService stays as it is, but it is never presented as belonging to HendelseAdapter. Null when nothing is selected, the plan names no
     /// specification, or the selected one is among them.
     /// </summary>
+    /// <summary>The specification files the plan's cases come from (each case's own source), in plan order.</summary>
+    public static IReadOnlyList<string> PlanSpecifications(TestPlanDraft plan) =>
+        [.. plan.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).Select(c => c.Generated.Story?.SpecificationPath ?? SpecificationPathOfEvidence(c))
+            .OfType<string>().Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    private static string? SpecificationPathOfEvidence(TestCaseDraft c) =>
+        c.Generated.Evidence.FirstOrDefault()?.Reference is { } r && r.IndexOf('#') is var hash and > 0 && r[..hash].EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? r[..hash] : null;
+
+    /// <summary>One neutral line about where the plan's cases come from (2026-11-25): never a warning — a saved plan is independent of the
+    /// specification selected in Finn og forstå.</summary>
+    public static string? PlanSourceLine(TestPlanDraft plan) => PlanSpecifications(plan) switch
+    {
+        [] => null,
+        [var one] => $"Inneholder testtilfeller fra {ModuleOrPath(one)}.",
+        var many => $"Inneholder testtilfeller fra {many.Count} spesifikasjoner: {string.Join(", ", many.Select(ModuleOrPath))}.",
+    };
+
+    private static string ModuleOrPath(string path)
+    {
+        var parts = path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 3 && parts[1].Equals("specs", StringComparison.OrdinalIgnoreCase) ? $"{parts[0]} ({parts[2]})" : path;
+    }
+
     public static IReadOnlyList<string>? OtherSpecifications(TestPlanDraft plan, string? selectedPath)
     {
         if (string.IsNullOrWhiteSpace(selectedPath)) return null;
@@ -427,7 +451,7 @@ public static partial class PlanPreparePresentation
     public static (string Text, string Tone)? TranslationStatus(TestCaseDraft c)
     {
         if (c.Translation(ScenarioPlanning.Norwegian) is not { } nb) return null;
-        if (ScenarioPlanning.StateOf(c) == TranslationState.SourceChanged) return ("Oversatt fra en eldre tekst — gjennomgå", "warn");
+        if (ScenarioPlanning.StateOf(c) == TranslationState.SourceChanged) return ("Må gjennomgås — originalen er endret etter oversettelsen", "warn");
         return nb.Origin switch
         {
             TranslationOrigin.Machine => ("Maskinoversatt — ikke gjennomgått", "info"),
@@ -435,6 +459,19 @@ public static partial class PlanPreparePresentation
             _ => ("Skrevet av en person", "ok"),
         };
     }
+
+    /// <summary>Whether the plan has text with no Norwegian translation yet: a case (not superseded) or one of its user stories.</summary>
+    public static bool MissingTranslation(TestPlanDraft plan)
+    {
+        var stories = (plan.StoryTranslations ?? []).Where(t => t.Language == ScenarioPlanning.Norwegian).Select(t => t.StoryKey).ToHashSet(StringComparer.Ordinal);
+        var cases = plan.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).ToList();
+        return cases.Any(c => c.Translation(ScenarioPlanning.Norwegian) is null)
+            || cases.Select(c => c.Generated.Story?.Key).OfType<string>().Distinct(StringComparer.Ordinal).Any(k => !stories.Contains(k));
+    }
+
+    /// <summary>The server refused a change because the plan moved on (someone saved in between).</summary>
+    public static bool IsStale(string? error) => error is not null
+        && (error.Contains("changed by someone else", StringComparison.OrdinalIgnoreCase) || error.Contains("is at revision", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>A server message in the tester's words (stale saves and archived plans are the common ones).</summary>
     public static string Friendly(string? error, string fallback) => error switch

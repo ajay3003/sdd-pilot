@@ -660,6 +660,87 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         (again.Draft ?? edited).StoryTranslations!.Single(t => t.StoryKey == storyKey).Title.Should().Be("Brukerhistorie 6 – Forventet populasjon");
     }
 
+    // ── Automatic translation: only missing (2026-11-25) ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Only_missing_translates_on_first_opening_and_then_saves_nothing_and_calls_no_service()
+    {
+        await using var db = Context();
+        var (service, plan, _, _) = await PlanWithStoriesAsync(db);
+        var revisions = (await service.RevisionsAsync(plan.Id, default)).Count;
+
+        var first = await service.TranslatePlanAsync(plan.Id, new TranslatePlanRequest(plan.Revision, OnlyMissing: true), new FakeTranslator(), Settings, "anna", default);
+        first.Draft!.Cases.Should().OnlyContain(c => c.Translation("nb") != null && c.Translation("nb")!.Origin == TranslationOrigin.Machine);
+        first.Draft.StoryTranslations.Should().NotBeNullOrEmpty();
+        (await service.RevisionsAsync(plan.Id, default)).Should().HaveCount(revisions + 1, "one revision for the missing text");
+
+        var translator = new FakeTranslator();
+        var again = await service.TranslatePlanAsync(plan.Id, new TranslatePlanRequest(first.Draft.Revision, OnlyMissing: true), translator, Settings, "anna", default);
+        again.Draft.Should().BeNull("nothing is missing, so nothing is saved");
+        translator.Calls.Should().Be(0, "reopening the page sends nothing to the translation service");
+        (await service.RevisionsAsync(plan.Id, default)).Should().HaveCount(revisions + 1, "no unexpected revision");
+        (await service.DraftAsync(plan.Id, default)).Revision.Should().Be(first.Draft.Revision);
+
+        // Nothing missing never needs a service: an unavailable translator is not an error then.
+        var off = await service.TranslatePlanAsync(plan.Id, new TranslatePlanRequest(first.Draft.Revision, OnlyMissing: true), new FakeTranslator(available: false), Settings, "anna", default);
+        off.Draft.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Only_missing_never_replaces_an_existing_translation_edited_outdated_or_approved_and_translates_only_new_cases()
+    {
+        await using var db = Context();
+        var (service, plan, s42, s7) = await PlanWithStoriesAsync(db);
+        plan = (await service.TranslatePlanAsync(plan.Id, new TranslatePlanRequest(plan.Revision), new FakeTranslator(), Settings, "anna", default)).Draft!;
+        // s42: a person edits the Norwegian title; s7: its ORIGINAL changes afterwards (the translation is now from an older text) and it is approved.
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42
+            ? part with { Translations = new() { ["nb"] = c.Translation("nb")! with { Title = "Et barn over skolepliktig alder" } } }
+            : part with { Edits = part.Edits with { Title = "A child past compulsory school age (changed)" } }), "inger", default);
+        plan = await service.ReviewAsync(plan.Id, new ReviewTestCaseRequest(plan.Revision, s7, TestCaseReviewState.Accepted, "ok"), "lead", default);
+        var edited = plan.Cases.Single(c => c.Source.ScenarioId == s42).Translation("nb")!;
+        var outdated = plan.Cases.Single(c => c.Source.ScenarioId == s7).Translation("nb")!;
+        edited.Origin.Should().Be(TranslationOrigin.MachineEdited);
+        ScenarioPlanning.StateOf(plan.Cases.Single(c => c.Source.ScenarioId == s7)).Should().Be(TranslationState.SourceChanged);
+        // A new case without any translation.
+        plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "No report submitted", null, null, ScenarioKey: s42), "anna", default);
+        var added = plan.Cases.Single(c => c.Source.Kind == ScenarioSourceKind.Manual).Source.ScenarioId;
+
+        var result = await service.TranslatePlanAsync(plan.Id, new TranslatePlanRequest(plan.Revision, OnlyMissing: true), new FakeTranslator(), Settings, "anna", default);
+
+        result.Translated.Should().Equal(["No report submitted"], "only the case without a translation");
+        var after = result.Draft!;
+        after.Cases.Single(c => c.Source.ScenarioId == added).Translation("nb")!.Title.Should().Be("NB: ingen report submitted");
+        after.Cases.Single(c => c.Source.ScenarioId == s42).Translation("nb").Should().BeEquivalentTo(edited, "a person's text is never replaced");
+        after.Cases.Single(c => c.Source.ScenarioId == s7).Translation("nb").Should().BeEquivalentTo(outdated, "a translation of an older original is kept for review, not replaced");
+        ScenarioPlanning.StateOf(after.Cases.Single(c => c.Source.ScenarioId == s7)).Should().Be(TranslationState.SourceChanged, "it stays marked for review");
+        after.Cases.Single(c => c.Source.ScenarioId == s7).Review.Should().Be(TestCaseReviewState.Accepted, "the approval and its history are untouched");
+        after.Cases.Single(c => c.Source.ScenarioId == s7).ReviewHistory.Should().BeEquivalentTo(plan.Cases.Single(c => c.Source.ScenarioId == s7).ReviewHistory);
+        after.Cases.Single(c => c.Source.ScenarioId == s7).Edits.Should().BeEquivalentTo(plan.Cases.Single(c => c.Source.ScenarioId == s7).Edits, "the tester's own edits are untouched");
+    }
+
+    [Fact]
+    public async Task Only_missing_with_a_save_in_between_is_refused_as_stale_and_the_save_wins()
+    {
+        await using var db = Context();
+        var (service, plan, s42, _) = await PlanAsync(db);
+        var saved = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42 ? part with { Edits = part.Edits with { Preconditions = "Saved by the tester" } } : part), "inger", default);
+
+        var late = () => service.TranslatePlanAsync(plan.Id, new TranslatePlanRequest(plan.Revision, OnlyMissing: true), new FakeTranslator(), Settings, "anna", default);
+        (await late.Should().ThrowAsync<TestPlanException>()).Which.Status.Should().Be(409);
+        (await service.DraftAsync(plan.Id, default)).Cases.Single(c => c.Source.ScenarioId == s42).Edits.Preconditions.Should().Be("Saved by the tester");
+        (await service.DraftAsync(plan.Id, default)).Revision.Should().Be(saved.Revision);
+    }
+
+    [Fact]
+    public async Task Only_missing_without_a_translation_service_says_so_and_changes_nothing()
+    {
+        await using var db = Context();
+        var (service, plan, _, _) = await PlanAsync(db);
+        var none = () => service.TranslatePlanAsync(plan.Id, new TranslatePlanRequest(plan.Revision, OnlyMissing: true), new FakeTranslator(available: false), Settings, "anna", default);
+        (await none.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("translation-unavailable");
+        (await service.DraftAsync(plan.Id, default)).Revision.Should().Be(plan.Revision);
+    }
+
     // ── Order and exclusion ───────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

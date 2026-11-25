@@ -495,7 +495,7 @@ public sealed partial class ManualTestingPlanTests : BunitContext
         var stale = original.WithTranslation(ScenarioPlanning.Norwegian, new TestCaseTranslation { Title = "Gammel tittel", SourceFingerprint = "older", Origin = TranslationOrigin.MachineEdited });
         Setup(Plan(stale));
         var cut = Open();
-        cut.Find("[data-testid=mtp-translation-state]").TextContent.Should().Contain("eldre tekst");
+        cut.Find("[data-testid=mtp-translation-state]").TextContent.Should().StartWith("Må gjennomgås");
     }
 
     [Fact]
@@ -544,18 +544,6 @@ public sealed partial class ManualTestingPlanTests : BunitContext
         cut.Find("[data-testid=mtp-exclude-why]").Input("Dekket av en annen test");
         cut.Find("[data-testid=mtp-exclude-yes]").Click();
         _api.Verify(x => x.ReviewAsync(PlanId, new ReviewTestCaseRequest(3, "c1", TestCaseReviewState.Excluded, "Dekket av en annen test"), It.IsAny<CancellationToken>()));
-    }
-
-    [Fact]
-    public void N_translate_all_uses_the_existing_plan_translation()
-    {
-        Setup();
-        _api.Setup(x => x.TranslateAllAsync(PlanId, It.IsAny<TranslatePlanRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((new TranslateScenarioResult(Standard() with { Revision = 4 }, ["c1", "m1"], [], [], "Oversatt 2 testtilfeller."), (string?)null));
-        var cut = Open();
-        cut.Find("[data-testid=mtp-translate-all]").Click();
-        _api.Verify(x => x.TranslateAllAsync(PlanId, new TranslatePlanRequest(3, false, ScenarioPlanning.Norwegian), It.IsAny<CancellationToken>()));
-        cut.Find("[data-testid=mtp-notice]").TextContent.Should().Be("Oversatt 2 testtilfeller.");
     }
 
     [Fact]

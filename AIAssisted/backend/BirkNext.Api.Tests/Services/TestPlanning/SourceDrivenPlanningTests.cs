@@ -465,6 +465,101 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
         saved.Cases.Should().HaveCount(2, "nothing is lost and saving works");
     }
 
+    // ── Each saved case is compared with its OWN specification, never with the one selected now (2026-11-25) ─────────────────────
+
+    private const string SkoleSpec = "SkoleService/specs/001-skoleservice/spec.md", FrontendSpec = "Frontend/specs/002-child-search-profile/spec.md";
+    private static readonly Guid SameSnapshot = Guid.Parse("0f0f0f0f-0000-0000-0000-000000000001");
+
+    private static DiscoveredScenario InSpec(string id, string spec, string story, string fingerprint) => Merged(id, "tss-" + id, "given " + id, fingerprint) with
+    {
+        Story = new CoverageUserStory { Key = spec + "#" + story, StoryId = story, Title = story, SpecificationPath = spec }, Evidence = [new("specification", spec + "#" + id)],
+    };
+
+    /// <summary>A discovery of one selected specification over the SAME source version (same snapshot, same content).</summary>
+    private static ScenarioDiscoveryResult Selected(string id, DateTimeOffset at, string spec, params DiscoveredScenario[] candidates) => Result(id, at, DiscoveryBasisKind.Current, candidates) with
+    {
+        SelectionScope = spec,
+        Basis = new DiscoverySourceBasis { ApplicationKey = "app-m", Kind = DiscoveryBasisKind.Current, Fingerprint = "fp-" + spec, SpecificationOrigin = SpecificationOrigin.ImportedSnapshot,
+            SpecificationReference = spec, Members = [new DiscoverySourceMember { RepositoryKey = "app-m", DisplayName = "M", SnapshotId = SameSnapshot, StateCode = "SINGLE_SNAPSHOT" }] },
+    };
+
+    [Fact]
+    public async Task A_SkoleService_plan_opened_while_Frontend_is_selected_is_compared_with_SkoleService_and_shows_no_missing_source()
+    {
+        await using var db = Context();
+        var x = Services(db);
+        _discoveries.Store(Selected("d-skole", DateTimeOffset.UtcNow.AddMinutes(-10), SkoleSpec, InSpec("s1", SkoleSpec, "US2", "f1"), InSpec("s2", SkoleSpec, "US2", "f2")));
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-skole", CandidateIds = ["s1", "s2"] }, "t", default);
+        var revision = plan.Revision;
+        // The tester now selects Frontend in Finn og forstå: its scenarios have the same US2/AC numbers but are other scenarios.
+        _discoveries.Store(Selected("d-front", DateTimeOffset.UtcNow, FrontendSpec, InSpec("f1", FrontendSpec, "US2", "g1"), InSpec("f2", FrontendSpec, "US2", "g2")));
+
+        var opened = await x.Plans.DraftAsync(plan.Id, default);
+
+        opened.Cases.Should().OnlyContain(c => c.SourceState == CaseSourceState.Current, "each case is compared with its own (SkoleService) specification");
+        var status = (await x.Plans.ProjectWorkspaceAsync("import:m", null, true, default)).PlanStatus![plan.Id];
+        status.State.Should().Be("Klar");
+        status.Unavailable.Should().Be(0);
+        status.NewScenarios.Should().Be(0, "Frontend scenarios are not new for a SkoleService plan");
+        opened.Revision.Should().Be(revision, "opening a plan never writes it");
+        opened.Cases.Select(c => c.Source.ScenarioId).Should().Equal("s1", "s2");
+    }
+
+    [Fact]
+    public async Task A_real_change_and_a_real_removal_in_the_own_specification_are_still_found_while_another_is_selected()
+    {
+        await using var db = Context();
+        var x = Services(db);
+        _discoveries.Store(Selected("d-skole1", DateTimeOffset.UtcNow.AddMinutes(-20), SkoleSpec, InSpec("s1", SkoleSpec, "US2", "f1"), InSpec("s2", SkoleSpec, "US2", "f2")));
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-skole1", CandidateIds = ["s1", "s2"] }, "t", default);
+        // SkoleService read again (same source version): s1's text changed, s2 is gone. Then Frontend is selected.
+        _discoveries.Store(Selected("d-skole2", DateTimeOffset.UtcNow.AddMinutes(-10), SkoleSpec, InSpec("s1", SkoleSpec, "US2", "f1-changed"), InSpec("s3", SkoleSpec, "US3", "f3")));
+        _discoveries.Store(Selected("d-front", DateTimeOffset.UtcNow, FrontendSpec, InSpec("f1", FrontendSpec, "US2", "g1")));
+
+        var opened = await x.Plans.DraftAsync(plan.Id, default);
+
+        opened.Cases.Single(c => c.Source.ScenarioId == "s1").SourceState.Should().Be(CaseSourceState.Changed);
+        opened.Cases.Single(c => c.Source.ScenarioId == "s2").SourceState.Should().Be(CaseSourceState.Removed, "a complete comparison of its own specification");
+    }
+
+    [Fact]
+    public async Task Without_any_discovery_of_the_own_specification_the_case_is_not_compared_not_missing_and_the_plan_is_not_called_in_line()
+    {
+        await using var db = Context();
+        var x = Services(db);
+        _discoveries.Store(Selected("d-skole", DateTimeOffset.UtcNow.AddMinutes(-10), SkoleSpec, InSpec("s1", SkoleSpec, "US2", "f1")));
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-skole", CandidateIds = ["s1"] }, "t", default);
+        // A NEW source version (another snapshot) read with Frontend selected: no discovery of SkoleService exists for it.
+        _discoveries.Store(Result("d-front-v2", DateTimeOffset.UtcNow, DiscoveryBasisKind.Current, InSpec("f1", FrontendSpec, "US2", "g1")) with { SelectionScope = FrontendSpec });
+
+        var opened = await x.Plans.DraftAsync(plan.Id, default);
+        var c = opened.Cases.Single();
+        c.SourceState.Should().Be(CaseSourceState.NotCompared, "a discovery of another specification proves nothing about this case");
+        c.SourceStateReason.Should().StartWith("Ikke sammenlignet").And.Contain(SkoleSpec).And.NotContain("Kilde mangler");
+        var status = (await x.Plans.ProjectWorkspaceAsync("import:m", null, true, default)).PlanStatus![plan.Id];
+        status.Unavailable.Should().Be(0);
+        status.State.Should().NotBe("Kilde mangler");
+    }
+
+    [Fact]
+    public async Task A_plan_with_cases_from_two_specifications_resolves_each_case_independently()
+    {
+        await using var db = Context();
+        var x = Services(db);
+        _discoveries.Store(Selected("d-skole", DateTimeOffset.UtcNow.AddMinutes(-20), SkoleSpec, InSpec("s1", SkoleSpec, "US2", "f1")));
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-skole", CandidateIds = ["s1"] }, "t", default);
+        _discoveries.Store(Selected("d-front", DateTimeOffset.UtcNow.AddMinutes(-10), FrontendSpec, InSpec("f1", FrontendSpec, "US2", "g1")));
+        plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-front", CandidateIds = ["f1"], DraftId = plan.Id, BaseRevision = plan.Revision }, "t", default);
+        // Frontend's scenario changes; SkoleService is unchanged; SkoleService is selected again last.
+        _discoveries.Store(Selected("d-front2", DateTimeOffset.UtcNow.AddMinutes(-5), FrontendSpec, InSpec("f1", FrontendSpec, "US2", "g1-changed")));
+        _discoveries.Store(Selected("d-skole2", DateTimeOffset.UtcNow, SkoleSpec, InSpec("s1", SkoleSpec, "US2", "f1")));
+
+        var opened = await x.Plans.DraftAsync(plan.Id, default);
+
+        opened.Cases.Single(c => c.Source.ScenarioId == "s1").SourceState.Should().Be(CaseSourceState.Current);
+        opened.Cases.Single(c => c.Source.ScenarioId == "f1").SourceState.Should().Be(CaseSourceState.Changed, "the Frontend case is compared with Frontend");
+    }
+
     [Fact]
     public async Task A_historical_inspection_can_never_extend_a_plan_or_move_its_basis()
     {

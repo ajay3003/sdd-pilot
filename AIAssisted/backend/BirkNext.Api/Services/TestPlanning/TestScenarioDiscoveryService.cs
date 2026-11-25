@@ -219,6 +219,16 @@ public sealed class ScenarioDiscoveryCache
     public ScenarioDiscoveryResult? LatestForScope(string projectKey, string scope) =>
         _latest.TryGetValue(Scoped(projectKey, scope), out var id) && _byId.TryGetValue(id, out var r) && r.ProjectKey == projectKey && r.SelectionScope == scope ? r : null;
 
+    /// <summary>The project's current results held in the cache (every selection scope), newest first — to compare a saved case with a discovery
+    /// of its own specification when another specification is selected now.</summary>
+    public IReadOnlyList<ScenarioDiscoveryResult> CurrentResults(string projectKey) =>
+        [.. _byId.Values.Where(r => r.IsCurrent && string.Equals(r.ProjectKey, projectKey, StringComparison.Ordinal)).OrderByDescending(r => r.DiscoveredAt)];
+
+    private readonly ConcurrentDictionary<string, bool> _scopesRestored = new(StringComparer.Ordinal);
+
+    /// <summary>True the first time a project's stored per-scope results are restored in this process.</summary>
+    public bool FirstScopedRestore(string projectKey) => _scopesRestored.TryAdd(projectKey, true);
+
     /// <summary>Holds a result (read back from storage) for lookup by id without making it the project's latest.</summary>
     public void Remember(ScenarioDiscoveryResult result) => _byId.TryAdd(result.DiscoveryId, result);
 

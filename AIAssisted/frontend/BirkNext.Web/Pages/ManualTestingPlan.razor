@@ -106,10 +106,22 @@
                 @* «Overfør testplan» (2026-11-25) lives on the Testplaner tab: the button opens it for this testplan. *@
                 <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => GoTransfer(plan.Id)" data-testid="mtp-transfer">Overfør testplan</button>
                 <a class="msb-link" href="@M.PlansRoute" data-testid="mtp-manage-plans">Administrer testplaner</a>
+                @* Automatic translation (2026-11-25): missing Norwegian text is translated in the background when the test plan opens. *@
+                @if (_auto == AutoTranslation.Running)
+                {
+                    <InlineLoading Text="Oversetter …" Class="mt-muted msb-small" TestId="mtp-auto-translating" />
+                }
+                else if (_auto == AutoTranslation.Failed)
+                {
+                    <span class="mtp-auto is-failed" role="status" data-testid="mtp-auto-failed" title="@_autoError">Kunne ikke oversette — originalteksten vises.
+                        <button type="button" class="msb-link" @onclick="() => StartAutoTranslation(retry: true)" data-testid="mtp-auto-retry">Prøv igjen</button></span>
+                }
+                else if (_auto == AutoTranslation.Unavailable)
+                {
+                    <span class="mtp-auto mt-muted msb-small" role="status" data-testid="mtp-auto-unavailable" title="@_translationReason">Automatisk oversettelse er ikke tilgjengelig her — originalteksten vises.</span>
+                }
                 @if (CanWrite && !ReadOnlyPlan)
                 {
-                    <button type="button" class="btn btn-secondary btn-sm" disabled="@(_busy || Dirty || !_translationAvailable)" title="@(Dirty ? "Lagre først." : _translationAvailable ? "Oversetter alle testtilfellene til norsk med den valgte tjenesten. Personskrevne og redigerte oversettelser beholdes." : "Oversettelse er ikke satt opp.")"
-                            @onclick="TranslateAllAsync" data-testid="mtp-translate-all">Oversett alle</button>
                     <button type="button" class="msb-link" disabled="@(_busy || Dirty)" @onclick="() => _archiveAsk = true" data-testid="mtp-archive">Arkiver testplan</button>
                 }
             </div>
@@ -129,10 +141,11 @@
                     @if (CanWrite) { <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="UnarchiveAsync" data-testid="mtp-unarchive">Gjenopprett</button> }
                 </p>
             }
-            @if (P.OtherSpecifications(plan, _ws?.Specification is { Selected: { } selSpec } ? selSpec.SourcePath ?? selSpec.FileName : null) is { } otherSpecs)
+            @* A saved plan is independent of the specification selected in Finn og forstå (2026-11-25): one neutral line about where its cases come
+               from — never a warning. Each case's source status is resolved from its own specification. *@
+            @if (P.PlanSourceLine(plan) is { } sourceLine)
             {
-                <p class="mtp-source-banner" role="status" data-testid="mtp-scope-differs"><strong>Testplanen hører til en annen spesifikasjon.</strong>
-                    Den er laget fra @string.Join(", ", otherSpecs.Select(p => $"«{p}»")), ikke fra valgt «@(_ws!.Specification!.Selected!.DisplayName)». Testtilfellene vises slik de er lagret i testplanen.</p>
+                <p class="mt-muted msb-small mtp-plan-source" data-testid="mtp-plan-source">@sourceLine</p>
             }
             @if (!ReadOnlyPlan && status is not null && status.State is not ("Klar" or "Ikke sammenlignet"))
             {
@@ -479,7 +492,7 @@
                                 {
                                     <div class="mtp-lang-empty" data-testid="mtp-lang-empty">
                                         <p><strong>Ingen norsk oversettelse finnes ennå.</strong></p>
-                                        <p class="mt-muted msb-small">Oversettelse skjer bare når du ber om det. Originalteksten er gjeldende til en oversettelse er laget og gjennomgått.</p>
+                                        <p class="mt-muted msb-small">@(_auto == AutoTranslation.Running ? "Oversetter …" : "Manglende oversettelser lages automatisk når testplanen åpnes.") Originalteksten er gjeldende til en oversettelse er laget og gjennomgått.</p>
                                         <div class="mtp-lang-empty-actions">
                                             @if (canTranslate)
                                             {
@@ -949,7 +962,14 @@
 
     private static readonly (string Key, string Label)[] Tools = [("cases", "Testtilfeller"), ("versions", "Versjoner"), ("changes", "Kildeendringer")];
 
-    private bool _loading = true, _busy, _showTechnical, _archiveAsk, _excludeAsk, _translationAvailable = true;
+    private bool _loading = true, _busy, _showTechnical, _archiveAsk, _excludeAsk, _translationAvailable = true, _disposed;
+    private enum AutoTranslation { Idle, Running, Failed, Unavailable }
+    private AutoTranslation _auto;
+    private string? _autoError, _translationReason;
+    private Task? _autoTask;
+    private int _autoGeneration;
+    private AutoTranslationRegistry? _ownRegistry;
+    private AutoTranslationRegistry Registry => ServiceProvider.GetService(typeof(AutoTranslationRegistry)) as AutoTranslationRegistry ?? (_ownRegistry ??= new());
     /// <summary>The editor's language view; reset to the default (Norsk when a translation exists) for each case.</summary>
     private EditorLanguage _lang = EditorLanguage.Original;
     private bool _storyOpen;
@@ -991,7 +1011,11 @@
             _error = _ws.Error;
             _plans = [.. (_ws.Plans?.Drafts ?? []).OrderByDescending(p => p.UpdatedAt)];
             _archived = [.. _ws.Plans?.ArchivedDrafts ?? []];
-            if (Api is { } api) { try { _translationAvailable = (await api.TranslationAsync())?.Available ?? false; } catch (Exception e) when (e is not OperationCanceledException) { } }
+            if (Api is { } api)
+            {
+                try { var availability = await api.TranslationAsync(); _translationAvailable = availability?.Available ?? false; _translationReason = availability?.Reason; }
+                catch (Exception e) when (e is not OperationCanceledException) { }
+            }
             if (_ws.ProjectKey is { } key)
                 _selection = [.. await TabDraftStore.ReadAsync<string[]>(JS, TabDraftStore.SelectionKey(key)) ?? []];
             await LoadTraceAsync();
@@ -1017,6 +1041,69 @@
         await LoadPlanRunsAsync();
         var first = P.Rows(draft, _showTechnical).Rows.SelectMany(r => r.Cases).FirstOrDefault() ?? draft.Cases.FirstOrDefault();
         Open(_selectedId is { } keep && draft.Cases.Any(c => P.IdOf(c) == keep) ? keep : first is null ? null : P.IdOf(first));
+        StartAutoTranslation();
+    }
+
+    /// <summary>
+    /// Automatic translation (2026-11-25): when the test plan opens, the text with no Norwegian translation yet — this plan only — is translated in
+    /// the background with the configured translator (offline by default). Existing translations are shown at once and never replaced: edited,
+    /// person-written, approved and outdated ones stay (the server's «only missing» mode). One request per plan revision per session; a newer plan
+    /// or request makes an older answer irrelevant; editing and navigation never wait for it.
+    /// </summary>
+    private void StartAutoTranslation(bool retry = false)
+    {
+        if (_plan is not { } plan || Api is not { } api || !CanWrite || ReadOnlyPlan || !P.MissingTranslation(plan)) { _auto = AutoTranslation.Idle; return; }
+        if (!_translationAvailable) { _auto = AutoTranslation.Unavailable; return; }
+        var call = Registry.Begin(plan.Id, plan.Revision, retry,
+            () => api.TranslateAllAsync(plan.Id, new TranslatePlanRequest(plan.Revision, Target: ScenarioPlanning.Norwegian, OnlyMissing: true)));
+        if (call is null)
+        {
+            var (_, error) = Registry.Outcome(plan.Id, plan.Revision);
+            (_auto, _autoError) = error is null ? (AutoTranslation.Idle, null) : (AutoTranslation.Failed, error);
+            return;
+        }
+        _auto = AutoTranslation.Running; _autoError = null;
+        _autoTask = FinishAutoTranslationAsync(plan.Id, plan.Revision, call, ++_autoGeneration);
+    }
+
+    private async Task FinishAutoTranslationAsync(Guid planId, int revision, Task<(TranslateScenarioResult? Result, string? Error)> call, int generation)
+    {
+        TranslateScenarioResult? result = null; string? error = null;
+        try { (result, error) = await call; }
+        catch (Exception e) when (e is not OperationCanceledException) { error = e.Message; }
+        var failure = result is null ? error : result.Failed.Count > 0 ? $"{result.Failed.Count} tekst(er) kunne ikke oversettes." : null;
+        Registry.End(planId, revision, call, failure);
+        // Another plan, a newer request or a closed page: this answer is not shown (what the server saved is read with the plan next time).
+        if (_disposed || generation != _autoGeneration || _plan?.Id != planId) return;
+        if (result is null && error is not null && P.IsStale(error))
+        {
+            // The tester saved meanwhile: the server refused the translation, so nothing of theirs was overwritten. Once more, on the new revision.
+            _auto = AutoTranslation.Idle;
+            StartAutoTranslation();
+        }
+        else
+        {
+            if (result?.Draft is { } draft && draft.Revision > _plan.Revision) ApplyTranslated(draft);
+            (_auto, _autoError) = failure is null ? (AutoTranslation.Idle, null) : (AutoTranslation.Failed, failure);
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>A translated plan arrived: unsaved edits stay (the next save sends them with the new translations); otherwise the case reopens on
+    /// its Norwegian text unless the tester chose a view.</summary>
+    private void ApplyTranslated(TestPlanDraft draft)
+    {
+        if (Dirty) { _plan = draft; return; }
+        var chosen = _form is not null && _lang != P.DefaultLanguage(_form) ? _lang : (EditorLanguage?)null;
+        _plan = draft;
+        Open(_selectedId);
+        if (chosen is { } keep) _lang = keep;
+    }
+
+    /// <summary>A change the tester saves waits for an automatic translation still running, so it is sent on the newest revision.</summary>
+    private async Task SettleAutoTranslationAsync()
+    {
+        if (_autoTask is { IsCompleted: false } running) { try { await running; } catch (Exception e) when (e is not OperationCanceledException) { } }
     }
 
     private void Open(string? caseId)
@@ -1091,6 +1178,7 @@
         _busy = true; _error = null;
         try
         {
+            await SettleAutoTranslationAsync();
             var (draft, error) = await api.SaveAsync(_plan.Id, P.SaveWith(_plan, _form));
             if (draft is null) { _error = P.Friendly(error, "Testtilfellet kunne ikke lagres."); return false; }
             _plan = draft;
@@ -1320,21 +1408,6 @@
         finally { _busy = false; }
     }
 
-    /// <summary>Translate all: the existing plan translation (stories and requirement wording too). Person-written and edited text is kept.</summary>
-    private async Task TranslateAllAsync()
-    {
-        if (_plan is null || Api is not { } api) return;
-        _busy = true; _error = null;
-        try
-        {
-            var (result, error) = await api.TranslateAllAsync(_plan.Id, new TranslatePlanRequest(_plan.Revision, Target: ScenarioPlanning.Norwegian));
-            if (result is null) { _error = P.Friendly(error, "Oversettelsen feilet."); return; }
-            if (result.Draft is { } draft) { _plan = draft; Open(_selectedId); }
-            _notice = result.Message + (result.Failed.Count > 0 ? $" {result.Failed.Count} kunne ikke oversettes og er fortsatt på originalspråket." : "");
-        }
-        finally { _busy = false; }
-    }
-
     private async Task ArchiveAsync()
     {
         if (_plan is null || Api is not { } api) return;
@@ -1453,5 +1526,5 @@
 
     private void OnProjectChanged() => _ = InvokeAsync(async () => { _ws = null; _plan = null; _form = null; _selectedId = null; _pending = null; await LoadAsync(); StateHasChanged(); });
 
-    public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; }
+    public void Dispose() { _disposed = true; if (_projection is not null) _projection.Changed -= OnProjectChanged; }
 }

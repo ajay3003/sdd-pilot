@@ -179,6 +179,9 @@ public enum CaseSourceState
     Removed,
     /// <summary>The scenario could not be compared: its source role is missing, unresolved or its analyzer failed ("Kilde mangler"). Never "removed".</summary>
     SourceUnavailable,
+    /// <summary>Not compared (2026-11-25): the case's own specification was not read for the current source version — Finn og forstå reads the
+    /// specification selected there, and another one is selected. Not an error and not a missing source: the case is shown as saved ("Ikke sammenlignet").</summary>
+    NotCompared,
 }
 
 /// <summary>A reviewer's resolution of an expected-result conflict: which claim (or own wording) is the expected result, and why.</summary>

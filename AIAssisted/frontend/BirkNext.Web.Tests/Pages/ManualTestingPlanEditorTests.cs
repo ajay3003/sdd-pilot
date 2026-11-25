@@ -201,7 +201,7 @@ public sealed partial class ManualTestingPlanTests
         Setup(Plan(Translated(Case("c1", "Submit a valid report"), fingerprint: "older")));
         var cut = Open();
 
-        cut.Find("[data-testid=mtp-translation-state]").TextContent.Should().Contain("eldre tekst");
+        cut.Find("[data-testid=mtp-translation-state]").TextContent.Should().StartWith("Må gjennomgås");
         cut.Find("[data-testid=mtp-translation-stale]").TextContent.Should().Contain("endret etter at den ble oversatt");
         cut.Find("[data-testid=mtp-translation-compare]").Click();
         Language(cut).Should().Be(nameof(EditorLanguage.Compare));

@@ -67,6 +67,7 @@ public sealed partial class TestPlanSuggestionService
     {
         if (plan.ProjectKey is null || discoveryStore is null) return;
         await discoveryStore.RestoreAsync(plan.ProjectKey, null, ct);
+        await discoveryStore.RestoreScopesAsync(plan.ProjectKey, ct);
         var application = plan.ApplicationKey ?? discoveries?.Latest(plan.ProjectKey)?.Basis?.ApplicationKey;
         if (application is not null) await discoveryStore.RestoreApplicationAsync(application, ct);
     }
@@ -97,8 +98,9 @@ public sealed partial class TestPlanSuggestionService
             var read = current.Candidates.Where(x => x.CapabilityId == D.Specification).Select(SpecificationPathOf).OfType<string>().ToList();
             if (own is null)
                 return (CaseSourceState.SourceUnavailable, "Kilde mangler: det er ikke registrert hvilken spesifikasjon scenarioet kom fra, så det kan ikke avgjøres om det er fjernet.");
+            // Another specification is selected in Finn og forstå (it reads one at a time): the case is outside this comparison — not missing.
             if (!read.Any(p => BirkNext.Specifications.SpecificationCatalogRules.SamePath(p, own)))
-                return (CaseSourceState.SourceUnavailable, $"Kilde mangler: spesifikasjonen scenarioet kom fra ({own}) ble ikke lest i siste oppdagelse — en annen spesifikasjon var valgt. Velg den og oppdag på nytt for å sammenligne.");
+                return (CaseSourceState.NotCompared, $"Ikke sammenlignet: spesifikasjonen testtilfellet kommer fra ({own}) er ikke lest for gjeldende kildeversjon. Testtilfellet vises slik det er lagret; velg spesifikasjonen i Finn og forstå for å sammenligne.");
         }
         if (c.Generated.Capability != D.Specification)
         {
@@ -126,18 +128,43 @@ public sealed partial class TestPlanSuggestionService
     private static string? PathPart(string? reference) =>
         reference is { Length: > 0 } r && r.IndexOf('#') is var hash and > 0 ? r[..hash] : null;
 
-    /// <summary>Source state flags of a project plan against its application's current discovery (read-time; nothing is rewritten).</summary>
+    /// <summary>Whether a discovery read this specification file (its specification scenarios came from it).</summary>
+    private static bool ReadSpecification(ScenarioDiscoveryResult result, string path) =>
+        result.Candidates.Any(x => x.CapabilityId == D.Specification && SpecificationPathOf(x) is { } p && BirkNext.Specifications.SpecificationCatalogRules.SamePath(p, path));
+
+    /// <summary>
+    /// The discovery to compare one case with (2026-11-25): the current one, or — when the case's own specification was not read by it because
+    /// another specification is selected in Finn og forstå — the newest current discovery of the SAME source version (same content fingerprints)
+    /// that read the case's specification. Never another source version, never a historical inspection; null when none exists.
+    /// </summary>
+    private ScenarioDiscoveryResult? OwnSpecificationDiscovery(TestCaseDraft c, ScenarioDiscoveryResult latest)
+    {
+        if (c.Generated.Capability != D.Specification || SpecificationPathOf(c) is not { } own || ReadSpecification(latest, own)) return latest;
+        if (discoveries is null || latest.Basis is not { } basis) return null;
+        // Only when the current discovery DID read specifications (another one): a failed or partial read is reported as such, never hidden
+        // behind an older discovery.
+        if (latest.Capabilities.FirstOrDefault(x => x.Id == D.Specification) is not { State: DiscoveryCapabilityState.Available, PartialFailure: false }) return null;
+        var content = ScenarioDiscoveryStore.Content(basis);
+        return discoveries.CurrentResults(latest.ProjectKey).FirstOrDefault(r => r.Basis is { } b && b.Complete && b.ApplicationKey == basis.ApplicationKey
+            && ScenarioDiscoveryStore.Content(b).SetEquals(content) && ReadSpecification(r, own));
+    }
+
+    /// <summary>Source state flags of a project plan against its application's current discovery (read-time; nothing is rewritten). Each case is
+    /// compared with a discovery of its OWN specification (<see cref="OwnSpecificationDiscovery"/>), never with whatever is selected now.</summary>
     private TestPlanDraft FlagProject(TestPlanDraft plan)
     {
-        if (plan.ProjectKey is null || CurrentFor(plan) is not { } latest) return plan;
-        var index = new CandidateIndex(latest.Candidates);
-        var moves = Renumbered(plan, latest.Candidates);
+        if (plan.ProjectKey is null || CurrentFor(plan) is not { } current) return plan;
+        var indexes = new Dictionary<string, (CandidateIndex Index, IReadOnlyDictionary<string, DiscoveredScenario> Moves)>(StringComparer.Ordinal);
+        (CandidateIndex Index, IReadOnlyDictionary<string, DiscoveredScenario> Moves) For(ScenarioDiscoveryResult r) =>
+            indexes.TryGetValue(r.DiscoveryId, out var held) ? held : indexes[r.DiscoveryId] = (new CandidateIndex(r.Candidates), Renumbered(plan, r.Candidates));
         return E.AssessAll(plan with
         {
             Cases = [.. plan.Cases.Select(c =>
             {
                 if (c.Source.Kind != ScenarioSourceKind.ProjectDiscovery || c.Review == TestCaseReviewState.Superseded)
                     return c with { SourceChanged = false, SourceState = null, SourceStateReason = null };
+                var latest = OwnSpecificationDiscovery(c, current) ?? current;
+                var (index, moves) = For(latest);
                 // A renumbering is a change within one import's specification; a later import's ids are always different (followed by identity).
                 if (moves.TryGetValue(c.Source.ScenarioId, out var moved) && moved.ProjectKey == c.Source.Owner && ReferenceEquals(Locate(c, index, moves), moved))
                     return c with { SourceChanged = true, SourceState = CaseSourceState.Changed, SourceStateReason = "Samme scenariotekst har fått en ny plass i spesifikasjonen." };
@@ -329,6 +356,7 @@ public sealed partial class TestPlanSuggestionService
             {
                 if (latest.Basis is null) continue;
                 var (state, reason) = Absence(c, latest, plan.DiscoveryBasis);
+                if (state == CaseSourceState.NotCompared) continue; // another specification: outside this comparison, not a missing source
                 impacts.Add(new CaseImpact
                 {
                     CaseId = c.Source.ScenarioId, Title = c.EffectiveTitle, ReviewedBefore = reviewed, Summary = reason,
@@ -436,16 +464,26 @@ public sealed partial class TestPlanSuggestionService
         var changed = active.Count(c => c.SourceState == CaseSourceState.Changed);
         var removed = active.Count(c => c.SourceState == CaseSourceState.Removed);
         var unavailable = active.Count(c => c.SourceState == CaseSourceState.SourceUnavailable);
+        var notCompared = active.Count(c => c.SourceState == CaseSourceState.NotCompared);
         var conflicts = active.Count(c => c.HasUnresolvedConflict);
         var index = new CandidateIndex(latest.Candidates);
         var covered = plan.Cases.Select(c => index.Find(c)?.CandidateId).OfType<string>().ToHashSet(StringComparer.Ordinal);
-        var fresh = latest.Candidates.Count(c => !covered.Contains(c.CandidateId));
-        var basisChanged = plan.DiscoveryBasis is not null && latest.Basis is not null && plan.DiscoveryBasis.Fingerprint != latest.Basis.Fingerprint;
+        // New scenarios: only from the plan's own specifications (a scenario of the specification selected now is not new for this plan).
+        var ownSpecs = plan.Cases.Where(c => c.Generated.Capability == D.Specification).Select(SpecificationPathOf).OfType<string>().ToList();
+        var fresh = latest.Candidates.Count(c => !covered.Contains(c.CandidateId) && (c.CapabilityId != D.Specification || ownSpecs.Count == 0
+            || SpecificationPathOf(c) is { } p && ownSpecs.Any(o => BirkNext.Specifications.SpecificationCatalogRules.SamePath(o, p))));
+        // Another source version = other source content; the specification selected in Finn og forstå is part of the basis fingerprint, not of it.
+        var basisChanged = plan.DiscoveryBasis is not null && latest.Basis is not null
+            && !ScenarioDiscoveryStore.Content(plan.DiscoveryBasis).SetEquals(ScenarioDiscoveryStore.Content(latest.Basis));
         var incomplete = latest.Basis is { Complete: false };
         var (state, message) = (incomplete || unavailable > 0) ? ("Kilde mangler", incomplete ? "Kilde mangler: " + (latest.Basis!.Problems.FirstOrDefault() ?? "grunnlaget er ufullstendig.") : $"{unavailable} testtilfeller kunne ikke sammenlignes fordi kilden mangler.")
             : (changed + removed + conflicts) > 0 ? ("Må gjennomgås", $"{changed} endret, {removed} utgått, {conflicts} med kildekonflikt. Se konsekvensanalysen før du oppdaterer planen.")
             : newer.Count > 0 ? ("Ny kildeversjon", $"Ny kildeversjon importert ({string.Join(", ", newer.Select(m => m.NewerArchiveName))}). Velg den som analysegrunnlag og oppdag testscenarier på nytt.")
             : basisChanged ? ("Ny kildeversjon", "Planen er laget fra en annen kildeversjon enn gjeldende. Oppdater planen fra gjeldende grunnlag.")
+            // Cases of a specification not read for the current source version were not compared: never "i samsvar" for them (2026-11-25).
+            : notCompared > 0 && notCompared == active.Count(c => c.Source.Kind == ScenarioSourceKind.ProjectDiscovery)
+                ? ("Ikke sammenlignet", "Spesifikasjonen testplanen kommer fra er ikke lest for gjeldende kildeversjon. Velg den i Finn og forstå for å sammenligne.")
+            : notCompared > 0 ? ("Klar", $"De sammenlignede testtilfellene er i samsvar med gjeldende kildegrunnlag. {notCompared} testtilfeller fra en annen spesifikasjon er ikke sammenlignet.")
             : ("Klar", "Planen er i samsvar med gjeldende kildegrunnlag.");
         return new PlanSourceStatus
         {

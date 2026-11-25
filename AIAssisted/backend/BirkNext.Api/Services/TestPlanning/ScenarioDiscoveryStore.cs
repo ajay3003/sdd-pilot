@@ -77,6 +77,17 @@ public sealed class ScenarioDiscoveryStore(AppDbContext db, ScenarioDiscoveryCac
     public static HashSet<string> Content(DiscoverySourceBasis basis) =>
         [.. basis.Members.Where(m => m.Resolved).Select(m => m.ContentFingerprint ?? m.SnapshotId!.Value.ToString())];
 
+    /// <summary>Puts the project's stored current results of every selection scope back into the cache, once per process, so a saved case can be
+    /// compared with a discovery of its own specification while another is selected (2026-11-25). Never a historical result; never the latest pointer.</summary>
+    public async Task RestoreScopesAsync(string projectKey, CancellationToken ct)
+    {
+        if (!cache.FirstScopedRestore(projectKey)) return;
+        var rows = await db.ScenarioDiscoveryResults.AsNoTracking().Where(r => r.ProjectKey == projectKey && (r.BasisKind == null || r.BasisKind != Historical))
+            .OrderByDescending(r => r.DiscoveredAt).Take(KeptPerProject + 1).ToListAsync(ct);
+        foreach (var row in rows)
+            if (Read(row) is { } result && result.ProjectKey == projectKey) cache.RememberScoped(result);
+    }
+
     /// <summary>The newest stored current result computed for exactly this selection scope (module + specification); null when none.</summary>
     public async Task<ScenarioDiscoveryResult?> FindScopedAsync(string projectKey, string scope, CancellationToken ct)
     {

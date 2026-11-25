@@ -52,8 +52,8 @@ public sealed class SourceRemovalRulesTests
 
         var (state, reason) = TestPlanSuggestionService.Absence(Case(Main), current, null);
 
-        state.Should().Be(CaseSourceState.SourceUnavailable);
-        reason.Should().StartWith("Kilde mangler").And.Contain(Main).And.Contain("ble ikke lest i siste oppdagelse");
+        state.Should().Be(CaseSourceState.NotCompared, "another specification selected is not a missing source (2026-11-25)");
+        reason.Should().StartWith("Ikke sammenlignet").And.Contain(Main).And.NotContain("Kilde mangler");
     }
 
     [Fact]

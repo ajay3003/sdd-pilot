@@ -61,6 +61,8 @@ builder.Services.AddHttpClient<ISystemUnderstandingApiService, SystemUnderstandi
 // One parsed last discovery per project and snapshot for the session, revalidated by ETag (LastDiscoveryCache).
 builder.Services.AddSingleton<LastDiscoveryCache>();
 builder.Services.AddHttpClient<ITestPlanSuggestionsApiService, TestPlanSuggestionsApiService>(client => client.BaseAddress = backendBase);
+// Automatic translation in Planlegg og klargjør: one request per plan revision for the browser session (shared across reopening and tab changes).
+builder.Services.AddSingleton<AutoTranslationRegistry>();
 // Testgjennomføring i BirkNext (optional, 2026-11-25): records what a tester did in a run; Azure DevOps Test Plans stays the default.
 builder.Services.AddHttpClient<IManualTestRunsApiService, ManualTestRunsApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITranslationSettingsApiService, TranslationSettingsApiService>(client => client.BaseAddress = backendBase);
