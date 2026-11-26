@@ -23,11 +23,13 @@
 |---|---|
 | S01 | dashboard subset → the scenario list and the story list show the same subset (US2 not listed) |
 | S02 | drawer open, checkbox, grouping change → the subset is kept; «Fjern utvalget» → full scope, the story list follows, the selection kept |
+| S04 | explicit **specification** change → the subset ends |
+| S05 | a subset with a story-less (standalone) scenario → listed under «Uten brukerhistorie» with only its own scenarios; scenarios outside the subset never appear |
 | S03 | explicit module change → the subset and the old-specification story filter end, the new scope shows all its scenarios, the stored filter no longer holds the subset (no reactivation), the selection kept |
 
 **Results:**
-- **S01–S03:** 3 / 3.
-- **Full frontend suite:** running at commit time.
+- **The class** (S01–S05 plus the grouping tests): 16 / 16.
+- **Full frontend suite (after S01–S03):** 9,798 / 9,798.
 
 ## Remaining limitations
 

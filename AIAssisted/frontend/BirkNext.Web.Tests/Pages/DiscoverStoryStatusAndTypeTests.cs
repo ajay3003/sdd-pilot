@@ -23,6 +23,8 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
     private bool FlatList { get; set; } = true;
     /// <summary>The explorer's modules (null = one module, no module chooser); S03 gives two so a module change can be made.</summary>
     private IReadOnlyList<ArtifactModuleRoleState>? TestModules { get; set; }
+    /// <summary>More specifications of the module (S04 gives one so a specification change can be made).</summary>
+    private List<ExplorerArtifact> ExtraSpecs { get; } = [];
 
     private const string Spec = "Frontend/specs/002-child-search-profile/spec.md";
     private readonly Mock<ITestPlanSuggestionsApiService> _api = new();
@@ -73,7 +75,7 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
             ExplorerArtifactCurrentness.Current, null, Module: "Frontend");
         var explorer = new Mock<IArtifactExplorerContext>();
         explorer.Setup(x => x.GetStateAsync(WorkspaceArtifactType.Specification, It.IsAny<CancellationToken>())).ReturnsAsync(new ArtifactExplorerState(WorkspaceArtifactType.Specification,
-            ExplorerArtifactStatus.Loaded, "m2lb", "M2LB", [spec], spec, ExplorerSelectionReason.Explicit, "# spec", Module: "Frontend", Modules: TestModules));
+            ExplorerArtifactStatus.Loaded, "m2lb", "M2LB", [spec, .. ExtraSpecs], spec, ExplorerSelectionReason.Explicit, "# spec", Module: "Frontend", Modules: TestModules));
         Services.AddSingleton(explorer.Object);
         _api.Setup(x => x.ProjectAsync("m2lb", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new TestPlanWorkspace { ProjectKey = "m2lb", GuideKey = "project:m2lb", CanWrite = true }, (string?)null));
@@ -358,5 +360,29 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
         JSInterop.Invocations.Where(i => i.Identifier == "sessionStorage.setItem" && i.Arguments[0]!.ToString() == TabDraftStore.DiscoverFilterKey("m2lb"))
             .Last().Arguments[1]!.ToString().Should().NotContain("tss-us1-1", "the stored filter no longer holds the subset (no reactivation on reload or Back)");
         cut.Find("[data-testid=mtd-selection-summary]").TextContent.Should().Contain("1 valgt totalt", "the checkbox selection survives a scope change");
+    }
+
+    [Fact]
+    public void S04_an_explicit_specification_change_ends_the_subset()
+    {
+        ExtraSpecs.Add(new ExplorerArtifact("s2", WorkspaceArtifactType.Specification, "Profile", "spec.md", "Frontend/specs/003-profile/spec.md", ExplorerArtifactSource.Workspace, null, null, 1, "Unknown",
+            ExplorerArtifactCurrentness.Current, null, Module: "Frontend"));
+        var cut = Open(View(), filter: Subset(Search));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-overview-selection]"));
+        cut.Find("[data-testid=ssp-specification]").Change("s2");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-overview-selection]").Should().BeEmpty("an explicit specification change ends the dashboard subset"));
+    }
+
+    [Fact]
+    public void S05_story_less_scenarios_of_a_subset_are_listed_under_Uten_brukerhistorie_and_others_are_not()
+    {
+        var items = ScenarioBrowserPresentation.Items(
+        [
+            Search, ErrorPanel,
+            new DiscoveredScenario { CandidateId = "e2e-1", ProjectKey = "m2lb", Title = "Altinn → Receiver → SkoleService", SourceIdentity = "tss-e2e-1", CanonicalKey = "flow:1" },
+            new DiscoveredScenario { CandidateId = "e2e-2", ProjectKey = "m2lb", Title = "Not in the subset", SourceIdentity = "tss-e2e-2", CanonicalKey = "flow:2" },
+        ], new Dictionary<string, ScenarioBrowserPresentation.Prepared>());
+        var stories = ScenarioWorkspacePresentation.Stories(items, ScenarioBrowserPresentation.FromOverview([Search.SourceIdentity, "tss-e2e-1"], "Utvalg"));
+        stories.Select(st => (st.Key, st.Discovered)).Should().Equal((Us1.Key, 1), (ScenarioWorkspacePresentation.NoStory, 1));
     }
 }
