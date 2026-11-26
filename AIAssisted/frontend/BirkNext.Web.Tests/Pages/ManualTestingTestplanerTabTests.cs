@@ -212,4 +212,54 @@ public sealed class ManualTestingTestplanerTabTests : BunitContext
         cut.Find("[data-testid=atp-panel]").GetAttribute("data-method").Should().Be("file", "file export is the default, every time");
         cut.Find("[data-testid=atp-method-file]").GetAttribute("aria-selected").Should().Be("true");
     }
+
+    // ── Ny testplan: Fra mal / Helt tom / Fra valgte scenarioer (2026-11-26) ─────────────────────────────────────────
+
+    [Fact]
+    public void Fra_mal_is_the_default_shows_the_template_structure_and_sends_the_template_id()
+    {
+        Setup();
+        var cut = Open();
+
+        cut.Find("[data-testid=mt-new-plan]").Click();
+        cut.Find("[data-testid=mt-new-plan-from-template]").HasAttribute("checked").Should().BeTrue("«Fra mal» is the default");
+        cut.FindAll("[data-testid=mt-new-plan-template-suite]").Select(s => s.TextContent).Should().Equal("Ende til ende", "Integrasjon", "Komponent", "Uklassifisert");
+        cut.Find("[data-testid=mt-new-plan-template-preview]").TextContent.Should().Contain("0 testtilfeller");
+        cut.Find("[data-testid=mt-new-plan-template]").Change(TestPlanTemplateRules.IntegrationId);
+        cut.FindAll("[data-testid=mt-new-plan-template-suite]").Select(s => (s.TextContent, s.GetAttribute("data-depth"))).Should().Equal(
+            ("Integrasjoner", "0"), ("Tjenesteintegrasjoner", "1"), ("Meldingsflyt", "1"));
+        cut.Find("[data-testid=mt-new-plan-create]").Click();
+
+        cut.WaitForAssertion(() => _requests.Should().ContainSingle());
+        (_requests[0].TemplateId, _requests[0].AllowEmpty, _requests[0].CandidateIds.Count).Should().Be((TestPlanTemplateRules.IntegrationId, true, 0));
+    }
+
+    [Fact]
+    public void Helt_tom_testplan_sends_no_template_and_no_scenarios()
+    {
+        Setup();
+        var cut = Open();
+
+        cut.Find("[data-testid=mt-new-plan]").Click();
+        cut.Find("[data-testid=mt-new-plan-empty]").Change(true);
+        cut.FindAll("[data-testid=mt-new-plan-template]").Should().BeEmpty();
+        cut.Find("[data-testid=mt-new-plan-create]").Click();
+
+        cut.WaitForAssertion(() => _requests.Should().ContainSingle());
+        (_requests[0].TemplateId, _requests[0].AllowEmpty, _requests[0].CandidateIds.Count).Should().Be(((string?)null, true, 0));
+    }
+
+    [Fact]
+    public void Custom_templates_from_the_installation_are_offered_and_archived_ones_are_not()
+    {
+        _plans.Setup(x => x.TemplatesAsync(false, It.IsAny<CancellationToken>())).ReturnsAsync(([.. TestPlanTemplateRules.BuiltIn,
+            new TestPlanTemplate { Id = "custom:1", Name = "Regresjon", Suites = [new("a", "Smoke")] },
+            new TestPlanTemplate { Id = "custom:2", Name = "Gammel", Archived = true, Suites = [new("a", "X")] }], (string?)null));
+        Setup();
+        var cut = Open();
+
+        cut.Find("[data-testid=mt-new-plan]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mt-new-plan-template]").TextContent.Should().Contain("Regresjon (egen mal)"));
+        cut.Find("[data-testid=mt-new-plan-template]").TextContent.Should().NotContain("Gammel");
+    }
 }

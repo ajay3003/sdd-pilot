@@ -188,7 +188,7 @@
                                 <span class="mt-muted msb-small" data-testid="mtp-hidden">@hidden teknisk@(hidden == 1 ? "" : "e") testtilfelle@(hidden == 1 ? "" : "r") skjult</span>
                             }
                         </div>
-                        @if (PlanSuiteEditing.Hierarchical(plan))
+                        @if (PlanSuiteEditing.ShowTree(plan))
                         {
                             <div class="mtp-suite-tools" data-testid="mtp-suite-tools">
                                 <button type="button" class="msb-link" @onclick="() => _collapsedSuites.Clear()" data-testid="mtp-suites-expand">Vis alle grupper</button>
@@ -199,17 +199,32 @@
                                 }
                             </div>
                         }
-                        else if (CanWrite && !ReadOnlyPlan && plan.Suites.Count > 0)
+                        else if (CanWrite && !ReadOnlyPlan && (plan.Suites.Count > 0 || PlanSuiteEditing.IsEmpty(plan)))
                         {
                             <div class="mtp-suite-tools"><button type="button" class="msb-link" aria-expanded="@(_manageSuites ? "true" : "false")" @onclick="() => { _manageSuites = !_manageSuites; _suiteError = null; }" data-testid="mtp-suites-manage">Testgrupper</button></div>
                         }
                         @if (_manageSuites) { @SuitePanel(plan) }
-                        @if (rows.Count == 0)
+                        @if (PlanSuiteEditing.IsEmpty(plan) && plan.Suites.Count == 0)
+                        {
+                            @* A plan with nothing in it is a valid plan (2026-11-26), not an error. *@
+                            <section class="msb-empty mtp-plan-empty" data-testid="mtp-plan-empty">
+                                <p><strong>Testplanen er tom.</strong></p>
+                                <p class="mt-muted msb-small">Opprett testgrupper for å organisere testplanen, eller legg til et testtilfelle direkte. Du kan også legge til scenarioer fra Finn og forstå senere.</p>
+                                @if (CanWrite && !ReadOnlyPlan)
+                                {
+                                    <div class="mtp-plan-empty-actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" disabled="@_busy" @onclick="() => { _manageSuites = true; _suiteError = null; }" data-testid="mtp-plan-empty-suite">Opprett testgruppe</button>
+                                        <button type="button" class="btn btn-outline-primary btn-sm" disabled="@_busy" @onclick="() => OpenNewCaseAsync(null, null)" data-testid="mtp-plan-empty-case">Legg til testtilfelle</button>
+                                    </div>
+                                }
+                            </section>
+                        }
+                        else if (rows.Count == 0 && !PlanSuiteEditing.IsEmpty(plan))
                         {
                             <p class="msb-empty" data-testid="mtp-rows-none">@(hidden > 0 && !_showTechnical ? "Alle testtilfellene i testplanen er tekniske. Slå på «Vis teknisk innhold» for å se dem." : "Ingen treff.")</p>
                         }
                         <ul class="mtp-scenarios">
-                            @if (PlanSuiteEditing.Hierarchical(plan))
+                            @if (PlanSuiteEditing.ShowTree(plan))
                             {
                                 @SuiteTree(plan, rows, null, 0)
                                 @foreach (var loose in rows.Where(r => plan.Suites.All(x => x.Id != r.Cases.FirstOrDefault()?.SuiteId))) { @RowItem(loose) }
@@ -241,6 +256,29 @@
                                     </div>
                                 </div>
                                 <p class="mt-muted msb-small" data-testid="mtp-new-kind-hint">@P.SuggestionText(nc.Suggestion)</p>
+                                @* Suite, test level and scenario type (2026-11-26): the suite's level is only a proposal; the case keeps its own level when moved. *@
+                                @if (_plan is { Suites.Count: > 0 } suitePlan)
+                                {
+                                    <label class="msb-small">Testgruppe
+                                        <select class="msb-select" @onchange="e => { nc.SuiteId = e.Value?.ToString(); nc.Level = suitePlan.Suites.FirstOrDefault(x => x.Id == nc.SuiteId)?.TestLevel ?? nc.Level; }" data-testid="mtp-new-suite">
+                                            <option value="" selected="@(nc.SuiteId is null)">@(nc.ScenarioKey is null ? "Velg testgruppe" : "Samme som scenarioet")</option>
+                                            @foreach (var (sid, spath) in PlanSuiteEditing.Choices(suitePlan)) { <option value="@sid" selected="@(nc.SuiteId == sid)">@spath</option> }
+                                        </select></label>
+                                }
+                                <label class="msb-small">Testnivå
+                                    <select class="msb-select" @onchange="e => nc.Level = Enum.TryParse<ScenarioTestLevel>(e.Value?.ToString(), out var lv) ? lv : null" data-testid="mtp-new-level">
+                                        <option value="" selected="@(nc.Level is null)">Ikke angitt</option>
+                                        @foreach (var lv in TestLevelClassifier.Order) { <option value="@lv" selected="@(nc.Level == lv)">@TestLevelClassifier.Label(lv)</option> }
+                                    </select></label>
+                                @if (nc.SuiteId is { } chosenSuite && _plan?.Suites.FirstOrDefault(x => x.Id == chosenSuite)?.TestLevel is { } suiteLevel && nc.Level is { } caseLevel && suiteLevel != caseLevel)
+                                {
+                                    <p class="mt-muted msb-small" data-testid="mtp-new-level-differs">Testgruppen er for «@TestLevelClassifier.Label(suiteLevel)»; testtilfellet blir «@TestLevelClassifier.Label(caseLevel)». Det er lov — gruppen er bare organisering.</p>
+                                }
+                                <label class="msb-small">Scenariotype
+                                    <select class="msb-select" @onchange="e => nc.Type = Enum.TryParse<ScenarioRequirementType>(e.Value?.ToString(), out var ty) ? ty : null" data-testid="mtp-new-type">
+                                        <option value="" selected="@(nc.Type is null)">Ikke angitt</option>
+                                        @foreach (var ty in ScenarioTypeClassifier.Order) { <option value="@ty" selected="@(nc.Type == ty)">@ScenarioTypeClassifier.Label(ty)</option> }
+                                    </select></label>
                                 <div class="mtp-new-actions">
                                     <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || nc.Kind is null || string.IsNullOrWhiteSpace(nc.Title))" @onclick="CreateCaseAsync" data-testid="mtp-new-create">Legg til</button>
                                     <button type="button" class="msb-link" @onclick="() => _newCase = null" data-testid="mtp-new-cancel">Avbryt</button>
@@ -519,6 +557,19 @@
                                     </div>
                                     @if (_form.TestKind is null) { <span class="msb-status msb-tone-warn" data-testid="mtp-kind-unset">Ikke angitt</span> }
                                     <span class="mt-muted msb-small" data-testid="mtp-kind-hint">@P.SuggestionText(caseSuggestion)</span>
+                                </div>
+                                <div class="mtp-case-classes" data-testid="mtp-case-classes">
+                                    <label class="msb-small"><span class="mtp-ctx-label">Testnivå</span>
+                                        <select class="msb-select" disabled="@readonlyCase" @onchange="e => _form.TestLevel = Enum.TryParse<ScenarioTestLevel>(e.Value?.ToString(), out var lv) ? lv : null" data-testid="mtp-case-level">
+                                            <option value="" selected="@(_form.TestLevel is null)">Ikke angitt</option>
+                                            @foreach (var lv in TestLevelClassifier.Order) { <option value="@lv" selected="@(_form.TestLevel == lv)">@TestLevelClassifier.Label(lv)</option> }
+                                        </select></label>
+                                    <label class="msb-small"><span class="mtp-ctx-label">Scenariotype</span>
+                                        <select class="msb-select" disabled="@readonlyCase" @onchange="e => _form.ScenarioType = Enum.TryParse<ScenarioRequirementType>(e.Value?.ToString(), out var ty) ? ty : null" data-testid="mtp-case-type">
+                                            <option value="" selected="@(_form.ScenarioType is null)">Ikke angitt</option>
+                                            @foreach (var ty in ScenarioTypeClassifier.Order) { <option value="@ty" selected="@(_form.ScenarioType == ty)">@ScenarioTypeClassifier.Label(ty)</option> }
+                                        </select></label>
+                                    <span class="mt-muted msb-small">Testmetode: @(_form.TestKind switch { ScenarioTestKind.Manual => "Manuell", ScenarioTestKind.Technical => "Teknisk", _ => "ikke angitt" })</span>
                                 </div>
                                 @if (showO || showN)
                                 {
@@ -1246,6 +1297,7 @@
                         @foreach (var row in mine) { @RowItem(row) }
                         @SuiteTree(plan, rows, id, depth + 1)
                         @if (count == 0 && mine.Count == 0) { <li class="mt-muted msb-small mtp-suite-empty" data-testid="mtp-suite-empty">0 testtilfeller</li> }
+                        @if (CanWrite && !ReadOnlyPlan) { <li class="mtp-suite-add"><button type="button" class="msb-link" disabled="@_busy" @onclick="() => OpenNewCaseInSuiteAsync(suite)" data-testid="mtp-suite-new-case">+ Nytt testtilfelle</button></li> }
                     </ul>
                 }
             </li>
@@ -1290,11 +1342,37 @@
                 </select>
                 <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || _newSuiteName.Trim().Length == 0)" @onclick="AddSuiteAsync" data-testid="mtp-suite-add">Ny gruppe</button>
             </div>
+            @if (plan.Suites.Count > 0)
+            {
+                @* «Lagre som mal» (2026-11-26): only the suite structure is saved — never cases, steps, results, test data, ADO ids or history. *@
+                <div class="mtp-suite-template" data-testid="mtp-save-template">
+                    <input class="mtp-lcell" placeholder="Navn på malen" value="@_templateName" @oninput="e => _templateName = e.Value?.ToString() ?? string.Empty" data-testid="mtp-save-template-name" />
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || _templateName.Trim().Length == 0)" @onclick="SaveAsTemplateAsync" data-testid="mtp-save-template-button">Lagre som mal</button>
+                    <span class="mt-muted msb-small">Bare testgruppene lagres i malen, ikke testtilfellene.</span>
+                </div>
+            }
             @if (_suiteError is { } se) { <p class="mt-alert msb-small" role="alert" data-testid="mtp-suite-error">@se</p> }
         </section>
     };
 
     private static string? NullIfEmpty(string? v) => string.IsNullOrWhiteSpace(v) ? null : v;
+
+    private string _templateName = "";
+
+    /// <summary>Saves the plan's stored suite structure as a custom template (the server reads the plan; unsaved case edits play no part).</summary>
+    private async Task SaveAsTemplateAsync()
+    {
+        if (_plan is null || Api is not { } api || _templateName.Trim().Length == 0) return;
+        _busy = true; _suiteError = null;
+        try
+        {
+            var (template, error) = await api.CreateTemplateAsync(new SaveTestPlanTemplateRequest(_templateName.Trim(), null, FromPlan: _plan.Id));
+            if (template is null) { _suiteError = P.Friendly(error, "Malen kunne ikke lagres."); return; }
+            _templateName = "";
+            _notice = $"Malen «{template.Name}» er lagret. Du finner den under Systeminnstillinger → Manuell testing → Testplanmaler.";
+        }
+        finally { _busy = false; }
+    }
 
     private async Task AddSuiteAsync()
     {
@@ -1427,6 +1505,9 @@
         public string Title { get; set; } = "";
         public ScenarioTestKind? Kind { get; set; }
         public P.KindSuggestion? Suggestion { get; init; }
+        public string? SuiteId { get; set; }
+        public ScenarioTestLevel? Level { get; set; }
+        public ScenarioRequirementType? Type { get; set; }
     }
 
     private NewCaseForm? _newCase;
@@ -1509,6 +1590,13 @@
         }
     }
 
+    /// <summary>«+ Nytt testtilfelle» inside a suite: no scenario; the suite is chosen and its level proposed (the tester may change it).</summary>
+    private async Task OpenNewCaseInSuiteAsync(TestSuiteDraft suite)
+    {
+        await OpenNewCaseAsync(null, null);
+        if (_newCase is { } nc) { nc.SuiteId = suite.Id; nc.Level = suite.TestLevel; }
+    }
+
     private async Task OpenNewCaseAsync(string? scenarioKey, string? scenarioTitle)
     {
         if (_plan is null) return;
@@ -1526,18 +1614,19 @@
     private async Task CreateCaseAsync()
     {
         if (_newCase is not { Kind: { } kind } nc || string.IsNullOrWhiteSpace(nc.Title)) return;
-        await AddCaseAsync(nc.ScenarioKey, nc.Title.Trim(), kind);
+        await AddCaseAsync(nc.ScenarioKey, nc.Title.Trim(), kind, nc.SuiteId, nc.Level, nc.Type);
     }
 
-    private async Task AddCaseAsync(string? scenarioKey, string title, ScenarioTestKind kind)
+    private async Task AddCaseAsync(string? scenarioKey, string title, ScenarioTestKind kind, string? suiteId = null, ScenarioTestLevel? level = null, ScenarioRequirementType? type = null)
     {
         if (_plan is null || Api is not { } api) return;
-        if (Dirty) { _pending = () => AddCaseAsync(scenarioKey, title, kind); return; }
+        if (Dirty) { _pending = () => AddCaseAsync(scenarioKey, title, kind, suiteId, level, type); return; }
         _busy = true; _error = null;
         try
         {
             var before = _plan.Cases.Select(P.IdOf).ToHashSet(StringComparer.Ordinal);
-            var (draft, error) = await api.AddManualCaseAsync(_plan.Id, new AddManualTestCaseRequest(_plan.Revision, title, null, null, ScenarioKey: scenarioKey, TestKind: kind));
+            var (draft, error) = await api.AddManualCaseAsync(_plan.Id, new AddManualTestCaseRequest(_plan.Revision, title, null, null, ScenarioKey: scenarioKey, TestKind: kind,
+                SuiteId: suiteId, TestLevel: level, ScenarioType: type));
             if (draft is null) { _error = P.Friendly(error, "Testtilfellet kunne ikke legges til."); return; }
             _plan = draft;
             Open(draft.Cases.Select(P.IdOf).FirstOrDefault(id => !before.Contains(id)) ?? _selectedId);

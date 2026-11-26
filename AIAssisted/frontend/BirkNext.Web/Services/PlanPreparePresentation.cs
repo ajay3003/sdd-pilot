@@ -259,6 +259,9 @@ public static partial class PlanPreparePresentation
         public TestDataNeed TestDataNeed { get; set; }
         /// <summary>Manuell or Teknisk for this case (null = «Ikke angitt»; an older case is never given one it was not given).</summary>
         public ScenarioTestKind? TestKind { get; set; }
+        /// <summary>The case's test level and scenario type (2026-11-26): its own values, set by a person; moving the case to another suite never changes them.</summary>
+        public ScenarioTestLevel? TestLevel { get; set; }
+        public ScenarioRequirementType? ScenarioType { get; set; }
         /// <summary>How the result is observed, written by a person (2026-11-25); the readiness «Verifiseringsmetode» needs it.</summary>
         public string ObservationMethod { get; set; } = "";
         /// <summary>Access, environment and systems the test needs, written by a person («Tilgang og miljø»).</summary>
@@ -303,6 +306,8 @@ public static partial class PlanPreparePresentation
             ExpectedResult = c.EffectiveExpected ?? "",
             TestDataNeed = c.EffectiveTestDataNeed,
             TestKind = c.Edits.TestKind,
+            TestLevel = c.Edits.TestLevel,
+            ScenarioType = c.Edits.ScenarioType,
             ObservationMethod = c.Edits.ObservationMethod ?? "",
             EnvironmentPrerequisites = c.Edits.EnvironmentPrerequisites ?? "",
             BlockedBy = c.Edits.BlockedBy ?? "",
@@ -364,6 +369,8 @@ public static partial class PlanPreparePresentation
                 StepExpected = stepsSame ? null : expected,
                 TestDataNeed = TestDataNeed == g.TestDataNeed ? null : TestDataNeed,
                 TestKind = TestKind,
+                TestLevel = TestLevel,
+                ScenarioType = ScenarioType,
                 ObservationMethod = Blank(ObservationMethod),
                 EnvironmentPrerequisites = Blank(EnvironmentPrerequisites),
                 BlockedBy = Blank(BlockedBy),
@@ -380,6 +387,8 @@ public static partial class PlanPreparePresentation
                 || !string.Equals(ExpectedResult.Trim(), now.ExpectedResult.Trim(), StringComparison.Ordinal)
                 || TestDataNeed != now.TestDataNeed
                 || TestKind != now.TestKind
+                || TestLevel != now.TestLevel
+                || ScenarioType != now.ScenarioType
                 || !string.Equals(ObservationMethod.Trim(), now.ObservationMethod.Trim(), StringComparison.Ordinal)
                 || !string.Equals(EnvironmentPrerequisites.Trim(), now.EnvironmentPrerequisites.Trim(), StringComparison.Ordinal)
                 || !string.Equals(BlockedBy.Trim(), now.BlockedBy.Trim(), StringComparison.Ordinal)

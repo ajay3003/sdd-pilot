@@ -393,6 +393,10 @@ public sealed record CreateProjectTestPlanRequest
     /// <summary>Hierarchical plans (2026-11-26): the grouping template of a NEW plan from a selection (<see cref="PlanStructureTemplates"/>); null =
     /// the earlier flat area suites. Ignored when adding to an existing plan (a saved plan is never reorganised).</summary>
     public string? Structure { get; init; }
+    /// <summary>«Fra mal» (2026-11-26): the template whose structure (suites only, new ids) an EMPTY new plan starts with. Never cases or approvals.</summary>
+    public string? TemplateId { get; init; }
+    /// <summary>Set by the server from <see cref="TemplateId"/> (never read from a client).</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public IReadOnlyList<TestSuiteDraft>? TemplateSuites { get; init; }
 }
 
 /// <summary>A test case a person writes by hand: title and purpose; steps are added while editing. <see cref="ScenarioKey"/> = write it under that
@@ -401,7 +405,8 @@ public sealed record CreateProjectTestPlanRequest
 /// <see cref="Variant"/> = start from a variant the scenario's evidence supports (its key from the variant proposals).
 /// <see cref="TestKind"/> = Manuell or Teknisk chosen when creating the case (2026-11-25); a duplicate keeps its source case's type unless one is given.</summary>
 public sealed record AddManualTestCaseRequest(int BaseRevision, string Title, string? Purpose, ScenarioCandidateType? Type,
-    string? ScenarioKey = null, string? CopyFrom = null, string? Variant = null, ScenarioTestKind? TestKind = null);
+    string? ScenarioKey = null, string? CopyFrom = null, string? Variant = null, ScenarioTestKind? TestKind = null,
+    string? SuiteId = null, ScenarioTestLevel? TestLevel = null, ScenarioRequirementType? ScenarioType = null);
 
 /// <summary>
 /// What changed in an application's scenarios with a new import (2026-11-23): the new import's discovery compared with the application's previous

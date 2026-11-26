@@ -18,6 +18,13 @@ public static class PlanSuiteEditing
     /// <summary>A plan whose suites form a tree (any suite has a parent).</summary>
     public static bool Hierarchical(TestPlanDraft plan) => plan.Suites.Any(s => s.ParentId is not null);
 
+    /// <summary>Whether Planlegg shows the suite tree (2026-11-26): a hierarchy, or a suite with no cases (from a template or created by hand) —
+    /// otherwise an empty suite would be invisible and nothing could be added to it.</summary>
+    public static bool ShowTree(TestPlanDraft plan) => Hierarchical(plan) || plan.Suites.Any(s => plan.Cases.All(c => c.SuiteId != s.Id));
+
+    /// <summary>A plan with no cases at all (a new empty or template plan).</summary>
+    public static bool IsEmpty(TestPlanDraft plan) => plan.Cases.Count == 0;
+
     /// <summary>Every case in the suite or one of its descendants (excluded and superseded cases are not counted).</summary>
     public static int CasesIn(TestPlanDraft plan, string suiteId) =>
         plan.Cases.Count(c => c.Review is not (TestCaseReviewState.Superseded or TestCaseReviewState.Excluded) && (c.SuiteId == suiteId || IsDescendant(plan.Suites, c.SuiteId, suiteId)));

@@ -152,7 +152,52 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
 
     [HttpPost("project-drafts")]
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
-    public Task<ActionResult> CreateProject([FromBody] CreateProjectTestPlanRequest request, CancellationToken ct) => Run(async () => Ok(await service.CreateProjectAsync(request, Actor, ct)));
+    public Task<ActionResult> CreateProject([FromBody] CreateProjectTestPlanRequest request, [FromServices] BirkNext.Api.Services.TestPlanning.TestPlanTemplateStore templates,
+        CancellationToken ct) => Run(async () =>
+    {
+        // «Fra mal» (2026-11-26): the template's structure with new ids; an unknown or archived template is refused, never silently ignored.
+        if (!string.IsNullOrWhiteSpace(request.TemplateId))
+        {
+            var template = templates.Find(request.TemplateId);
+            if (template is null || template.Archived) throw new BirkNext.Api.Services.TestPlanning.TestPlanException(400, "template-unknown", "Malen finnes ikke (eller er arkivert). Velg en annen mal.");
+            request = request with { TemplateSuites = TestPlanTemplateRules.Instantiate(template) };
+        }
+        return Ok(await service.CreateProjectAsync(request, Actor, ct));
+    });
+
+    // ── Test plan templates (2026-11-26): structure only; System Settings → Manuell testing → Testplanmaler ──
+
+    [HttpGet("templates")]
+    public ActionResult Templates([FromQuery] bool includeArchived, [FromServices] BirkNext.Api.Services.TestPlanning.TestPlanTemplateStore templates) => Ok(templates.List(includeArchived));
+
+    /// <summary>A new custom template from explicit suites or from a plan's structure («Lagre som mal»); the plan is never changed.</summary>
+    [HttpPost("templates")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> CreateTemplate([FromBody] SaveTestPlanTemplateRequest request, [FromServices] BirkNext.Api.Services.TestPlanning.TestPlanTemplateStore templates, CancellationToken ct) =>
+        Run(async () =>
+        {
+            var suites = request.FromPlan is { } planId ? TestPlanTemplateRules.FromPlan(await service.DraftAsync(planId, ct)) : request.Suites ?? [];
+            return TemplateResult(() => templates.Save(null, request.Name, request.Description, suites, Actor, DateTimeOffset.UtcNow, request.FromPlan));
+        });
+
+    [HttpPut("templates/{id}")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public ActionResult UpdateTemplate(string id, [FromBody] SaveTestPlanTemplateRequest request, [FromServices] BirkNext.Api.Services.TestPlanning.TestPlanTemplateStore templates) =>
+        TemplateResult(() => templates.Save(id, request.Name, request.Description, request.Suites ?? [], Actor, DateTimeOffset.UtcNow));
+
+    [HttpPost("templates/{id}/{action}")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public ActionResult TemplateAction(string id, TemplateAction action, [FromServices] BirkNext.Api.Services.TestPlanning.TestPlanTemplateStore templates) =>
+        TemplateResult(() => templates.Apply(id, action, Actor, DateTimeOffset.UtcNow));
+
+    private ActionResult TemplateResult(Func<TestPlanTemplate> run)
+    {
+        try { return Ok(run()); }
+        catch (ArgumentException e) { return BadRequest(new { code = "template-invalid", message = e.Message }); }
+        catch (InvalidOperationException e) { return Conflict(new { code = "template-built-in", message = e.Message }); }
+        catch (System.Collections.Generic.KeyNotFoundException e) { return NotFound(new { code = "template-not-found", message = e.Message }); }
+        catch (IOException) { return StatusCode(500, new { code = "template-not-saved", message = "Malen kunne ikke lagres." }); }
+    }
 
     [HttpPost("drafts/{id:guid}/manual-cases")]
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]

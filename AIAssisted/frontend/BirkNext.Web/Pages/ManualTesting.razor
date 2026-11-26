@@ -196,10 +196,38 @@
                     <input id="mt-new-plan-name" class="form-control mt-new-plan-name" maxlength="200" value="@draft.Name" @oninput="e => draft.Name = e.Value?.ToString() ?? string.Empty"
                            disabled="@_creating" aria-describedby="mt-new-plan-help" data-testid="mt-new-plan-name" />
                     <span id="mt-new-plan-help" class="mt-muted msb-small">Foreslått navn med dato og klokkeslett. Du kan skrive et eget navn.</span>
-                    @if (_selection.Count > 0 && _ws.Discovery is not null)
+                    @* Three ways to start (2026-11-26): from a template (structure only), completely empty, or from the scenarios chosen in Finn og forstå. *@
+                    <fieldset class="mt-new-plan-methods" data-testid="mt-new-plan-methods">
+                        <legend class="mtp-field"><span>Hvordan vil du starte?</span></legend>
+                        <label class="adx-check"><input type="radio" name="mt-new-plan-method" checked="@(draft.Method == NewPlanMethod.FromTemplate)" disabled="@_creating" @onchange="() => draft.Method = NewPlanMethod.FromTemplate" data-testid="mt-new-plan-from-template" />
+                            <span><strong>Fra mal</strong> <span class="mt-muted msb-small">Opprett en testplan med ferdige testgrupper. Legg til testtilfeller selv.</span></span></label>
+                        <label class="adx-check"><input type="radio" name="mt-new-plan-method" checked="@(draft.Method == NewPlanMethod.Empty)" disabled="@_creating" @onchange="() => draft.Method = NewPlanMethod.Empty" data-testid="mt-new-plan-empty" />
+                            <span><strong>Helt tom testplan</strong> <span class="mt-muted msb-small">Start uten testgrupper eller testtilfeller.</span></span></label>
+                        @if (_selection.Count > 0 && _ws.Discovery is not null)
+                        {
+                            <label class="adx-check"><input type="radio" name="mt-new-plan-method" checked="@draft.WithSelection" disabled="@_creating" @onchange="e => draft.WithSelection = e.Value is not false" data-testid="mt-new-plan-selection" />
+                                <span><strong>Fra valgte scenarioer</strong> <span class="mt-muted msb-small">Ta med @_selection.Count scenario@(_selection.Count == 1 ? "" : "er") valgt i Finn og forstå.</span></span></label>
+                        }
+                    </fieldset>
+                    @if (draft.Method == NewPlanMethod.FromTemplate)
                     {
-                        <label class="adx-check"><input type="checkbox" checked="@draft.WithSelection" disabled="@_creating" @onchange="e => draft.WithSelection = e.Value is true" data-testid="mt-new-plan-selection" />
-                            Ta med @_selection.Count scenario@(_selection.Count == 1 ? "" : "er") valgt i Finn og forstå</label>
+                        var template = Templates.FirstOrDefault(t => t.Id == draft.TemplateId) ?? Templates.FirstOrDefault();
+                        <label class="mtp-field" for="mt-new-plan-template"><span>Mal</span></label>
+                        <select id="mt-new-plan-template" class="form-select form-select-sm" disabled="@_creating" @onchange="e => draft.TemplateId = e.Value?.ToString() ?? TestPlanTemplateRules.StandardId" data-testid="mt-new-plan-template">
+                            @foreach (var t in Templates) { <option value="@t.Id" selected="@(t.Id == template?.Id)">@t.Name@(t.BuiltIn ? "" : " (egen mal)")</option> }
+                        </select>
+                        @if (template is not null)
+                        {
+                            <div class="mt-new-plan-preview" data-testid="mt-new-plan-template-preview">
+                                <span class="mt-muted msb-small">@(template.Description ?? "Testgruppene i malen") · testplanen starter med 0 testtilfeller.</span>
+                                <ul class="mt-structure-tree">
+                                    @foreach (var (suite, depth) in PlanStructure.Flatten(TestPlanTemplateRules.Instantiate(template)))
+                                    {
+                                        <li style="padding-left:@(depth * 1.1)rem" data-testid="mt-new-plan-template-suite" data-depth="@depth">@suite.Name</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
                         @if (draft.WithSelection)
                         {
                             <label class="mtp-field" for="mt-new-plan-structure"><span>Testplanstruktur</span></label>
@@ -529,7 +557,10 @@
     private sealed class NewPlanDraft(string name)
     {
         public string Name { get; set; } = name;
-        public bool WithSelection { get; set; }
+        /// <summary>How the plan starts (2026-11-26): «Fra mal» by default.</summary>
+        public NewPlanMethod Method { get; set; } = NewPlanMethod.FromTemplate;
+        public bool WithSelection { get => Method == NewPlanMethod.FromSelection; set => Method = value ? NewPlanMethod.FromSelection : NewPlanMethod.FromTemplate; }
+        public string TemplateId { get; set; } = TestPlanTemplateRules.StandardId;
         /// <summary>The grouping template of the new plan (2026-11-26); the System Settings default unless the tester picks another.</summary>
         public string Structure { get; set; } = PlanStructureTemplates.Default;
         public string RequestId { get; } = Guid.NewGuid().ToString("N");
@@ -602,6 +633,10 @@
         try { return await runs.AvailabilityAsync(); } catch (Exception e) when (e is not OperationCanceledException) { return false; }
     }
 
+    /// <summary>The templates «Fra mal» offers (active only); the built-ins until the installation's list is read.</summary>
+    private List<TestPlanTemplate> _templates = [.. TestPlanTemplateRules.BuiltIn];
+    private IReadOnlyList<TestPlanTemplate> Templates => _templates.Where(t => !t.Archived).ToList();
+
     /// <summary>The scenarios chosen in Finn og forstå that the current discovery still holds (only those are ever added).</summary>
     private List<DiscoveredScenario> SelectedScenarios() =>
         _ws?.Discovery is { } d ? [.. d.Candidates.Where(c => _selection.Contains(c.CandidateId))] : [];
@@ -616,6 +651,8 @@
         _new = new NewPlanDraft(M.SuggestedPlanName(DateTime.Now)) { Structure = _dashboard.EffectivePlanStructure };
         if (Api is { } api) _ = InvokeAsync(async () =>
         {
+            var (templates, _) = await api.TemplatesAsync();
+            if (templates is { Count: > 0 }) _templates = templates;
             var (settings, _) = await api.DashboardSettingsAsync();
             if (settings is not null) { _dashboard = settings; if (_new is { } n) n.Structure = settings.EffectivePlanStructure; StateHasChanged(); }
         });
@@ -635,6 +672,7 @@
                 ProjectKey = key, ProjectName = _ws.ProjectName, PlanName = draft.Name.Trim(), CreationRequestId = draft.RequestId,
                 DiscoveryId = withSelection ? _ws.Discovery!.DiscoveryId : "", CandidateIds = withSelection ? [.. _selection] : [], AllowEmpty = !withSelection,
                 Structure = withSelection ? draft.Structure : null,
+                TemplateId = !withSelection && draft.Method == NewPlanMethod.FromTemplate ? draft.TemplateId : null,
             });
             // A failed save keeps the draft (same name, same request id: a retry never creates a second test plan).
             if (plan is null) { _createError = P.Friendly(error, "Kunne ikke opprette testplan."); return; }

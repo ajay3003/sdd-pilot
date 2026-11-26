@@ -206,6 +206,10 @@ public sealed record TestCaseEdits
     /// were not given). Separate from the scenario's recommended approach (<see cref="ScenarioTestKindDecision"/>), from how the case is executed
     /// (<see cref="ExecutionMethod"/>: Teknisk is not "automated"), and from review, readiness or results.</summary>
     public ScenarioTestKind? TestKind { get; init; }
+    /// <summary>The case's test level chosen by the tester (2026-11-26; a manual case has no source to derive it from). Never changed by moving the case.</summary>
+    public ScenarioTestLevel? TestLevel { get; init; }
+    /// <summary>The case's scenario type chosen by the tester (functional / non-functional / mixed / unclassified).</summary>
+    public ScenarioRequirementType? ScenarioType { get; init; }
     /// <summary>Only meaningful for <see cref="TestCaseType.Performance"/>; kept if the type changes so nothing a tester wrote is lost.</summary>
     public PerformanceCaseDetails? Performance { get; init; }
     /// <summary>The expected result per edited step, parallel to <see cref="Steps"/> (only meaningful when Steps is set).</summary>

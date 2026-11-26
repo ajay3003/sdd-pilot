@@ -76,6 +76,15 @@ public interface ITestPlanSuggestionsApiService
     /// <summary>A person confirms (or withdraws) a story's implementation for the task evidence shown now.</summary>
     Task<(UserStoryImplementationStatus? Story, string? Error)> ConfirmStoryAsync(ConfirmUserStoryRequest request, CancellationToken ct = default) =>
         Task.FromResult<(UserStoryImplementationStatus?, string?)>((null, NotAvailable));
+    /// <summary>Test plan templates (2026-11-26): built-ins and custom templates (structure only).</summary>
+    Task<(List<TestPlanTemplate>? Templates, string? Error)> TemplatesAsync(bool includeArchived = false, CancellationToken ct = default) =>
+        Task.FromResult<(List<TestPlanTemplate>?, string?)>((null, NotAvailable));
+    Task<(TestPlanTemplate? Template, string? Error)> CreateTemplateAsync(SaveTestPlanTemplateRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanTemplate?, string?)>((null, NotAvailable));
+    Task<(TestPlanTemplate? Template, string? Error)> UpdateTemplateAsync(string id, SaveTestPlanTemplateRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanTemplate?, string?)>((null, NotAvailable));
+    Task<(TestPlanTemplate? Template, string? Error)> TemplateActionAsync(string id, TemplateAction action, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanTemplate?, string?)>((null, NotAvailable));
     /// <summary>System Settings → Manuell testing → Testoversikt: which dashboard parts are shown.</summary>
     Task<(ManualTestingDashboardSettings? Settings, string? Error)> DashboardSettingsAsync(CancellationToken ct = default) =>
         Task.FromResult<(ManualTestingDashboardSettings?, string?)>((null, NotAvailable));
@@ -259,6 +268,18 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
 
     public Task<(UserStoryImplementationStatus?, string?)> ConfirmStoryAsync(ConfirmUserStoryRequest request, CancellationToken ct = default) =>
         Send<UserStoryImplementationStatus>(() => http.PostAsJsonAsync($"{Base}/project/story-status/confirm", request, Json, ct), ct);
+
+    public Task<(List<TestPlanTemplate>?, string?)> TemplatesAsync(bool includeArchived = false, CancellationToken ct = default) =>
+        Send<List<TestPlanTemplate>>(() => http.GetAsync($"{Base}/templates?includeArchived={(includeArchived ? "true" : "false")}", ct), ct);
+
+    public Task<(TestPlanTemplate?, string?)> CreateTemplateAsync(SaveTestPlanTemplateRequest request, CancellationToken ct = default) =>
+        Send<TestPlanTemplate>(() => http.PostAsJsonAsync($"{Base}/templates", request, Json, ct), ct);
+
+    public Task<(TestPlanTemplate?, string?)> UpdateTemplateAsync(string id, SaveTestPlanTemplateRequest request, CancellationToken ct = default) =>
+        Send<TestPlanTemplate>(() => http.PutAsJsonAsync($"{Base}/templates/{Uri.EscapeDataString(id)}", request, Json, ct), ct);
+
+    public Task<(TestPlanTemplate?, string?)> TemplateActionAsync(string id, TemplateAction action, CancellationToken ct = default) =>
+        Send<TestPlanTemplate>(() => http.PostAsync($"{Base}/templates/{Uri.EscapeDataString(id)}/{action}", null, ct), ct);
 
     public Task<(ManualTestingDashboardSettings?, string?)> DashboardSettingsAsync(CancellationToken ct = default) =>
         Send<ManualTestingDashboardSettings>(() => http.GetAsync($"{Base}/dashboard-settings", ct), ct);

@@ -1,0 +1,197 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* System Settings → Manual Testing → Test plan templates (2026-11-26). A template is structure only (suite names, nesting, order, test level).
+   Built-in templates are read-only (Duplicate makes an editable copy). Custom templates can be renamed, have their suites edited, be archived and
+   restored. Nothing here changes an existing test plan, a case, a revision or Azure DevOps. Section chrome is English; suite and template names are
+   shown as written (testers see them in «Ny testplan»). *@
+<section class="gsx mtpt" aria-labelledby="mtpt-title" data-testid="mtpt">
+    <header class="gsx-header">
+        <div>
+            <h2 id="mtpt-title" class="gsx-title">Manual Testing — Test plan templates</h2>
+            <p class="gsx-subtitle">Templates offered in «Ny testplan → Fra mal». A template holds only the suite structure; a plan made from it starts with 0 test cases, and changing or archiving a template never changes existing plans.</p>
+        </div>
+        <div class="gsx-header-actions">
+            <label class="mtds-switch msb-small"><input type="checkbox" checked="@_showArchived" @onchange="ToggleArchivedAsync" data-testid="mtpt-show-archived" /> <span>Show archived</span></label>
+            <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="NewTemplate" data-testid="mtpt-new">New template</button>
+        </div>
+    </header>
+
+    @if (_templates is null)
+    {
+        <p class="gsx-muted" role="status" data-testid="mtpt-loading">@(_error ?? "Reading the templates…")</p>
+        @if (_error is not null) { <button type="button" class="btn-secondary btn-sm" @onclick="LoadAsync" data-testid="mtpt-retry">Retry</button> }
+    }
+    else
+    {
+        @if (_notice is { } n) { <p class="gsx-muted" role="status" data-testid="mtpt-notice">@n</p> }
+        @if (_error is { } e) { <p class="mt-alert msb-small" role="alert" data-testid="mtpt-error">@e</p> }
+        <ul class="mtpt-list">
+            @foreach (var t in _templates)
+            {
+                var template = t;
+                <li class="gsx-panel mtpt-item @(template.Archived ? "is-archived" : null)" data-testid="mtpt-template" data-template="@template.Id" data-builtin="@(template.BuiltIn ? "true" : "false")">
+                    <div class="gsx-panel-head">
+                        <h3 class="gsx-panel-title">@template.Name</h3>
+                        <span class="msb-status msb-tone-@(template.BuiltIn ? "info" : template.Archived ? "muted" : "ok")" data-testid="mtpt-kind">@(template.BuiltIn ? "Built-in (read-only)" : template.Archived ? "Archived" : "Custom")</span>
+                    </div>
+                    @if (template.Description is { Length: > 0 } d) { <p class="gsx-muted msb-small">@d</p> }
+                    <p class="gsx-muted msb-small" data-testid="mtpt-count">@template.Suites.Count suite@(template.Suites.Count == 1 ? "" : "s")@(template.UpdatedBy is { } by ? $" · updated by {by}" : "")@(template.SavedFromPlan is not null ? " · saved from a test plan" : "")</p>
+                    <ul class="mt-structure-tree" data-testid="mtpt-preview">
+                        @foreach (var (suite, depth) in PlanStructure.Flatten(TestPlanTemplateRules.Instantiate(template)))
+                        {
+                            <li style="padding-left:@(depth * 1.1)rem" data-testid="mtpt-suite">@suite.Name@(suite.TestLevel is { } lv ? $" · {TestLevelClassifier.Label(lv)}" : "")</li>
+                        }
+                    </ul>
+                    <div class="mtpt-actions">
+                        <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => ActAsync(template, TemplateAction.Duplicate)" data-testid="mtpt-duplicate">Duplicate</button>
+                        @if (!template.BuiltIn)
+                        {
+                            @if (!template.Archived) { <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => Edit(template)" data-testid="mtpt-edit">Edit</button> }
+                            <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => ActAsync(template, template.Archived ? TemplateAction.Restore : TemplateAction.Archive)" data-testid="mtpt-archive">@(template.Archived ? "Restore" : "Archive")</button>
+                        }
+                    </div>
+                    @if (_editing is { } ed && ed.Id == template.Id) { @Editor(ed) }
+                </li>
+            }
+        </ul>
+        @if (_editing is { Id: null } created) { <div class="gsx-panel" data-testid="mtpt-new-panel">@Editor(created)</div> }
+    }
+</section>
+
+@code {
+    private ITestPlanSuggestionsApiService? Api => Services.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
+    private List<TestPlanTemplate>? _templates;
+    private bool _showArchived, _busy;
+    private string? _error, _notice;
+    private Draft? _editing;
+
+    /// <summary>The template being edited (a working copy; nothing is saved until «Save template»).</summary>
+    private sealed class Draft
+    {
+        public string? Id { get; init; }
+        public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+        public List<TemplateSuite> Suites { get; set; } = [];
+        public string NewSuite { get; set; } = "";
+        public string? NewParent { get; set; }
+    }
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        if (Api is not { } api) { _error = "The test plan service is not available."; return; }
+        var (list, error) = await api.TemplatesAsync(_showArchived);
+        if (list is null) { _error = error ?? "The templates could not be read."; return; }
+        _templates = list;
+    }
+
+    private async Task ToggleArchivedAsync(ChangeEventArgs e) { _showArchived = e.Value is true; await LoadAsync(); }
+
+    private void NewTemplate() { _editing = new Draft(); _notice = null; _error = null; }
+
+    private void Edit(TestPlanTemplate t) =>
+        _editing = new Draft { Id = t.Id, Name = t.Name, Description = t.Description ?? "", Suites = [.. t.Suites] };
+
+    private RenderFragment Editor(Draft d) => __builder =>
+    {
+        <div class="mtpt-editor" data-testid="mtpt-editor">
+            <label class="msb-small">Name <input class="form-control form-control-sm" value="@d.Name" @oninput="e => d.Name = e.Value?.ToString() ?? string.Empty" data-testid="mtpt-name" /></label>
+            <label class="msb-small">Description <input class="form-control form-control-sm" value="@d.Description" @oninput="e => d.Description = e.Value?.ToString() ?? string.Empty" data-testid="mtpt-description" /></label>
+            <ul class="mtpt-suite-edit">
+                @foreach (var (s, depth) in Ordered(d.Suites))
+                {
+                    var suite = s;
+                    <li style="padding-left:@(depth * 1.1)rem" data-testid="mtpt-edit-suite" data-key="@suite.Key">
+                        <input class="form-control form-control-sm" value="@suite.Name" aria-label="Suite name" @onchange="e => Replace(d, suite, suite with { Name = e.Value?.ToString() ?? string.Empty })" data-testid="mtpt-edit-suite-name" />
+                        <select class="msb-select" aria-label="Test level" @onchange="e => Replace(d, suite, suite with { TestLevel = Enum.TryParse<ScenarioTestLevel>(e.Value?.ToString(), out var lv) ? lv : null })" data-testid="mtpt-edit-suite-level">
+                            <option value="" selected="@(suite.TestLevel is null)">No test level</option>
+                            @foreach (var lv in TestLevelClassifier.Order) { <option value="@lv" selected="@(suite.TestLevel == lv)">@TestLevelClassifier.Label(lv)</option> }
+                        </select>
+                        <button type="button" class="btn-secondary btn-sm" @onclick="() => Remove(d, suite)" data-testid="mtpt-edit-suite-remove">Remove</button>
+                    </li>
+                }
+            </ul>
+            <div class="mtpt-suite-new">
+                <input class="form-control form-control-sm" placeholder="New suite" value="@d.NewSuite" @oninput="e => d.NewSuite = e.Value?.ToString() ?? string.Empty" data-testid="mtpt-new-suite-name" />
+                <select class="msb-select" aria-label="Parent suite" @onchange="e => d.NewParent = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString()" data-testid="mtpt-new-suite-parent">
+                    <option value="">Top level</option>
+                    @foreach (var (s, _) in Ordered(d.Suites)) { <option value="@s.Key" selected="@(d.NewParent == s.Key)">Under: @s.Name</option> }
+                </select>
+                <button type="button" class="btn-secondary btn-sm" disabled="@(d.NewSuite.Trim().Length == 0)" @onclick="() => AddSuite(d)" data-testid="mtpt-new-suite-add">Add suite</button>
+            </div>
+            <div class="mtpt-actions">
+                <button type="button" class="btn-primary btn-sm" disabled="@(_busy || d.Name.Trim().Length == 0)" @onclick="() => SaveAsync(d)" data-testid="mtpt-save">Save template</button>
+                <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => _editing = null" data-testid="mtpt-cancel">Cancel</button>
+            </div>
+        </div>
+    };
+
+    /// <summary>Suites in tree order (parent before children, by order).</summary>
+    private static IEnumerable<(TemplateSuite Suite, int Depth)> Ordered(List<TemplateSuite> suites)
+    {
+        IEnumerable<(TemplateSuite, int)> Walk(string? parent, int depth, HashSet<string> seen)
+        {
+            foreach (var s in suites.Where(x => x.ParentKey == parent).OrderBy(x => x.Order))
+            {
+                if (!seen.Add(s.Key)) continue;
+                yield return (s, depth);
+                foreach (var child in Walk(s.Key, depth + 1, seen)) yield return child;
+            }
+        }
+        return Walk(null, 0, new HashSet<string>(StringComparer.Ordinal));
+    }
+
+    private static void Replace(Draft d, TemplateSuite old, TemplateSuite now) => d.Suites = [.. d.Suites.Select(s => s.Key == old.Key ? now : s)];
+
+    /// <summary>Removing a suite moves its child suites up to its parent (never silently drops them).</summary>
+    private static void Remove(Draft d, TemplateSuite suite) =>
+        d.Suites = [.. d.Suites.Where(s => s.Key != suite.Key).Select(s => s.ParentKey == suite.Key ? s with { ParentKey = suite.ParentKey } : s)];
+
+    private static void AddSuite(Draft d)
+    {
+        var order = d.Suites.Where(s => s.ParentKey == d.NewParent).Select(s => s.Order).DefaultIfEmpty(-1).Max() + 1;
+        d.Suites = [.. d.Suites, new TemplateSuite("t" + Guid.NewGuid().ToString("N")[..8], d.NewSuite.Trim(), d.NewParent, order)];
+        d.NewSuite = "";
+    }
+
+    private async Task SaveAsync(Draft d)
+    {
+        if (Api is not { } api) return;
+        if (TestPlanTemplateRules.Validate(d.Name, d.Suites) is { } invalid) { _error = invalid; return; }
+        _busy = true; _error = null; _notice = null;
+        try
+        {
+            var request = new SaveTestPlanTemplateRequest(d.Name.Trim(), string.IsNullOrWhiteSpace(d.Description) ? null : d.Description.Trim(), d.Suites);
+            var (saved, error) = d.Id is null ? await api.CreateTemplateAsync(request) : await api.UpdateTemplateAsync(d.Id, request);
+            if (saved is null) { _error = error ?? "The template could not be saved."; return; }
+            _editing = null;
+            _notice = $"Template «{saved.Name}» saved. Existing test plans are unchanged.";
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ActAsync(TestPlanTemplate t, TemplateAction action)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null; _notice = null;
+        try
+        {
+            var (result, error) = await api.TemplateActionAsync(t.Id, action);
+            if (result is null) { _error = error ?? "The template could not be changed."; return; }
+            _notice = action switch
+            {
+                TemplateAction.Duplicate => $"Copied as «{result.Name}». The copy can be edited.",
+                TemplateAction.Archive => $"«{result.Name}» is archived. It is no longer offered for new plans; existing plans are unchanged.",
+                _ => $"«{result.Name}» is restored.",
+            };
+            await LoadAsync();
+            if (action == TemplateAction.Duplicate) Edit(result);
+        }
+        finally { _busy = false; }
+    }
+}

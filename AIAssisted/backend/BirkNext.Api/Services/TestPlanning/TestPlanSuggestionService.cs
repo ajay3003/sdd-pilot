@@ -444,6 +444,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             TestType = e.TestType is TestCaseType.NotClassified ? null : e.TestType,
             ExecutionMethod = e.ExecutionMethod is TestExecutionMethod.NotDecided ? null : e.ExecutionMethod,
             TestKind = e.TestKind is ScenarioTestKind.Manual or ScenarioTestKind.Technical ? e.TestKind : null,
+            TestLevel = e.TestLevel, ScenarioType = e.ScenarioType,
             Performance = e.Performance is null ? null : CleanPerformance(e.Performance),
         };
 
@@ -657,6 +658,8 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             Suites = TestScenarioDiscoveryEngine.ProjectSuites(cases.Select(c => c.Generated)), Cases = cases, RuleVersion = E.RuleVersion,
             CreatedBy = actor, CreatedAt = Now, UpdatedBy = actor, UpdatedAt = Now,
         };
+        // «Fra mal» (2026-11-26): an empty plan starts with the template's structure — suites only, new ids; no case, approval or remote id is copied.
+        if (empty && request.TemplateSuites is { Count: > 0 } templateSuites) plan = plan with { Suites = [.. templateSuites] };
         // Hierarchical plan (2026-11-26): the chosen template becomes the saved suite structure — the same rules as the browser's preview.
         if (PlanStructureTemplates.Known(request.Structure) && cases.Count > 0)
         {
@@ -749,13 +752,18 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             edits = (edits ?? new TestCaseEdits { Title = title }) with { TestKind = kind };
             fields.Add($"Test type: {kind}");
         }
+        // Inside a chosen suite (2026-11-26): the suite must be the plan's; its level is only a proposal the tester confirmed or changed.
+        var chosenSuite = string.IsNullOrWhiteSpace(request.SuiteId) ? null
+            : current.Suites.FirstOrDefault(s => s.Id == request.SuiteId) ?? throw new TestPlanException(400, "suite-unknown", "Testgruppen finnes ikke i testplanen.");
+        if (request.TestLevel is { } level) { edits = (edits ?? new TestCaseEdits { Title = title }) with { TestLevel = level }; fields.Add($"Test level: {level}"); }
+        if (request.ScenarioType is { } type) { edits = (edits ?? new TestCaseEdits { Title = title }) with { ScenarioType = type }; fields.Add($"Scenario type: {type}"); }
         manual = manual with
         {
             ScenarioKey = scenarioKey,
             ScenarioTitle = scenarioKey is null ? null : parent?.Generated.Title ?? siblings.Select(s => s.ScenarioTitle).FirstOrDefault(t => t is not null),
             DuplicatedFrom = copy?.Source.ScenarioId,
             FromVariant = request.Variant is { Length: > 0 } fromVariant && copy is null ? fromVariant : null,
-            SuiteId = parent?.SuiteId ?? copy?.SuiteId ?? manual.SuiteId,
+            SuiteId = chosenSuite?.Id ?? parent?.SuiteId ?? copy?.SuiteId ?? manual.SuiteId,
             Edits = edits is null ? manual.Edits : Clean(edits),
             TestData = copy?.TestData ?? [],
             Risk = copy?.Risk ?? TestCaseRisk.NotAssessed,
@@ -999,7 +1007,8 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         await RestoreCurrentAsync(current, ct);
         var previous = current.Cases.ToDictionary(c => c.Source.ScenarioId, StringComparer.Ordinal);
         var ids = (request.ScenarioIds ?? []).Distinct(StringComparer.Ordinal).Where(previous.ContainsKey).ToList();
-        if (ids.Count == 0) throw new TestPlanException(400, "no-scenarios", "A plan keeps at least one test case.");
+        // An empty plan (from a template or «Helt tom testplan») saves its suites with no case (2026-11-26); a plan with cases keeps at least one.
+        if (ids.Count == 0 && current.Cases.Count > 0) throw new TestPlanException(400, "no-scenarios", "A plan keeps at least one test case.");
         var human = request.Cases.GroupBy(c => c.ScenarioId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Last(), StringComparer.Ordinal);
         var suites = request.Suites.Where(s => !string.IsNullOrWhiteSpace(s.Id) && !string.IsNullOrWhiteSpace(s.Name)).GroupBy(s => s.Id, StringComparer.Ordinal).Select(g => g.Last())
             .Take(200).Select(s => s with
@@ -1007,7 +1016,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
                 Name = s.Name.Trim()[..Math.Min(s.Name.Trim().Length, 200)], Origin = s.Origin is "area" or "stage" or "structure" ? s.Origin : "reviewer",
                 ParentId = string.IsNullOrWhiteSpace(s.ParentId) ? null : s.ParentId,
             }).ToList();
-        if (suites.Count == 0) suites = current.Suites;
+        if (suites.Count == 0 && current.Cases.Count > 0) suites = current.Suites;
         // The suite hierarchy is saved business data (2026-11-26): an unknown parent, a cycle or a duplicate id is refused, never repaired silently.
         if (PlanStructure.Validate(suites) is { } invalid) throw new TestPlanException(400, "invalid-suites", invalid);
         var assets = await AssetsAsync(ct);

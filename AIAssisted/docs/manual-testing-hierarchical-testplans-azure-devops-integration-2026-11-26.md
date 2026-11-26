@@ -99,7 +99,7 @@ The export is refused (409) when anything blocks it, exactly as the single file.
   - `HierarchicalTestPlanTests` (8): test level, default structure, no empty suites, stable parent-aware ids, E2E-only, other templates, invalid hierarchies, export package manifest, files and guide, remote matching;
   - in `SourceDrivenPlanningTests` (temporary database): create with a structure, add a child suite, move a case (identity, source and review unchanged), revision per change, cycle refused;
   - in `AdoTestPlanTransferTests` (Azure DevOps stand-in): preview writes nothing; the tree is created parent first under the destination; cases land in their own suites; a retry reuses suites without duplicates; a refused suite gives a partial result.
-  - All 19 transfer tests and all 44 related tests pass. The wider test-planning suite was still running at commit time; its result follows in a later commit.
+  - All 19 transfer tests and all 44 related tests pass. The wider suite (TestPlanning + TestEvidence + ImplementationGap, temporary databases) finished after the commit: **667 passed / 3 skipped / 0 failed** (recorded with delivery 4).
 - **Frontend:**
   - `ManualTestingPlanSuiteTreeTests` (tree, counts, empty suite, folding never saved, case move saves only the suite, flat plan unchanged, suite edit rules, «Se endringer»);
   - the «Ny testplan» preview, with the structure sent;

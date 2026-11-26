@@ -171,6 +171,7 @@
     <Compile Include="../../shared/UserStoryImplementationContracts.cs" Link="Models/UserStoryImplementationContracts.cs" />
     <Compile Include="../../shared/ScenarioTypeClassification.cs" Link="Models/ScenarioTypeClassification.cs" />
     <Compile Include="../../shared/TestPlanStructure.cs" Link="Models/TestPlanStructure.cs" />
+    <Compile Include="../../shared/TestPlanTemplates.cs" Link="Models/TestPlanTemplates.cs" />
     <Compile Include="../../shared/TestDesignAdvice.cs" Link="Models/TestDesignAdvice.cs" />
     <Compile Include="../../shared/RequirementSections.cs" Link="Models/RequirementSections.cs" />
     <Compile Include="../../shared/StoryGrouping.cs" Link="Models/StoryGrouping.cs" />

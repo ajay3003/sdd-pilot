@@ -618,6 +618,52 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task An_empty_plan_and_a_template_plan_start_with_no_cases_accept_manual_cases_in_a_suite_and_scenarios_later()
+    {
+        await using var db = Context();
+        var x = Services(db);
+
+        // «Helt tom testplan»: no suites, no cases — a valid plan, and suites can be saved on it.
+        var empty = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", PlanName = "Tom plan", AllowEmpty = true, CreationRequestId = "empty-1" }, "anna", default);
+        (empty.Cases.Count, empty.Suites.Count).Should().Be((0, 0));
+        var withSuite = await x.Plans.SaveAsync(empty.Id, Human(empty, (_, part) => part) with { Suites = [new TestSuiteDraft("suite:r:1", "Regresjon", "reviewer", null)] }, "anna", default);
+        withSuite.Suites.Select(s => s.Name).Should().Equal("Regresjon");
+        withSuite.Cases.Should().BeEmpty();
+
+        // «Fra mal»: the template's structure with new ids and 0 cases.
+        var template = TestPlanTemplateRules.BuiltIn.Single(t => t.Id == TestPlanTemplateRules.StandardId);
+        var fromTemplate = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest
+        {
+            ProjectKey = "import:m", PlanName = "Fra mal", AllowEmpty = true, TemplateId = template.Id, TemplateSuites = TestPlanTemplateRules.Instantiate(template), CreationRequestId = "tmpl-1",
+        }, "anna", default);
+        fromTemplate.Cases.Should().BeEmpty("a template never brings cases");
+        fromTemplate.Suites.Select(s => s.Name).Should().Equal(template.Suites.Select(s => s.Name));
+        var e2e = fromTemplate.Suites.Single(s => s.TestLevel == ScenarioTestLevel.EndToEnd);
+
+        // «+ Nytt testtilfelle» inside a suite: the case lands in that suite with the level and type the tester chose (Manuell testmetode).
+        var plan = await x.Plans.AddManualCaseAsync(fromTemplate.Id, new AddManualTestCaseRequest(fromTemplate.Revision, "Send rapport for stengt periode", null, null,
+            TestKind: ScenarioTestKind.Manual, SuiteId: e2e.Id, TestLevel: ScenarioTestLevel.Integration, ScenarioType: ScenarioRequirementType.Functional), "anna", default);
+        var manual = plan.Cases.Single();
+        (manual.SuiteId, manual.Edits.TestLevel, manual.Edits.ScenarioType, manual.Edits.TestKind).Should().Be((e2e.Id, ScenarioTestLevel.Integration, ScenarioRequirementType.Functional, ScenarioTestKind.Manual),
+            "the suite's level is only a proposal; the case keeps the level the tester set");
+        manual.Source.Kind.Should().Be(ScenarioSourceKind.Manual);
+        plan.Suites.Select(s => s.Id).Should().Equal(fromTemplate.Suites.Select(s => s.Id), "no extra «Written by hand» suite when a suite was chosen");
+        (await x.Plans.DraftAsync(plan.Id, default)).Cases.Single().SourceState.Should().BeNull("a case written by hand has no source to miss: never «Kilde mangler»");
+
+        var unknown = () => x.Plans.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "x", null, null, SuiteId: "suite:not-here"), "anna", default);
+        (await unknown.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("suite-unknown");
+
+        // Scenarios can be added later to the same plan; the template suites and the manual case stay.
+        var flow = InSpec("e1", SkoleSpec, "US1", "f1") with { Type = ScenarioCandidateType.BusinessE2E, Area = "Rapportering" };
+        _discoveries.Store(Selected("d-later", DateTimeOffset.UtcNow, SkoleSpec, flow));
+        plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-later", CandidateIds = ["e1"], DraftId = plan.Id, BaseRevision = plan.Revision }, "anna", default);
+        plan.Cases.Should().HaveCount(2);
+        plan.Suites.Select(s => s.Id).Should().Contain(fromTemplate.Suites.Select(s => s.Id));
+        plan.Cases.Single(c => c.Source.Kind == ScenarioSourceKind.Manual).SuiteId.Should().Be(e2e.Id);
+        (await x.Plans.RevisionsAsync(plan.Id, default)).Should().HaveCount(3, "created, case added, scenario added — each a revision");
+    }
+
+    [Fact]
     public async Task A_historical_inspection_can_never_extend_a_plan_or_move_its_basis()
     {
         await using var db = Context();
