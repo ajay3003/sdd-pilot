@@ -167,6 +167,28 @@ public static class SpecStoryHeadings
     public static readonly Regex RemovedStrikeRe = new(@"^#{2,6}\s+~~\s*(?:User\s+Story|Brukerhistorie)\s+(\d+)\b\s*(?:[-–—:]\s*)?(.*?)~~", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     public static readonly Regex RemovedMarkerRe = new(@"^#{2,6}\s+(?:User\s+Story|Brukerhistorie)\s+(\d+)\b\s*(?:[-–—:]\s*)?(.*?)(?:\s+[-–—]\s*|\s*[\[(])(?:Removed|Fjernet|Withdrawn|Utgått)\b[^\])]*[\])]?\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    /// <summary>The 1-based line ranges of REMOVED user-story sections (a struck-through heading or a trailing removed marker), from the heading to
+    /// the line before the next heading of the same or a higher level (2026-11-26). Their acceptance scenarios are removed with them: offered as
+    /// testable, they became «scenarios without a user story» (M2LB TjenesteService 004, User Stories 3 and 5).</summary>
+    public static IReadOnlyList<(int Start, int End)> RemovedSections(string? specContent)
+    {
+        var lines = (specContent ?? "").Replace("\r\n", "\n").Split('\n');
+        var ranges = new List<(int, int)>();
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (!RemovedStrikeRe.IsMatch(lines[i]) && !RemovedMarkerRe.IsMatch(lines[i])) continue;
+            var level = lines[i].TakeWhile(c => c == '#').Count();
+            var end = lines.Length;
+            for (var j = i + 1; j < lines.Length; j++)
+            {
+                var hashes = lines[j].TakeWhile(c => c == '#').Count();
+                if (hashes > 0 && hashes <= level && lines[j].Length > hashes && lines[j][hashes] == ' ') { end = j; break; }
+            }
+            ranges.Add((i + 1, end));
+        }
+        return ranges;
+    }
+
     /// <summary>
     /// The feature's interpretation inputs from its spec.md user-story headings (already stripped of Markdown, with the parser's explicit item id when
     /// it has one) and raw content (for removed markers): the same keys Delivery stores (US n, S n), so both consumers classify a task identically.

@@ -35,7 +35,9 @@ public static class SpecificationEvidenceBuilder
             NamedRequirements = NamedRequirements($"{u.Title}\n{u.Description}\n{u.Why}\n{u.IndependentTest}"),
             TaskRequirements = u.AuthoredId is { } storyTag ? DocumentRequirements(featureDocuments, specPath, storyTag) : [],
         }).ToList();
-        var scenarios = spec.AcceptanceScenarios.Select((s, i) => new QaTestCandidate
+        // Acceptance scenarios of a REMOVED user story (struck through or marked removed in spec.md) are not offered: the source withdrew them.
+        var removed = BirkNext.Interpretation.SpecStoryHeadings.RemovedSections(content);
+        var scenarios = spec.AcceptanceScenarios.Where(s => s.LineStart is not { } line || !removed.Any(r => line >= r.Start && line <= r.End)).Select((s, i) => new QaTestCandidate
         {
             Id = string.IsNullOrWhiteSpace(s.Id) ? $"scenario-{i + 1}" : s.Id!, Title = string.IsNullOrWhiteSpace(s.Title) ? s.When ?? $"Scenario {i + 1}" : s.Title,
             Source = "Acceptance scenario in the specification", Ownership = TestOwnership.QaManual,

@@ -338,7 +338,7 @@ public sealed class ScenarioWorkQueuePageTests : BunitContext
 
         var readiness = cut.Find("[data-testid=mtd-readiness-details]");
         readiness.HasAttribute("open").Should().BeFalse("the criteria are on demand");
-        readiness.QuerySelector("summary")!.TextContent.Should().Contain("Testberedskap").And.Contain("kriterier oppfylt");
+        readiness.QuerySelector("summary")!.TextContent.Should().Contain("Kildegrunnlag").And.Contain("kontrollpunkter i kilden").And.NotContain("Ikke klar til kjøring", "source checkpoints never claim execution readiness (v3: the 16/16 contradiction)");
 
         cut.Find("[data-testid=mtd-scenario][data-id='c-changed'] [data-testid=mtd-show-details]").Click(); cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail-title]").Should().NotBeNull()); cut.WaitForState(() => cut.FindAll("[data-testid=mtd-plans]").Count == 1);
         cut.Find("[data-testid=mtd-plans-none]").TextContent.Should().Contain("Ikke lagt til i en aktiv testplan", "archived only is not active membership");

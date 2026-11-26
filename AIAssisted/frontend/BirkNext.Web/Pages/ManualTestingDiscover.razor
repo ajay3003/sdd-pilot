@@ -936,10 +936,12 @@
 
                         var checklist = Checklist(active);
                         var met = checklist.Count(x => x.State == Tri.Yes);
-                        <section class="mtw-section" aria-label="Testberedskap" data-testid="mtd-readiness">
+                        <section class="mtw-section" aria-label="Kildegrunnlag" data-testid="mtd-readiness">
                             <details class="mtw-ready-details" data-testid="mtd-readiness-details">
-                            <summary><span class="mtp-ctx-label">Testberedskap</span> <span class="mtw-met" data-testid="mtd-readiness-count">@met / @checklist.Count</span>
-                                <span class="mt-muted msb-small">kriterier oppfylt · @(met == checklist.Count ? "Klar til kjøring" : "Ikke klar til kjøring")</span>
+                            @* Finn og forstå v3 (2026-11-26): these are SOURCE checkpoints (what the source and stored data say), not execution readiness —
+                               «16/16» next to «Ikke klar til kjøring» was two different assessments under one name. Execution readiness is «Klargjør AC». *@
+                            <summary><span class="mtp-ctx-label">Kildegrunnlag</span> <span class="mtw-met" data-testid="mtd-readiness-count">@met / @checklist.Count</span>
+                                <span class="mt-muted msb-small" data-testid="mtd-readiness-meaning">kontrollpunkter i kilden oppfylt · klar til kjøring vurderes i «Klargjør AC»</span>
                                 <span class="msb-link msb-small mtw-ready-more">Vis kriterier og mangler</span></summary>
                             <ul class="mtw-checklist">
                                 @foreach (var item in checklist)
