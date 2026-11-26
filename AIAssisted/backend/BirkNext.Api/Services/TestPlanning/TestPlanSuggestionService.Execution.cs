@@ -21,6 +21,9 @@ public sealed partial class TestPlanSuggestionService
         var row = await Row(planId, ct);
         var plan = Read(row);
         var events = await EventsAsync(planId, ct);
+        // Preparation per occurrence (same engine as «Klargjør AC»): the scenario from the project's latest discovery and the testers' decisions
+        // in its document. Read-only; a scenario that is not in the discovery has none.
+        var readiness = await OccurrenceReadinessAsync(plan, ct);
         return new PlanExecutionView
         {
             PlanId = plan.Id, PlanName = plan.PlanName, SprintLabel = plan.DeliveryLabel, Archived = row.Lifecycle != ActiveState,
@@ -28,9 +31,29 @@ public sealed partial class TestPlanSuggestionService
             {
                 var history = events.GetValueOrDefault(o.Key) ?? [];
                 var latest = history.FirstOrDefault();
-                return o with { History = history, Latest = latest, Status = latest?.Status ?? ScenarioExecutionStatus.NotRun };
+                return o with { History = history, Latest = latest, Status = latest?.Status ?? ScenarioExecutionStatus.NotRun,
+                    Preparation = o.ScenarioId is { } sid ? readiness.GetValueOrDefault(sid) : null };
             })],
         };
+    }
+
+    private async Task<Dictionary<string, PreparationStatus?>> OccurrenceReadinessAsync(TestPlanDraft plan, CancellationToken ct)
+    {
+        var result = new Dictionary<string, PreparationStatus?>(StringComparer.Ordinal);
+        if (plan.ProjectKey is not { } key || discoveries is null) return result;
+        if (discoveryStore is not null)
+            try { await discoveryStore.RestoreAsync(key, null, ct); } catch (Exception e) when (e is not OperationCanceledException) { }
+        if (discoveries.Latest(key) is not { } latest) return result;
+        var ids = Occurrences(plan).Select(o => o.ScenarioId).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        if (ids.Count == 0) return result;
+        var (_, preparation) = await GroupingDecisionsAsync(key, ct);
+        foreach (var c in latest.Candidates.Where(c => ids.Contains(c.CandidateId)))
+        {
+            var doc = ScenarioPreparationEngine.DocumentKey(c);
+            var decisions = doc is null ? null : preparation.GetValueOrDefault(StoryGroupingService.NormalizePath(doc));
+            result[c.CandidateId] = ScenarioPreparationEngine.Evaluate(ScenarioPreparationEngine.FactsOf(c, []), decisions, c.SourceIdentity, c.Fingerprint).Status;
+        }
+        return result;
     }
 
     /// <summary>Records one scenario result in this plan (a new event; history kept). Refused for an archived plan, an unknown occurrence, or when

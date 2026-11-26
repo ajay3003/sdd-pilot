@@ -281,6 +281,9 @@ public sealed record ScenarioOccurrence
     /// <summary>Planned without a prepared case (the scenario's source text is the instruction).</summary>
     public bool ScenarioOnly { get; init; }
     public ScenarioExecutionStatus Status { get; init; }
+    /// <summary>The scenario's preparation («Klargjør AC», 2026-11-26) — advisory, never an execution result and never a gate. Null when the scenario
+    /// is not in the project's current discovery (e.g. a hand-written case).</summary>
+    public PreparationStatus? Preparation { get; init; }
     public ScenarioExecutionEvent? Latest { get; init; }
     public List<ScenarioExecutionEvent> History { get; init; } = [];
 }

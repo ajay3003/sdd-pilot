@@ -45,7 +45,7 @@
                             <li class="mtx-row is-@occ.Status.ToString().ToLowerInvariant()" data-testid="mtx-row" data-key="@occ.Key" data-status="@occ.Status">
                                 <button type="button" class="mtx-row-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => Toggle(occ)" data-testid="mtx-row-open">
                                     <span class="mtx-title">@(occ.StoryId is { } sid && occ.NumberInStory is { } n2 ? $"{sid} · AC {n2} — " : "")@occ.Title</span>
-                                    <span class="msb-status msb-tone-@Tone(occ.Status)" data-testid="mtx-status">@Label(occ.Status)</span>
+                                    <span class="msb-status msb-tone-@Tone(occ.Status)" data-testid="mtx-status">@Label(occ.Status)</span>@if (occ.Preparation is { } prep) { <span class="msb-tag mtx-prep" title="Klargjøring er veiledende og stopper ikke gjennomføring." data-testid="mtx-prep" data-prep="@prep">Klargjøring: @BirkNext.TestPlanning.ScenarioPreparationEngine.Label(prep)</span> }
                                     @if (occ.Latest is { } last) { <span class="mt-muted msb-small">@last.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · @last.By</span> }
                                 </button>
                                 @if (open)
