@@ -22,7 +22,14 @@ public sealed partial class TestPlanSuggestionService
         var application = discovery.ApplicationKey;
         if (discoveryStore is not null) await discoveryStore.RestoreApplicationAsync(application, ct);
         var newest = discoveries?.CurrentForApplication(application);
-        var discoveryCurrent = discovery.IsCurrent && (newest is null || newest.DiscoveryId == discovery.DiscoveryId || newest.DiscoveredAt <= discovery.DiscoveredAt);
+        // Outdated only by a newer discovery on OTHER source versions, or a newer one for the SAME selection (e.g. a changed specification).
+        // Discoveries are made per selection (module + specification): a newer one for another selection on the same source versions does not
+        // make this one older (2026-11-27, found in the V9 browser journey: after switching module, the first module's queue said «eldre
+        // kildeversjon» and recommended nothing although no source had changed).
+        static string Sources(ScenarioDiscoveryResult r) => string.Join("|", (r.Basis?.Members ?? []).Select(m => $"{m.RepositoryKey}:{m.SnapshotId}").Order(StringComparer.Ordinal));
+        var outdated = newest is not null && newest.DiscoveryId != discovery.DiscoveryId && newest.DiscoveredAt > discovery.DiscoveredAt
+            && (Sources(newest) != Sources(discovery) || string.Equals(newest.SelectionScope, discovery.SelectionScope, StringComparison.Ordinal));
+        var discoveryCurrent = discovery.IsCurrent && !outdated;
 
         // Every non-deleted project plan of this project or another import of the application. An unreadable plan is counted, never guessed.
         var owner = ProjectOwner(key);

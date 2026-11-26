@@ -309,6 +309,34 @@ public sealed class ScenarioWorkQueueTests : IAsyncLifetime, IDisposable
 
     private static ScenarioWorkItem Of(ScenarioWorkQueueView view, string id) => view.Items.Single(i => i.CandidateId == id);
 
+    private static ScenarioDiscoveryResult Scoped(string id, string scope, Guid snapshot, DateTimeOffset at) => new()
+    {
+        DiscoveryId = id, ProjectKey = "import:p1", SelectionScope = scope, DiscoveredAt = at, RuleVersion = "tsd-1",
+        Candidates = [new DiscoveredScenario { CandidateId = id + "-c", ProjectKey = "import:p1", CapabilityId = "specification", Title = "Valid report" }],
+        Basis = new DiscoverySourceBasis { ApplicationKey = "app-p", Kind = DiscoveryBasisKind.Current, Fingerprint = id,
+            Members = [new DiscoverySourceMember { RepositoryKey = "app-p", DisplayName = "P", SnapshotId = snapshot, StateCode = "SINGLE_SNAPSHOT" }] },
+    };
+
+    [Fact]
+    public async Task A_newer_discovery_of_another_selection_on_the_same_source_versions_does_not_make_a_discovery_outdated()
+    {
+        // Found in the V9 browser journey (2026-11-27): after switching module, the first module's queue said «eldre kildeversjon» and recommended
+        // nothing although no source had changed. Outdated means: other source versions, or a newer result for the same selection.
+        await using var db = Context();
+        var service = Service(db);
+        var snapshot = Guid.NewGuid();
+        var moduleA = Scoped("d-a", "module a|spec-a", snapshot, DateTimeOffset.UtcNow.AddMinutes(-5));
+        _discoveries.Store(moduleA);
+        _discoveries.Store(Scoped("d-b", "module b|spec-b", snapshot, DateTimeOffset.UtcNow));
+        (await service.WorkQueuesAsync("import:p1", "d-a", default)).DiscoveryCurrent.Should().BeTrue("same source versions, another selection");
+
+        _discoveries.Store(Scoped("d-a2", "module a|spec-a", snapshot, DateTimeOffset.UtcNow.AddMinutes(1)));
+        (await service.WorkQueuesAsync("import:p1", "d-a", default)).DiscoveryCurrent.Should().BeFalse("a newer result for the same selection");
+
+        _discoveries.Store(Scoped("d-c", "module b|spec-b", Guid.NewGuid(), DateTimeOffset.UtcNow.AddMinutes(2)));
+        (await service.WorkQueuesAsync("import:p1", "d-a2", default)).DiscoveryCurrent.Should().BeFalse("a newer source version");
+    }
+
     [Fact]
     public async Task Saved_draft_and_approved_cases_move_a_scenario_from_recommended_to_prepared()
     {
