@@ -2116,6 +2116,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_ws?.ProjectKey is { } loadedKey && loadedKey != _gOpenProject) { await LoadOpenGroupsAsync(); StateHasChanged(); }
         if (_gLoaded) return;
         _gLoaded = true;
         if (await ManualTestingLanguage.ReadAsync(JS) is { } language) _language = language;
@@ -2148,12 +2149,43 @@
         catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
     }
 
-    /// <summary>A group is open by default unless the list is large (then the tester opens what they need: no thousands of rows at once).</summary>
-    private bool IsOpen(string path, int shownCount) => _gOpen.TryGetValue(path, out var open) ? open : shownCount <= 200;
+    /// <summary>
+    /// Every group starts COLLAPSED (2026-11-26 blocker fix): a group is open only when the tester opened it. Before, a group opened by itself when
+    /// 200 or fewer scenarios were shown, so a small scope came up expanded. The tester's expansion is kept for the project in session storage
+    /// (it survives re-renders, the drawer, and going to Planlegg og klargjør and back); group paths include the grouping axis, so a new project or
+    /// a new grouping starts collapsed unless that exact context was opened before.
+    /// </summary>
+    private bool IsOpen(string path, int shownCount) => _gOpen.TryGetValue(path, out var open) && open;
 
-    private void ToggleGroup(string path, int shownCount) => _gOpen[path] = !IsOpen(path, shownCount);
+    private Task ToggleGroup(string path, int shownCount) { _gOpen[path] = !IsOpen(path, shownCount); return SaveOpenGroupsAsync(); }
 
-    private void SetAllGroups(IEnumerable<string> paths, bool open) { foreach (var p in paths) _gOpen[p] = open; }
+    private Task SetAllGroups(IEnumerable<string> paths, bool open) { foreach (var p in paths) _gOpen[p] = open; return SaveOpenGroupsAsync(); }
+
+    private string? _gOpenProject;
+
+    private static string OpenGroupsKey(string project) => $"birknext.manualTesting.openGroups.{project}";
+
+    private async Task SaveOpenGroupsAsync()
+    {
+        if (_ws?.ProjectKey is not { } key) return;
+        try { await JS.InvokeVoidAsync("sessionStorage.setItem", OpenGroupsKey(key), System.Text.Json.JsonSerializer.Serialize(_gOpen.Where(kv => kv.Value).Select(kv => kv.Key).ToArray())); }
+        catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
+    }
+
+    /// <summary>Loads the tester's open groups once per project (another project starts collapsed).</summary>
+    private async Task LoadOpenGroupsAsync()
+    {
+        if (_ws?.ProjectKey is not { } key || key == _gOpenProject) return;
+        _gOpenProject = key;
+        _gOpen.Clear();
+        try
+        {
+            if (await JS.InvokeAsync<string?>("sessionStorage.getItem", OpenGroupsKey(key)) is { Length: > 0 } json
+                && System.Text.Json.JsonSerializer.Deserialize<string[]>(json) is { } open)
+                foreach (var p in open) _gOpen[p] = true;
+        }
+        catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException or System.Text.Json.JsonException) { }
+    }
 
     private async Task ClearGroupAsync(IEnumerable<S.Item> items) { foreach (var i in items) _selected.Remove(i.Id); await KeepAsync(); }
 

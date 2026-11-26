@@ -21,6 +21,9 @@ namespace BirkNext.Web.Tests.Pages;
 /// </summary>
 public sealed class DiscoverScopeAndActionTests : BunitContext
 {
+    /// <summary>Open with «Ingen gruppering» saved (the flat list); grouping tests set false to get the default grouping.</summary>
+    private bool FlatList { get; set; } = true;
+
     private const string MainPath = "SkoleService/specs/001-skoleservice/spec.md";
     private const string DependenciesPath = "SkoleService/docs/avhengigheter-bestilling.md";
 
@@ -83,6 +86,8 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
             .Returns(() => (_discovery = new TaskCompletionSource<(ScenarioDiscoveryResult?, string?)>()).Task);
         Services.AddSingleton(_api.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
+        // These tests check the list, drawer and filters, not grouping: the tester's saved choice «Ingen gruppering» gives the flat list (groups start collapsed, 2026-11-26).
+        if (FlatList) JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("None>None");
         Services.GetRequiredService<NavigationManager>().NavigateTo("manual-testing/discover");
         var cut = Render<ManualTestingDiscover>();
         if (known) cut.WaitForAssertion(() => cut.Find("[data-testid=mtd]").GetAttribute("aria-busy").Should().Be("false"));

@@ -19,6 +19,9 @@ namespace BirkNext.Web.Tests.Pages;
 /// </summary>
 public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
 {
+    /// <summary>Open with «Ingen gruppering» saved (the flat list); grouping tests set false to get the default grouping.</summary>
+    private bool FlatList { get; set; } = true;
+
     private const string Spec = "Frontend/specs/002-child-search-profile/spec.md";
     private readonly Mock<ITestPlanSuggestionsApiService> _api = new();
 
@@ -86,6 +89,8 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
         _api.Setup(x => x.StoryStatusAsync("m2lb", It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync((status, error));
         Services.AddSingleton(_api.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
+        // These tests check the list, drawer and filters, not grouping: the tester's saved choice «Ingen gruppering» gives the flat list (groups start collapsed, 2026-11-26).
+        if (FlatList) JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("None>None");
         JSInterop.Setup<string?>("sessionStorage.getItem", TabDraftStore.DiscoverFilterKey("m2lb")).SetResult(JsonSerializer.Serialize(filter ?? new ScenarioBrowserPresentation.Filter(All: true)));
         Services.GetRequiredService<NavigationManager>().NavigateTo("manual-testing/discover");
         var cut = Render<ManualTestingDiscover>();
@@ -166,6 +171,7 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
 
         cut.Find("[data-testid=mtd-list-group]").Change("ScenarioType");
         cut.Find("[data-testid=mtd-list-group2]").Change("None");
+        cut.Find("[data-testid=mtd-groups-expand]").Click(); // groups start collapsed (2026-11-26)
         cut.FindAll("[data-testid=mtd-sgroup]").Select(g => (g.QuerySelector("[data-testid=mtd-sgroup-label]")!.TextContent, g.QuerySelector("[data-testid=mtd-sgroup-count]")!.TextContent))
             .Should().Equal(("Funksjonelle", "2"), ("Ikke-funksjonelle", "1"), ("Blandede", "1"));
         cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal("us1-1", "us1-4", "us2-6", "us2-5");
@@ -205,30 +211,68 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
         [.. cut.FindAll("[data-testid=mtd-sgroup]").Select(g => (g.QuerySelector("[data-testid=mtd-sgroup-label]")!.TextContent, g.QuerySelector("[data-testid=mtd-sgroup-count]")!.TextContent, g.GetAttribute("data-depth")!))];
 
     [Fact]
-    public void G01_a_selected_specification_is_grouped_by_user_story_by_default_with_collapsible_groups_and_each_scenario_once()
+    public void G01_every_group_starts_collapsed_and_opens_and_closes_only_when_the_tester_says_so()
     {
+        FlatList = false;
         var cut = Open(View());
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]"));
         cut.Find("[data-testid=mtd-list-group] option[selected]").GetAttribute("value").Should().Be("Story");
-        Groups(cut).Should().Equal(("US1 — Search for a Child", "2", "0"), ("US2 — View Child Profile Overview", "2", "0"));
-        cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().OnlyHaveUniqueItems().And.HaveCount(4);
+        Groups(cut).Should().Equal(("US1 — Search for a Child", "2", "0"), ("US2 — View Child Profile Overview", "2", "0")); // counts are shown while collapsed
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]").Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "false", "every group starts collapsed — even a small list");
+        cut.FindAll("[data-testid=mtd-scenario]").Should().BeEmpty("no rows are rendered for collapsed groups");
 
-        cut.FindAll("[data-testid=mtd-sgroup-toggle]")[0].GetAttribute("aria-expanded").Should().Be("true");
         cut.FindAll("[data-testid=mtd-sgroup-toggle]")[0].Click();
-        cut.FindAll("[data-testid=mtd-sgroup]")[0].QuerySelectorAll("[data-testid=mtd-scenario]").Should().BeEmpty("collapsed");
-        cut.FindAll("[data-testid=mtd-scenario]").Should().HaveCount(2, "the other group stays open");
-        cut.Find("[data-testid=mtd-groups-collapse]").Click();
-        cut.FindAll("[data-testid=mtd-scenario]").Should().BeEmpty();
+        cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal("us1-1", "us1-4");
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]")[1].GetAttribute("aria-expanded").Should().Be("false", "opening one group never opens another");
+        JSInterop.VerifyInvoke("sessionStorage.setItem").Arguments[0].Should().Be("birknext.manualTesting.openGroups.m2lb", "the tester's expansion is kept for the project");
+
         cut.Find("[data-testid=mtd-groups-expand]").Click();
         cut.FindAll("[data-testid=mtd-scenario]").Should().HaveCount(4);
+        cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().OnlyHaveUniqueItems();
+        cut.Find("[data-testid=mtd-groups-collapse]").Click();
+        cut.FindAll("[data-testid=mtd-scenario]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void G04_nested_groups_start_collapsed_and_a_new_grouping_starts_collapsed_too()
+    {
+        FlatList = false;
+        JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("TestLevel>ScenarioType");
+        var cut = Open(View());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("TestLevel"));
+        cut.FindAll("[data-testid=mtd-sgroup]").Should().ContainSingle("only the primary group is rendered while it is collapsed");
+        cut.Find("[data-testid=mtd-sgroup-toggle]").Click();
+        cut.FindAll("[data-testid=mtd-sgroup][data-depth='1'] > .mtg-head [data-testid=mtd-sgroup-toggle]").Should().HaveCount(3)
+            .And.OnlyContain(t => t.GetAttribute("aria-expanded") == "false", "secondary groups start collapsed");
+        cut.FindAll("[data-testid=mtd-scenario]").Should().BeEmpty();
+
+        cut.Find("[data-testid=mtd-list-group]").Change("Method");
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]").Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "false", "another grouping is a new context: collapsed");
+    }
+
+    [Fact]
+    public void G05_the_testers_open_groups_survive_leaving_and_coming_back_and_the_drawer()
+    {
+        FlatList = false;
+        JSInterop.Setup<string?>("sessionStorage.getItem", "birknext.manualTesting.openGroups.m2lb").SetResult(JsonSerializer.Serialize(new[] { $"/Story:{Spec}#{Us2.Key}" }));
+        var cut = Open(View());
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal("us2-5", "us2-6"));
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]")[0].GetAttribute("aria-expanded").Should().Be("false", "only the group the tester had opened");
+
+        cut.Find("[data-testid=mtd-scenario][data-id='us2-5'] [data-testid=mtd-show-details]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true"));
+        cut.Find("[data-testid=mtd-drawer-close]").Click();
+        cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal(["us2-5", "us2-6"], "the drawer never changes expansion");
     }
 
     [Fact]
     public void G02_a_saved_preference_overrides_the_default_and_two_level_grouping_keeps_the_axes_independent()
     {
+        FlatList = false;
         JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("TestLevel>ScenarioType");
         var cut = Open(View());
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("TestLevel"));
+        cut.Find("[data-testid=mtd-groups-expand]").Click();
         Groups(cut).Should().Equal(("Uavklart testnivå", "4", "0"), ("Funksjonelle", "2", "1"), ("Ikke-funksjonelle", "1", "1"), ("Blandede", "1", "1"));
         cut.FindAll("[data-testid=mtd-list-group2] option").Select(o => o.GetAttribute("value")).Should().NotContain("TestLevel", "the secondary axis cannot repeat the primary");
         cut.FindAll("[data-testid=mtd-list-group2] option")[0].TextContent.Should().Be("Én gruppering");
@@ -245,6 +289,7 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
     [Fact]
     public void G03_group_selection_counts_and_selection_outside_the_current_filter_are_explicit()
     {
+        FlatList = false;
         var cut = Open(View());
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]"));
         cut.FindAll("[data-testid=mtd-sgroup-select]")[1].Click();

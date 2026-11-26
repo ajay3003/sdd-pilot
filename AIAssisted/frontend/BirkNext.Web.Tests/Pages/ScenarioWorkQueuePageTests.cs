@@ -20,6 +20,9 @@ namespace BirkNext.Web.Tests.Pages;
 /// </summary>
 public sealed class ScenarioWorkQueuePageTests : BunitContext
 {
+    /// <summary>Open with «Ingen gruppering» saved (the flat list); grouping tests set false to get the default grouping.</summary>
+    private bool FlatList { get; set; } = true;
+
     private static CoverageUserStory Story(int ordinal, string? priority) => new()
     {
         Key = CoverageUserStory.KeyOf("spec.md", $"us{ordinal}"), StoryId = $"US{ordinal}", Ordinal = ordinal, Title = $"Story {ordinal}", Priority = priority, SpecificationPath = "spec.md",
@@ -79,6 +82,8 @@ public sealed class ScenarioWorkQueuePageTests : BunitContext
         api.Setup(x => x.WorkQueuesAsync("library", "d1", It.IsAny<CancellationToken>())).ReturnsAsync((view, view is null ? "Testplanforslag svarte ikke" : null));
         Services.AddSingleton(api.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
+        // These tests check the list, drawer and filters, not grouping: the tester's saved choice «Ingen gruppering» gives the flat list (groups start collapsed, 2026-11-26).
+        if (FlatList) JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("None>None");
         Services.GetRequiredService<NavigationManager>().NavigateTo("manual-testing/discover");
         var cut = Render<ManualTestingDiscover>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd]").GetAttribute("aria-busy").Should().Be("false"));

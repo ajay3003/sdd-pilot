@@ -21,6 +21,9 @@ namespace BirkNext.Web.Tests.Pages;
 /// </summary>
 public sealed class DiscoverWorkspaceTests : BunitContext
 {
+    /// <summary>Open with «Ingen gruppering» saved (the flat list); grouping tests set false to get the default grouping.</summary>
+    private bool FlatList { get; set; } = true;
+
     private static CoverageUserStory Story(string id, int ordinal, string title, int scenarios) => new()
     {
         Key = CoverageUserStory.KeyOf("SkoleService/specs/001-skoleservice/spec.md", $"us{ordinal}"), StoryId = id, Ordinal = ordinal, Title = title, Priority = "P1",
@@ -64,6 +67,8 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         }, (string?)null));
         Services.AddSingleton(api.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
+        // These tests check the list, drawer and filters, not grouping: the tester's saved choice «Ingen gruppering» gives the flat list (groups start collapsed, 2026-11-26).
+        if (FlatList) JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("None>None");
         JSInterop.Setup<string?>("sessionStorage.getItem", TabDraftStore.DiscoverFilterKey("m2lb"))
             .SetResult(JsonSerializer.Serialize(new ScenarioBrowserPresentation.Filter(All: true, Story: rememberedStory)));
         if (remembered is not null)
