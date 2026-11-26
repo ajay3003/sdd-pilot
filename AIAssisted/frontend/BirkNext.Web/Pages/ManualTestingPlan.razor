@@ -454,7 +454,7 @@
                                     }
                                     <div class="mtw-story-foot">
                                         @if (refs.Count > 0) { @foreach (var rf in refs) { <span class="mtp-chip" data-testid="mtp-story-ref">@rf</span> } }
-                                        <button type="button" class="mtw-toggle" aria-expanded="@(_storyOpen ? "true" : "false")" @onclick="() => _storyOpen = !_storyOpen" data-testid="mtp-story-toggle">@(_storyOpen ? "Skjul detaljer" : "Detaljer")</button>
+                                        <button type="button" class="mtw-toggle" aria-expanded="@(_storyOpen ? "true" : "false")" @onclick="() => _storyOpen = !_storyOpen" data-testid="mtp-story-toggle">@(_storyOpen ? "Skjul scenariodetaljer" : "Vis scenariodetaljer")</button>
                                     </div>
                                     @if (_storyOpen)
                                     {

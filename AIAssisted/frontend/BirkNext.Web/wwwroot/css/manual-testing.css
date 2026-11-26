@@ -1326,3 +1326,10 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .mtx-crumbs { margin-bottom: 0.3rem; }
 .mtx-h { font-size: 1.4rem; margin: 0 0 0.3rem; }
 .adx-field-error { color: var(--clr-danger, #cf222e); font-weight: 600; }
+
+/* ── Planlegg v4 (2026-11-26): the scenario context is a compact header, the test case is the main content ── */
+.mtp .mtp-us.is-story { background: var(--msb-surface); border: 1px solid var(--msb-border); border-left: 3px solid var(--clr-success, #16a34a); padding: 0.5rem 0.8rem; box-shadow: none; margin-bottom: 0.6rem; }
+.mtp .mtp-us.is-story .mtp-us-title { font-size: 0.98rem; font-weight: 600; }
+.mtp .mtp-us .mtw-story-lead { margin-top: 0.25rem; font-size: 0.9rem; color: var(--clr-text-muted, #57606a); -webkit-line-clamp: 2; line-clamp: 2; }
+.mtp .mtp-us-compare .mtw-story-lead { -webkit-line-clamp: 1; line-clamp: 1; }
+.mtp .mtp-us .mtw-story-foot { margin-top: 0.2rem; }
