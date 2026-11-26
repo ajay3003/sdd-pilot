@@ -578,6 +578,8 @@
 
     private ManualTestingDashboardSettings? _draft;
     private bool _draftReset, _resetAsk, _leaveAsk;
+    /// <summary>Where the tester tried to go while the layout had unsaved changes (2026-11-26 blocker: a blocked tab click looked dead).</summary>
+    private string? _leaveTarget;
     private ManualTestingDashboardSettings View => _draft ?? _dashboard;
 
     private static readonly Dictionary<string, string> CoreNames = new(StringComparer.Ordinal)
@@ -625,7 +627,7 @@
         || !ManualTestingDashboard.KpiSequence(d).SequenceEqual(ManualTestingDashboard.KpiSequence(_dashboard))
         || System.Text.Json.JsonSerializer.Serialize(d.EffectiveTiles) != System.Text.Json.JsonSerializer.Serialize(_dashboard.EffectiveTiles));
 
-    private void CancelCustomize() { _draft = null; _draftReset = false; _resetAsk = false; _leaveAsk = false; }
+    private void CancelCustomize() { _draft = null; _draftReset = false; _resetAsk = false; _leaveAsk = false; _leaveTarget = null; }
 
     /// <summary>«Ferdig»: one save of the draft (only the switches that differ from what they would otherwise be, the tiles and the order).</summary>
     private async Task SaveCustomizeAsync()
@@ -651,12 +653,34 @@
     }
 
     /// <summary>Leaving the page with unsaved layout changes is stopped once with an explanation (nothing is saved or lost silently).</summary>
-    private void GuardNavigation(LocationChangingContext context)
+    /// <summary>Leaving the page with unsaved layout changes is stopped ONCE with a visible choice at the top of the page — save and go, discard and
+    /// go, or stay. (Before, the explanation sat inside the panel and a tab click such as «Testplaner» looked like it did nothing.)</summary>
+    private async Task GuardNavigation(LocationChangingContext context)
     {
         if (_draft is null || !DraftDirty) return;
         context.PreventNavigation();
         _leaveAsk = true;
+        _leaveTarget = context.TargetLocation;
         StateHasChanged();
+        try { await JS.InvokeVoidAsync("eval", "document.querySelector('[data-testid=mto-custom-leave]')?.scrollIntoView({block:'center'})"); }
+        catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
+    }
+
+    /// <summary>«Lagre og gå videre»: save the draft, then continue to where the tester was going.</summary>
+    private async Task SaveAndLeaveAsync()
+    {
+        var target = _leaveTarget;
+        await SaveCustomizeAsync();
+        if (_draft is null && target is not null) { _leaveTarget = null; Nav.NavigateTo(target); }
+    }
+
+    /// <summary>«Forkast og gå videre»: drop the draft (nothing is written), then continue.</summary>
+    private void DiscardAndLeave()
+    {
+        var target = _leaveTarget;
+        CancelCustomize();
+        _leaveTarget = null;
+        if (target is not null) Nav.NavigateTo(target);
     }
 
     private void EditTile(DashboardKpiTile? t) { _tileEdit = t; _tileEditing = true; _tileError = null; _tileNotice = null; }
@@ -705,7 +729,17 @@
             </div>
             <p class="mt-muted msb-small mto-custom-note">Velg hvilke fliser som vises og i hvilken rekkefølge. Bare visningen endres — tallene, scenarioene, testtilfellene og testplanene er de samme.
                 Oppsettet gjelder for denne BirkNext-installasjonen (det finnes ingen egne brukerprofiler her). Lagres når du trykker «Ferdig».</p>
-            @if (_leaveAsk) { <p class="msb-callout is-warn" role="alert" data-testid="mto-custom-leave">Du har ulagrede endringer i oppsettet. Trykk «Ferdig» for å lagre eller «Avbryt» for å forkaste dem før du går videre.</p> }
+            @if (_leaveAsk)
+            {
+                <div class="msb-callout is-warn mto-custom-leave" role="alertdialog" aria-label="Ulagrede endringer i oppsettet" data-testid="mto-custom-leave">
+                    <strong>Du har ulagrede endringer i oppsettet.</strong> Vil du lagre dem før du går videre?
+                    <span class="mto-custom-leave-actions">
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@_tileBusy" @onclick="SaveAndLeaveAsync" data-testid="mto-custom-leave-save">Lagre og gå videre</button>
+                        <button type="button" class="btn btn-secondary btn-sm" @onclick="DiscardAndLeave" data-testid="mto-custom-leave-discard">Forkast og gå videre</button>
+                        <button type="button" class="msb-link msb-small" @onclick="() => { _leaveAsk = false; _leaveTarget = null; }" data-testid="mto-custom-leave-stay">Bli her</button>
+                    </span>
+                </div>
+            }
             <details class="mto-custom-catalog" open data-testid="mto-custom-catalog">
                 <summary>Tilgjengelige fliser</summary>
                 <div class="mto-custom-groups">

@@ -811,6 +811,42 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         requests.Single().ResetToDefaults.Should().BeFalse("the plan-structure setting is not part of the layout");
     }
 
+    [Fact]
+    public void T06_the_Testplaner_tab_is_never_a_dead_click_unsaved_layout_changes_ask_once_and_then_go()
+    {
+        // 2026-11-26 blocker «Unable to click on Testplaner tab»: with unsaved layout changes the click was stopped and only explained inside the panel.
+        var requests = SetupTiles(new ManualTestingDashboardSettings());
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
+        var nav = Services.GetRequiredService<NavigationManager>();
+
+        nav.NavigateTo("manual-testing/plans");   // no customisation: the tab simply works
+        cut.WaitForAssertion(() => nav.Uri.Should().EndWith("manual-testing/plans"));
+        nav.NavigateTo("manual-testing");
+        cut.Render(); // bUnit has no Router: re-render as the Router does on a route change
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-customize]"));
+
+        cut.Find("[data-testid=mto-customize]").Click();
+        cut.Find("[data-slot='metric.approved'] [data-testid=mto-slot-hide]").Click();
+        nav.NavigateTo("manual-testing/plans");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-custom-leave]"));
+        nav.Uri.Should().EndWith("manual-testing", "stopped once, with a visible choice");
+        cut.Find("[data-testid=mto-custom-leave-discard]").Click();
+        cut.WaitForAssertion(() => nav.Uri.Should().EndWith("manual-testing/plans"));
+        requests.Should().BeEmpty("discarding writes nothing");
+
+        nav.NavigateTo("manual-testing");
+        cut.Render(); // bUnit has no Router: re-render as the Router does on a route change
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-customize]"));
+        cut.Find("[data-testid=mto-customize]").Click();
+        cut.Find("[data-slot='metric.approved'] [data-testid=mto-slot-hide]").Click();
+        nav.NavigateTo("manual-testing/plans");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-custom-leave-save]"));
+        cut.Find("[data-testid=mto-custom-leave-save]").Click();
+        cut.WaitForAssertion(() => nav.Uri.Should().EndWith("manual-testing/plans"));
+        requests.Should().ContainSingle().Which.Visible.Should().ContainKey("metric.approved");
+    }
+
     // ── Testoversikt v3 P0: data correctness (2026-11-26) ─────────────────────────────────────────────────────────────────────
 
     [Fact]

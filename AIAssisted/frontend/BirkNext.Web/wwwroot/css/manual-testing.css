@@ -1333,3 +1333,4 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .mtp .mtp-us .mtw-story-lead { margin-top: 0.25rem; font-size: 0.9rem; color: var(--clr-text-muted, #57606a); -webkit-line-clamp: 2; line-clamp: 2; }
 .mtp .mtp-us-compare .mtw-story-lead { -webkit-line-clamp: 1; line-clamp: 1; }
 .mtp .mtp-us .mtw-story-foot { margin-top: 0.2rem; }
+.mto-custom-leave { position: sticky; top: 0.5rem; z-index: 40; display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; align-items: center; } .mto-custom-leave-actions { display: inline-flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
