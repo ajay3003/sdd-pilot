@@ -39,3 +39,12 @@ Discover suites 440/440, full frontend 9,833/9,833. Backend: `RemovedStoryScenar
 - **VERIFIED:** grouping defaults/collapsed, standalone scenarios, story summary.
 - **IMPLEMENTED:** the 102/668 analysis, the removed-story fix, requirement grouping, the 16/16 fix.
 - **NOT IMPLEMENTED:** the visual row and drawer redesign, and filter toolbar consolidation.
+
+## Follow-up (2026-11-26): row density — IMPLEMENTED, MEASURED
+- The secondary facts of a scenario row (area/priority, scenario type, requirements, plan membership) now share one wrapping line under the title instead of four stacked lines. Nothing is removed. CSS only (`.mtw-ac-row .msb-row-main`).
+- Measured in the isolated browser (v1env24, M2LB, flat list, first 40 rows): average row height **110 px → 83 px**. Screenshots: `scratchpad/v1/v1env24/shots/rows-before.png`, `rows-after.png`.
+- Also since v3:
+  - shared «Vis flere» with «Viser X av Y» (progressive results V1);
+  - search finds row 2,000 of 2,000 at once;
+  - compact discovery payload (75 % of the bytes).
+- **Still NOT IMPLEMENTED:** drawer restructure and filter-toolbar consolidation. Both need a design decision; the drawer already leads with «Forventet resultat» and keeps technical design collapsed.

@@ -1379,3 +1379,9 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .spp-group > summary.spp-group-h::-webkit-details-marker { display: none; }
 .spp-group > summary.spp-group-h::before { content: "▸ "; color: var(--clr-text-muted, #57606a); }
 .spp-group[open] > summary.spp-group-h::before { content: "▾ "; }
+
+/* Finn og forstå rows (2026-11-26, follow-up #2): the secondary facts — area/priority, scenario type, requirements, plan membership — share one
+   wrapping line under the title instead of four stacked lines; nothing is removed. */
+.mtw-ac-row .msb-row-main { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 0.5rem; row-gap: 0.1rem; }
+.mtw-ac-row .msb-row-main > .mtw-row-label, .mtw-ac-row .msb-row-main > .msb-row-title { flex: 1 1 100%; min-width: 0; }
+.mtw-ac-row .msb-row-main > .msb-row-meta { flex: 0 1 auto; max-width: 100%; }
