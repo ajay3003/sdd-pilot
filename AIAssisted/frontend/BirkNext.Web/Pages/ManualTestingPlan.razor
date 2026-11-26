@@ -451,7 +451,9 @@
                             {
                                 var planTech = TC.Of(scenarioCandidate, PlanTechDecisions(scenarioCandidate), _ws?.Discovery?.TestsReadForScenarios ?? false);
                                 <details class="mtw-tech mtp-tech" data-testid="mtp-tech" data-state="@planTech.State">
-                                    <summary><span class="mtp-ctx-label">Hva er allerede kontrollert?</span> <span class="msb-status msb-tone-@planTech.Tone" data-testid="mtp-tech-state">@planTech.Label</span></summary>
+                                    <summary><span class="mtp-ctx-label">Hva er allerede kontrollert?</span> <span class="msb-status msb-tone-@planTech.Tone" data-testid="mtp-tech-state">@planTech.Label</span>
+                                        @if (BirkNext.Web.Services.DeveloperTestCoveragePresentation.PrioritiseManual(planTech.State)) { <span class="msb-status msb-tone-warn" data-testid="mtp-tech-priority">Prioriter manuell test</span> }</summary>
+                                    <p class="msb-small" data-testid="mtp-tech-meaning">@BirkNext.Web.Services.DeveloperTestCoveragePresentation.Meaning(planTech.State)</p>
                                     @if (planTech.Tests.Count == 0)
                                     {
                                         <p class="mt-muted msb-small">@(planTech.State == TC.State.NotAssessed ? "Testene i kilden er ikke lest for scenariohenvisninger ennå." : "Ingen automatisk test i kilden nevner scenarioet.")</p>

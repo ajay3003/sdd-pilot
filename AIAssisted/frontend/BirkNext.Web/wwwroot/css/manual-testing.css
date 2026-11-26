@@ -939,3 +939,9 @@ a.mto-kpi:hover, a.mto-kpi:focus-visible { border-color: var(--msb-accent); }
 .mt-new-plan-preview { border: 1px dashed var(--msb-border); border-radius: 6px; padding: .4rem .6rem; margin: .3rem 0 .5rem; }
 .mt-structure-tree, .adt-suite-tree { list-style: none; margin: .25rem 0 0; padding: 0; font-size: .86rem; display: grid; gap: .15rem; }
 .mtw-level { margin: .1rem 0 .4rem; }
+
+/* Developer tests and AC coverage (2026-11-26) */
+.mtw-devtests { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: .35rem 0 0; }
+.mtw-checkpoints { margin: .4rem 0; }
+.mtw-checkpoints ul { list-style: none; margin: .2rem 0 0; padding: 0; display: grid; gap: .2rem; }
+.mtw-checkpoints li { display: flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; }

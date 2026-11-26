@@ -124,12 +124,13 @@ public static class TechnicalCoveragePresentation
     /// <summary>Filter values for «Automatiske tester» (one per state, plus "any tie").</summary>
     public static readonly IReadOnlyList<(string Key, string Label)> Filters =
     [
-        ("none", "Ingen kjent automatisk test"), ("candidate", "Mulig automatisk test"), ("linked", "Automatisk test funnet"),
+        ("nodevtest", "Uten koblet utviklertest (prioriter manuelt)"), ("none", "Ingen kjent automatisk test"), ("candidate", "Mulig automatisk test"), ("linked", "Automatisk test funnet"),
         ("partial", "Delvis kontrollert"), ("full", "Kontrollert (vurdert)"), ("review", "Kontroller koblingen"), ("notassessed", "Ikke vurdert"),
     ];
 
     public static bool Matches(State s, string filter) => filter switch
     {
+        "nodevtest" => DeveloperTestCoveragePresentation.PrioritiseManual(s),
         "none" => s is State.NoKnownTest or State.SameRequirementOnly,
         "candidate" => s == State.Candidate,
         "linked" => s == State.Linked,

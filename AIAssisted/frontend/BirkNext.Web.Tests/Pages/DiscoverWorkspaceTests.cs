@@ -245,6 +245,28 @@ public sealed class DiscoverWorkspaceTests : BunitContext
     }
 
     [Fact]
+    public void The_story_card_summarises_developer_tests_without_claiming_coverage_and_filters_to_ACs_without_a_test()
+    {
+        var test = new CandidateTestAssociation("t-9", "Scenario_1_valid_report_is_stored", "SkoleService/tests/IntakeTests.cs:42", "The method name names scenario 1")
+        { Origin = TestScenarioLinkOrigin.Scenario, Layer = "Integration", MethodName = "Scenario_1_valid_report_is_stored", SourceFingerprint = "fp" };
+        var cut = Open(null, null, Valid with { ExistingTests = [test] }, Above);
+        cut.Find("[data-testid=mtd-queue][data-queue='All']").Click();
+
+        cut.Find($"[data-testid=mtd-story][data-story='{Us1.Key}']").Click();
+        var line = cut.Find("[data-testid=mtd-us-devtests]");
+        line.TextContent.Should().Contain("1 av 2 AC har koblet test").And.Contain("1 uten kjent test").And.NotContain("dekket");
+        line.GetAttribute("title").Should().Contain("ikke at akseptansescenarioet er tilstrekkelig testet");
+
+        cut.Find("[data-testid=mtd-scenario][data-id='US1-AS1']").Click();
+        cut.Find("[data-testid=mtd-tech-meaning]").TextContent.Should().Contain("ingen har vurdert hvor mye den kontrollerer");
+        cut.Find("[data-testid=mtd-tech-caveat]").TextContent.Should().Contain("ikke at akseptansescenarioet er tilstrekkelig testet");
+        cut.FindAll("[data-testid=mtd-checkpoint]").Should().OnlyContain(li => li.GetAttribute("data-state") == "NotConfirmed");
+
+        cut.Find("[data-testid=mtd-us-devtests-filter]").Click();
+        cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal("US1-AS2");
+    }
+
+    [Fact]
     public void Technical_coverage_shows_what_a_source_test_checks_in_plain_words_with_details_on_demand_and_never_a_result()
     {
         var test = new CandidateTestAssociation("t-9", "Scenario_1_valid_report_is_stored", "SkoleService/tests/M2LB.SkoleService.Integration/IntakeTests.cs:42",

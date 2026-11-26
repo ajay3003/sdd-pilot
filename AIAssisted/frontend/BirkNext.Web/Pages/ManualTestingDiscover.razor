@@ -6,6 +6,7 @@
 @using S = BirkNext.Web.Services.ScenarioBrowserPresentation
 @using W = BirkNext.Web.Services.ScenarioWorkspacePresentation
 @using TC = BirkNext.Web.Services.TechnicalCoveragePresentation
+@using DT = BirkNext.Web.Services.DeveloperTestCoveragePresentation
 @using SC = BirkNext.Web.Services.SpecContextPresentation
 @using G = BirkNext.Web.Services.StoryGroupingPresentation
 @implements IDisposable
@@ -238,6 +239,14 @@
                                     <button type="button" class="mtw-toggle" aria-expanded="@(_storyGrouping ? "true" : "false")" @onclick="() => _storyGrouping = !_storyGrouping" data-testid="mtd-grouping-toggle">Gruppering</button>
                                 }
                             </div>
+                            @{ var devSummary = DT.Summarize(_items.Where(i => i.Candidate.Story?.Key == us.Key && i.Tech is not null).Select(i => i.Tech!.Value)); }
+                            <p class="mtw-devtests msb-small" title="@DT.Caveat" data-testid="mtd-us-devtests" data-with="@devSummary.WithTest" data-total="@devSummary.Total">
+                                <span class="msb-status msb-tone-@DT.StoryTone(devSummary)">@DT.StoryText(devSummary)</span>
+                                @if (devSummary.NoTest + devSummary.Candidate > 0)
+                                {
+                                    <button type="button" class="msb-link" @onclick='() => Set(_filter with { Tech = "nodevtest" })' data-testid="mtd-us-devtests-filter">Vis AC uten koblet utviklertest</button>
+                                }
+                            </p>
                             @StoryStatusBlock(us.Key)
                             @if (prof is not null && (_storyGrouping || prof.NeedsReviewFlag))
                             {
@@ -752,6 +761,22 @@
                                 <span class="msb-status msb-tone-@tech.Tone" data-testid="mtd-tech-state">@tech.Label</span>
                                 @if (tech.Tests.Count > 0) { <span class="mt-muted msb-small" data-testid="mtd-tech-result">@TC.NoResult</span> }
                             </div>
+                            <p class="msb-small" data-testid="mtd-tech-meaning">@DT.Meaning(tech.State)</p>
+                            @{ var checkpoints = DT.Checkpoints(c, tech.State); }
+                            @if (checkpoints.Count > 0 && tech.State != TC.State.NotAssessed)
+                            {
+                                <div class="mtw-checkpoints" data-testid="mtd-checkpoints">
+                                    <span class="mtp-ctx-label">Forventede resultater</span>
+                                    <ul>
+                                        @foreach (var cp in checkpoints)
+                                        {
+                                            <li data-testid="mtd-checkpoint" data-state="@cp.State"><span class="msb-status msb-tone-@(cp.State == DT.CheckpointState.CheckedByAssessedTest ? "ok" : "muted")">@cp.Label</span> @cp.Text</li>
+                                        }
+                                    </ul>
+                                    @if (tech.State == TC.State.Partial) { <p class="mt-muted msb-small" data-testid="mtd-checkpoints-partial">Vurderingen sier at testen dekker deler — ikke hvilke. Ingen av resultatene regnes derfor som kontrollert.</p> }
+                                </div>
+                            }
+                            @if (tech.Tests.Count > 0) { <p class="mt-muted msb-small" data-testid="mtd-tech-caveat">@DT.Caveat</p> }
                             @if (tech.State == TC.State.NotAssessed)
                             {
                                 <p class="mt-muted msb-small" data-testid="mtd-tech-not-assessed">Testene i kilden er ikke lest for scenariohenvisninger ennå. Importer kilden på nytt for å se hvilke automatiske tester som nevner scenarioet.</p>
