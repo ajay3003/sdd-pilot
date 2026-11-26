@@ -1,6 +1,6 @@
 # BirkNext — application-wide performance, scope and terminology (2026-11-26)
 
-Commits: `99e9e1bd` (lazy discovery), `432556ec` (scope picker terminology), `20e7cd94` (scope-safe identities, explicit cross-page intent).
+Commits: `403bb1a9` (review-context build off the critical path), `99e9e1bd` (lazy discovery), `432556ec` (scope picker terminology), `20e7cd94` (scope-safe identities, explicit cross-page intent).
 
 ## 1. Route inventory
 `@page` routes in `frontend/BirkNext.Web` (`scratchpad/routes.txt`): **84**, of which 82 have no route parameters. All 82 were opened in the isolated instance (v1env18, M2LB imported): 82/82 loaded with status ok.
@@ -53,7 +53,9 @@ Test level, scenario type and test method stay separate axes (see the AC classif
 
 | Operation | Before | After | Verification |
 |---|---|---|---|
-| Testplaner full load (M2LB) | 11.3–12.1 s | v1env19 numbers below | v1_apitiming / v1_p0 |
+| Testplaner full load (M2LB) | 11.3–12.1 s | **2.6–3.2 s** | v1_apitiming, v1env20, 4 runs |
+| Testoversikt full load | 8.7–8.8 s | **3.2–3.4 s** | same |
+| Finn og forstå full load | 17.4–17.7 s | **6.5–8.0 s** | same (still pays the 11.9 MB discovery) |
 
 ## Not done
 These are honest limits of this pass:
@@ -70,3 +72,25 @@ These are honest limits of this pass:
 - Testplaner full load: **11.3–11.4 s** (before 11.3–12.1 s): `discover/last` is no longer requested (verified in the request list), but the time to content barely moved — the discovery was not the dominant cost.
 - **Dominant cost found (app-wide):** request timeline of a Testplaner full load — boot calls until ~2.0 s, workspace `bootstrap` (463 KB) and `documents` until ~4.8 s, then **~5.4 s with no network at all** (client CPU) before the page's own calls at ~10.3 s. This is the app shell's workspace restore / document processing that every page pays on a full load (Testoversikt 8.7 s has the same shape). NOT FIXED in this pass: it needs step-level instrumentation of `WorkspaceRestore` and the review-context build in a WASM build; recommended as the next performance task.
 - **Finn og forstå pipeline** on the real M2LB discovery (589 candidates, 1.4 MB; `DiscoverPipelineTimingTests` with BIRKNEXT_DISCOVERY_JSON, .NET desktop runtime): deserialize 316 ms, Items 143 ms, classify 77 ms, filter 6 ms, grouping 37 ms, type summaries 7 ms, suitability 154 ms, readiness facts 41 ms — < 0.8 s natively; in WASM several times slower. Biggest single step: deserialising the payload → recommended: a projected/paged discovery endpoint for list views.
+
+## Fix of the dominant cost (`403bb1a9`, measured in v1env20)
+- **Root cause:** the timeline showed «Rebuilding ReviewContext from workspace artifacts» taking ~4 s of client CPU right after the deferred documents load (Constitution 1.1 s, Spec 1.5 s, Plan 0.9 s, Tasks 0.4 s). `WorkspaceDocumentHydration.LoadAsync` awaited it, and `WorkspaceDocumentsGate` and `ArtifactExplorerContext` awaited the hydration. So every page waited for the build, including pages that never read the review context.
+- **Change:**
+  1. The hydration completes as soon as the bodies are applied, and the build runs in the background.
+  2. `IReviewContextProvider.WhenCurrentAsync()` lets async readers wait for the latest build: `ManualTestingWorkspace`, `RequirementPopulation`, Test Coverage Review and Test Plan Suggestions.
+  3. The documents gate still holds pages that read `GetCurrent()` synchronously (Implementation Review, Quality Review, Traceability, Task Explorer …) until the build ends.
+  4. The Manual Testing pages declare `[ReviewContextNotRead]` and render at once.
+  5. `CurrentWorkspaceProjection` loads all workflow roles in one `GetStatesAsync` call.
+- **Measured (v1env20, fresh isolated database, M2LB import + 3 seeded plans, full page loads, `v1_apitiming.py`):**
+
+| Page | Before (v1env18/19) | After |
+|---|---|---|
+| Testplaner | 11.3–12.1 s | 2.6–3.2 s |
+| Testoversikt | 8.7–8.8 s | 3.2–3.4 s |
+| Finn og forstå | 17.4–17.7 s | 6.5–8.0 s |
+
+- **Correctness check:** Implementation Review, Test Coverage Review and Traceability were loaded in the browser after the change. They render with the built context (for example «2502 tasks (2356 checked)»), with no console errors. The time for these pages was not measured separately: the script used a fixed wait.
+- **Tests:**
+  - New gate test: the documents are available before the build ends; a Manual Testing page renders; Implementation Review waits until the build completes.
+  - Frontend 9840/9840.
+- **Remaining:** Finn og forstå still deserialises the full discovery (11.9 MB). A projected or paged discovery endpoint is the next step.
