@@ -1505,7 +1505,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
                                           && pg.ConstraintName == "ux_test_plan_draft_revisions_draft_revision")
         {
             db.ChangeTracker.Clear();
-            throw new TestPlanException(409, "draft-changed", "The plan was changed at the same time (another save or an automatic translation). Reload it; your change was not saved.");
+            throw new TestPlanException(409, "draft-changed", "The proposal was changed by someone else at the same time (another save or an automatic translation). Reload it; your change was not saved.");
         }
         return plan;
     }
