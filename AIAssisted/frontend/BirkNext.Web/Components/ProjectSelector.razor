@@ -13,7 +13,7 @@
 @if (Selection is not null)
 {
 <div class="psel" data-testid="project-selector">
-    <label class="psel-label" for="@_id">Project</label>
+    <label class="psel-label" for="@_id">Prosjekt</label>
     @if (Restoring)
     {
         <span class="psel-note" role="status" data-testid="project-selector-restoring">Loading the selected project…</span>
@@ -28,7 +28,7 @@
         @* Re-created on every refused or failed switch (@key), so the control shows the project still in use, not the refused choice. *@
         <select id="@_id" class="psel-select" @key="_version" data-testid="project-selector-select" disabled="@_busy" aria-describedby="@(_status is null ? null : _id + "-status")"
                 @onchange="OnChangeAsync">
-            @if (current.Length == 0) { <option value="" selected>Choose a project…</option> }
+            @if (current.Length == 0) { <option value="" selected>Velg prosjekt …</option> }
             @foreach (var choice in selection.Choices)
             {
                 <option value="@choice.Value" selected="@(choice.Value == current)" title="@Title(choice)">@choice.Label</option>

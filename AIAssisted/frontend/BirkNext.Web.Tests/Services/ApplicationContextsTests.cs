@@ -54,15 +54,18 @@ public sealed class ApplicationContextsTests
             var m2lb = Record("M2LB", muFirst ? 20 : 2, Guid.NewGuid());
             var lifecycle = new SddLifecycleState { ProjectImports = [mu, common, m2lb] };
             ApplicationContexts.Ensure(lifecycle, DateTimeOffset.UtcNow);
+            // V8 (2026-11-26): without a current import nothing becomes the current application by itself.
+            lifecycle.CurrentApplicationId.Should().BeNull("no current import: no project is chosen automatically");
+            var applicationId = lifecycle.Applications.Single().Id;
             var setup = Setup((mu, 5, 3), (common, 0, 1), (m2lb, 16, 23));
 
-            var packages = ApplicationContexts.Packages(lifecycle, lifecycle.CurrentApplicationId, setup);
+            var packages = ApplicationContexts.Packages(lifecycle, applicationId, setup);
             ApplicationContexts.Primary(packages)!.DisplayName.Should().Be("M2LB", $"M2LB.Common points to M2LB (MU first: {muFirst})");
             packages.Single(p => p.DisplayName == "Tiltak 2").Role.Should().Be(PackageEvidenceRole.RelatedApplicationSource);
             packages.Single(p => p.DisplayName == "M2LB.Common").Role.Should().Be(PackageEvidenceRole.SupportingSource);
             ApplicationContexts.Reconcile(lifecycle, setup);
             lifecycle.Applications.Single().Name.Should().Be("M2LB");
-            ApplicationContexts.DocumentImport(lifecycle, lifecycle.CurrentApplicationId!, setup, mu.ImportId).Should().Be(m2lb.ImportId);
+            ApplicationContexts.DocumentImport(lifecycle, applicationId, setup, mu.ImportId).Should().Be(m2lb.ImportId);
         }
     }
 

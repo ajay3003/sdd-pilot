@@ -115,11 +115,12 @@ public static class ApplicationContexts
             if (string.IsNullOrWhiteSpace(target.Name)) (target.Name, target.NameBasis) = NameOf(Imports(lifecycle, target.Id));
             changed = true;
         }
-        if (lifecycle.CurrentApplicationId is null && lifecycle.Applications.Count > 0)
+        // The application of the current import (a restored explicit choice). Without a current import nothing is chosen (V8, 2026-11-26): before,
+        // the application with the newest import — or the first one — became current by itself.
+        if (lifecycle.CurrentApplicationId is null && lifecycle.Applications.Count > 0
+            && lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == lifecycle.CurrentProjectImportId)?.ApplicationId is { } ofCurrent)
         {
-            // The application of the current import, else the one with the newest import.
-            lifecycle.CurrentApplicationId = lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == lifecycle.CurrentProjectImportId)?.ApplicationId
-                ?? lifecycle.ProjectImports.OrderByDescending(i => i.ImportedAt).FirstOrDefault()?.ApplicationId ?? lifecycle.Applications[0].Id;
+            lifecycle.CurrentApplicationId = ofCurrent;
             changed = true;
         }
         return changed;

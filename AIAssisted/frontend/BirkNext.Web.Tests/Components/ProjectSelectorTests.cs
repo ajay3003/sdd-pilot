@@ -104,7 +104,8 @@ public sealed class ProjectSelectorTests : BunitContext
     {
         Application("app-a", "Library", "import-a");
         var cut = Render<ProjectSelector>();
-        cut.Find("option[selected]").TextContent.Should().Be("Choose a project…");
+        cut.Find("option[selected]").TextContent.Should().Be("Velg prosjekt …", "first use: nothing is chosen (V8)");
+        cut.Find("label").TextContent.Should().Be("Prosjekt");
     }
 
     [Fact]
