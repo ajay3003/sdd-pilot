@@ -1498,6 +1498,15 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             db.ChangeTracker.Clear();
             throw new TestPlanException(409, "draft-changed", "The proposal was changed by someone else. Reload it; your change was not saved.");
         }
+        // Two writes from the same base revision (2026-11-26, seen in the browser: Planlegg's automatic translate-all while a case was created) both pass
+        // the base-revision check; the unique (plan, revision) index stops the second. That is a revision conflict, not a server error: nothing was
+        // overwritten, the writer reloads.
+        catch (DbUpdateException e) when (e.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation } pg
+                                          && pg.ConstraintName == "ux_test_plan_draft_revisions_draft_revision")
+        {
+            db.ChangeTracker.Clear();
+            throw new TestPlanException(409, "draft-changed", "The plan was changed at the same time (another save or an automatic translation). Reload it; your change was not saved.");
+        }
         return plan;
     }
 

@@ -1341,6 +1341,9 @@
         if (_intent is { } intended && caseId is not null && _plan?.Cases.FirstOrDefault(c => P.IdOf(c) == caseId) is { } other
             && other.Source.ScenarioId != intended && other.ParentScenario != intended) _intent = null;
         _selectedId = caseId;
+        // Opening a case shows it (2026-11-26, found in the browser journey): a scenario's «Klargjør» view left open stayed in front, so a case just
+        // created («Skriv teststegene og lagre») was not shown. ApplyIntent sets the preparation view AFTER Open(null), so that path is unchanged.
+        if (caseId is not null) _prepItem = null;
         _form = Selected is { } c ? P.CaseForm.From(c) : null;
         // 2026-11-26: the tester's language choice is kept across cases, tabs and reloads (it was reset per case before).
         _lang = _form is null ? EditorLanguage.Original : _langPref ?? P.DefaultLanguage(_form);

@@ -775,6 +775,39 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task Two_writes_from_the_same_revision_give_one_save_and_one_revision_conflict_never_a_server_error()
+    {
+        // Seen in the browser (2026-11-26): Planlegg's automatic translate-all and a case creation wrote the same revision; the unique
+        // (plan, revision) index stopped the second as an unhandled DbUpdateException (HTTP 500). It must be the normal 409 conflict.
+        await using var db1 = Context();
+        var x1 = Services(db1);
+        _discoveries.Store(Selected("d-race", DateTimeOffset.UtcNow, SkoleSpec, InSpec("r1", SkoleSpec, "US1", "f1") with { Title = "Rapport" }));
+        var plan = await x1.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-race", CandidateIds = ["r1"],
+            PlanName = "Race", CreationRequestId = "race-1" }, "anna", default);
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            await using var a = Context(); await using var b = Context();
+            var (xa, xb) = (Services(a), Services(b));
+            TestPlanDraft current;
+            await using (var read = Context()) current = await Services(read).Plans.DraftAsync(plan.Id, default); // a fresh read: the current revision
+            // Placing the planned scenario writes only the plan (and its revision): two moves from the same base revision.
+            var suites = current.Suites.Select(su => su.Id).ToList();
+            var outcomes = await Task.WhenAll(
+                Outcome(() => xa.Plans.PlaceScenarioAsync(plan.Id, new PlaceScenarioRequest(current.Revision, "r1", suites[attempt % suites.Count]), "anna", default)),
+                Outcome(() => xb.Plans.PlaceScenarioAsync(plan.Id, new PlaceScenarioRequest(current.Revision, "r1", suites[attempt % suites.Count]), "bob", default)));
+            outcomes.Count(o => o == "saved").Should().Be(1, $"exactly one of two writes from the same revision is saved (outcomes: {string.Join(", ", outcomes)})");
+            outcomes.Count(o => o == "409:draft-changed").Should().Be(1, "the other is a revision conflict, never a database error");
+        }
+
+        static async Task<string> Outcome(Func<Task<TestPlanDraft>> write)
+        {
+            try { await write(); return "saved"; }
+            catch (TestPlanException e) { return $"{e.Status}:{e.Code}"; }
+        }
+    }
+
+    [Fact]
     public async Task Sprint_12_results_stay_when_copied_to_Sprint_13_which_starts_not_run_and_each_sprint_keeps_its_own_history()
     {
         await using var db = Context();

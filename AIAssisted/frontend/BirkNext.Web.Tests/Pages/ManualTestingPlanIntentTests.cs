@@ -65,6 +65,28 @@ public sealed partial class ManualTestingPlanTests
     }
 
     [Fact]
+    public void X05_a_case_created_while_the_scenarios_preparation_is_shown_opens_in_the_editor()
+    {
+        // Found in the V9 browser journey (2026-11-26): «Nytt testtilfelle lagt til … Skriv teststegene og lagre» — but the scenario's «Klargjør»
+        // view stayed in front and the new case was not shown.
+        var planned = Plan(Case("c1", "Submit a valid report", story: StoryA)) with { PlannedScenarios = [new PlannedScenario { ScenarioId = "cB", Title = "Register an absence", SuiteId = "suite-1" }] };
+        SetupTwoScenarios(planned);
+        var created = Case("m1", "Fravær registreres", story: StoryB) with { ScenarioKey = "cB" };
+        _api.Setup(x => x.AddManualCaseAsync(PlanId, It.IsAny<AddManualTestCaseRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((planned with { Revision = 4, Cases = [.. planned.Cases, created] }, (string?)null));
+        var cut = Open("manual-testing/plan?scenario=cB");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtp-prep-item]"));
+
+        cut.Find("[data-testid=mtp-new-case]").Click();
+        cut.Find("[data-testid=mtp-new-title-input]").Input("Fravær registreres");
+        cut.FindAll("[data-testid=mtp-new-kind-option]").First().Click();
+        cut.Find("[data-testid=mtp-new-create]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtp-editor]"));
+        cut.FindAll("[data-testid=mtp-prep-item]").Should().BeEmpty("the new case is shown, not the preparation view");
+    }
+
+    [Fact]
     public void X03_scenario_A_opens_its_own_case_and_an_unknown_scenario_opens_nothing()
     {
         SetupTwoScenarios();
