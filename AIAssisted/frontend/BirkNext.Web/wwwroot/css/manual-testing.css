@@ -1335,3 +1335,43 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .mtp .mtp-us .mtw-story-foot { margin-top: 0.2rem; }
 .mto-custom-leave { position: sticky; top: 0.5rem; z-index: 40; display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; align-items: center; } .mto-custom-leave-actions { display: inline-flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 .mtp-intent { display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; align-items: center; padding: 0.5rem 0.8rem; margin-bottom: 0.6rem; border: 1px solid var(--msb-border); border-left: 3px solid var(--clr-primary, #0969da); border-radius: var(--msb-radius); background: var(--msb-surface); }
+
+/* ── Planlegg og klargjør V5 (2026-11-26): one semantic set for US / AC / test case, built on the existing tokens (US = neutral slate,
+   AC = the accent purple the AC chip already used, test case = the primary blue of the selected case). Tints and accent edges only —
+   no long saturated panels; the state is always also said in text. ── */
+.msb-page {
+    --mt-us-bg: var(--clr-surface, #f8fafc); --mt-us-border: #cbd5e1; --mt-us-accent: #64748b;
+    --mt-ac-bg: var(--clr-accent-bg, #ede9fe); --mt-ac-border: var(--clr-accent-border, #ddd6fe); --mt-ac-accent: var(--clr-accent, #7c3aed);
+    --mt-case-bg: var(--clr-surface-selected, #eff6ff); --mt-case-border: #bfdbfe; --mt-case-accent: var(--clr-primary, #2563eb);
+}
+@media (prefers-color-scheme: dark) {
+    .msb-page {
+        --mt-us-bg: #1e293b; --mt-us-border: #334155; --mt-us-accent: #94a3b8;
+        --mt-ac-bg: #2e1f4d; --mt-ac-border: #4c3a7a; --mt-ac-accent: #c4b5fd;
+        --mt-case-bg: #13253f; --mt-case-border: #1e3a5f; --mt-case-accent: #60a5fa;
+    }
+}
+/* US: compact neutral header with a slate edge. */
+.mtp-story { background: var(--mt-us-bg); border-color: var(--mt-us-border); }
+.mtp-us { background: var(--mt-us-bg); border-color: var(--mt-us-border); border-left: 3px solid var(--mt-us-accent); }
+.mtp-us > summary { padding-top: 0.4rem; padding-bottom: 0.4rem; }
+/* AC: the accent chip and a thin accent edge on the scenario heading — never a large purple banner. */
+.mtp-ac { background: var(--mt-ac-bg); border-color: var(--mt-ac-border); }
+.mtp-scenario-heading { border-left: 3px solid var(--mt-ac-accent); padding-left: 0.55rem; }
+/* Test case: the primary workspace — a blue top edge on the editor, the selected case in the navigator in the same blue. */
+.mtp-editor { border-top: 3px solid var(--mt-case-accent); padding-top: 0.6rem; }
+.mtp-case.is-selected { border-color: var(--mt-case-accent); background: var(--mt-case-bg); }
+/* Test steps: one readable card per step (number, action, expected result, tools). */
+.mtp-editor .mtp-steps ol { gap: 0.6rem; }
+.mtp-editor .mtp-step { border: 1px solid var(--msb-border); border-bottom-style: solid; border-radius: var(--msb-radius); background: var(--msb-surface);
+    padding: 0.55rem 0.65rem; }
+.mtp-editor .mtp-step:focus-within { border-color: var(--mt-case-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--mt-case-accent) 18%, transparent); }
+.mtp-editor .mtp-step-no { background: var(--mt-case-bg); color: var(--mt-case-accent); border: 1px solid var(--mt-case-border); }
+.mtp-editor .mtp-step textarea { min-height: 3.2rem; }
+/* Toolbar: grouped actions; the review group is labelled and set apart. */
+.mtp-action-group { display: inline-flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.mtp-review-group { padding-left: 0.6rem; border-left: 1px solid var(--msb-border); }
+.mtp-action-group-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--clr-text-muted, #57606a); }
+@media (max-width: 720px) { .mtp-review-group { padding-left: 0; border-left: 0; } }
+/* AC readiness: compact head, groups as rows; only real missing items carry the warning tone (set by the status chips). */
+.spp { border-left: 3px solid var(--mt-ac-accent); }

@@ -922,10 +922,16 @@
                                 var problems = P.ReadyProblems(current);
                                 <div class="mtp-actions is-sticky" role="toolbar" aria-label="Handlinger for testtilfellet" data-testid="mtp-actions">
                                     @if (Dirty) { <span class="mtp-dirty-dot" data-testid="mtp-dirty">Ulagrede endringer</span> }
-                                    <button type="button" class="btn btn-primary" disabled="@(!Dirty || _busy)" @onclick="SaveAsync" data-testid="mtp-save">Lagre</button>
-                                    <button type="button" class="btn btn-secondary" disabled="@(!Dirty || _busy)" @onclick="Discard" data-testid="mtp-discard">Forkast endringer</button>
+                                    @* V5 (2026-11-26): three groups — edit (Lagre/Forkast), Forhåndsvisning, review — and ONE primary action per state:
+                                       Lagre while there are unsaved changes, else the review step. *@
+                                    <span class="mtp-action-group" role="group" aria-label="Redigering">
+                                        <button type="button" class="btn @(Dirty ? "btn-primary" : "btn-secondary")" disabled="@(!Dirty || _busy)" @onclick="SaveAsync" data-testid="mtp-save">Lagre</button>
+                                        <button type="button" class="btn btn-outline-secondary" disabled="@(!Dirty || _busy)" @onclick="Discard" data-testid="mtp-discard">Forkast endringer</button>
+                                    </span>
                                     <button type="button" class="btn btn-outline-secondary" @onclick="() => OpenPreview(new(current.Source.ScenarioId, null))" data-testid="mtp-preview-open">Forhåndsvisning</button>
                                     <span class="mtp-spacer"></span>
+                                    <span class="mtp-action-group mtp-review-group" role="group" aria-label="Gjennomgang av testtilfellet" data-testid="mtp-review-group">
+                                    <span class="mtp-action-group-label" aria-hidden="true">Gjennomgang</span>
                                     @if (current.Review is TestCaseReviewState.Generated or TestCaseReviewState.NeedsClarification)
                                     {
                                         <button type="button" class="btn btn-secondary" disabled="@(Dirty || _busy || problems.Count > 0)" title="@(Dirty ? "Lagre først." : string.Join(" ", problems))"
@@ -933,13 +939,14 @@
                                     }
                                     @if (current.Review != TestCaseReviewState.NeedsClarification)
                                     {
-                                        <button type="button" class="btn btn-secondary" disabled="@(Dirty || _busy)" @onclick="() => ReviewAsync(TestCaseReviewState.NeedsClarification)" data-testid="mtp-clarify">Trenger avklaring</button>
+                                        <button type="button" class="btn btn-outline-secondary" disabled="@(Dirty || _busy)" @onclick="() => ReviewAsync(TestCaseReviewState.NeedsClarification)" data-testid="mtp-clarify">Trenger avklaring</button>
                                     }
                                     @if (current.Review != TestCaseReviewState.Accepted)
                                     {
-                                        <button type="button" class="btn btn-primary" disabled="@(Dirty || _busy || problems.Count > 0)" title="@(Dirty ? "Lagre først." : string.Join(" ", problems))"
+                                        <button type="button" class="btn @(Dirty ? "btn-secondary" : "btn-primary")" disabled="@(Dirty || _busy || problems.Count > 0)" title="@(Dirty ? "Lagre først." : string.Join(" ", problems))"
                                                 @onclick="() => ReviewAsync(TestCaseReviewState.Accepted)" data-testid="mtp-approve">Godkjenn</button>
                                     }
+                                    </span>
                                     <button type="button" class="msb-link" disabled="@(Dirty || _busy)" @onclick="() => _excludeAsk = true" data-testid="mtp-exclude">Utelat</button>
                                 </div>
                                 @if (_excludeAsk)
