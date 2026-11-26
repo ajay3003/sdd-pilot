@@ -191,6 +191,7 @@
                                             <span class="msb-status msb-tone-muted" data-testid="mtp-planned-state">Scenario – ikke klargjort</span>
                                             @if (plan.Suites.Any(s => s.Id == it.SuiteId)) { <span class="mt-muted msb-small">@PlanStructure.PathOf(plan.Suites, it.SuiteId)</span> }
                                             <button type="button" class="msb-link" @onclick="() => OpenPreview(new(null, it))" data-testid="mtp-planned-preview">Forhåndsvis</button>
+                                            <button type="button" class="msb-link" @onclick="() => _prepItem = it.ScenarioId" data-testid="mtp-planned-ready">@(it.StoryId is null ? "Klargjør scenario" : "Klargjør AC")</button>
                                             @if (CanWrite && !ReadOnlyPlan)
                                             {
                                                 <button type="button" class="msb-link" disabled="@(_busy || Dirty)" @onclick="() => PrepareItemAsync(it)" data-testid="mtp-planned-prepare">Forbered testtilfelle</button>
@@ -318,7 +319,16 @@
                                 <button type="button" class="msb-link" @onclick="() => _pending = null" data-testid="mtp-unsaved-cancel">Avbryt</button>
                             </div>
                         }
-                        @if (Selected is not { } current || _form is null)
+                        @* «Klargjør AC» for a planned scenario WITHOUT a test case (2026-11-26): preparation needs no case, and none is created here. *@
+                        @if (_prepItem is { } prepId && _ws?.ProjectKey is { } prepKey && _ws.Discovery?.Candidates.FirstOrDefault(x => x.CandidateId == prepId) is { } prepScenario)
+                        {
+                            <div class="mtp-prep-item" data-testid="mtp-prep-item">
+                                <button type="button" class="msb-link mtp-prep-close" @onclick="() => _prepItem = null" data-testid="mtp-prep-close">Lukk klargjøring</button>
+                                <BirkNext.Web.Components.ManualTesting.ScenarioPreparationPanel ProjectKey="@prepKey" Scenario="prepScenario"
+                                    Cases="@(_plan!.Cases.Where(x => x.Source.ScenarioId == prepId).ToList())" ReadOnly="@(!CanWrite)" />
+                            </div>
+                        }
+                        else if (Selected is not { } current || _form is null)
                         {
                             <p class="msb-empty" data-testid="mtp-detail-none">Velg et testtilfelle i listen.</p>
                         }
@@ -741,6 +751,12 @@
                                                             }
                                                         </div>
                                                     </div>
+                                                    @if (P.StepWarning(step.Action, step.Expected) is { } stepWarn)
+                                                    {
+                                                        <span class="mtp-step-warn" role="note" data-testid="mtp-step-warning">
+                                                            <strong>Teststeget bør konkretiseres.</strong> @string.Join(" ", stepWarn)
+                                                        </span>
+                                                    }
                                                     @if (!readonlyCase)
                                                     {
                                                         <span class="mtp-step-tools">
@@ -902,12 +918,18 @@
                             var linkedIds = linkedAll.Select(l => l.RequirementId).ToHashSet(StringComparer.OrdinalIgnoreCase);
                             var designReqs = _ws?.Requirements is { } allReqs && RequirementLinkPresentation.SpecificationPathOf(current) is { } ownSpec
                                     ? allReqs.Where(r => linkedIds.Contains(r.RequirementId) && BirkNext.Specifications.SpecificationCatalogRules.SamePath(r.SpecificationPath, ownSpec)).ToList() : [];
+                            @if (ScenarioCandidateOf(current) is { } prepCandidate && _ws?.ProjectKey is { } projectForPrep)
+                            {
+                                <BirkNext.Web.Components.ManualTesting.ScenarioPreparationPanel ProjectKey="@projectForPrep" Scenario="prepCandidate"
+                                    Cases="@(_plan!.Cases.Where(x => x.Source.ScenarioId == prepCandidate.CandidateId || x.ParentScenario == prepCandidate.CandidateId).ToList())" ReadOnly="@(!CanWrite)" />
+                            }
                             <details class="mtp-design" open="@_designOpen" data-testid="mtp-design">
-                                <summary @onclick="() => _designOpen = !_designOpen" @onclick:preventDefault="true"><span class="msb-h">Testdesign og klargjøring</span></summary>
+                                <summary @onclick="() => _designOpen = !_designOpen" @onclick:preventDefault="true"><span class="msb-h">Vis teknisk analyse</span>
+                                    <span class="mt-muted msb-small">Testdesign, verifiseringspunkter og forslag til flere tester</span></summary>
                                 @if (_designOpen)
                                 {
                                     <BirkNext.Web.Components.ManualTesting.TestDesignPanel Facts="TestDesignAdvisor.FactsOf(current)" Scenario="scenarioCase ?? current" Case="current"
-                                        Readiness="TestDesignAdvisor.Readiness(current)" TestData="TestDesignAdvisor.TestData(current)"
+                                        TestData="TestDesignAdvisor.TestData(current)"
                                         Siblings="@(parentKey is null ? [] : _plan!.Cases.Where(x => x.ParentScenario == parentKey))"
                                         Decisions="@(_plan!.DesignDecisions?.Where(d => d.ScenarioKey == parentKey).ToList())"
                                         Table="@(designReqs.Count() > 1 ? TestDesignAdvisor.Decisions(designReqs) : null)"
@@ -1673,7 +1695,10 @@
         finally { _busy = false; }
     }
 
-    private bool _designOpen = true;
+    // Adaptive readiness (2026-11-26): the technical analysis is secondary and starts collapsed; «Klargjør AC» is the readiness shown.
+    private bool _designOpen;
+    /// <summary>The planned scenario (candidate id) whose preparation is open without a case.</summary>
+    private string? _prepItem;
 
     /// <summary>Accepts a test-design proposal: the existing add-from-variant path (the server re-derives the proposal from the scenario's
     /// evidence and refuses it when it no longer applies or a case with its title exists — no duplicate cases).</summary>

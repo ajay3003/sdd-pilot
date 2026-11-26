@@ -80,6 +80,20 @@ public static class ManualTestingOverviewPresentation
 
     private static DeliveryBar Bar(string key, string label, int value, DeliveryDashboardTone tone, string info) => new(key, label, value, tone, info);
 
+    private static readonly System.Globalization.CultureInfo Nb = System.Globalization.CultureInfo.GetCultureInfo("nb-NO");
+
+    /// <summary>One display policy for every share on Testoversikt (2026-11-26): «0 %» only when nothing is counted; under 1 % with one decimal
+    /// («0,5 %» for 6 av 1 218); never «100 %» while something is missing («99,9 %»); otherwise whole percent.</summary>
+    public static string Share(int part, int whole)
+    {
+        if (whole <= 0 || part <= 0) return "0 %";
+        if (part >= whole) return "100 %";
+        var pct = 100.0 * part / whole;
+        return pct < 1 ? $"{Math.Max(0.1, Math.Round(pct, 1)).ToString("0.0", Nb)} %"
+            : pct >= 99.5 ? $"{Math.Min(99.9, Math.Floor(pct * 10) / 10).ToString("0.0", Nb)} %"
+            : $"{Math.Round(pct).ToString("0", Nb)} %";
+    }
+
     /// <summary>Testforberedelse: overlapping milestones over the saved cases (never stacked, never added).</summary>
     public static IReadOnlyList<DeliveryBar> Preparation(Slice s)
     {
@@ -108,17 +122,23 @@ public static class ManualTestingOverviewPresentation
         };
         return [.. groups.Where(g => g.Total > 0).OrderBy(g => g.Label, StringComparer.CurrentCultureIgnoreCase)
             .Select(g => Bar(g.Key, $"{g.Label} ({g.Covered}/{g.Total})", (int)Math.Round(100.0 * g.Covered / g.Total), g.Covered == g.Total ? DeliveryDashboardTone.Ready : DeliveryDashboardTone.Progress,
-                $"{g.Covered} av {g.Total} scenarioer har testtilfeller"))];
+                $"{g.Covered} av {g.Total} scenarioer har testtilfeller") with { ValueText = Share(g.Covered, g.Total) })];
     }
 
     private static readonly string[] Priorities = ["P1", "P2", "P3"];
+
+    /// <summary>Every priority the source states, in order (P1, P2, P3 always first, then any other the specifications use, e.g. P4–P7), so the
+    /// priority buckets plus «Ikke prioritert» always add up to the scenario count (2026-11-26: P4–P7 stories were dropped from the chart).</summary>
+    public static IReadOnlyList<string> PriorityKeys(IEnumerable<OverviewScenario> scenarios) =>
+        [.. Priorities.Concat(scenarios.Select(sc => sc.Priority).OfType<string>()).Distinct(StringComparer.Ordinal)
+            .OrderBy(p => int.TryParse(p.AsSpan(1), out var n) ? n : 99).ThenBy(p => p, StringComparer.Ordinal)];
 
     /// <summary>Scenarios per stated priority; «Ikke prioritert» when the source states none.</summary>
     public static IReadOnlyList<DeliveryBar> Priority(Slice s)
     {
         if (!s.ScenariosAvailable) return [];
         var all = s.Specifications.SelectMany(x => x.Scenarios).ToList();
-        return [.. Priorities.Select(p => (p, all.Count(sc => sc.Priority == p))).Append(("Ikke prioritert", all.Count(sc => sc.Priority is null)))
+        return [.. PriorityKeys(all).Select(p => (p, all.Count(sc => sc.Priority == p))).Append(("Ikke prioritert", all.Count(sc => sc.Priority is null)))
             .Where(x => x.Item2 > 0).Select(x => Bar(x.Item1, x.Item1, x.Item2, x.Item1 == "P1" ? DeliveryDashboardTone.Change : DeliveryDashboardTone.Neutral, $"{x.Item2} scenarioer"))];
     }
 
@@ -128,7 +148,7 @@ public static class ManualTestingOverviewPresentation
         if (!s.ScenariosAvailable) return [];
         var covered = CoveredKeys(s.Cases);
         var open = s.Specifications.SelectMany(x => x.Scenarios.Where(sc => !IsCovered(x, sc, covered))).ToList();
-        return [.. Priorities.Select(p => (p, open.Count(sc => sc.Priority == p))).Append(("Ikke prioritert", open.Count(sc => sc.Priority is null)))
+        return [.. PriorityKeys(open).Select(p => (p, open.Count(sc => sc.Priority == p))).Append(("Ikke prioritert", open.Count(sc => sc.Priority is null)))
             .Where(x => x.Item2 > 0).Select(x => Bar(x.Item1, $"{x.Item1} uten testtilfeller", x.Item2, x.Item1 == "P1" ? DeliveryDashboardTone.Blocker : DeliveryDashboardTone.Review, $"{x.Item2} scenarioer uten lagret testtilfelle"))];
     }
 
@@ -291,6 +311,8 @@ public static class ManualTestingOverviewPresentation
             ("panel.translationReview", "machine") => Cases("Maskinoversatte testtilfeller som ikke er gjennomgått", x => x.Translation == TranslationState.Current && x.TranslationOrigin == TranslationOrigin.Machine),
             ("panel.translationReview", "stale") => Cases("Oversettelser som må gjennomgås", x => x.Translation == TranslationState.SourceChanged),
             ("panel.translationReview", "reviewed") => Cases("Oversettelser redigert eller skrevet av en person", x => x.Translation == TranslationState.Current && x.TranslationOrigin is TranslationOrigin.MachineEdited or TranslationOrigin.Manual),
+            ("chart.scenarioReadiness", _) => Scenarios($"{(Enum.TryParse<PreparationStatus>(key, out var ps) ? ScenarioPreparationEngine.Label(ps) : key)}: scenarioer",
+                d => d.Scenario.IsAcceptanceScenario && d.Scenario.Preparation?.ToString() == key),
             ("chart.scenarioTypes", _) => Scenarios($"{TypeTitle(key)} akseptansescenarioer", d => d.Scenario.IsAcceptanceScenario && d.Scenario.Type.ToString() == key),
             ("chart.nfrCategories", _) => Enum.TryParse<QualityAttribute>(key, out var quality)
                 ? Scenarios($"Scenarioer som gjelder {ScenarioTypeClassifier.Label(quality).ToLowerInvariant()}", d => d.Scenario.IsAcceptanceScenario && (d.Scenario.Qualities ?? []).Contains(quality)) : null,
@@ -318,6 +340,14 @@ public static class ManualTestingOverviewPresentation
     public static int? StoriesWithOpenTasks(Slice s) => StoryCount(s, x => x.Eligible > 0 && x.Remaining > 0);
     public static int? StoriesTasksCompleted(Slice s) => StoryCount(s, x => x.Status == UserStoryTaskStatus.TasksCompleted);
     public static int? StoriesNeedingClarification(Slice s) => StoryCount(s, x => x.Status == UserStoryTaskStatus.NeedsClarification);
+
+    /// <summary>«Klargjøring av scenarioer»: unique scenarios per readiness status (mutually exclusive; optional items never count as missing).</summary>
+    public static IReadOnlyList<DeliveryBar> ScenarioReadiness(Slice s) =>
+        [.. new[] { PreparationStatus.Ready, PreparationStatus.NeedsPreparation, PreparationStatus.NeedsAssessment }
+            .Select(st => (st, TileScenarios(s).Count(sc => sc.Preparation == st))).Where(x => x.Item2 > 0)
+            .Select(x => Bar(x.st.ToString(), ScenarioPreparationEngine.Label(x.st), x.Item2,
+                x.st switch { PreparationStatus.Ready => DeliveryDashboardTone.Ready, PreparationStatus.NeedsPreparation => DeliveryDashboardTone.Blocker, _ => DeliveryDashboardTone.Review },
+                $"{x.Item2} scenarioer"))];
 
     // ── Custom KPI tiles (2026-11-26) ──
 

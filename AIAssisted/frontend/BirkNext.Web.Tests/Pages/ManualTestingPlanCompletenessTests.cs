@@ -66,8 +66,9 @@ public sealed partial class ManualTestingPlanTests
         var before = cut.Find("[data-testid=mtp-before]");
         before.HasAttribute("open").Should().BeFalse();
         cut.Find("[data-testid=mtp-before-summary]").TextContent.Should().Be("0 av 2 fylt ut · ingen hindring");
-        cut.Find("[data-testid=tdp-readiness-details]").HasAttribute("open").Should().BeFalse();
-        cut.Find("[data-testid=tdp-readiness-count]").Should().NotBeNull("«Klar til kjøring?» and its count stay visible");
+        cut.Find("[data-testid=mtp-design]").HasAttribute("open").Should().BeFalse("the technical analysis is secondary and collapsed (2026-11-26)");
+        cut.Find("[data-testid=mtp-design] summary").TextContent.Should().StartWith("Vis teknisk analyse");
+        cut.FindAll("[data-testid=tdp-readiness-count]").Should().BeEmpty("the rigid «x / 6» is replaced by «Klargjør AC»");
 
         cut.Find("[data-testid=mtp-blocked-by]").Input("Venter på testdata fra Person-teamet");
         cut.Find("[data-testid=mtp-before]").HasAttribute("open").Should().BeTrue("a recorded hindrance is shown");
@@ -80,9 +81,10 @@ public sealed partial class ManualTestingPlanTests
         // Readiness reflects the SAVED case: a saved hindrance makes it «Blokkert», and the collapsed checklist then opens by itself.
         Setup(Plan(Case("c1", "Submit a valid report") with { Edits = new TestCaseEdits { BlockedBy = "Venter på testdata fra Person-teamet" } }));
         var cut = Open();
-        cut.Find("[data-testid=tdp-readiness-details]").HasAttribute("open").Should().BeTrue("a blocked case shows why");
-        cut.Find("[data-testid=tdp-check]").TextContent.Should().Contain("Venter på testdata fra Person-teamet");
-        cut.Find("[data-testid=mtp-before]").HasAttribute("open").Should().BeTrue();
+        // The saved hindrance is never hidden: «Før du starter» opens by itself and names it (the old checklist is gone, 2026-11-26).
+        cut.Find("[data-testid=mtp-before]").HasAttribute("open").Should().BeTrue("a blocked case shows why");
+        cut.Find("[data-testid=mtp-before-summary]").TextContent.Should().StartWith("Hindring registrert");
+        cut.Find("[data-testid=mtp-blocked-by]").GetAttribute("value").Should().Be("Venter på testdata fra Person-teamet");
     }
 
     [Fact]

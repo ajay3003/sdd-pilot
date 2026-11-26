@@ -1,0 +1,231 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+@* «Klargjør AC» / «Klargjør scenario» (adaptive readiness, 2026-11-26): the preparation of ONE acceptance scenario or standalone documented test,
+   with or without test cases. Required items form the count; optional items never block; «Ikke relevant» is never «Oppfylt»; an undecided item
+   is never counted as ready. Every incomplete item has a real action that opens its editor and saves through the specification's grouping
+   document (optimistic revision, history). Opening, closing and reading the panel never writes. *@
+
+<section class="spp" aria-labelledby="@($"spp-h-{_uid}")" data-testid="spp" data-status="@_summary?.Status" data-scenario="@ScenarioId">
+    <header class="spp-head">
+        <h3 class="spp-title" id="@($"spp-h-{_uid}")">@(Standalone ? "Klargjør scenario" : "Klargjør AC") <span class="spp-id" data-testid="spp-id">@Identity</span></h3>
+        @if (_summary is { } s)
+        {
+            <span class="msb-status msb-tone-@Tone(s.Status)" data-testid="spp-status">@ScenarioPreparationEngine.Label(s.Status)</span>
+            <span class="spp-count" data-testid="spp-count">@ScenarioPreparationEngine.CountText(s)</span>
+            @if (s.Undecided > 0) { <span class="mt-muted msb-small" data-testid="spp-undecided">Relevans må vurderes for @s.Undecided punkt@(s.Undecided == 1 ? "" : "er")</span> }
+            @if (s.OptionalOpen > 0) { <span class="mt-muted msb-small" data-testid="spp-optional-open">@s.OptionalOpen valgfri@(s.OptionalOpen == 1 ? "" : "e") forbedring@(s.OptionalOpen == 1 ? "" : "er")</span> }
+        }
+    </header>
+    @if (_loadError is { } le)
+    {
+        <p class="msb-error" role="alert" data-testid="spp-load-error">@le <button type="button" class="msb-link" @onclick="LoadAsync">Prøv igjen</button></p>
+    }
+    else if (_summary is not { } summary)
+    {
+        <p class="mt-muted msb-small" role="status" data-testid="spp-loading">Henter klargjøringen …</p>
+    }
+    else
+    {
+        <p class="mt-muted msb-small spp-note">Klar til kjøring betyr ikke at testen er kjørt eller bestått, og stopper ikke gjennomføring i Testplaner. Testtilfeller er valgfrie.</p>
+        @if (summary.Undecided > 0 && !ReadOnly && summary.Criteria.Any(c => c.Suggested is not null))
+        {
+            <button type="button" class="btn btn-secondary btn-sm spp-accept" disabled="@_busy" @onclick="AcceptSuggestionsAsync" data-testid="spp-accept-suggestions">
+                Bruk forslagene for relevans (@summary.Criteria.Count(c => c.Suggested is not null))</button>
+        }
+        @Group("Påkrevde", CriterionApplicability.Required, summary, "required")
+        @Group("Relevans ikke vurdert", CriterionApplicability.Undecided, summary, "undecided")
+        @Group("Anbefalt før testing", CriterionApplicability.Optional, summary, "optional")
+        @Group("Ikke relevant", CriterionApplicability.NotApplicable, summary, "na")
+        @if (_error is { } err) { <p class="msb-error" role="alert" data-testid="spp-error">@err</p> }
+    }
+</section>
+
+@code {
+    /// <summary>The grouping document the decisions live in: the AC's specification, or the standalone test's own document.</summary>
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+    [Parameter, EditorRequired] public DiscoveredScenario Scenario { get; set; } = default!;
+    /// <summary>The scenario's cases (optional; none is fine). Only evidence: their approval is shown, never required.</summary>
+    [Parameter] public IReadOnlyList<TestCaseDraft> Cases { get; set; } = [];
+    [Parameter] public bool ReadOnly { get; set; }
+    /// <summary>The document after a save, so a page holding the same document keeps its revision current.</summary>
+    [Parameter] public EventCallback<StoryGroupingDocument> OnSaved { get; set; }
+
+    private readonly string _uid = Guid.NewGuid().ToString("N")[..8];
+    private StoryGroupingDocument? _doc;
+    private PreparationSummary? _summary;
+    private string? _loadError, _error;
+    private bool _busy;
+    private string? _loadedFor;
+    private Editing? _edit;
+
+    private sealed class Editing
+    {
+        public PreparationCriterion Criterion { get; init; }
+        public CriterionApplicability Applicability { get; set; }
+        public CriterionEvaluation Evaluation { get; set; }
+        public string Evidence { get; set; } = "";
+        public string Reason { get; set; } = "";
+    }
+
+    private string ScenarioId => Scenario.SourceIdentity.Length > 0 ? Scenario.SourceIdentity : Scenario.CandidateId;
+    private bool Standalone => Scenario.Story is null;
+    private string? DocumentPath => ScenarioPreparationEngine.DocumentKey(Scenario);
+    private string Identity => Scenario.Story is { } st && Scenario.NumberInStory is { } n ? $"{st.StoryId} · AC {n}" : Scenario.Title.Split(':')[0];
+
+    private static string Tone(PreparationStatus s) => s switch { PreparationStatus.Ready => "ok", PreparationStatus.NeedsPreparation => "warn", _ => "info" };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{ProjectKey}|{DocumentPath}|{ScenarioId}";
+        if (key == _loadedFor) { Recompute(); return; }
+        _loadedFor = key; _edit = null; _error = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadError = null; _summary = null;
+        if (DocumentPath is not { } path) { _loadError = "Scenarioet har ingen kilde å lagre klargjøringen i."; return; }
+        if (Services.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) { _loadError = "Klargjøringen er ikke tilgjengelig."; return; }
+        var (doc, error) = await api.StoryGroupingAsync(ProjectKey, path);
+        if (doc is null) { _loadError = $"Klargjøringen kunne ikke hentes. {error}"; return; }
+        _doc = doc;
+        Recompute();
+    }
+
+    private void Recompute()
+    {
+        if (_doc is null) return;
+        _summary = ScenarioPreparationEngine.Evaluate(ScenarioPreparationEngine.FactsOf(Scenario, Cases), _doc.Preparation, ScenarioId, Scenario.Fingerprint);
+    }
+
+    private RenderFragment Group(string title, CriterionApplicability a, PreparationSummary s, string key) => __builder =>
+    {
+        var items = s.InGroup(a).ToList();
+        if (items.Count == 0) return;
+        <div class="spp-group" data-testid="spp-group" data-group="@key">
+            <h4 class="spp-group-h">@title</h4>
+            <ul class="spp-list">
+                @foreach (var c in items)
+                {
+                    var crit = c;
+                    var done = c.Applicability is CriterionApplicability.NotApplicable || c.Evaluation == CriterionEvaluation.Satisfied && !c.Stale;
+                    <li class="spp-item @(done ? "is-done" : "is-open")" data-testid="spp-item" data-criterion="@c.Criterion" data-applicability="@c.Applicability" data-evaluation="@c.Evaluation">
+                        <span class="spp-mark" aria-hidden="true">@Mark(c)</span>
+                        <span class="spp-main">
+                            <strong>@ScenarioPreparationEngine.Label(c.Criterion)</strong>
+                            <span class="spp-state" data-testid="spp-state">@ScenarioPreparationEngine.StateText(c)</span>
+                            <span class="msb-tag spp-basis" data-testid="spp-basis">@ScenarioPreparationEngine.Label(c.ApplicabilityBasis)</span>
+                            @if (c.Stale) { <span class="msb-tag spp-stale" data-testid="spp-stale">Må gjennomgås på nytt</span> }
+                            @if (c.Suggested is { } sug) { <span class="mt-muted msb-small" data-testid="spp-suggested">Foreslått: @ScenarioPreparationEngine.Label(sug) — @c.SuggestionWhy</span> }
+                            @if (c.Evidence is { Length: > 0 } ev) { <span class="mt-muted msb-small spp-evidence" data-testid="spp-evidence">@ev</span> }
+                            @if (c.Applicability == CriterionApplicability.NotApplicable && c.Reason is { } why) { <span class="mt-muted msb-small" data-testid="spp-reason">Begrunnelse: @why</span> }
+                        </span>
+                        @if (!ReadOnly)
+                        {
+                            <button type="button" class="btn btn-sm @(done ? "btn-link" : "btn-outline-primary") spp-act" disabled="@_busy" @onclick="() => Open(crit)"
+                                    aria-expanded="@(_edit?.Criterion == crit.Criterion ? "true" : "false")" data-testid="spp-act">@(done ? "Endre" : ScenarioPreparationEngine.Action(crit.Criterion))</button>
+                        }
+                    </li>
+                    @if (_edit is { } e && e.Criterion == c.Criterion) { @Editor(e) }
+                }
+            </ul>
+        </div>
+    };
+
+    private static string Mark(CriterionState c) => c.Applicability switch
+    {
+        CriterionApplicability.NotApplicable => "–",
+        CriterionApplicability.Undecided => "?",
+        _ when c.Stale => "!",
+        _ => c.Evaluation switch { CriterionEvaluation.Satisfied => "✓", CriterionEvaluation.Unsatisfied => "!", _ => "○" },
+    };
+
+    private RenderFragment Editor(Editing e) => __builder =>
+    {
+        var na = e.Applicability == CriterionApplicability.NotApplicable;
+        <li class="spp-editor" role="group" aria-label="@($"Klargjør {ScenarioPreparationEngine.Label(e.Criterion)}")" data-testid="spp-editor" data-criterion="@e.Criterion">
+            <fieldset class="spp-field"><legend>Gjelder punktet for dette scenarioet?</legend>
+                @foreach (var a in new[] { CriterionApplicability.Required, CriterionApplicability.Optional, CriterionApplicability.NotApplicable, CriterionApplicability.Undecided })
+                {
+                    var value = a;
+                    <label class="spp-radio"><input type="radio" name="@($"spp-a-{_uid}")" checked="@(e.Applicability == value)" @onchange="() => e.Applicability = value" data-testid="spp-applicability" data-value="@value" /> @ScenarioPreparationEngine.Label(value)</label>
+                }
+            </fieldset>
+            <fieldset class="spp-field" disabled="@na"><legend>Er det oppfylt?</legend>
+                @foreach (var v in new[] { CriterionEvaluation.Satisfied, CriterionEvaluation.Unsatisfied, CriterionEvaluation.NotEvaluated })
+                {
+                    var value = v;
+                    <label class="spp-radio"><input type="radio" name="@($"spp-e-{_uid}")" checked="@(!na && e.Evaluation == value)" @onchange="() => e.Evaluation = value" data-testid="spp-evaluation" data-value="@value" /> @ScenarioPreparationEngine.Label(value)</label>
+                }
+                @if (na) { <small class="mt-muted">Et punkt som ikke er relevant, telles ikke og vises aldri som oppfylt.</small> }
+            </fieldset>
+            <label class="spp-field"><span>@ScenarioPreparationEngine.EvidencePrompt(e.Criterion)</span>
+                <textarea rows="3" maxlength="@ScenarioPreparationEngine.MaxEvidence" value="@e.Evidence" @oninput="x => e.Evidence = x.Value?.ToString() ?? string.Empty" data-testid="spp-evidence-input"></textarea></label>
+            <label class="spp-field"><span>Begrunnelse@(na ? " (påkrevd for «Ikke relevant»)" : " (valgfritt)")</span>
+                <input type="text" maxlength="@ScenarioPreparationEngine.MaxReason" value="@e.Reason" @oninput="x => e.Reason = x.Value?.ToString() ?? string.Empty" data-testid="spp-reason-input" /></label>
+            <span class="spp-editor-actions">
+                <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => SaveAsync(e)" data-testid="spp-save">Lagre</button>
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => _edit = null" data-testid="spp-cancel">Avbryt</button>
+            </span>
+        </li>
+    };
+
+    private void Open(CriterionState c)
+    {
+        _error = null;
+        _edit = new Editing
+        {
+            Criterion = c.Criterion,
+            // An undecided item opens on its proposal, but nothing is stored until «Lagre».
+            Applicability = c.Applicability == CriterionApplicability.Undecided && c.Suggested is { } s ? s : c.Applicability,
+            Evaluation = c.Evaluation, Evidence = c.Decision?.Evidence ?? "", Reason = c.Reason ?? "",
+        };
+    }
+
+    private Task SaveAsync(Editing e)
+    {
+        var na = e.Applicability == CriterionApplicability.NotApplicable;
+        var reason = string.IsNullOrWhiteSpace(e.Reason) ? null : e.Reason.Trim();
+        if (ScenarioPreparationEngine.Validate(e.Applicability, na ? null : e.Evaluation, e.Evidence, reason) is { } invalid) { _error = invalid; return Task.CompletedTask; }
+        return ApplyAsync([new StoryGroupingOperation
+        {
+            Kind = StoryGroupingOperationKind.SetScenarioPreparation, ScenarioId = ScenarioId, DisplayId = Identity, StoryKey = Scenario.Story?.Key,
+            Criterion = e.Criterion, Applicability = e.Applicability, Evaluation = na ? null : e.Evaluation,
+            Evidence = string.IsNullOrWhiteSpace(e.Evidence) ? null : e.Evidence.Trim(), Reason = reason, ScenarioFingerprint = Scenario.Fingerprint,
+        }]);
+    }
+
+    /// <summary>«Bruk forslagene»: the tester confirms every proposed applicability in one save (each still stored as their own decision).</summary>
+    private Task AcceptSuggestionsAsync() => ApplyAsync([.. _summary!.Criteria.Where(c => c.Suggested is not null).Select(c => new StoryGroupingOperation
+    {
+        Kind = StoryGroupingOperationKind.SetScenarioPreparation, ScenarioId = ScenarioId, DisplayId = Identity, StoryKey = Scenario.Story?.Key,
+        Criterion = c.Criterion, Applicability = c.Suggested, Reason = c.Suggested == CriterionApplicability.NotApplicable ? c.SuggestionWhy : null,
+        ScenarioFingerprint = Scenario.Fingerprint,
+    })]);
+
+    private async Task ApplyAsync(List<StoryGroupingOperation> ops)
+    {
+        if (_doc is null || DocumentPath is not { } path || Services.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) return;
+        _busy = true; _error = null;
+        try
+        {
+            var (doc, error) = await api.ApplyStoryGroupingAsync(ProjectKey, path, new StoryGroupingChangeRequest
+                { RequestId = Guid.NewGuid().ToString("N"), ExpectedRevision = _doc.Revision, Operations = ops });
+            if (doc is null)
+            {
+                // Someone else saved first: reload and keep the tester's open editor (nothing was saved).
+                _error = $"Klargjøringen ble ikke lagret. {error}";
+                var keep = _edit;
+                await LoadAsync();
+                _edit = keep;
+                return;
+            }
+            _doc = doc; _edit = null;
+            Recompute();
+            await OnSaved.InvokeAsync(doc);
+        }
+        finally { _busy = false; }
+    }
+}

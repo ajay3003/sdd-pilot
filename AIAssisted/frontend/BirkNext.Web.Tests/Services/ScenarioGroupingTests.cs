@@ -64,6 +64,15 @@ public sealed class ScenarioGroupingTests
     }
 
     [Fact]
+    public void Requirements_without_a_scenario_are_never_counted_as_scenarios_without_a_story()
+    {
+        var req = Item("r", null, null) with { Candidate = Item("r", null, null).Candidate with { CanonicalKey = "requirement:M|FR-01" } };
+        var groups = ScenarioGrouping.Build([Item("a", "A/specs/001-x/spec.md", "US1"), Item("standalone", null, null), req], ScenarioGroupAxis.Story, ScenarioGroupAxis.None);
+        groups.Select(g => (g.Label, string.Join(",", g.Items.Select(i => i.Id)))).Should().Equal(
+            ("US1 — T", "a"), ("Scenarioer uten brukerhistorie", "standalone"), ("Krav uten akseptansescenario", "r"));
+    }
+
+    [Fact]
     public void Defaults_and_preferences()
     {
         // 2026-11-26 AC-level classification: Brukerhistorie → Scenariotype for every scope unless the tester saved another choice.

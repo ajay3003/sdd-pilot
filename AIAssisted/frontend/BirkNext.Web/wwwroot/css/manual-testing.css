@@ -1242,3 +1242,30 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .kte-foot { display: flex; justify-content: flex-end; gap: 0.5rem; }
 .mtds-tile { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.4rem; }
 .mtds-tile-tools { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+
+/* ── Klargjør AC (adaptive readiness, 2026-11-26) ── */
+.spp { border: 1px solid var(--msb-border); border-radius: var(--msb-radius); background: var(--msb-surface); padding: 0.75rem 0.9rem; display: grid; gap: 0.55rem; }
+.spp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.7rem; }
+.spp-title { font-size: 1rem; margin: 0; }
+.spp-id { font-weight: 500; color: var(--clr-text-muted, #57606a); margin-left: 0.25rem; }
+.spp-count { font-weight: 600; font-size: 0.9rem; }
+.spp-note { margin: 0; }
+.spp-accept { justify-self: start; }
+.spp-group-h { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; margin: 0.2rem 0; color: var(--clr-text-muted, #57606a); }
+.spp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+.spp-item { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr) auto; gap: 0.5rem; align-items: start; padding: 0.35rem 0.4rem; border-radius: 6px; }
+.spp-item.is-open { background: var(--msb-subtle); }
+.spp-mark { font-weight: 700; text-align: center; }
+.spp-main { display: flex; flex-wrap: wrap; gap: 0.2rem 0.5rem; align-items: baseline; min-width: 0; }
+.spp-state { font-size: 0.85rem; }
+.spp-basis, .spp-stale { font-size: 0.72rem; }
+.spp-evidence { flex-basis: 100%; overflow-wrap: anywhere; }
+.spp-editor { display: grid; gap: 0.5rem; padding: 0.6rem; border: 1px solid var(--msb-border); border-radius: 8px; }
+.spp-field { display: grid; gap: 0.25rem; border: 0; margin: 0; padding: 0; min-width: 0; }
+.spp-field legend, .spp-field > span { font-weight: 600; font-size: 0.85rem; }
+.spp-field textarea, .spp-field input[type=text] { width: 100%; }
+.spp-radio { display: inline-flex; gap: 0.3rem; align-items: center; margin-right: 0.8rem; font-size: 0.88rem; }
+.spp-editor-actions { display: flex; gap: 0.4rem; }
+@media (max-width: 600px) { .spp-item { grid-template-columns: 1.2rem minmax(0, 1fr); } .spp-act { grid-column: 2; justify-self: start; } }
+.mtp-step-warn { grid-column: 2 / -1; font-size: 0.8rem; color: var(--clr-warning-text, #9a6700); background: color-mix(in srgb, #d4a72c 10%, transparent); border-radius: 6px; padding: 0.25rem 0.5rem; }
+.mtp-step-warn::before { content: "! "; font-weight: 700; }

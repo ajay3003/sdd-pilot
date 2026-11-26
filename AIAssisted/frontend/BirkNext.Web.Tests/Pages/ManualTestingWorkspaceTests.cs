@@ -783,4 +783,65 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.WaitForAssertion(() => Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("manual-testing/discover"));
         _plans.Verify(x => x.SaveAsync(It.IsAny<Guid>(), It.IsAny<SaveTestPlanDraftRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    // ── Testoversikt v3 P0: data correctness (2026-11-26) ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void D01_priority_buckets_reconcile_with_the_scenario_count_including_P4_to_P7()
+    {
+        // M2LB states P4–P7 on 7 stories; before, their scenarios were in «Scenarioforslag» but in no priority bar (1 218 vs 1 175).
+        var o = Overview() with
+        {
+            Specifications =
+            [
+                new(Skole, "SkoleService", "001-skoleservice", [new("a", "k1", "US1", "R", 1, "P1", "A"), new("b", "k2", "US2", "R", 1, "P4", "B"), new("c", "k3", "US3", "R", 1, "P7", "C"),
+                    new("d", "k4", "US4", "R", 1, null, "D"), new("e", "k5", "US5", "R", 1, "P2", "E")]),
+            ],
+        };
+        var slice = O.Of(o, O.Scope.Project);
+        var bars = O.Priority(slice);
+        bars.Select(b => b.Key).Should().Equal("P1", "P2", "P4", "P7", "Ikke prioritert");
+        bars.Sum(b => b.Value).Should().Be(O.Compute(slice, o.Plans).Scenarios, "mutually exclusive buckets add up to the same population as the KPI");
+        O.Gaps(slice).Sum(b => b.Value).Should().Be(5 - O.Compute(slice, o.Plans).Covered!.Value);
+        O.DrillDown(slice, O.Level.Project, "chart.priority", "P4")!.Scenarios.Select(d => d.Scenario.Identity).Should().Equal("b");
+    }
+
+    [Fact]
+    public void D02_shares_never_show_0_percent_for_a_non_zero_count_and_never_100_percent_while_something_is_missing()
+    {
+        O.Share(6, 1218).Should().Be("0,5 %");
+        O.Share(1, 5000).Should().Be("0,1 %");
+        O.Share(0, 1218).Should().Be("0 %");
+        O.Share(0, 0).Should().Be("0 %");
+        O.Share(1217, 1218).Should().Be("99,9 %");
+        O.Share(1218, 1218).Should().Be("100 %");
+        O.Share(50, 200).Should().Be("25 %");
+        var slice = O.Of(Overview(), new O.Scope(O.Level.Project, null, null));
+        O.Coverage(slice, O.Level.Project).Should().OnlyContain(b => b.ValueText != null && b.ValueText.EndsWith(" %"));
+    }
+
+    [Fact]
+    public void D03_a_plan_card_tells_an_older_server_from_an_empty_plan_and_shows_its_structure()
+    {
+        Setup([Summary()], Discovery(3));
+        var ov = Overview() with
+        {
+            Plans =
+            [
+                new(PlanId, "Med scenarioer", 7, 2, 5, 1, ["SkoleService"], DateTimeOffset.UtcNow) { Execution = new PlanExecutionCounts(4, 2, 1, 1, 0), Suites = 3, PlannedOnly = 1 },
+                new(Guid.NewGuid(), "Eldre server", 3, 0, 3, 0, ["SkoleService"], DateTimeOffset.UtcNow.AddDays(-1)),
+                new(Guid.NewGuid(), "Tom plan", 0, 0, 0, 0, [], DateTimeOffset.UtcNow.AddDays(-2)) { Execution = new PlanExecutionCounts(0, 0, 0, 0, 0), Suites = 0, PlannedOnly = 0 },
+            ],
+        };
+        _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((ov, (string?)null));
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ManualTestingDashboardSettings(), (string?)null));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mto-plan-card]").Should().HaveCount(3));
+        var cards = cut.FindAll("[data-testid=mto-plan-card]");
+        cards[0].QuerySelector("[data-testid=mto-plan-structure]")!.TextContent.Should().Be("3 testgrupper · 4 planlagte scenarioer (1 uten testtilfelle) · 7 testtilfeller");
+        cards[0].QuerySelector("[data-testid=mto-plan-no-exec]").Should().BeNull();
+        cards[1].QuerySelector("[data-testid=mto-plan-no-exec]")!.GetAttribute("data-reason").Should().Be("unavailable", "missing counts are not an empty plan");
+        cards[2].QuerySelector("[data-testid=mto-plan-no-exec]")!.GetAttribute("data-reason").Should().Be("empty");
+        cut.FindAll("[data-testid=mto-plan-exec]").Single().GetAttribute("data-passed").Should().Be("1", "execution comes only from the plan's recorded events");
+    }
 }

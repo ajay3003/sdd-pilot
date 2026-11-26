@@ -228,7 +228,7 @@
                     @DrillPanel(drill)
                 }
 
-                var moreWidgets = new[] { "chart.manualTechnical", "chart.usImplementation", "chart.scenarioTypes", "chart.nfrCategories", "chart.gapsByType", "chart.history", "panel.testPlans", "panel.recentChanges", "panel.translationReview" };
+                var moreWidgets = new[] { "chart.scenarioReadiness", "chart.manualTechnical", "chart.usImplementation", "chart.scenarioTypes", "chart.nfrCategories", "chart.gapsByType", "chart.history", "panel.testPlans", "panel.recentChanges", "panel.translationReview" };
                 @if (moreWidgets.Any(On))
                 {
                     <section class="mto-band" aria-labelledby="mto-band-more-h" data-testid="mto-band" data-band="more">
@@ -249,7 +249,16 @@
                                                 {
                                                     @ExecutionBar(ex)
                                                 }
-                                                else { <span class="mt-muted msb-small" data-testid="mto-plan-no-exec">Gjennomføring: ingen scenarioer i planen</span> }
+                                                else if (pl.Execution is null)
+                                                {
+                                                    @* An API that predates scenario-level execution sends no counts: never shown as an empty plan (2026-11-26). *@
+                                                    <span class="mt-muted msb-small" data-testid="mto-plan-no-exec" data-reason="unavailable">Gjennomføringsstatus er ikke tilgjengelig fra serveren — åpne planen for å se scenarioene.</span>
+                                                }
+                                                else { <span class="mt-muted msb-small" data-testid="mto-plan-no-exec" data-reason="empty">Gjennomføring: ingen scenarioer i planen ennå</span> }
+                                                @if (pl.Suites is { } suites && pl.Execution is { } exs)
+                                                {
+                                                    <span class="mt-muted msb-small" data-testid="mto-plan-structure">@suites testgrupper · @exs.Scenarios planlagte scenarioer@(pl.PlannedOnly is > 0 ? $" ({pl.PlannedOnly} uten testtilfelle)" : "") · @pl.Cases testtilfeller</span>
+                                                }
                                             </li>
                                         }</ul>
                                     <p class="msb-small mto-card-links"><a href="@M.PlansRoute">Se alle testplaner</a></p></section>
@@ -257,6 +266,7 @@
                             @Chart("chart.manualTechnical", "Manuelle og tekniske testtilfeller", O.ManualTechnical(slice), "Testtypen som er valgt for testtilfellet.", false)
                             @Chart("chart.usImplementation", "Implementeringsframdrift for brukerhistorier", O.StoryImplementation(slice),
                                 slice.StoriesAvailable ? "Fra oppgavene i tasks.md; hver brukerhistorie telles én gang. «US-oppgaver fullført» er ikke det samme som implementert." : "Ikke tilgjengelig: oppgavene i tasks.md er ikke lest for denne importen.", false)
+                            @Chart("chart.scenarioReadiness", "Klargjøring av scenarioer", O.ScenarioReadiness(slice), "Hvert akseptansescenario og hver dokumenterte test telles én gang. Klar til kjøring er ikke et testresultat; valgfrie punkter teller aldri som mangler.", false)
                             @Chart("chart.scenarioTypes", "Scenarioer etter type", O.ScenarioTypes(slice), "Akseptansescenarioer; et blandet scenario telles bare som blandet.", false)
                             @Chart("chart.nfrCategories", "Ikke-funksjonelle scenarioer per kategori", O.NonFunctionalCategories(slice), "Ikke-funksjonelle og blandede scenarioer; et scenario med flere kvalitetsegenskaper står i flere søyler.", false)
                             @Chart("chart.gapsByType", "Manglende dekning etter type", O.GapsByType(slice), "Akseptansescenarioer uten lagret testtilfelle.", false)
@@ -554,8 +564,7 @@
                 <span class="msb-tag mto-tile-badge" data-testid="mto-tile-metric">@metric</span>
                 @if (explain)
                 {
-                    <span class="mto-kpi-e" data-testid="mto-tile-explain">@(count is null ? "Ikke tilgjengelig: spesifikasjonen er ikke lagret for prosjektet"
-                        : declared > 0 ? $"{declared} dokumentert som E2E i kilden – ikke verifisert" : "Unike scenarioer i utvalget")</span>
+                    <span class="mto-kpi-e" data-testid="mto-tile-explain">@TileExplain(t, slice, count, declared)</span>
                 }
             </button>
             <span class="mto-tile-tools">
@@ -574,6 +583,16 @@
             </span>
         </div>
     };
+
+    /// <summary>What a tile's number means; a 0 on a test level says how many scenarios have no stated level, so «0 E2E» is never read as «no E2E».</summary>
+    private static string TileExplain(DashboardKpiTile t, O.Slice slice, int? count, int declared)
+    {
+        if (count is null) return "Ikke tilgjengelig: spesifikasjonen er ikke lagret for prosjektet";
+        if (declared > 0) return $"{declared} dokumentert som E2E i kilden – ikke verifisert";
+        var unknown = t.Dimension == KpiTileDimension.TestLevel && t.Metric != nameof(ScenarioTestLevel.Unclassified)
+            ? O.TileCount(slice, new DashboardKpiTile("x", null, KpiTileDimension.TestLevel, nameof(ScenarioTestLevel.Unclassified))) ?? 0 : 0;
+        return count == 0 && unknown > 0 ? $"{unknown:N0} scenarioer har uavklart testnivå – 0 betyr ikke at det ikke finnes slike tester" : "Unike scenarioer i utvalget";
+    }
 
     private List<DashboardKpiTile> TilesWith(DashboardKpiTile changed)
     {
@@ -757,10 +776,11 @@
     /// <summary>A share of a real count as a thin meter with its text (never colour or length alone).</summary>
     private static RenderFragment Meter(int part, int whole, string what) => __builder =>
     {
-        var pct = whole <= 0 ? 0 : (int)Math.Round(100.0 * part / whole);
-        <span class="mto-meter" role="img" aria-label="@($"{part} av {whole} {what} ({pct} %)")" data-testid="mto-meter">
-            <span class="mto-meter-bar" aria-hidden="true"><span class="mto-meter-fill" style="width:@(pct)%"></span></span>
-            <span class="mto-meter-t" aria-hidden="true">@pct % @what</span>
+        var width = whole <= 0 ? 0 : Math.Round(100.0 * part / whole, 2);
+        var share = O.Share(part, whole);
+        <span class="mto-meter" role="img" aria-label="@($"{part} av {whole} {what} ({share})")" title="@($"{part:N0} av {whole:N0} {what}")" data-testid="mto-meter">
+            <span class="mto-meter-bar" aria-hidden="true"><span class="mto-meter-fill" style="width:@(width.ToString(System.Globalization.CultureInfo.InvariantCulture))%"></span></span>
+            <span class="mto-meter-t" aria-hidden="true">@share @what</span>
         </span>
     };
 

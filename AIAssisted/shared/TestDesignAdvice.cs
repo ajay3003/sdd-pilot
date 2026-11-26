@@ -402,7 +402,9 @@ public static partial class TestDesignAdvisor
     public static IEnumerable<TestCaseVariantProposal> Repetitions(TestCaseDraft scenario)
     {
         var f = FactsOf(scenario);
-        var text = f.All;
+        // Relevance (2026-11-26): only the scenario's OWN source words (Given / When / Then) can propose a test — never composed steps, a title
+        // or edited text that happens to mention a topic.
+        var text = f.SourceText;
         if (!Repetition().IsMatch(text) && !Regex.IsMatch(text, @"\b(correction|withdraw\w*)\b", RegexOptions.IgnoreCase)) yield break;
         var keys = new[] { ("message id", "meldingsidentitet"), ("message-chain", "meldingskjede"), ("version", "versjon"), ("send time", "sendetid"), ("record identity", "postidentitet"), ("business key", "forretningsnøkkel") }
             .Where(k => text.Contains(k.Item1, StringComparison.OrdinalIgnoreCase)).Select(k => k.Item2).ToList();
@@ -423,17 +425,32 @@ public static partial class TestDesignAdvisor
     public static IEnumerable<TestCaseVariantProposal> SecurityVariants(TestCaseDraft scenario)
     {
         var f = FactsOf(scenario);
-        if (!Security().IsMatch(f.All)) yield break;
-        var permissions = Regex.Matches(f.All, @"`([A-Za-zÆØÅæøå]+:[A-Za-zÆØÅæøå]+)`").Select(m => m.Groups[1].Value).Distinct().ToList();
-        var classified = Regex.IsMatch(f.All, @"Kode ?[67]|classified|security level", RegexOptions.IgnoreCase);
+        // Relevance (2026-11-26): an access or confidentiality proposal needs the scenario's OWN source words to state it (a «Kode 6/7» proposal
+        // was shown under a scenario about a Barn referencing a missing Person). The triggering words are quoted in the reason.
+        var text = f.SourceText;
+        if (!Security().IsMatch(text)) yield break;
+        var permissions = Regex.Matches(text, @"`([A-Za-zÆØÅæøå]+:[A-Za-zÆØÅæøå]+)`").Select(m => m.Groups[1].Value).Distinct().ToList();
+        var classifiedMatch = Regex.Match(text, @"Kode ?[67]|classified|security level", RegexOptions.IgnoreCase);
+        var classified = classifiedMatch.Success;
         if (permissions.Count > 0)
             yield return new($"noperm:{Sha(string.Join(",", permissions))}", Clip($"{scenario.Generated.Title} — uten {string.Join(", ", permissions)}", 200), "Tilgang (negativ)",
                 $"Kilden krever {string.Join(", ", permissions)}. Test samme handling uten tillatelsen; kontroller at ingenting avsløres (heller ikke at barnet finnes). Forventet svar er ikke oppgitt i scenarioet.",
                 $"En bruker uten {string.Join(", ", permissions)}.", null, null);
         if (classified)
             yield return new($"classified:{Sha(f.Title + "classified")}", Clip($"{scenario.Generated.Title} — skjermet barn (Kode 6/7) uten særskilt tilgang", 200), "Konfidensialitet",
-                "Kilden omtaler skjerming. Kontroller oppslag, liste og telling hver for seg: skjermet barn verken vises, telles eller avsløres. Fravær i én liste er ikke nok.",
+                $"Scenarioets kilde sier: «{SourceQuote(text, classifiedMatch.Index)}». Kontroller oppslag, liste og telling hver for seg: skjermet barn verken vises, telles eller avsløres. Fravær i én liste er ikke nok.",
                 "Et skjermet barn og en bruker uten tilgang til det.", null, null);
+    }
+
+    /// <summary>The source sentence around <paramref name="index"/> (for «Hvorfor foreslås denne testen?»), bounded.</summary>
+    public static string SourceQuote(string text, int index)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        var at = Math.Clamp(index, 0, text.Length - 1);
+        var start = at == 0 ? 0 : text.LastIndexOfAny(['.', '\n', ';'], at) + 1;
+        var end = text.IndexOfAny(['.', '\n', ';'], at);
+        var quote = text[start..(end < 0 ? text.Length : end)].Trim();
+        return quote.Length > 160 ? quote[..159] + "…" : quote;
     }
 
     /// <summary>All test-design proposals of the scenario (existing evidence variants come first, from <see cref="ScenarioPlanning.Variants"/>);
@@ -517,7 +534,7 @@ public static partial class TestDesignAdvisor
     public static IEnumerable<TestCaseVariantProposal> StateSequences(TestCaseDraft scenario)
     {
         var f = FactsOf(scenario);
-        var states = StatesNamed(f.All);
+        var states = StatesNamed(f.SourceText);
         if (states.Count < 3) yield break;
         yield return new($"states:{Sha(string.Join(">", states))}", Clip($"{scenario.Generated.Title} — forløp {string.Join(" → ", states)}", 200), "Tilstandsforløp",
             $"Scenarioet nevner tilstandene {string.Join(", ", states)}. Test forløpet i rekkefølge, og at et forsøk på å hoppe over eller gjenta et steg ikke gir en annen sluttilstand. Overganger kilden ikke beskriver må avklares.",

@@ -16,20 +16,35 @@ public sealed partial class TestPlanSuggestionService
 
     /// <summary>Reviewers' scenario-type decisions per specification (normalized path → scenario source identity → newest decision); read-only,
     /// one query. Each decision belongs to ONE acceptance scenario — nothing here is a story-level type.</summary>
-    internal async Task<Dictionary<string, Dictionary<string, ScenarioTypeDecision>>> TypeDecisionsAsync(string key, CancellationToken ct)
+    internal async Task<Dictionary<string, Dictionary<string, ScenarioTypeDecision>>> TypeDecisionsAsync(string key, CancellationToken ct) =>
+        (await GroupingDecisionsAsync(key, ct)).Types;
+
+    /// <summary>Both kinds of per-scenario decisions of every grouping document of the project, from one query (read-only).</summary>
+    internal async Task<(Dictionary<string, Dictionary<string, ScenarioTypeDecision>> Types, Dictionary<string, List<ScenarioPreparationDecision>> Preparation)> GroupingDecisionsAsync(string key, CancellationToken ct)
     {
+        var preparation = new Dictionary<string, List<ScenarioPreparationDecision>>(StringComparer.OrdinalIgnoreCase);
         var typeDecisions = new Dictionary<string, Dictionary<string, ScenarioTypeDecision>>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in await db.StoryGroupings.AsNoTracking().Where(r => r.ProjectKey == key).ToListAsync(ct))
         {
             try
             {
                 if (System.Text.Json.JsonSerializer.Deserialize<StoryGroupingDocument>(row.ContentJson, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)) is { } doc)
+                {
                     typeDecisions[StoryGroupingService.NormalizePath(row.SpecificationPath)] = StoryGroupingEngine.ScenarioTypeDecisions(doc);
+                    preparation[StoryGroupingService.NormalizePath(row.SpecificationPath)] = doc.Preparation ?? [];
+                }
             }
             catch (System.Text.Json.JsonException) { }
         }
-        return typeDecisions;
+        return (typeDecisions, preparation);
     }
+
+    /// <summary>The scenario's readiness from its own facts and the testers' decisions in its document (cases are evidence only, so this is the
+    /// same status every tab shows).</summary>
+    private static PreparationStatus Readiness(DiscoveredScenario c, Dictionary<string, List<ScenarioPreparationDecision>> preparation) =>
+        ScenarioPreparationEngine.Evaluate(ScenarioPreparationEngine.FactsOf(c, []),
+            ScenarioPreparationEngine.DocumentKey(c) is { } doc ? preparation.GetValueOrDefault(StoryGroupingService.NormalizePath(doc)) : null,
+            c.SourceIdentity, c.Fingerprint).Status;
 
     /// <summary>The newest reviewer decision for this acceptance scenario, if any.</summary>
     internal static ScenarioTypeDecision? DecisionFor(Dictionary<string, Dictionary<string, ScenarioTypeDecision>> all, DiscoveredScenario c) =>
@@ -38,7 +53,8 @@ public sealed partial class TestPlanSuggestionService
 
     /// <summary>Standalone documented tests (2026-11-26) of the project's latest discovery, one entry per test document (its module from the path).
     /// Read-only; nothing is discovered here. Each test is one unique scenario with its own type and its DECLARED level.</summary>
-    private async Task<List<OverviewSpecification>> DocumentedTestSpecificationsAsync(string key, Dictionary<string, Dictionary<string, ScenarioTypeDecision>> typeDecisions, CancellationToken ct)
+    private async Task<List<OverviewSpecification>> DocumentedTestSpecificationsAsync(string key, Dictionary<string, Dictionary<string, ScenarioTypeDecision>> typeDecisions,
+        Dictionary<string, List<ScenarioPreparationDecision>> preparation, CancellationToken ct)
     {
         if (discoveries is null) return [];
         if (discoveryStore is not null)
@@ -53,7 +69,7 @@ public sealed partial class TestPlanSuggestionService
                 var type = ScenarioTypeClassifier.Classify(c, DecisionFor(typeDecisions, c));
                 var level = TestLevelClassifier.Of(c.Type);
                 return new OverviewScenario(c.SourceIdentity, null, null, null, null, null, c.Title, type.Type, [.. type.Qualities])
-                    { Level = level.Level, LevelDeclared = level.Candidate, Standalone = true };
+                    { Level = level.Level, LevelDeclared = level.Candidate, Standalone = true, Preparation = Readiness(c, preparation) };
             })]))];
     }
 
@@ -66,7 +82,7 @@ public sealed partial class TestPlanSuggestionService
         var specifications = new List<OverviewSpecification>();
         var stored = specificationCatalogs is null ? null : await specificationCatalogs.EvidenceAsync(null, key, ct);
         // Reviewers' scenario-type decisions of every specification of the project (one query; 2026-11-26).
-        var typeDecisions = await TypeDecisionsAsync(key, ct);
+        var (typeDecisions, preparationDecisions) = await GroupingDecisionsAsync(key, ct);
         foreach (var spec in stored?.Evidence ?? [])
         {
             var decisions = typeDecisions.GetValueOrDefault(StoryGroupingService.NormalizePath(spec.Path));
@@ -79,13 +95,14 @@ public sealed partial class TestPlanSuggestionService
                     var requirementOnly = c.CanonicalKey.StartsWith("requirement:", StringComparison.Ordinal);
                     var type = requirementOnly ? null : ScenarioTypeClassifier.Classify(c, decisions?.GetValueOrDefault(c.SourceIdentity), requirementTexts);
                     return new OverviewScenario(c.SourceIdentity, c.Story?.Key, c.Story?.StoryId, c.Story?.Title, c.NumberInStory, NormalPriority(c.Story?.Priority), c.Title,
-                        type?.Type ?? ScenarioRequirementType.Unclassified, type is null ? null : [.. type.Qualities], requirementOnly) { Level = TestLevelClassifier.Of(c.Type).Level };
+                        type?.Type ?? ScenarioRequirementType.Unclassified, type is null ? null : [.. type.Qualities], requirementOnly)
+                        { Level = TestLevelClassifier.Of(c.Type).Level, Preparation = requirementOnly ? null : Readiness(c, preparationDecisions) };
                 })
                 .ToList();
             var folder = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(spec.Path.Replace('\\', '/')) ?? "");
             specifications.Add(new OverviewSpecification(spec.Path, ModuleOf(spec.Path), folder.Length > 0 ? folder : spec.Path, scenarios));
         }
-        specifications.AddRange(await DocumentedTestSpecificationsAsync(key, typeDecisions, ct));
+        specifications.AddRange(await DocumentedTestSpecificationsAsync(key, typeDecisions, preparationDecisions, ct));
 
         // Every case of the active plans, flagged against its own source (the same per-case resolution as Planlegg og klargjør).
         var cases = new List<OverviewCase>();
@@ -129,6 +146,8 @@ public sealed partial class TestPlanSuggestionService
             {
                 SprintLabel = plan.DeliveryLabel,
                 Execution = ExecutionCounts(plan, latestByPlan),
+                Suites = plan.Suites.Count,
+                PlannedOnly = Occurrences(plan).Count(o => o.ScenarioOnly),
             });
             foreach (var r in (await RevisionsAsync(plan.Id, ct)).Take(5))
                 revisions.Add(new OverviewRevision(plan.Id, plan.PlanName, r.Revision, r.Reason, r.SavedBy, r.SavedAt));

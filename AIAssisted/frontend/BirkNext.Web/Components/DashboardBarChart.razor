@@ -69,7 +69,7 @@ else
 
     private bool Selectable => OnSelect.HasDelegate;
 
-    private string Value(DeliveryBar b) => $"{b.Value}{(Percent ? "%" : "")}";
+    private string Value(DeliveryBar b) => b.ValueText ?? $"{b.Value}{(Percent ? "%" : "")}";
 
     private static string F(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
 

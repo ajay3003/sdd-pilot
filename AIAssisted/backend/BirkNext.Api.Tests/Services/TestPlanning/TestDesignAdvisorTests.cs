@@ -258,6 +258,27 @@ public sealed class TestDesignAdvisorTests
     }
 
     [Fact]
+    public void R01_a_proposal_needs_the_scenarios_own_source_words_never_composed_or_edited_text_and_quotes_them()
+    {
+        // 2026-11-26: a «skjermet barn (Kode 6/7)» proposal was shown under a scenario about a Barn record referencing a Person that does not exist.
+        var unrelated = new TestCaseDraft
+        {
+            Generated = new TestCaseContent
+            {
+                Title = "Barn-post med ukjent Person beholdes og prøves igjen",
+                Template = [new("given", "Given", "en Barn-post som refererer en Person som ikke finnes ennå"), new("when", "When", "posten mottas"), new("then", "Then", "posten lagres og prøves igjen senere")],
+                Steps = ["Kontroller tilgang for Kode 6/7 og `Person:SeGradertBarn` i oppslaget"], // composed / edited text — not the scenario's source
+            },
+        };
+        TestDesignAdvisor.SecurityVariants(unrelated).Should().BeEmpty("the scenario's own source says nothing about access or shielding");
+        TestDesignAdvisor.StateSequences(unrelated).Should().BeEmpty();
+        ScenarioPlanning.Variants(unrelated, []).Should().NotContain(v => v.Dimension == "Konfidensialitet" || v.Dimension == "Tilgang (negativ)");
+
+        var stated = TestDesignAdvisor.SecurityVariants(Case(Get("SkoleService/US2-2"))).Single(p => p.Dimension == "Konfidensialitet");
+        stated.Basis.Should().StartWith("Scenarioets kilde sier: «").And.Contain("Kode", "the reason quotes the source words that triggered it");
+    }
+
+    [Fact]
     public void T24_T25_classification_change_and_Person_unavailable_appear_only_when_stated()
     {
         TestDesignAdvisor.SecurityMatrix("Given Person is unavailable and the child is Kode 7, when a caseworker lists children, the child is not shown.").Rows

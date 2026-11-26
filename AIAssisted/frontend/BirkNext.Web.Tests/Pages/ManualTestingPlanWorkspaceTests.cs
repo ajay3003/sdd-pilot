@@ -51,7 +51,9 @@ public sealed partial class ManualTestingPlanTests
         Setup(Plan(Case("c1", "Submit a valid report", story: Story6)));
         var cut = Open();
 
-        cut.FindAll("[data-testid=tdp-check]").Select(c => c.GetAttribute("data-key")).Should().Equal("source", "data", "trigger", "verify", "env", "review");
-        cut.Find("[data-testid=tdp-readiness-count]").TextContent.Should().MatchRegex(@"^\d / 6$");
+        // Adaptive readiness (2026-11-26): no fixed «x / 6» in Planlegg — even with the technical analysis open.
+        cut.Find("[data-testid=mtp-design] summary").Click();
+        cut.FindAll("[data-testid=tdp-check]").Should().BeEmpty();
+        cut.FindAll("[data-testid=tdp-readiness-count]").Should().BeEmpty();
     }
 }

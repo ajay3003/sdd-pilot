@@ -38,6 +38,7 @@ public static class ManualTestingDashboard
         new("chart.history", Charts, "Utvikling i testforberedelse", "Utvikling over tid — bare når historikken finnes.", false),
         new("chart.moduleApproval", Charts, "Godkjenning per modul", "Lagrede og godkjente testtilfeller per modul.", false),
         new("chart.usImplementation", Charts, "Implementeringsframdrift for brukerhistorier", "Brukerhistorier etter oppgavestatus i tasks.md (hver historie telles én gang).", false),
+        new("chart.scenarioReadiness", Charts, "Klargjøring av scenarioer", "Akseptansescenarioer og dokumenterte tester: klar, trenger klargjøring eller må vurderes (ikke testresultater).", true),
         new("chart.scenarioTypes", Charts, "Scenarioer etter type", "Funksjonelle, ikke-funksjonelle, blandede og uavklarte akseptansescenarioer.", false),
         new("chart.nfrCategories", Charts, "Ikke-funksjonelle scenarioer per kategori", "Kvalitetsegenskaper (ytelse, universell utforming …); et scenario kan ha flere.", false),
         new("chart.gapsByType", Charts, "Manglende dekning etter type", "Akseptansescenarioer uten lagret testtilfelle, etter scenariotype.", false),
@@ -193,6 +194,8 @@ public sealed record OverviewScenario(string Identity, string? StoryKey, string?
     public bool LevelDeclared { get; init; }
     /// <summary>A standalone documented test (no user story; never one invented).</summary>
     public bool Standalone { get; init; }
+    /// <summary>Adaptive readiness of this scenario (2026-11-26; the same engine as «Klargjør AC»); null for a requirement without a scenario.</summary>
+    public PreparationStatus? Preparation { get; init; }
     /// <summary>An acceptance scenario (not a requirement without one): only these are classified by type.</summary>
     public bool IsAcceptanceScenario => !RequirementOnly;
 }
@@ -231,6 +234,9 @@ public sealed record OverviewPlan(Guid Id, string Name, int Cases, int Approved,
     /// <summary>Scenario-level execution in THIS plan (2026-11-26): its scenario occurrences by current status. Never a global scenario result;
     /// never a case or step count.</summary>
     public PlanExecutionCounts? Execution { get; init; }
+    /// <summary>Suites in the plan and its scenario-only items (planned without a case), 2026-11-26. Null from a server that predates them.</summary>
+    public int? Suites { get; init; }
+    public int? PlannedOnly { get; init; }
 }
 
 /// <summary>A plan's scenario occurrences by their current execution status in that plan.</summary>

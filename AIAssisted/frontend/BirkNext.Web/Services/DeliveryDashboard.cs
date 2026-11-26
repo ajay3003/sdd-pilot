@@ -11,7 +11,11 @@ public sealed record DeliveryKpi(string Key, string Value, string Label, string 
 /// <summary>A categorical quality dimension: a state word, never a percentage invented from a category.</summary>
 public sealed record DeliveryQualityRow(string Key, string Label, string State, string Detail, DeliveryDashboardTone Tone, int? Filled = null, int? Of = null);
 
-public sealed record DeliveryBar(string Key, string Label, int Value, DeliveryDashboardTone Tone, string Info);
+public sealed record DeliveryBar(string Key, string Label, int Value, DeliveryDashboardTone Tone, string Info)
+{
+    /// <summary>The value as shown, when it is not the plain number (e.g. «0,5 %» for a share that rounds to 0).</summary>
+    public string? ValueText { get; init; }
+}
 
 public sealed record DeliveryAttentionGroupRow(DeliveryAttentionCategory Category, string Label, IReadOnlyList<DeliveryAttentionItem> Items);
 

@@ -34,8 +34,11 @@ public static class ScenarioGrouping
                     : new(i.TypeKey, S.TypeGroupLabel(i.TypeKey), i.TypeKey == S.RequirementGroup ? 60 : 70);
             case ScenarioGroupAxis.Story:
                 // Specification-scoped: «US1» of two specifications are two groups.
+                // A requirement without an acceptance scenario is not a scenario without a story (2026-11-26: 649 of the 668 items under
+                // «Scenarioer uten brukerhistorie» in M2LB were FR requirements): it gets its own group, after the stories.
                 return i.Candidate.Story is { } st
                     ? new($"{st.SpecificationPath}#{st.Key}", $"{st.StoryId} — {st.Title}".Trim(' ', '—'), 0)
+                    : S.IsRequirementOnly(i.Candidate) ? new("~requirements", S.TypeGroupLabel(S.RequirementGroup), 100)
                     : new("~none", ScenarioGroupAxes.NoStory, 99);
             case ScenarioGroupAxis.Area:
                 return string.IsNullOrWhiteSpace(i.Area) ? new("~none", ScenarioGroupAxes.NoArea, 99) : new(i.Area, i.Area, 0);

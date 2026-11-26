@@ -29,15 +29,22 @@ public sealed partial class ManualTestingPlanTests
         },
     };
 
+    /// <summary>Planlegg with the technical analysis opened (collapsed by default since adaptive readiness, 2026-11-26).</summary>
+    private IRenderedComponent<BirkNext.Web.Pages.ManualTestingPlan> OpenDesign()
+    {
+        var cut = Open();
+        cut.Find("[data-testid=mtp-design] summary").Click();
+        return cut;
+    }
+
     [Fact]
     public void M01_the_case_shows_its_approach_readiness_verification_and_source_grounded_proposals()
     {
         Setup(Plan(ThresholdScenario()));
-        var cut = Open();
+        var cut = OpenDesign();
 
         cut.FindAll("[data-testid=tdp-approach]").Select(a => a.GetAttribute("data-approach")).Should().Contain("ManualTechnical").And.NotContain("Manual");
-        cut.Find("[data-testid=tdp-readiness-level]").TextContent.Should().Be("Klar til forberedelse");
-        cut.FindAll("[data-testid=tdp-check]").Single(c => c.TextContent.Contains("Utløser")).GetAttribute("data-satisfied").Should().Be("Unknown");
+        cut.FindAll("[data-testid=tdp-readiness]").Should().BeEmpty("readiness is «Klargjør AC» now; the fixed six-question count is gone (2026-11-26)");
         cut.Find("[data-testid=tdp-point-method]").TextContent.Should().Be("Verifisering kreves — metode ikke bekreftet");
         var proposals = cut.FindAll("[data-testid=tdp-proposal]");
         proposals.Should().HaveCount(3).And.OnlyContain(p => p.TextContent.Contains("strengt større enn 0.5"));
@@ -53,7 +60,7 @@ public sealed partial class ManualTestingPlanTests
         var added = Case("m9", "US1 scenario 4 — grenseverdi: like innenfor 0.5", kind: ScenarioSourceKind.Manual, scenarioKey: "c1");
         _api.Setup(x => x.AddManualCaseAsync(PlanId, It.IsAny<AddManualTestCaseRequest>(), It.IsAny<CancellationToken>()))
             .Callback<Guid, AddManualTestCaseRequest, CancellationToken>((_, r, _) => sent = r).ReturnsAsync((Plan(scenario, added) with { Revision = 4 }, (string?)null));
-        var cut = Open();
+        var cut = OpenDesign();
 
         var proposal = cut.FindAll("[data-testid=tdp-proposal]").First(p => p.TextContent.Contains("like innenfor"));
         proposal.QuerySelector("[data-testid=tdp-accept]")!.Click();
@@ -74,7 +81,7 @@ public sealed partial class ManualTestingPlanTests
         _api.Setup(x => x.SaveAsync(PlanId, It.IsAny<SaveTestPlanDraftRequest>(), It.IsAny<CancellationToken>()))
             .Callback<Guid, SaveTestPlanDraftRequest, CancellationToken>((_, r, _) => sent = r)
             .ReturnsAsync(() => (Plan(scenario) with { Revision = 4, DesignDecisions = sent!.DesignDecisions }, (string?)null));
-        var cut = Open();
+        var cut = OpenDesign();
         var key = cut.FindAll("[data-testid=tdp-proposal]")[0].GetAttribute("data-key");
 
         cut.FindAll("[data-testid=tdp-reject]")[0].Click();
@@ -91,7 +98,7 @@ public sealed partial class ManualTestingPlanTests
         var scenario = ThresholdScenario();
         var key = ScenarioPlanning.Variants(scenario, [])[0].Key;
         Setup(Plan(scenario) with { DesignDecisions = [new TestDesignDecision { ScenarioKey = "c1", ProposalKey = key, Decision = TestDesignDecisions.Deferred, By = "anna" }] });
-        var cut = Open();
+        var cut = OpenDesign();
 
         var first = cut.FindAll("[data-testid=tdp-proposal]")[0];
         first.QuerySelector("[data-testid=tdp-decision]")!.TextContent.Should().Be("Utsatt av anna");
@@ -105,7 +112,7 @@ public sealed partial class ManualTestingPlanTests
         var scenario = ThresholdScenario();
         var decisions = ScenarioPlanning.Variants(scenario, []).Select(v => new TestDesignDecision { ScenarioKey = "c1", ProposalKey = v.Key, Decision = TestDesignDecisions.Rejected, By = "anna" }).ToList();
         Setup(Plan(scenario) with { DesignDecisions = decisions });
-        var cut = Open();
+        var cut = OpenDesign();
 
         cut.FindAll("[data-testid=tdp-proposal]").Should().BeEmpty();
         cut.Find("[data-testid=tdp-proposals-rejected]").TextContent.Should().Contain($"{decisions.Count} avviste");
@@ -115,7 +122,7 @@ public sealed partial class ManualTestingPlanTests
     public void M05_the_panel_is_the_same_in_every_language_view_and_needs_no_new_request()
     {
         Setup(Plan(Translated(ThresholdScenario())));
-        var cut = Open();
+        var cut = OpenDesign();
         string Panel() => cut.Find("[data-testid=tdp]").TextContent;
 
         var norsk = Panel();
@@ -130,7 +137,7 @@ public sealed partial class ManualTestingPlanTests
     public void M06_a_read_only_plan_shows_the_advice_but_offers_no_decisions()
     {
         Setup(Plan(ThresholdScenario()), canWrite: false);
-        var cut = Open();
+        var cut = OpenDesign();
         cut.FindAll("[data-testid=tdp-proposal]").Should().NotBeEmpty();
         cut.FindAll("[data-testid=tdp-accept]").Should().BeEmpty();
     }
@@ -139,7 +146,7 @@ public sealed partial class ManualTestingPlanTests
     public void M06_unsaved_edits_block_decisions_but_the_draft_stays_savable()
     {
         Setup(Plan(ThresholdScenario()));
-        var writable = Open();
+        var writable = OpenDesign();
         writable.Find("[data-testid=mtp-title]").Input("Endret");
         writable.FindAll("[data-testid=tdp-accept]").Should().BeEmpty("save first: a decision never mixes with unsaved edits");
         writable.Find("[data-testid=mtp-save]").HasAttribute("disabled").Should().BeFalse("the draft stays savable");

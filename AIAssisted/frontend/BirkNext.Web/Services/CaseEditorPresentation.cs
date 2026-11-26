@@ -92,6 +92,32 @@ public static partial class PlanPreparePresentation
     [GeneratedRegex(@"^(?:(?:it|the system|systemet|everything|alt|this|det)\s+)?(?:works|work|fungerer|virker|is ok|er ok|as expected|som forventet|correctly|riktig|ok)\.?$", RegexOptions.IgnoreCase)]
     private static partial Regex Vague();
 
+    [GeneratedRegex(@"^\s*(?:trigger and observe|verify the result|check the (?:behaviou?r|result)|process the record|observe the result|utløs og observer|kontroller (?:resultatet|oppførselen)|verifiser resultatet|behandle posten)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex GenericAction();
+
+    [GeneratedRegex(@"must be specified|må angis|må spesifiseres|ikke oppgitt|not stated", RegexOptions.IgnoreCase)]
+    private static partial Regex OpenAction();
+
+    [GeneratedRegex(@"\b(vises|viser|lagres|lagret|returnerer|returns?|stored|displayed|shown|publiseres|published|status|melding|message|feilmelding|error|logg|log|rapport|report|svar|response|HTTP\s*\d{3}|\d{3})\b", RegexOptions.IgnoreCase)]
+    private static partial Regex Observable();
+
+    /// <summary>Why one step is not yet actionable for a manual tester (2026-11-26) — a warning only: the step is never rewritten, an approved case
+    /// stays approved, and nothing is invented (no endpoint, payload, query or environment). Null = the step reads as actionable.</summary>
+    public static IReadOnlyList<string>? StepWarning(string? action, string? expected)
+    {
+        var reasons = new List<string>();
+        var a = (action ?? "").Trim();
+        var e = (expected ?? "").Trim();
+        if (a.Length == 0 && e.Length == 0) return null;
+        if (a.Length == 0) reasons.Add("Mangler handling: hva gjør testeren?");
+        else if (GenericAction().IsMatch(a)) reasons.Add("Handlingen er generell: angi hva som utløser hendelsen og hvor.");
+        else if (OpenAction().IsMatch(a)) reasons.Add("Kilden sier ikke hvordan dette utløses i testmiljøet — avklar før gjennomføring.");
+        if (e.Length == 0) reasons.Add("Mangler forventet resultat for steget.");
+        else if (Vague().IsMatch(e) || !Observable().IsMatch(e) && e.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < 4)
+            reasons.Add("Forventet resultat er ikke observerbart: hva ser testeren, og hvor?");
+        return reasons.Count == 0 ? null : reasons;
+    }
+
     /// <summary>Quality guidance on what a tester will actually do and check — advice, never a block (the review rules stay the gate).</summary>
     public static IReadOnlyList<string> QualityHints(CaseForm form)
     {

@@ -988,8 +988,13 @@
                             <div class="msb-callout is-warn" data-testid="mtd-detail-questions"><strong>Åpne spørsmål</strong><ul>@foreach (var q in open2.Take(5)) { <li>@q</li> }</ul></div>
                         }
 
+                        @* «Klargjør AC» (2026-11-26): the scenario's own preparation, the same calculation as Planlegg og klargjør. *@
+                        @if (_ws?.ProjectKey is { } prepKey)
+                        {
+                            <BirkNext.Web.Components.ManualTesting.ScenarioPreparationPanel ProjectKey="@prepKey" Scenario="c" OnSaved="PreparationSavedAsync" />
+                        }
                         <details class="mtw-more" data-testid="mtd-detail-design" open="@_designOpen" @ontoggle="() => _designOpen = !_designOpen">
-                            <summary>Testdesign og forslag til flere tester</summary>
+                            <summary>Vis teknisk analyse (testdesign og forslag til flere tester)</summary>
                             <BirkNext.Web.Components.ManualTesting.TestDesignPanel Facts="TestDesignAdvisor.FactsOf(c)" Scenario="TestDesignAdvisor.AsDraft(c)" Suitability="active.Suitability" />
                         </details>
 
@@ -1597,6 +1602,13 @@
 
     /// <summary>Saves grouping / link operations as one change against the revision read. On success the profiles are recomputed and a story whose
     /// grouping suggestion changed is named; nothing else on the page (scenarios, cases, filters) is touched.</summary>
+    /// <summary>A preparation saved in the drawer stored a new revision of the same grouping document: keep the page's copy current.</summary>
+    private Task PreparationSavedAsync(StoryGroupingDocument doc)
+    {
+        if (_groupDoc is not null && BirkNext.Specifications.SpecificationCatalogRules.SamePath(doc.SpecificationPath, _groupDoc.SpecificationPath)) _groupDoc = doc;
+        return Task.CompletedTask;
+    }
+
     private async Task<string?> ApplyGroupingAsync(IReadOnlyList<StoryGroupingOperation> ops)
     {
         if (ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api || _ws?.ProjectKey is not { } key || _groupSpecPath is not { } spec || _groupDoc is null)

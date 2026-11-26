@@ -90,6 +90,9 @@ public sealed record StoryGroupingDocument
     /// (2026-11-26); a decision without a type returns the scenario to the source-derived proposal. Never changes the scenario, its test method or
     /// its test cases.</summary>
     public List<ScenarioTypeDecision> ScenarioTypes { get; init; } = [];
+    /// <summary>Testers' preparation decisions per scenario and criterion (adaptive AC readiness, 2026-11-26), newest last. Never changes the
+    /// scenario, its cases, an approval or an execution result.</summary>
+    public List<ScenarioPreparationDecision> Preparation { get; init; } = [];
 }
 
 /// <summary>A reviewer's decision about a source test for a scenario. <see cref="Cleared"/> returns it to what the source says.</summary>
@@ -182,6 +185,10 @@ public enum StoryGroupingOperationKind
     /// <see cref="StoryGroupingOperation.ScenarioType"/>, <see cref="StoryGroupingOperation.Qualities"/>, <see cref="StoryGroupingOperation.ScenarioFingerprint"/>;
     /// no type = back to the proposal). 2026-11-26.</summary>
     SetScenarioType,
+    /// <summary>A tester's preparation decision on one criterion of one scenario (<see cref="StoryGroupingOperation.ScenarioId"/> = its source
+    /// identity, <see cref="StoryGroupingOperation.Criterion"/>, <see cref="StoryGroupingOperation.Applicability"/>, <see cref="StoryGroupingOperation.Evaluation"/>,
+    /// <see cref="StoryGroupingOperation.Evidence"/>, <see cref="StoryGroupingOperation.Reason"/>). 2026-11-26.</summary>
+    SetScenarioPreparation,
 }
 
 /// <summary>One change to the grouping document. Unused fields are null. Applied together and atomically (all or nothing).</summary>
@@ -220,6 +227,11 @@ public sealed record StoryGroupingOperation
     /// <summary>SetScenarioType: the reviewed type (null = back to the proposal) and its quality attributes.</summary>
     public ScenarioRequirementType? ScenarioType { get; init; }
     public List<QualityAttribute>? Qualities { get; init; }
+    /// <summary>SetScenarioPreparation: the criterion and the parts the tester decided (null = keep the earlier decision for that part).</summary>
+    public PreparationCriterion? Criterion { get; init; }
+    public CriterionApplicability? Applicability { get; init; }
+    public CriterionEvaluation? Evaluation { get; init; }
+    public string? Evidence { get; init; }
 }
 
 public sealed record StoryGroupingChangeRequest
@@ -557,6 +569,7 @@ public static class StoryGroupingEngine
         var kinds = (doc.TestKinds ?? []).ToList();
         var testLinks = (doc.TestLinks ?? []).ToList();
         var scenarioTypes = (doc.ScenarioTypes ?? []).ToList();
+        var preparation = (doc.Preparation ?? []).ToList();
         void Log(string action, string detail) => history.Add(new(now, actor, action, detail));
         StoryLinkDecision? Current(string story, string req) =>
             decisions.LastOrDefault(d => d.StoryKey == story && string.Equals(d.RequirementId, req, StringComparison.OrdinalIgnoreCase));
@@ -721,6 +734,26 @@ public static class StoryGroupingEngine
                         + (qualities.Count > 0 ? $" ({string.Join(", ", qualities.Select(ScenarioTypeClassifier.Label))})" : "") + " (scenarioet, testtypen og testtilfellene er uendret)");
                     break;
                 }
+                case StoryGroupingOperationKind.SetScenarioPreparation:
+                {
+                    var scenario = string.IsNullOrWhiteSpace(op.ScenarioId) ? throw new GroupingRefusal("missing-scenario", "Mangler scenario.") : op.ScenarioId.Trim();
+                    var criterion = op.Criterion ?? throw new GroupingRefusal("missing-criterion", "Mangler punkt.");
+                    var evidence = string.IsNullOrWhiteSpace(op.Evidence) ? null : op.Evidence.Trim();
+                    var reason = string.IsNullOrWhiteSpace(op.Reason) ? null : op.Reason.Trim();
+                    var before = ScenarioPreparationEngine.Current(preparation, scenario).GetValueOrDefault(criterion);
+                    // «Ikke relevant» is checked with the reason the decision will carry (a new one, or the one already given).
+                    if (ScenarioPreparationEngine.Validate(op.Applicability, op.Evaluation, evidence, reason ?? (op.Applicability == CriterionApplicability.NotApplicable ? before?.Reason : null)) is { } refused)
+                        throw new GroupingRefusal("preparation-invalid", refused);
+                    if (op.Applicability is null && op.Evaluation is null && evidence is null && reason is null) throw new GroupingRefusal("preparation-empty", "Ingen endring å lagre.");
+                    preparation.Add(new ScenarioPreparationDecision { ScenarioId = scenario, Criterion = criterion, Applicability = op.Applicability, Evaluation = op.Evaluation,
+                        Evidence = evidence, Reason = reason, ScenarioFingerprint = string.IsNullOrWhiteSpace(op.ScenarioFingerprint) ? null : op.ScenarioFingerprint, By = actor, At = now });
+                    string Was(CriterionApplicability? a, CriterionEvaluation? e) => a == CriterionApplicability.NotApplicable ? "Ikke relevant"
+                        : $"{(a is { } x ? ScenarioPreparationEngine.Label(x) : "—")} · {(e is { } y ? ScenarioPreparationEngine.Label(y) : "—")}";
+                    var after = ScenarioPreparationEngine.Current(preparation, scenario)[criterion];
+                    Log("Klargjorde scenario", $"{op.DisplayId ?? scenario}: {ScenarioPreparationEngine.Label(criterion)} {Was(before?.Applicability, before?.Evaluation)} → {Was(after.Applicability, after.Evaluation)}"
+                        + (reason is null ? "" : $" ({reason})") + " (scenarioet, testtilfellene, godkjenninger og resultater er uendret)");
+                    break;
+                }
                 case StoryGroupingOperationKind.LeaveUngrouped:
                 {
                     var s = Story(op.StoryKey);
@@ -833,7 +866,7 @@ public static class StoryGroupingEngine
                 }
             }
         }
-        return doc with { Revision = doc.Revision + 1, Groups = groups, Placements = placements, Decisions = decisions, History = history, Roles = roles, TestKinds = kinds, TestLinks = testLinks, ScenarioTypes = scenarioTypes };
+        return doc with { Revision = doc.Revision + 1, Groups = groups, Placements = placements, Decisions = decisions, History = history, Roles = roles, TestKinds = kinds, TestLinks = testLinks, ScenarioTypes = scenarioTypes, Preparation = preparation };
     }
 
     /// <summary>Every scenario's current type decision (source identity → decision); returned-to-proposal ones left out.</summary>
