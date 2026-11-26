@@ -197,7 +197,7 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         cut.Find("[data-testid=mtd-detail-cases]").TextContent.Should().Contain("beholder koblingen til scenarioet og US1");
 
         cut.Find("[data-testid=mtd-detail-prepare]").Click();
-        Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith(ManualTestingPresentation.PlanRoute);
+        Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith($"{ManualTestingPresentation.PlanRoute}?scenario=US1-AS1", "the chosen scenario travels explicitly (cross-page context hardening)");
     }
 
     [Fact]

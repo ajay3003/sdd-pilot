@@ -2460,7 +2460,16 @@
 
     private async Task PrepareAsync() { await KeepAsync(); Nav.NavigateTo(M.PlanRoute); }
 
-    private async Task PrepareOnlyAsync(string id) { _selected.Add(id); await PrepareAsync(); }
+    /// <summary>«Forbered testtilfelle» for ONE scenario (cross-page context hardening, 2026-11-26). The intent travels explicitly in the address —
+    /// the scenario's candidate id and, when it is already in an active plan, that plan — instead of through the multi-selection and Planlegg's
+    /// remembered plan/case (which opened the PREVIOUS US/AC after a module or specification change). The multi-selection is not touched.</summary>
+    private Task PrepareOnlyAsync(string id)
+    {
+        var item = _items.FirstOrDefault(i => i.Id == id);
+        var plan = item is null ? null : S.Memberships(item).FirstOrDefault(m => m.Active)?.PlanId;
+        Nav.NavigateTo($"{M.PlanRoute}?scenario={Uri.EscapeDataString(id)}{(plan is { } p ? $"&draft={p}" : "")}");
+        return Task.CompletedTask;
+    }
 
     /// <summary>↑/↓ move, Space selects, Home/End jump — the list keeps one active scenario whose details are shown.</summary>
     private async Task KeyAsync(KeyboardEventArgs e, List<S.Item> page)

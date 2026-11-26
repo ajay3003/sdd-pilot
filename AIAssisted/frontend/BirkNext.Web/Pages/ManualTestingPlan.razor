@@ -53,6 +53,31 @@
             <p class="mtp-notice" role="status" data-testid="mtp-notice">@notice</p>
         }
 
+        @if (_intent is { } intendedId)
+        {
+            var intended = _ws.Discovery?.Candidates.FirstOrDefault(c => c.CandidateId == intendedId);
+            <section class="mtp-intent" role="status" data-testid="mtp-intent" data-scenario="@intendedId" data-in-plan="@(IntentInPlan ? "true" : "false")">
+                <span class="mtp-ctx-label">Valgt i Finn og forstå</span>
+                <strong data-testid="mtp-intent-title">@(intended is { } ic ? (ic.Story is { } st ? $"{st.StoryId}{(ic.NumberInStory is { } n ? $" · AC {n}" : "")} — " : "") + ic.Title : "Ukjent scenario")</strong>
+                @if (_intentUnknown)
+                {
+                    <span class="msb-status msb-tone-warn" data-testid="mtp-intent-unknown">Scenarioet finnes ikke i prosjektets gjeldende scenarioer. Ingen testtilfelle er åpnet.</span>
+                }
+                else if (_plan is { } ip && !IntentInPlan)
+                {
+                    <span data-testid="mtp-intent-not-in-plan">Ikke i testplanen «@ip.PlanName». Ingenting er lagt til automatisk.</span>
+                    @if (CanWrite && !ReadOnlyPlan) { <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="AddIntentToPlanAsync" data-testid="mtp-intent-add">Legg til i testplanen</button> }
+                }
+                else if (_intentCases > 1)
+                {
+                    <span class="mt-muted msb-small" data-testid="mtp-intent-many">@_intentCases testtilfeller hører til scenarioet; det første er åpnet. Velg et annet i listen.</span>
+                }
+                else if (_intentCases == 0)
+                {
+                    <span class="mt-muted msb-small" data-testid="mtp-intent-no-case">Ingen testtilfelle ennå (valgfritt). Klargjør scenarioet, eller forbered et testtilfelle.</span>
+                }
+            </section>
+        }
         @if (_selection.Count > 0 && _ws.Discovery is not null)
         {
             var notInPlan = _plan is null ? _selection : _selection.Where(id => _plan.Cases.All(c => c.Source.ScenarioId != id)).ToList();
@@ -1083,6 +1108,9 @@
     [SupplyParameterFromQuery(Name = "panel")] public string? PanelParameter { get; set; }
     /// <summary>A case to open (drill-down from Test Coverage / Requirements Traceability); shown even when it is technical.</summary>
     [SupplyParameterFromQuery(Name = "case")] public string? CaseParameter { get; set; }
+    /// <summary>Explicit intent from Finn og forstå's «Forbered testtilfelle»: the scenario (candidate id) to prepare. It takes precedence over any
+    /// remembered case; only a case that belongs to THIS scenario is ever opened for it (cross-page context hardening, 2026-11-26).</summary>
+    [SupplyParameterFromQuery(Name = "scenario")] public string? ScenarioParameter { get; set; }
 
     /// <summary>The discovered scenario a case belongs to (its own discovery id, or its parent scenario's); null for a case written by hand.</summary>
     private static string? DiscoverScenarioId(TestCaseDraft c) =>
@@ -1165,6 +1193,8 @@
             if (_ws.ProjectKey is { } key)
                 _selection = [.. await TabDraftStore.ReadAsync<string[]>(JS, TabDraftStore.SelectionKey(key)) ?? []];
             await LoadTraceAsync();
+            _intent = ScenarioParameter is { Length: > 0 } wantedScenario ? wantedScenario : null;
+            _intentUnknown = _intent is { } si && _ws.Discovery is { } disc && disc.Candidates.All(c => c.CandidateId != si);
             var id = DraftParameter is { } wanted && (_plans.Any(p => p.Id == wanted) || _archived.Any(p => p.Id == wanted)) ? wanted : _plans.FirstOrDefault()?.Id;
             if (id is { } draftId) await OpenPlanAsync(draftId);
             if (CaseParameter is { Length: > 0 } wantedCase && _plan?.Cases.FirstOrDefault(c => P.IdOf(c) == wantedCase) is { } linked)
@@ -1179,12 +1209,16 @@
     private async Task OpenPlanAsync(Guid id)
     {
         if (Api is not { } api) return;
+        // A newer plan choice makes an older answer irrelevant: it never replaces the plan the tester chose last.
+        var seq = ++_planSeq;
         var (draft, error) = await api.DraftAsync(id);
+        if (seq != _planSeq) return;
         if (draft is null) { _error = P.Friendly(error, "Testplanen kunne ikke lastes."); return; }
         _plan = draft;
         _archiveAsk = _excludeAsk = false;
         await LoadScenarioKindsAsync();
         await LoadPlanRunsAsync();
+        if (_intent is not null) { ApplyIntent(draft); StartAutoTranslation(); return; }
         var first = P.Rows(draft, _showTechnical).Rows.SelectMany(r => r.Cases).FirstOrDefault() ?? draft.Cases.FirstOrDefault();
         Open(_selectedId is { } keep && draft.Cases.Any(c => P.IdOf(c) == keep) ? keep : first is null ? null : P.IdOf(first));
         StartAutoTranslation();
@@ -1252,8 +1286,52 @@
         if (_autoTask is { IsCompleted: false } running) { try { await running; } catch (Exception e) when (e is not OperationCanceledException) { } }
     }
 
+    // ── Explicit scenario intent (cross-page context hardening, 2026-11-26) ──
+    private string? _intent;
+    private bool _intentUnknown;
+    private int _intentCases, _planSeq;
+
+    /// <summary>The cases of the plan that belong to the scenario: its own case or a case written under it (never another scenario's).</summary>
+    private static List<TestCaseDraft> CasesOfScenario(TestPlanDraft plan, string scenarioId) =>
+        [.. plan.Cases.Where(c => c.Review is not TestCaseReviewState.Superseded && (c.Source.ScenarioId == scenarioId || c.ParentScenario == scenarioId))];
+
+    /// <summary>Resolves the intent in the open plan, by one documented rule: the scenario's first case in plan order (its own case before one
+    /// written under it); none → the scenario's «Klargjør AC» when it is planned without a case; otherwise nothing is selected and the page says
+    /// the scenario is not in this plan (with «Legg til i testplanen»). A remembered case of another scenario is never opened.</summary>
+    private void ApplyIntent(TestPlanDraft plan)
+    {
+        if (_intent is not { } id) return;
+        _prepItem = null;
+        var cases = CasesOfScenario(plan, id).OrderBy(c => c.Source.ScenarioId == id ? 0 : 1).ToList();
+        _intentCases = cases.Count;
+        if (cases.Count > 0) { Open(P.IdOf(cases[0])); return; }
+        Open(null);
+        if ((plan.PlannedScenarios ?? []).Any(p => p.ScenarioId == id)) _prepItem = id;
+    }
+
+    private bool IntentInPlan => _intent is { } id && _plan is { } p && (CasesOfScenario(p, id).Count > 0 || (p.PlannedScenarios ?? []).Any(x => x.ScenarioId == id));
+
+    /// <summary>«Legg til i testplanen» for the intended scenario: explicit, scenario-only (no case), into the plan's first testgruppe.</summary>
+    private async Task AddIntentToPlanAsync()
+    {
+        if (_intent is not { } id || _plan is not { } plan || Api is not { } api || _ws?.ProjectKey is not { } key || _ws.Discovery is not { } disc || _busy) return;
+        _busy = true;
+        try
+        {
+            var (draft, error) = await api.CreateProjectAsync(new CreateProjectTestPlanRequest
+                { ProjectKey = key, DiscoveryId = disc.DiscoveryId, CandidateIds = [id], DraftId = plan.Id, BaseRevision = plan.Revision, ScenarioOnly = true });
+            if (draft is null) { _error = P.Friendly(error, "Scenarioet ble ikke lagt til."); return; }
+            _plan = draft;
+            ApplyIntent(draft);
+        }
+        finally { _busy = false; }
+    }
+
     private void Open(string? caseId)
     {
+        // Opening a case of ANOTHER scenario ends the intent (the tester chose something else explicitly).
+        if (_intent is { } intended && caseId is not null && _plan?.Cases.FirstOrDefault(c => P.IdOf(c) == caseId) is { } other
+            && other.Source.ScenarioId != intended && other.ParentScenario != intended) _intent = null;
         _selectedId = caseId;
         _form = Selected is { } c ? P.CaseForm.From(c) : null;
         // 2026-11-26: the tester's language choice is kept across cases, tabs and reloads (it was reset per case before).

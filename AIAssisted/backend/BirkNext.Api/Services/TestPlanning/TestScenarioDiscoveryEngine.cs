@@ -629,10 +629,39 @@ public static class TestScenarioDiscoveryEngine
     /// requirement id, and notes "possible duplicate" between candidates of different sources that name the same requirement — never merged.
     /// Order: by source category, area, title.
     /// </summary>
+    /// <summary>
+    /// Cross-page context hardening (2026-11-26): a specification scenario's key was «scenario:{module}|{id}», so US1/AC1 of two specifications of the
+    /// SAME module had one key and one candidate id — merged into one candidate here, and «Forbered testtilfelle» for one could open the other's
+    /// case. When one key is claimed by more than one specification file, every claimant gets a specification-scoped key («…|{file}|{id}») and so
+    /// its own candidate id. Keys without a collision keep their id exactly (existing plans keep their links); source identities, already
+    /// file-scoped, never change.
+    /// </summary>
+    internal static IEnumerable<DiscoveredScenario> ScopeCollidingSpecificationKeys(string projectKey, IEnumerable<DiscoveredScenario> candidates)
+    {
+        var list = candidates.ToList();
+        static string? FileOf(DiscoveredScenario c) => c.Story?.SpecificationPath is { Length: > 0 } spec ? spec : c.Evidence.FirstOrDefault(e => e.Kind is "specification" or "requirement")?.Reference.Split('#')[0];
+        var colliding = list.Where(c => c.CapabilityId == Specification && (c.CanonicalKey.StartsWith("scenario:", StringComparison.Ordinal) || c.CanonicalKey.StartsWith("requirement:", StringComparison.Ordinal)))
+            .GroupBy(c => c.CanonicalKey, StringComparer.Ordinal)
+            // A scenario's source identity is file- and situation-scoped (the same scenario seen twice keeps it); a requirement's derives from the key,
+            // so its specification file decides.
+            .Where(g => (g.Key.StartsWith("scenario:", StringComparison.Ordinal)
+                ? g.Select(c => c.SourceIdentity).Where(x => x.Length > 0).Distinct(StringComparer.Ordinal).Count()
+                : g.Select(FileOf).Distinct(StringComparer.OrdinalIgnoreCase).Count()) > 1)
+            .Select(g => g.Key).ToHashSet(StringComparer.Ordinal);
+        if (colliding.Count == 0) return list;
+        return list.Select(c =>
+        {
+            if (!colliding.Contains(c.CanonicalKey) || FileOf(c) is not { Length: > 0 } file) return c;
+            var bar = c.CanonicalKey.IndexOf('|');
+            var key = bar < 0 ? $"{c.CanonicalKey}|{file}" : $"{c.CanonicalKey[..bar]}|{file}|{c.CanonicalKey[(bar + 1)..]}";
+            return c with { CanonicalKey = key, CandidateId = CandidateId(projectKey, c.CapabilityId, key) };
+        });
+    }
+
     public static List<DiscoveredScenario> Finalize(string projectKey, string snapshotKey, IEnumerable<DiscoveredScenario> candidates, IEnumerable<RequirementTestLink> links,
         IEnumerable<ScenarioTestLink>? scenarioLinks = null)
     {
-        var merged = candidates.Where(c => c.ProjectKey == projectKey).GroupBy(c => c.CandidateId, StringComparer.Ordinal).Select(g => g.Skip(1).Aggregate(g.First(), (a, b) => a with
+        var merged = ScopeCollidingSpecificationKeys(projectKey, candidates.Where(c => c.ProjectKey == projectKey)).GroupBy(c => c.CandidateId, StringComparer.Ordinal).Select(g => g.Skip(1).Aggregate(g.First(), (a, b) => a with
         {
             Evidence = [.. a.Evidence.Concat(b.Evidence).DistinctBy(e => (e.Kind, e.Reference))],
             RequirementIds = [.. a.RequirementIds.Concat(b.RequirementIds).Distinct(StringComparer.OrdinalIgnoreCase)],
