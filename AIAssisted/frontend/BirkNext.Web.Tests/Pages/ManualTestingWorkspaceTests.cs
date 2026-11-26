@@ -561,4 +561,226 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         css.Should().Contain(".mto-grid.mto-grid-3 > .mto-card { flex: 1 1 22rem; }", "cards fill each row: two cards never leave an empty column").And.Contain("@container mto (max-width: 30rem)");
         css.Should().Contain(".mto-kpis-core { grid-template-columns: repeat(4, minmax(0, 1fr));");
     }
+
+    // ── Testoversikt v2 (2026-11-26) ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void V01_legacy_html_bars_are_gone_and_charts_are_svg_with_axis_values_outside_and_a_text_alternative()
+    {
+        Setup([Summary()], Discovery(3));
+        SetupOverview();
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
+        cut.FindAll(".dd-bars").Should().BeEmpty("no legacy HTML bar widget on Testoversikt");
+        var priority = cut.Find("[data-testid=mto-widget][data-widget='chart.priority']");
+        priority.QuerySelector("svg.dbc-svg rect.dbc-bar").Should().NotBeNull();
+        priority.QuerySelectorAll(".dbc-tick").Should().NotBeEmpty("an x-axis with tick values");
+        priority.QuerySelectorAll("[data-testid=mto-bar] [data-testid=mto-bar-value]").Select(v => v.TextContent).Should().OnlyContain(t => t.Length > 0, "values are printed outside the bars");
+        priority.QuerySelector("table.dbc-sr caption")!.TextContent.Should().Be("Scenarioer etter prioritet", "a text alternative for screen readers");
+        priority.QuerySelectorAll("[data-testid=mto-bar]").Select(r => r.GetAttribute("data-key")).Should().StartWith(["P1", "P2"], "business order, never alphabetical");
+    }
+
+    [Fact]
+    public void V02_follow_up_rows_show_real_counts_and_open_the_same_drill_down()
+    {
+        Setup([Summary()], Discovery(3));
+        SetupOverview();
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-band][data-band=action]"));
+        var source = cut.Find("[data-testid=mto-widget][data-widget='chart.sourceChanges']");
+        source.QuerySelectorAll("[data-testid=mto-bar]").Should().OnlyContain(r => r.QuerySelector(".mto-action-count")!.TextContent != "0", "only rows with a count");
+        cut.Find("[data-testid=mto-widget][data-widget='chart.sourceChanges'] [data-testid=mto-bar-open]").Click();
+        cut.Find("[data-testid=mto-drill]").GetAttribute("data-chart").Should().Be("chart.sourceChanges");
+    }
+
+    [Fact]
+    public void V03_plan_cards_show_plan_specific_execution_and_remaining_ACs_never_a_global_result()
+    {
+        Setup([Summary()], Discovery(3));
+        var ov = Overview() with { Plans = [Overview().Plans[0] with { SprintLabel = "Sprint 12", Execution = new PlanExecutionCounts(4, 1, 2, 1, 0) }] };
+        _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((ov, (string?)null));
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ManualTestingDashboardSettings(), (string?)null));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-plan-card]"));
+        var card = cut.Find("[data-testid=mto-plan-card]");
+        card.TextContent.Should().Contain("Sprint 12");
+        var exec = card.QuerySelector("[data-testid=mto-plan-exec]")!;
+        (exec.GetAttribute("data-passed"), exec.GetAttribute("data-failed"), exec.GetAttribute("data-notrun")).Should().Be(("2", "1", "1"));
+        exec.QuerySelector("svg")!.GetAttribute("aria-label").Should().Contain("i denne planen");
+        cut.Find("[data-testid=mto-widget][data-widget='panel.planExecution']").TextContent.Should().Contain("ikke kjørt i «Library – test plan»").And.Contain("1 feilet");
+        cut.Find("[data-testid=mto-plan-card] a.mto-plan-name").GetAttribute("href").Should().Be($"{M.PlanRoute}?draft={PlanId}");
+    }
+
+    [Fact]
+    public void V04_the_module_table_sorts_by_a_column_and_back()
+    {
+        Setup([Summary()], Discovery(3));
+        SetupOverview();
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mto-row]").Count.Should().Be(3));
+        cut.Find("[data-testid=mto-sort][data-col=cases]").Click();
+        cut.FindAll("[data-testid=mto-row]").Select(r => r.GetAttribute("data-key")).First().Should().Be("SkoleService", "most test cases first");
+        cut.Find("[data-testid=mto-sort][data-col=cases]").Click();
+        cut.FindAll("[data-testid=mto-row]").Select(r => r.GetAttribute("data-key")).Last().Should().Be("SkoleService");
+        cut.Find("th[aria-sort=ascending] [data-testid=mto-sort]").GetAttribute("data-col").Should().Be("cases");
+    }
+
+    [Fact]
+    public void V05_nice_axis_maximum_and_ticks()
+    {
+        BirkNext.Web.Components.DashboardBarChart.NiceMax(842).Should().Be(1000);
+        BirkNext.Web.Components.DashboardBarChart.NiceMax(325).Should().Be(500);
+        BirkNext.Web.Components.DashboardBarChart.NiceMax(7).Should().Be(10);
+        BirkNext.Web.Components.DashboardBarChart.NiceMax(0).Should().Be(1);
+        BirkNext.Web.Components.DashboardBarChart.Ticks(1000).Should().Equal(0, 250, 500, 750, 1000);
+    }
+
+    // ── Custom KPI tiles (2026-11-26) ─────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>One story (US2) with ACs of different types, a requirement without a scenario, the same AC listed twice, and standalone documented
+    /// E2E tests of a test specification (no story).</summary>
+    private static ManualTestingOverview TileOverview() => Overview() with
+    {
+        Specifications =
+        [
+            new(Skole, "SkoleService", "001-skoleservice", [
+                new("ac-1", "k2", "US2", "Lock", 1, "P1", "A", ScenarioRequirementType.Functional),
+                new("ac-2", "k2", "US2", "Lock", 2, "P1", "B", ScenarioRequirementType.NonFunctional),
+                new("ac-3", "k2", "US2", "Lock", 3, "P2", "C", ScenarioRequirementType.Mixed),
+                new("ac-4", "k2", "US2", "Lock", 4, "P2", "D", ScenarioRequirementType.Unclassified),
+                new("req-1", null, null, null, null, null, "FR-099", RequirementOnly: true)]),
+            new(Front, "Frontend", "002-child-search-profile", [new("ac-1", "k2", "US2", "Lock", 1, "P1", "A", ScenarioRequirementType.Functional)]),
+            new("SkoleService/docs/Skole – Testspesifikasjon.md", "SkoleService", "Skole – Testspesifikasjon", [
+                new("doc-e1", null, null, null, null, null, "TEST-E-01: Full flyt", ScenarioRequirementType.Functional) { Level = ScenarioTestLevel.EndToEnd, LevelDeclared = true, Standalone = true },
+                new("doc-e2", null, null, null, null, null, "TEST-E-02: Svartid", ScenarioRequirementType.NonFunctional) { Level = ScenarioTestLevel.EndToEnd, LevelDeclared = true, Standalone = true }]),
+        ],
+    };
+
+    [Fact]
+    public void T01_tiles_count_unique_scenarios_on_one_dimension_never_user_stories_requirements_or_duplicates()
+    {
+        var project = O.Of(TileOverview(), O.Scope.Project);
+        var e2e = DashboardKpiTiles.Defaults.Single();
+        (e2e.Id, DashboardKpiTiles.DisplayTitle(e2e), e2e.Dimension, e2e.Metric).Should().Be(("tile.e2e", "Ende-til-ende-tester", KpiTileDimension.TestLevel, "EndToEnd"));
+        O.TileScenarios(project).Should().HaveCount(6, "4 ACs (ac-1 once although listed twice) + 2 standalone tests; the requirement and the story are not scenarios");
+        O.TileCount(project, e2e).Should().Be(2, "the documented TEST-E tests; the acceptance scenarios state no level");
+        O.TileDeclared(project, e2e).Should().Be(2, "declared by the document, not verified");
+        var functional = new DashboardKpiTile("t2", "Funksjonelle", KpiTileDimension.ScenarioType, "Functional");
+        var nonFunctional = new DashboardKpiTile("t3", null, KpiTileDimension.ScenarioType, "NonFunctional");
+        (O.TileCount(project, functional), O.TileCount(project, nonFunctional)).Should().Be((2, 2), "ac-1 + doc-e1; ac-2 + doc-e2 — each AC by its OWN type, US2 is never counted");
+        O.TileCount(project, new("t4", null, KpiTileDimension.ScenarioType, "Mixed")).Should().Be(1);
+        O.TileCount(project, new("t5", null, KpiTileDimension.ScenarioType, "Unclassified")).Should().Be(1);
+        O.TileCount(project, new("t6", null, KpiTileDimension.TestLevel, "Unclassified")).Should().Be(4, "test level is independent of the type");
+        O.TileCount(project, functional with { Title = "Helt annet navn" }).Should().Be(2, "the title never changes the count");
+        O.TileCount(O.Of(TileOverview(), new O.Scope(O.Level.Module, "Frontend", null)), functional).Should().Be(1, "the scope changes the count, not the metric");
+        O.TileCount(O.Of(TileOverview() with { ScenariosAvailable = false }, O.Scope.Project), e2e).Should().BeNull("unavailable is «—», never an invented 0");
+        (O.TileFilter(e2e).TestLevel, O.TileFilter(e2e).ScenarioType, O.TileFilter(nonFunctional).ScenarioType, O.TileFilter(nonFunctional).TestLevel)
+            .Should().Be(("EndToEnd", (string?)null, "NonFunctional", (string?)null), "a tile filters on exactly its own dimension");
+    }
+
+    [Fact]
+    public void T02_tile_settings_are_validated_titles_cleaned_and_ids_stable()
+    {
+        var list = DashboardKpiTiles.Normalize([
+            new("tile.e2e", "  E2E   –  Skolenærvær ", KpiTileDimension.TestLevel, "EndToEnd", Order: 5),
+            new("tile.b", "   ", KpiTileDimension.ScenarioType, "NonFunctional", Order: 1),
+            new("tile.c", new string('x', 90), KpiTileDimension.TestLevel, "EndToEnd", Order: 9),
+        ]);
+        list.Select(t => (t.Id, t.Order)).Should().Equal(("tile.b", 0), ("tile.e2e", 1), ("tile.c", 2));
+        list[1].Title.Should().Be("E2E – Skolenærvær");
+        list[0].Title.Should().BeNull("an empty name falls back to the metric's default");
+        DashboardKpiTiles.DisplayTitle(list[0]).Should().Be("Ikke-funksjonelle scenarioer");
+        list[2].Title!.Length.Should().Be(DashboardKpiTiles.MaxTitle);
+        list.Count(t => t.Dimension == KpiTileDimension.TestLevel && t.Metric == "EndToEnd").Should().Be(2, "two tiles may measure the same metric");
+        FluentActions.Invoking(() => DashboardKpiTiles.Normalize([new("a", null, KpiTileDimension.TestLevel, "EndToEnd"), new("a", null, KpiTileDimension.TestLevel, "Component")]))
+            .Should().Throw<ArgumentException>();
+        FluentActions.Invoking(() => DashboardKpiTiles.Normalize([new("a", null, KpiTileDimension.TestLevel, "Functional")])).Should().Throw<ArgumentException>("Functional is a scenario type, not a test level");
+        FluentActions.Invoking(() => DashboardKpiTiles.Normalize([new("<b>", null, KpiTileDimension.TestLevel, "EndToEnd")])).Should().Throw<ArgumentException>();
+        new ManualTestingDashboardSettings().EffectiveTiles.Should().Equal(DashboardKpiTiles.Defaults);
+        new ManualTestingDashboardSettings { Tiles = [] }.EffectiveTiles.Should().BeEmpty("removing every tile is an explicit choice, not «use the defaults»");
+    }
+
+    [Fact]
+    public void T03_the_default_tile_shows_its_count_renames_through_the_dialog_and_saves_only_the_dashboard_setup()
+    {
+        Setup([Summary()], Discovery(3));
+        _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((TileOverview(), (string?)null));
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ManualTestingDashboardSettings(), (string?)null));
+        SaveManualTestingDashboardSettingsRequest? sent = null;
+        _plans.Setup(x => x.SaveDashboardSettingsAsync(It.IsAny<SaveManualTestingDashboardSettingsRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<SaveManualTestingDashboardSettingsRequest, CancellationToken>((r, _) => sent = r)
+            .ReturnsAsync((SaveManualTestingDashboardSettingsRequest r, CancellationToken _) => (new ManualTestingDashboardSettings { Tiles = r.ResetTiles ? null : r.Tiles }, (string?)null));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-tile]"));
+        var tile = cut.Find("[data-testid=mto-tile]");
+        (tile.GetAttribute("data-tile"), tile.GetAttribute("data-dimension"), tile.GetAttribute("data-metric")).Should().Be(("tile.e2e", "TestLevel", "EndToEnd"));
+        cut.Find("[data-testid=mto-tile-title]").TextContent.Should().Be("Ende-til-ende-tester");
+        cut.Find("[data-testid=mto-tile-count]").TextContent.Should().Be("2");
+        cut.Find("[data-testid=mto-tile-metric]").TextContent.Should().Be("Testnivå · Ende til ende");
+        cut.Find("[data-testid=mto-tile-explain]").TextContent.Should().Contain("dokumentert som E2E i kilden – ikke verifisert");
+
+        // The menu is a sibling of the clickable area: opening it never navigates.
+        var before = Services.GetRequiredService<NavigationManager>().Uri;
+        cut.Find("[data-testid=mto-tile-menu]").Click();
+        Services.GetRequiredService<NavigationManager>().Uri.Should().Be(before);
+        cut.Find("[data-testid=mto-tile-edit]").Click();
+        var dialog = cut.Find("[data-testid=kte-dialog]");
+        (dialog.GetAttribute("role"), dialog.GetAttribute("aria-modal")).Should().Be(("dialog", "true"));
+        cut.Find("[data-testid=kte-title]").Input("<b>E2E – Skolenærvær</b>");
+        cut.Find("[data-testid=kte-preview-count]").TextContent.Should().Be("2");
+        cut.Find("[data-testid=kte-metric]").Change("ScenarioType|Functional");
+        cut.Find("[data-testid=kte-preview-count]").TextContent.Should().Be("2", "the preview recalculates for the chosen metric (ac-1 + doc-e1)");
+        cut.Find("[data-testid=kte-save]").Click();
+
+        sent!.Tiles!.Single().Should().Be(new DashboardKpiTile("tile.e2e", "<b>E2E – Skolenærvær</b>", KpiTileDimension.ScenarioType, "Functional", true, 0), "same stable id; the name is a label");
+        sent.Visible.Should().BeNull("no other dashboard part changes");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=kte]").Should().BeEmpty());
+        cut.Find("[data-testid=mto-tile-title]").TextContent.Should().Be("<b>E2E – Skolenærvær</b>", "shown as text, never as markup");
+        cut.Find("[data-testid=mto-tile-title]").QuerySelector("b").Should().BeNull();
+        _plans.Verify(x => x.SaveAsync(It.IsAny<Guid>(), It.IsAny<SaveTestPlanDraftRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void T04_add_hide_remove_and_reset_change_only_the_tile_list_and_the_tile_opens_Finn_og_forsta()
+    {
+        Setup([Summary()], Discovery(3));
+        _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((TileOverview(), (string?)null));
+        var stored = new ManualTestingDashboardSettings { Tiles = [.. DashboardKpiTiles.Defaults, new("tile.nf", "Ikke-funksjonelle", KpiTileDimension.ScenarioType, "NonFunctional", true, 1)] };
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((stored, (string?)null));
+        var requests = new List<SaveManualTestingDashboardSettingsRequest>();
+        _plans.Setup(x => x.SaveDashboardSettingsAsync(It.IsAny<SaveManualTestingDashboardSettingsRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<SaveManualTestingDashboardSettingsRequest, CancellationToken>((r, _) => requests.Add(r))
+            .ReturnsAsync((SaveManualTestingDashboardSettingsRequest r, CancellationToken _) => (new ManualTestingDashboardSettings { Tiles = r.ResetTiles ? null : r.Tiles }, (string?)null));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mto-tile]").Should().HaveCount(2));
+        cut.FindAll("[data-testid=mto-tile-count]").Select(e => e.TextContent).Should().Equal("2", "2");
+
+        cut.Find("[data-testid=mto-tile][data-tile='tile.nf'] [data-testid=mto-tile-menu]").Click();
+        cut.Find("[data-testid=mto-tile-hide]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mto-tile]").Select(t => t.GetAttribute("data-tile")).Should().Equal("tile.e2e"));
+        requests[^1].Tiles!.Single(t => t.Id == "tile.nf").Visible.Should().BeFalse("hidden, not removed");
+
+        cut.Find("[data-testid=mto-tile-menu]").Click();
+        cut.Find("[data-testid=mto-tile-add]").Click();
+        cut.Find("[data-testid=kte-metric]").Change("TestLevel|Integration");
+        cut.Find("[data-testid=kte-save]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mto-tile]").Should().HaveCount(2));
+        var added = requests[^1].Tiles!.Last();
+        (added.Id.StartsWith("tile."), added.Title, added.Metric, added.Order).Should().Be((true, (string?)null, "Integration", 2));
+        cut.Find("[data-testid=mto-tile][data-metric=Integration] [data-testid=mto-tile-title]").TextContent.Should().Be("Integrasjonstester");
+
+        cut.Find("[data-testid=mto-tile][data-metric=Integration] [data-testid=mto-tile-menu]").Click();
+        cut.Find("[data-testid=mto-tile-remove]").Click();
+        cut.WaitForAssertion(() => requests[^1].Tiles!.Select(t => t.Id).Should().Equal("tile.e2e", "tile.nf"));
+
+        cut.Find("[data-testid=mto-tile-menu]").Click();
+        cut.Find("[data-testid=mto-tile-reset]").Click();
+        cut.WaitForAssertion(() => requests[^1].ResetTiles.Should().BeTrue());
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mto-tile]").Select(t => t.GetAttribute("data-tile")).Should().Equal("tile.e2e"));
+        requests.Should().OnlyContain(r => r.Visible == null && r.ResetToDefaults == false, "the other dashboard parts are never reset by the tile actions");
+
+        cut.Find("[data-testid=mto-tile-open]").Click();
+        cut.WaitForAssertion(() => Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("manual-testing/discover"));
+        _plans.Verify(x => x.SaveAsync(It.IsAny<Guid>(), It.IsAny<SaveTestPlanDraftRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

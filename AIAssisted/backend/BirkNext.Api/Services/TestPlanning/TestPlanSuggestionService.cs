@@ -686,11 +686,13 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         };
         // «Fra mal» (2026-11-26): an empty plan starts with the template's structure — suites only, new ids; no case, approval or remote id is copied.
         if (empty && request.TemplateSuites is { Count: > 0 } templateSuites) plan = plan with { Suites = [.. templateSuites] };
+        // AC-level types for the structure (2026-11-26): each acceptance scenario's own reviewed type, read only when a structure needs it.
+        var typeDecisions = items.Count > 0 || PlanStructureTemplates.Known(request.Structure) && cases.Count > 0 ? await TypeDecisionsAsync(key, ct) : [];
         if (items.Count > 0)
         {
             // Scenario-only items get the same structure rules as cases (the preview's), keyed by the scenario id.
             var itemStructure = PlanStructure.Build(PlanStructureTemplates.Known(request.Structure) ? request.Structure! : PlanStructureTemplates.Default,
-                [.. chosen.Select(c => PlanStructure.FactsOf(c.CandidateId, c))]);
+                [.. chosen.Select(c => PlanStructure.FactsOf(c.CandidateId, c, decision: DecisionFor(typeDecisions, c)))]);
             plan = plan with
             {
                 Suites = [.. plan.Suites, .. itemStructure.Suites.Where(s => plan.Suites.All(x => x.Id != s.Id))],
@@ -700,7 +702,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         // Hierarchical plan (2026-11-26): the chosen template becomes the saved suite structure — the same rules as the browser's preview.
         if (PlanStructureTemplates.Known(request.Structure) && cases.Count > 0)
         {
-            var structure = PlanStructure.Build(request.Structure!, [.. cases.Select((c, i) => StructureFacts(c, i < chosen.Count ? chosen[i] : null))]);
+            var structure = PlanStructure.Build(request.Structure!, [.. cases.Select((c, i) => StructureFacts(c, i < chosen.Count ? chosen[i] : null, typeDecisions))]);
             plan = plan with { Suites = structure.Suites, Cases = [.. cases.Select(c => structure.Assignment.TryGetValue(c.Source.ScenarioId, out var suite) ? c with { SuiteId = suite } : c)] };
         }
         Bound(plan);
@@ -723,9 +725,9 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
     };
 
     /// <summary>What the plan structure reads about one new case: its scenario's facts (shared with the browser's preview), or a hand-written case.</summary>
-    internal static PlanStructureFacts StructureFacts(TestCaseDraft c, DiscoveredScenario? scenario) => scenario is null
+    internal static PlanStructureFacts StructureFacts(TestCaseDraft c, DiscoveredScenario? scenario, Dictionary<string, Dictionary<string, ScenarioTypeDecision>>? decisions = null) => scenario is null
         ? new(c.Source.ScenarioId, ScenarioTestLevel.Unclassified, c.Generated.GroupTitle ?? "Skrevet for hånd", null, null, null)
-        : PlanStructure.FactsOf(c.Source.ScenarioId, scenario, c.Generated.GroupTitle);
+        : PlanStructure.FactsOf(c.Source.ScenarioId, scenario, c.Generated.GroupTitle, decisions is null ? null : DecisionFor(decisions, scenario));
 
     /// <summary>The project's plan created from this browser draft id, if any (archived and active; never another project's).</summary>
     private async Task<TestPlanDraft?> CreatedFromAsync(string key, string creationRequestId, CancellationToken ct)

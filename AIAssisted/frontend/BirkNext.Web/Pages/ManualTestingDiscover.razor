@@ -2146,6 +2146,15 @@
         (_gPrimary, _gSecondary) = ScenarioGrouping.Default(SelectedSpecificationPath is not null);
     }
 
+    /// <summary>«Tilbakestill gruppering»: Brukerhistorie → Testnivå, the saved choice removed (so later default changes apply), groups collapsed.</summary>
+    private async Task ResetGroupingAsync()
+    {
+        (_gPrimary, _gSecondary) = ScenarioGrouping.Default();
+        _gChosen = false;
+        try { await JS.InvokeVoidAsync("localStorage.removeItem", GroupingPreferenceKey); }
+        catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
+    }
+
     private async Task SetGroupingAsync(ScenarioGroupAxis primary, ScenarioGroupAxis secondary)
     {
         if (secondary == primary || primary == ScenarioGroupAxis.None) secondary = ScenarioGroupAxis.None;
@@ -2214,6 +2223,10 @@
                 <button type="button" class="msb-link" @onclick="() => SetAllGroups(ScenarioGrouping.Paths(tree), true)" data-testid="mtd-groups-expand">Vis alle grupper</button>
                 <button type="button" class="msb-link" @onclick="() => SetAllGroups(ScenarioGrouping.Paths(tree), false)" data-testid="mtd-groups-collapse">Skjul alle</button>
             }
+            @if ((_gPrimary, _gSecondary) != ScenarioGrouping.Default())
+            {
+                <button type="button" class="msb-link" @onclick="ResetGroupingAsync" data-testid="mtd-groups-reset">Tilbakestill gruppering</button>
+            }
             <span class="mtp-seg mtg-lang" role="radiogroup" aria-label="Språk" data-testid="mtd-lang">
                 @foreach (var l in new[] { EditorLanguage.Norwegian, EditorLanguage.Original, EditorLanguage.Compare })
                 {
@@ -2243,6 +2256,12 @@
                     <span class="mtg-count" data-testid="mtd-sgroup-count">@g.Items.Count</span>
                     @if (selectedHere > 0) { <span class="mtg-selected" data-testid="mtd-sgroup-selected">@selectedHere valgt</span> }
                     @if (g.Candidates > 0) { <span class="mtg-candidates mt-muted msb-small" data-testid="mtd-sgroup-candidates">@g.Candidates kandidat@(g.Candidates == 1 ? "" : "er") (ikke gjennomgått)</span> }
+                    @if (g.Axis == ScenarioGroupAxis.Story && ScenarioGrouping.TypeSummary(g.Items) is { Count: > 0 } typeSummary)
+                    {
+                        <span class="mtg-type-summary mt-muted msb-small" data-testid="mtd-sgroup-type-summary" title="Oppsummering av akseptansescenarioene i brukerhistorien. Brukerhistorien selv har ingen scenariotype.">
+                            Akseptansescenarioer: @string.Join(" · ", typeSummary.Select(x => ScenarioGroupAxes.TypeCount(x.Type, x.Count)))
+                        </span>
+                    }
                 </button>
                 <span class="mtg-actions">
                     @if (selectedHere < g.Items.Count) { <button type="button" class="msb-link msb-small" @onclick="() => SelectAll(g.Items)" data-testid="mtd-sgroup-select">Velg alle (@g.Items.Count)</button> }

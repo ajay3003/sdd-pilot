@@ -50,4 +50,30 @@ public sealed class ManualTestingDashboardSettingsStoreTests : IDisposable
         ManualTestingDashboard.Widgets.Select(w => w.Title).Should().NotContain(t => t.Contains("Gjennomført") || t.Contains("Bestått") || t.Contains("Feilet"));
         ManualTestingDashboard.Widgets.Select(w => w.Id).Should().OnlyHaveUniqueItems();
     }
+
+    [Fact]
+    public void Custom_tiles_default_to_the_E2E_tile_persist_as_a_list_and_reset_without_touching_other_widgets()
+    {
+        var store = new ManualTestingDashboardSettingsStore(_dir);
+        store.Read().EffectiveTiles.Should().Equal(DashboardKpiTiles.Defaults);
+        store.Save(new SaveManualTestingDashboardSettingsRequest(new() { ["chart.history"] = true }), "lead", DateTimeOffset.UtcNow);
+        store.Save(new SaveManualTestingDashboardSettingsRequest(null)
+        {
+            Tiles = [new("tile.e2e", " E2E – Skolenærvær ", KpiTileDimension.TestLevel, "EndToEnd"), new("tile.nf", null, KpiTileDimension.ScenarioType, "NonFunctional", false, 1)],
+        }, "lead", DateTimeOffset.UtcNow);
+        store.Save(new SaveManualTestingDashboardSettingsRequest(new() { ["chart.priority"] = false }), "lead", DateTimeOffset.UtcNow);
+
+        var reread = new ManualTestingDashboardSettingsStore(_dir).Read();
+        reread.EffectiveTiles.Select(t => (t.Id, t.Title, t.Visible, t.Order)).Should().Equal(("tile.e2e", "E2E – Skolenærvær", true, 0), ("tile.nf", (string?)null, false, 1));
+        reread.IsOn("chart.history").Should().BeTrue("a tile save keeps the switches, a switch save keeps the tiles");
+
+        FluentActions.Invoking(() => store.Save(new SaveManualTestingDashboardSettingsRequest(null) { Tiles = [new("x", null, KpiTileDimension.TestLevel, "Functional")] }, "lead", DateTimeOffset.UtcNow))
+            .Should().Throw<ArgumentException>("Functional is not a test level");
+        new ManualTestingDashboardSettingsStore(_dir).Read().EffectiveTiles.Should().HaveCount(2, "a refused save changes nothing");
+
+        var reset = store.Save(new SaveManualTestingDashboardSettingsRequest(null) { ResetTiles = true }, "lead", DateTimeOffset.UtcNow);
+        reset.EffectiveTiles.Should().Equal(DashboardKpiTiles.Defaults);
+        (reset.IsOn("chart.history"), reset.IsOn("chart.priority")).Should().Be((true, false), "only the tiles are reset");
+        store.Save(new SaveManualTestingDashboardSettingsRequest(null) { Tiles = [] }, "lead", DateTimeOffset.UtcNow).EffectiveTiles.Should().BeEmpty("every tile removed is kept as a choice");
+    }
 }

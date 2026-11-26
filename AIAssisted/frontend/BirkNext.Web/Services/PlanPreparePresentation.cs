@@ -333,9 +333,34 @@ public static partial class PlanPreparePresentation
 
         private static bool SameText(TestCaseTranslation a, TestCaseTranslation b) =>
             (a.Title ?? "") == (b.Title ?? "") && (a.Purpose ?? "") == (b.Purpose ?? "") && (a.Preconditions ?? "") == (b.Preconditions ?? "") && (a.ExpectedResult ?? "") == (b.ExpectedResult ?? "")
-            && a.Steps.Select(x => x ?? "").SequenceEqual(b.Steps.Select(x => x ?? "")) && a.StepExpected.Select(x => x ?? "").SequenceEqual(b.StepExpected.Select(x => x ?? ""));
+            && SameList(a.Steps, b.Steps) && SameList(a.StepExpected, b.StepExpected);
+
+        /// <summary>Step texts compared with a missing entry equal to an empty one (2026-11-26): a stored translation without step texts ([]) and the
+        /// editor's empty translated steps ("", "") are the same text. Before, such a case counted as changed the moment it opened.</summary>
+        private static bool SameList(IReadOnlyList<string?> a, IReadOnlyList<string?> b)
+        {
+            for (var i = 0; i < Math.Max(a.Count, b.Count); i++)
+                if (((i < a.Count ? a[i] : null) ?? "").Trim() != ((i < b.Count ? b[i] : null) ?? "").Trim()) return false;
+            return true;
+        }
 
         public void AddStep() => Steps.Add(new StepRow());
+
+        /// <summary>Planlegg UX v2 (2026-11-26): a new empty step directly below <paramref name="index"/> (at the end when out of range).</summary>
+        public int InsertStepAfter(int index)
+        {
+            var at = index < 0 || index >= Steps.Count ? Steps.Count : index + 1;
+            Steps.Insert(at, new StepRow());
+            return at;
+        }
+
+        /// <summary>A copy of the step (both languages) directly below it; the copy is a new row with its own key.</summary>
+        public void DuplicateStep(int index)
+        {
+            if (index < 0 || index >= Steps.Count) return;
+            var s = Steps[index];
+            Steps.Insert(index + 1, new StepRow { Action = s.Action, Expected = s.Expected, TranslatedAction = s.TranslatedAction, TranslatedExpected = s.TranslatedExpected });
+        }
 
         public void RemoveStep(int index) { if (index >= 0 && index < Steps.Count) Steps.RemoveAt(index); }
 

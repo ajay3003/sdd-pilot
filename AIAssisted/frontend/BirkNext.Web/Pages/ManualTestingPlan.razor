@@ -190,7 +190,7 @@
                                             <span class="mtp-planned-title">@(it.StoryId is { } sid && it.NumberInStory is { } n ? $"{sid} · AC {n} — " : "")@it.Title</span>
                                             <span class="msb-status msb-tone-muted" data-testid="mtp-planned-state">Scenario – ikke klargjort</span>
                                             @if (plan.Suites.Any(s => s.Id == it.SuiteId)) { <span class="mt-muted msb-small">@PlanStructure.PathOf(plan.Suites, it.SuiteId)</span> }
-                                            <button type="button" class="msb-link" @onclick="() => _preview = new(null, it)" data-testid="mtp-planned-preview">Forhåndsvis</button>
+                                            <button type="button" class="msb-link" @onclick="() => OpenPreview(new(null, it))" data-testid="mtp-planned-preview">Forhåndsvis</button>
                                             @if (CanWrite && !ReadOnlyPlan)
                                             {
                                                 <button type="button" class="msb-link" disabled="@(_busy || Dirty)" @onclick="() => PrepareItemAsync(it)" data-testid="mtp-planned-prepare">Forbered testtilfelle</button>
@@ -708,8 +708,9 @@
                                 @if (showO || showN)
                                 {
                                     <fieldset class="mtp-steps" data-testid="mtp-steps">
-                                        <legend>Teststeg</legend>
-                                        @if (_form.Steps.Count == 0) { <p class="mt-muted msb-small" data-testid="mtp-steps-none">Ingen teststeg ennå.</p> }
+                                        <legend>Teststeg <span class="msb-tag" data-testid="mtp-steps-count">@_form.Steps.Count</span></legend>
+                                        @if (_form.Steps.Count == 0) { <p class="mt-muted msb-small" data-testid="mtp-steps-none">Ingen teststeg ennå. Beskriv hva testeren gjør, og hva som skal skje, ett steg om gangen.</p> }
+                                        else if (!readonlyCase) { <p class="mt-muted msb-small mtp-steps-hint" data-testid="mtp-steps-hint">Ctrl+Enter i et steg legger til et nytt steg under.</p> }
                                         <ol>
                                             @foreach (var (step, i) in _form.Steps.Select((st, i) => (st, i)))
                                             {
@@ -719,7 +720,7 @@
                                                     <div class="mtp-step-body">
                                                         <div class="mtp-lrow" data-field="step-action">
                                                             <span class="mtp-lrow-label">Handling</span>
-                                                            @if (showO) { <textarea class="mtp-lcell mtp-auto" rows="2" value="@step.Action" @oninput="e => step.Action = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="@($"Handling, steg {index + 1}")" data-testid="mtp-step-action"></textarea> }
+                                                            @if (showO) { <textarea class="mtp-lcell mtp-auto" rows="2" value="@step.Action" @oninput="e => step.Action = e.Value?.ToString() ?? string.Empty" @onkeydown="e => StepKey(e, index)" disabled="@readonlyCase" aria-label="@($"Handling, steg {index + 1}")" placeholder="Hva gjør testeren?" data-testid="mtp-step-action"></textarea> }
                                                             @if (showN)
                                                             {
                                                                 <span class="mtp-lcell-wrap" data-testid="mtp-tr-step">
@@ -730,7 +731,7 @@
                                                         </div>
                                                         <div class="mtp-lrow" data-field="step-expected">
                                                             <span class="mtp-lrow-label">Forventet resultat</span>
-                                                            @if (showO) { <textarea class="mtp-lcell mtp-auto" rows="2" value="@step.Expected" @oninput="e => step.Expected = e.Value?.ToString() ?? string.Empty" disabled="@readonlyCase" aria-label="@($"Forventet resultat, steg {index + 1}")" data-testid="mtp-step-expected"></textarea> }
+                                                            @if (showO) { <textarea class="mtp-lcell mtp-auto" rows="2" value="@step.Expected" @oninput="e => step.Expected = e.Value?.ToString() ?? string.Empty" @onkeydown="e => StepKey(e, index)" disabled="@readonlyCase" aria-label="@($"Forventet resultat, steg {index + 1}")" placeholder="Hva skal skje?" data-testid="mtp-step-expected"></textarea> }
                                                             @if (showN)
                                                             {
                                                                 <span class="mtp-lcell-wrap">
@@ -745,7 +746,9 @@
                                                         <span class="mtp-step-tools">
                                                             <button type="button" class="mtp-icon" disabled="@(index == 0)" @onclick="() => _form.MoveStep(index, -1)" aria-label="@($"Flytt steg {index + 1} opp")" data-testid="mtp-step-up">↑</button>
                                                             <button type="button" class="mtp-icon" disabled="@(index == _form.Steps.Count - 1)" @onclick="() => _form.MoveStep(index, 1)" aria-label="@($"Flytt steg {index + 1} ned")" data-testid="mtp-step-down">↓</button>
-                                                            <button type="button" class="mtp-icon" @onclick="() => _form.RemoveStep(index)" aria-label="@($"Fjern steg {index + 1}")" data-testid="mtp-step-remove">✕</button>
+                                                            <button type="button" class="mtp-icon" @onclick="() => _form.InsertStepAfter(index)" aria-label="@($"Nytt steg under steg {index + 1}")" title="Nytt steg under" data-testid="mtp-step-insert">+</button>
+                                                            <button type="button" class="mtp-icon" @onclick="() => _form.DuplicateStep(index)" aria-label="@($"Dupliser steg {index + 1}")" title="Dupliser" data-testid="mtp-step-duplicate">⧉</button>
+                                                            <button type="button" class="mtp-icon mtp-icon-danger" @onclick="() => _form.RemoveStep(index)" aria-label="@($"Fjern steg {index + 1}")" title="Fjern" data-testid="mtp-step-remove">✕</button>
                                                         </span>
                                                     }
                                                 </li>
@@ -852,10 +855,11 @@
                             @if (!readonlyCase)
                             {
                                 var problems = P.ReadyProblems(current);
-                                <div class="mtp-actions" data-testid="mtp-actions">
+                                <div class="mtp-actions is-sticky" role="toolbar" aria-label="Handlinger for testtilfellet" data-testid="mtp-actions">
+                                    @if (Dirty) { <span class="mtp-dirty-dot" data-testid="mtp-dirty">Ulagrede endringer</span> }
                                     <button type="button" class="btn btn-primary" disabled="@(!Dirty || _busy)" @onclick="SaveAsync" data-testid="mtp-save">Lagre</button>
                                     <button type="button" class="btn btn-secondary" disabled="@(!Dirty || _busy)" @onclick="Discard" data-testid="mtp-discard">Forkast endringer</button>
-                                    <button type="button" class="btn btn-outline-secondary" @onclick="() => _preview = new(current.Source.ScenarioId, null)" data-testid="mtp-preview-open">Forhåndsvisning</button>
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="() => OpenPreview(new(current.Source.ScenarioId, null))" data-testid="mtp-preview-open">Forhåndsvisning</button>
                                     <span class="mtp-spacer"></span>
                                     @if (current.Review is TestCaseReviewState.Generated or TestCaseReviewState.NeedsClarification)
                                     {
@@ -883,7 +887,8 @@
                                 }
                                 @if (problems.Count > 0 && !Dirty)
                                 {
-                                    <ul class="mtp-problems" data-testid="mtp-problems">@foreach (var pr in problems) { <li>@pr</li> }</ul>
+                                    <div class="mtp-readiness" data-testid="mtp-readiness"><span class="mtp-ctx-label">Før godkjenning</span>
+                                        <ul class="mtp-problems" data-testid="mtp-problems">@foreach (var pr in problems) { <li>@pr</li> }</ul></div>
                                 }
                             }
                             else if (current.Review == TestCaseReviewState.Excluded && CanWrite && !ReadOnlyPlan)
@@ -1320,13 +1325,15 @@
     private async Task PrepareItemAsync(PlannedScenario item)
     {
         if (_plan is null || Api is not { } api || _ws?.ProjectKey is not { } key) return;
-        if (_ws.Discovery is not { } discovery || discovery.Candidates.All(c => c.CandidateId != item.ScenarioId))
-        { _error = "Scenarioet finnes ikke i gjeldende oppdagelse. Åpne Finn og forstå for samme spesifikasjon og prøv igjen."; return; }
+        // 2026-11-26 fix: the plan's own discovery (the one the item was planned from), not the specification this page happens to have loaded;
+        // the server validates the scenario. Before, a scenario of another specification was refused here and no case was created.
+        var discoveryId = _plan.DiscoveryId ?? _ws.Discovery?.DiscoveryId;
+        if (discoveryId is null) { _error = "Oppdagelsen scenarioet ble planlagt fra er ikke tilgjengelig. Åpne Finn og forstå og prøv igjen."; return; }
         _busy = true; _error = null;
         try
         {
             var (draft, error) = await api.CreateProjectAsync(new CreateProjectTestPlanRequest
-            { ProjectKey = key, DiscoveryId = discovery.DiscoveryId, CandidateIds = [item.ScenarioId], DraftId = _plan.Id, BaseRevision = _plan.Revision });
+            { ProjectKey = key, DiscoveryId = discoveryId, CandidateIds = [item.ScenarioId], DraftId = _plan.Id, BaseRevision = _plan.Revision });
             if (draft is null) { _error = P.Friendly(error, "Testtilfellet kunne ikke forberedes."); return; }
             _plan = draft;
             if (draft.Cases.FirstOrDefault(c => c.ParentScenario == item.ScenarioId) is { } made) Open(P.IdOf(made));
@@ -1339,6 +1346,13 @@
     private sealed record PreviewTarget(string? CaseId, PlannedScenario? Item);
     private PreviewTarget? _preview;
 
+    /// <summary>Ctrl+Enter (or Cmd+Enter) in a step adds an empty step directly below it.</summary>
+    private void StepKey(KeyboardEventArgs e, int index)
+    {
+        if (_form is null || e.Key != "Enter" || !(e.CtrlKey || e.MetaKey)) return;
+        _form.InsertStepAfter(index);
+    }
+
     private RenderFragment PreviewDialog() => __builder =>
     {
         if (_preview is not { } target || _plan is not { } plan) return;
@@ -1346,70 +1360,116 @@
         var form = c is not null && _form is { } f && f.CaseId == P.IdOf(c) ? f : null;
         var unsaved = form is not null && c is not null && form.IsDirty(c);
         var suiteId = c?.SuiteId ?? target.Item?.SuiteId;
-        <div class="mtp-preview-backdrop" data-testid="mtp-preview">
-            <section class="mtp-preview" role="dialog" aria-modal="true" aria-labelledby="mtp-preview-title" @onkeydown="PreviewKey">
+        var wantNb = _lang != EditorLanguage.Original;
+        var hasNb = form?.HasTranslation == true || (form is null && c?.Translation(ScenarioPlanning.Norwegian) is not null);
+        var showNb = wantNb && hasNb;
+        var compare = _lang == EditorLanguage.Compare && hasNb;
+        var nbOrigin = c?.Translation(ScenarioPlanning.Norwegian)?.Origin;
+        var story = c?.Generated.Story;
+        @* 2026-11-26 fix: a real modal (backdrop + panel above the page, own scroll, focus moved in and back). Before, the markup had no styles and
+           rendered as ordinary content at the top of the page, so nothing appeared to happen where the tester was working. Read-only: no inputs,
+           no save, approval or execution controls. *@
+        <div class="mtp-preview-backdrop" data-testid="mtp-preview" @onclick="ClosePreviewAsync">
+            <section class="mtp-preview" role="dialog" aria-modal="true" aria-labelledby="mtp-preview-title" tabindex="-1" @ref="_previewRef"
+                     @onclick:stopPropagation="true" @onkeydown="PreviewKey" data-testid="mtp-preview-dialog">
                 <header class="mtp-preview-head">
-                    <div>
+                    <div class="mtp-preview-head-text">
                         <span class="mtp-ctx-label">Forhåndsvisning · @plan.PlanName@(suiteId is { } sid && plan.Suites.Any(s => s.Id == sid) ? $" · {PlanStructure.PathOf(plan.Suites, sid)}" : "")</span>
-                        <h2 id="mtp-preview-title" class="mtp-preview-title" data-testid="mtp-preview-title">@(c is not null ? P.ScenarioHeading(c, _lang) : target.Item!.Title)</h2>
-                        @if (unsaved) { <span class="msb-status msb-tone-warn" data-testid="mtp-preview-unsaved">Ulagret utkast</span> }
-                        else if (c is not null) { <span class="msb-status msb-tone-muted" data-testid="mtp-preview-saved">Lagret versjon</span> }
+                        <h2 id="mtp-preview-title" class="mtp-preview-title" data-testid="mtp-preview-title">@(c is not null ? P.ScenarioHeading(c, _lang) : (target.Item!.StoryId is { } usid && target.Item.NumberInStory is { } acn ? $"{usid} · AC {acn} — {target.Item.Title}" : target.Item.Title))</h2>
+                        <span class="mtp-preview-badges">
+                            @if (unsaved) { <span class="msb-status msb-tone-warn" data-testid="mtp-preview-unsaved">Ulagret utkast</span> }
+                            else if (c is not null) { <span class="msb-status msb-tone-muted" data-testid="mtp-preview-saved">Lagret versjon</span> }
+                            <span class="msb-status msb-tone-muted" data-testid="mtp-preview-language">@(_lang switch { EditorLanguage.Norwegian => "Norsk", EditorLanguage.Compare => "Sammenlign", _ => "Original" })</span>
+                            @if (wantNb && !hasNb) { <span class="msb-status msb-tone-warn" data-testid="mtp-preview-no-nb">Norsk oversettelse mangler – viser originalen</span> }
+                            else if (showNb && nbOrigin is TranslationOrigin.Machine) { <span class="msb-status msb-tone-warn" data-testid="mtp-preview-machine">Maskinoversatt – ikke gjennomgått</span> }
+                        </span>
                     </div>
                     <div class="mtp-preview-actions">
                         <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="PrintAsync" data-testid="mtp-preview-print">Skriv ut</button>
-                        <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _preview = null" data-testid="mtp-preview-close">Lukk</button>
+                        <button type="button" class="btn btn-secondary btn-sm" @onclick="ClosePreviewAsync" data-testid="mtp-preview-close">Lukk forhåndsvisning</button>
                     </div>
                 </header>
-                <section class="mtp-preview-sec" aria-label="Scenario" data-testid="mtp-preview-scenario">
-                    <h3>Scenario</h3>
-                    <p>@(c?.Generated.Title ?? target.Item!.Title)</p>
-                    <p><strong>Forventet atferd:</strong> @(c?.Generated.ExpectedResult ?? target.Item?.ExpectedBehaviour ?? "Ikke oppgitt i kilden – må avklares")</p>
-                </section>
-                <section class="mtp-preview-sec" aria-label="Testtilfelle" data-testid="mtp-preview-case">
-                    <h3>Testtilfelle</h3>
-                    @if (form is null && c is null)
-                    {
-                        <p class="mt-muted" data-testid="mtp-preview-no-case">Ingen testtilfelle er klargjort.</p>
-                    }
-                    else
-                    {
-                        var title = form?.Title ?? c!.EffectiveTitle;
-                        var purpose = form?.Purpose ?? c!.EffectivePurpose;
-                        var pre = form?.Preconditions ?? c!.EffectivePreconditions;
-                        var expected = form?.ExpectedResult ?? c!.EffectiveExpected;
-                        var steps = form is not null ? form.Steps.Where(s => !string.IsNullOrWhiteSpace(s.Action) || !string.IsNullOrWhiteSpace(s.Expected)).Select(s => (s.Action, (string?)s.Expected)).ToList()
-                            : c!.EffectiveSteps.Select((s, i) => (s, c.EffectiveStepExpected.ElementAtOrDefault(i))).ToList();
-                        <dl class="mtp-preview-dl">
-                            <dt>Tittel</dt><dd data-testid="mtp-preview-case-title">@Given(title)</dd>
-                            <dt>Formål</dt><dd data-testid="mtp-preview-purpose">@Given(purpose)</dd>
-                            <dt>Forutsetninger</dt><dd data-testid="mtp-preview-preconditions">@Given(pre)</dd>
-                        </dl>
-                        @if (steps.Count == 0) { <p class="msb-tone-warn" data-testid="mtp-preview-no-steps">Teststeg: Ikke angitt</p> }
+                <div class="mtp-preview-body">
+                    <section class="mtp-preview-sec" aria-label="Scenario" data-testid="mtp-preview-scenario">
+                        <h3>Scenario</h3>
+                        <p class="mtp-preview-meta">@(story?.StoryId is { } st ? $"{st}{(story.Title is { Length: > 0 } stt ? " — " + stt : "")}" : target.Item?.StoryId ?? "Uten brukerhistorie")@(story?.Priority is { } pri ? $" · {pri}" : "")@((story?.SpecificationPath ?? target.Item?.SpecificationPath) is { } spec ? $" · {spec}" : "")</p>
+                        <p>@(c?.Generated.Title ?? target.Item!.Title)</p>
+                        <p><strong>Forventet atferd:</strong> @(c?.Generated.ExpectedResult ?? target.Item?.ExpectedBehaviour ?? "Ikke oppgitt i kilden – må avklares")</p>
+                    </section>
+                    <section class="mtp-preview-sec" aria-label="Testtilfelle" data-testid="mtp-preview-case">
+                        <h3>Testtilfelle</h3>
+                        @if (form is null && c is null)
+                        {
+                            <p class="mt-muted" data-testid="mtp-preview-no-case">Ingen testtilfelle er klargjort.</p>
+                        }
                         else
                         {
-                            <table class="mtp-preview-steps" data-testid="mtp-preview-steps">
-                                <thead><tr><th scope="col">Steg</th><th scope="col">Handling</th><th scope="col">Forventet resultat</th></tr></thead>
-                                <tbody>@for (var i = 0; i < steps.Count; i++) { <tr data-testid="mtp-preview-step"><td>@(i + 1)</td><td>@Given(steps[i].Item1)</td><td>@Given(steps[i].Item2)</td></tr> }</tbody>
-                            </table>
+                            // The editor's CURRENT values (saved or not); the Norwegian side from the form's translation fields.
+                            var ogTitle = form?.Title ?? c!.EffectiveTitle;
+                            var ogPurpose = form?.Purpose ?? c!.EffectivePurpose;
+                            var ogPre = form?.Preconditions ?? c!.EffectivePreconditions;
+                            var ogExpected = form?.ExpectedResult ?? c!.EffectiveExpected;
+                            var ogSteps = form is not null ? form.Steps.Where(st => !string.IsNullOrWhiteSpace(st.Action) || !string.IsNullOrWhiteSpace(st.Expected)).Select(st => (st.Action, (string?)st.Expected, st.TranslatedAction, (string?)st.TranslatedExpected)).ToList()
+                                : c!.EffectiveSteps.Select((st, i) => (st, c.EffectiveStepExpected.ElementAtOrDefault(i), "", (string?)null)).ToList();
+                            string Pick(string? og, string? nb) => showNb && !string.IsNullOrWhiteSpace(nb) ? nb!.Trim() : Given(og);
+                            <dl class="mtp-preview-dl">
+                                <dt>Tittel</dt><dd data-testid="mtp-preview-case-title">@Pick(ogTitle, form?.TranslatedTitle)</dd>
+                                @if (compare) { <dt class="mtp-preview-og">Original</dt><dd class="mtp-preview-og" data-testid="mtp-preview-case-title-original">@Given(ogTitle)</dd> }
+                                <dt>Formål</dt><dd data-testid="mtp-preview-purpose">@Pick(ogPurpose, form?.TranslatedPurpose)</dd>
+                                <dt>Forutsetninger</dt><dd data-testid="mtp-preview-preconditions">@Pick(ogPre, form?.TranslatedPreconditions)</dd>
+                                <dt>Testdata</dt><dd data-testid="mtp-preview-testdata">@((form?.TestDataAssetIds.Count ?? c!.TestData.Count) is var td and > 0 ? $"{td} koblet testdatasett" : (form?.TestDataNeed ?? c!.EffectiveTestDataNeed) == TestDataNeed.Required ? "Kreves – ikke koblet" : "Ikke angitt")</dd>
+                            </dl>
+                            @if (ogSteps.Count == 0) { <p class="msb-tone-warn" data-testid="mtp-preview-no-steps">Teststeg: Ikke angitt</p> }
+                            else
+                            {
+                                <table class="mtp-preview-steps" data-testid="mtp-preview-steps">
+                                    <thead><tr><th scope="col">Steg</th><th scope="col">Handling</th><th scope="col">Forventet resultat</th></tr></thead>
+                                    <tbody>@for (var i = 0; i < ogSteps.Count; i++)
+                                    {
+                                        var stp = ogSteps[i];
+                                        <tr data-testid="mtp-preview-step"><td>@(i + 1)</td>
+                                            <td>@Pick(stp.Item1, stp.Item3)@if (compare) { <span class="mtp-preview-og">Original: @Given(stp.Item1)</span> }</td>
+                                            <td>@Pick(stp.Item2, stp.Item4)@if (compare) { <span class="mtp-preview-og">Original: @Given(stp.Item2)</span> }</td></tr>
+                                    }</tbody>
+                                </table>
+                            }
+                            <p><strong>Samlet forventet resultat:</strong> <span data-testid="mtp-preview-expected">@Pick(ogExpected, form?.TranslatedExpected)</span></p>
                         }
-                        <p><strong>Samlet forventet resultat:</strong> <span data-testid="mtp-preview-expected">@Given(expected)</span></p>
-                    }
-                </section>
-                <section class="mtp-preview-sec" aria-label="Klargjøringsstatus" data-testid="mtp-preview-status">
-                    <h3>Klargjøringsstatus</h3>
-                    @if (c is null) { <p data-testid="mtp-preview-status-text">Scenario – ikke klargjort. Ikke klart til kjøring.</p> }
-                    else
-                    {
-                        var problems = P.ReadyProblems(c);
-                        <p data-testid="mtp-preview-status-text">@(c.Review == TestCaseReviewState.Accepted ? "Godkjent" : "Ikke godkjent") · @(problems.Count == 0 ? "ingen kjente mangler (lagret versjon)" : $"{problems.Count} mangler (lagret versjon)")</p>
-                    }
-                    <p class="mt-muted msb-small">Forhåndsvisningen lagrer ingenting og endrer ikke status, godkjenning eller oversettelse.</p>
-                </section>
+                    </section>
+                    <section class="mtp-preview-sec" aria-label="Klargjøringsstatus" data-testid="mtp-preview-status">
+                        <h3>Klargjøringsstatus</h3>
+                        @if (c is null) { <p data-testid="mtp-preview-status-text">Scenario – ikke klargjort. Ikke klart til kjøring.</p> }
+                        else
+                        {
+                            var problems = P.ReadyProblems(c);
+                            <p data-testid="mtp-preview-status-text">@(c.Review == TestCaseReviewState.Accepted ? "Godkjent" : "Ikke godkjent") · @(problems.Count == 0 ? "ingen kjente mangler (lagret versjon)" : $"{problems.Count} mangler (lagret versjon)")</p>
+                        }
+                        <p class="mt-muted msb-small">Forhåndsvisningen lagrer ingenting og endrer ikke status, godkjenning eller oversettelse. Testgjennomføring skjer i Testplaner.</p>
+                    </section>
+                </div>
             </section>
         </div>
     };
 
-    private void PreviewKey(KeyboardEventArgs e) { if (e.Key == "Escape") _preview = null; }
+    private Task PreviewKey(KeyboardEventArgs e) => e.Key == "Escape" ? ClosePreviewAsync() : Task.CompletedTask;
+
+    private ElementReference _previewRef;
+    private bool _focusPreview, _focusPreviewButton;
+
+    /// <summary>Opens the preview and moves focus into it (Escape and «Lukk forhåndsvisning» close it and return focus).</summary>
+    private void OpenPreview(PreviewTarget target) { _preview = target; _focusPreview = true; }
+
+    private Task ClosePreviewAsync() { _preview = null; _focusPreviewButton = true; return Task.CompletedTask; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (_focusPreview && _preview is not null) { _focusPreview = false; await _previewRef.FocusAsync(); }
+            else if (_focusPreviewButton) { _focusPreviewButton = false; await JS.InvokeVoidAsync("eval", "document.querySelector('[data-testid=mtp-preview-open]')?.focus()"); }
+        }
+        catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
+    }
 
     private static string Given(string? text) => string.IsNullOrWhiteSpace(text) ? "Ikke angitt" : text.Trim();
 

@@ -311,6 +311,10 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
         // The project's own glossary (if any) from the Markdown already read: project evidence of this snapshot, never global vocabulary.
         await ReportProgressAsync("Analyzing project glossary", "Detecting the project's own glossary and terminology proposals.");
         snapshot = snapshot with { Glossary = AnalyzeGlossary(snapshot, workspace) };
+        // Documented tests (2026-11-26): the tests of the archive's test specification documents, typed (the documents are never stored).
+        try { snapshot = snapshot with { DocumentedTests = BirkNext.TestPlanning.DocumentedTestReader.Read([.. (workspace.DocumentationCandidates ?? []).Select(d => (d.Path, d.Content))]) }; }
+        catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
+        { snapshot = snapshot with { DocumentedTests = new BirkNext.TestPlanning.DocumentedTestSnapshot { Limitations = [$"Documented tests could not be read ({ex.GetType().Name})."] } }; }
         // Insert only. Identical archive hashes still create distinct evidence versions when analyzed again.
         await ReportProgressAsync("Saving source snapshot", "Persisting one immutable Source Analysis snapshot.");
         db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = environmentId, IntegrationId = integrationId,

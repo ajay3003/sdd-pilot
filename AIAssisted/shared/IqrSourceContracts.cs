@@ -74,6 +74,9 @@ public sealed record IqrSourceSnapshot
     /// <summary>The project's own glossary documents (authoritative, proposed, conflicting) and their rows, read from this archive's Markdown.
     /// Project evidence of this snapshot only — never global BirkNext vocabulary. Null in snapshots analyzed before it existed.</summary>
     public BirkNext.Glossary.ProjectGlossarySnapshot? Glossary { get; init; }
+    /// <summary>Tests written in the archive's test specification documents (TEST-E-01 …), as typed facts (2026-11-26). Null in snapshots analyzed
+    /// before it existed (then «re-analyze to read them»), never an empty guess.</summary>
+    public BirkNext.TestPlanning.DocumentedTestSnapshot? DocumentedTests { get; init; }
     /// <summary>Code-risk observations (placeholders, error handling, authorization metadata, duplicates, test assertions) captured once at upload
     /// for the Code Risk Review profile. Facts only; the review decides what they mean. Null in snapshots analyzed before it existed.</summary>
     public BirkNext.AiCodeReview.CodeRiskSourceEvidence? CodeRiskEvidence { get; init; }

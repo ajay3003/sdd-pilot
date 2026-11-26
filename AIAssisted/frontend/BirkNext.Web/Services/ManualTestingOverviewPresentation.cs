@@ -319,6 +319,31 @@ public static class ManualTestingOverviewPresentation
     public static int? StoriesTasksCompleted(Slice s) => StoryCount(s, x => x.Status == UserStoryTaskStatus.TasksCompleted);
     public static int? StoriesNeedingClarification(Slice s) => StoryCount(s, x => x.Status == UserStoryTaskStatus.NeedsClarification);
 
+    // ── Custom KPI tiles (2026-11-26) ──
+
+    /// <summary>The unique scenarios a tile can count: acceptance scenarios and standalone documented tests (requirements without a scenario,
+    /// user stories, cases and plan occurrences are never counted), one per identity even when it appears in several places.</summary>
+    public static IReadOnlyList<OverviewScenario> TileScenarios(Slice s) =>
+        [.. s.Specifications.SelectMany(x => x.Scenarios).Where(sc => sc.IsAcceptanceScenario).DistinctBy(sc => sc.Identity, StringComparer.Ordinal)];
+
+    public static bool Matches(OverviewScenario sc, DashboardKpiTile t) => t.Dimension switch
+    {
+        KpiTileDimension.TestLevel => sc.Level.ToString() == t.Metric,
+        KpiTileDimension.ScenarioType => sc.Type.ToString() == t.Metric,
+        _ => false,
+    };
+
+    /// <summary>The tile's count in the scope; null when the scenarios are not available (shown as «—», never an invented 0).</summary>
+    public static int? TileCount(Slice s, DashboardKpiTile t) => s.ScenariosAvailable ? TileScenarios(s).Count(sc => Matches(sc, t)) : null;
+
+    /// <summary>How many of the counted scenarios have their level only DECLARED by a document («Dokumentert E2E», not verified).</summary>
+    public static int TileDeclared(Slice s, DashboardKpiTile t) => s.ScenariosAvailable ? TileScenarios(s).Count(sc => Matches(sc, t) && sc.LevelDeclared) : 0;
+
+    /// <summary>Finn og forstå's filter for a tile: exactly the tile's dimension and value; nothing else is changed.</summary>
+    public static ScenarioBrowserPresentation.Filter TileFilter(DashboardKpiTile t) => t.Dimension == KpiTileDimension.TestLevel
+        ? new ScenarioBrowserPresentation.Filter(All: true, TestLevel: t.Metric)
+        : new ScenarioBrowserPresentation.Filter(All: true, ScenarioType: t.Metric);
+
     /// <summary>Acceptance scenarios of exactly one type (a mixed scenario is only «Blandet»). Null when no specification is stored.</summary>
     public static int? ScenariosOfType(Slice s, ScenarioRequirementType type) => s.ScenariosAvailable ? Acceptance(s).Count(sc => sc.Type == type) : null;
 

@@ -22,7 +22,7 @@
 <div class="mt msb-page @(IsHome ? "mto-page" : null)" data-testid="mt" aria-busy="@(_loading ? "true" : "false")">
     <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="@(IsHome ? null : "plans")" Title="@(IsHome ? "Testoversikt" : "Testplaner")"
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
-        Lead="@(IsHome ? "Hvor står testforberedelsen? Velg modul og spesifikasjon her; Finn og forstå viser det samme utvalget." : "Opprett, åpne og overfør testplanene for applikasjonen. Testtilfellene forberedes i Planlegg og klargjør.")">
+        Lead="@(IsHome ? "Testforberedelse, dekning og prioriteringer. Velg modul og spesifikasjon her; Finn og forstå viser det samme utvalget." : "Opprett, åpne og overfør testplanene for applikasjonen. Testtilfellene forberedes i Planlegg og klargjør.")">
         <Help><BirkNext.Web.Components.HelpLink Topic="manual-testing" Text="Slik fungerer det" /></Help>
     </BirkNext.Web.Components.TestingWorkspaceHeader>
 
@@ -84,29 +84,40 @@
                 <section class="mto-kpis mto-kpis-core" aria-label="Nøkkeltall" data-testid="mto-kpis">
                     @if (On("metric.scenarios"))
                     {
-                        <a class="mto-kpi is-core" href="@M.DiscoverRoute" data-testid="mto-kpi" data-widget="metric.scenarios"><span class="mto-kpi-k">Scenarioforslag</span>
+                        <a class="mto-kpi is-core" href="@M.DiscoverRoute" data-testid="mto-kpi" data-widget="metric.scenarios"><span class="mto-kpi-k"><span class="mto-kpi-icon is-scenarios" aria-hidden="true"></span>Scenarioforslag</span>
                             <span class="mto-kpi-v">@(fig.Scenarios?.ToString("N0", Nb) ?? "—")</span>
                             @if (fig.Scenarios is { } sc && sc > 0 && fig.Covered is { } cv) { @Meter(cv, sc, "med testtilfeller") }
                             @if (explain) { <span class="mto-kpi-e">@(fig.Scenarios is null ? "Ikke tilgjengelig: spesifikasjonen er ikke lagret for prosjektet" : fig.Covered is { } cov ? $"{cov} har testtilfeller" : "")</span> }</a>
                     }
                     @if (On("metric.testCases"))
                     {
-                        <a class="mto-kpi is-core" href="@M.PlanRoute" data-testid="mto-kpi" data-widget="metric.testCases"><span class="mto-kpi-k">Testtilfeller</span><span class="mto-kpi-v">@fig.Cases.ToString("N0", Nb)</span>
+                        <a class="mto-kpi is-core" href="@M.PlanRoute" data-testid="mto-kpi" data-widget="metric.testCases"><span class="mto-kpi-k"><span class="mto-kpi-icon is-cases" aria-hidden="true"></span>Testtilfeller</span><span class="mto-kpi-v">@fig.Cases.ToString("N0", Nb)</span>
                             @if (explain) { <span class="mto-kpi-e">Lagret i aktive testplaner</span> }</a>
                     }
                     @if (On("metric.approved"))
                     {
-                        <div class="mto-kpi is-core" data-testid="mto-kpi" data-widget="metric.approved"><span class="mto-kpi-k">Godkjente</span><span class="mto-kpi-v">@fig.Approved.ToString("N0", Nb)</span>
+                        <div class="mto-kpi is-core" data-testid="mto-kpi" data-widget="metric.approved"><span class="mto-kpi-k"><span class="mto-kpi-icon is-approved" aria-hidden="true"></span>Godkjente</span><span class="mto-kpi-v">@fig.Approved.ToString("N0", Nb)</span>
                             @if (fig.Cases > 0) { @Meter(fig.Approved, fig.Cases, "godkjent") }
                             @if (explain) { <span class="mto-kpi-e">@fig.Approved av @fig.Cases testtilfeller</span> }</div>
                     }
+                    @foreach (var tile in _dashboard.EffectiveTiles.Where(t => t.Visible).OrderBy(t => t.Order))
+                    {
+                        @Tile(tile, slice, explain)
+                    }
                     @if (On("metric.ready"))
                     {
-                        <div class="mto-kpi is-core" data-testid="mto-kpi" data-widget="metric.ready"><span class="mto-kpi-k">Klar til testing</span><span class="mto-kpi-v">@fig.Ready.ToString("N0", Nb)</span>
+                        <div class="mto-kpi is-core" data-testid="mto-kpi" data-widget="metric.ready"><span class="mto-kpi-k"><span class="mto-kpi-icon is-ready" aria-hidden="true"></span>Klar til testing</span><span class="mto-kpi-v">@fig.Ready.ToString("N0", Nb)</span>
                             @if (fig.Cases > 0) { @Meter(fig.Ready, fig.Cases, "klar") }
                             @if (explain) { <span class="mto-kpi-e">@fig.Ready av @fig.Cases · godkjent er ikke det samme som klar</span> }</div>
                     }
                 </section>
+                @if (_tileError is { } tileError) { <p class="msb-error" role="alert" data-testid="mto-tile-error">@tileError</p> }
+                @if (_tileNotice is { } tileNotice) { <p class="mt-muted msb-small" role="status" data-testid="mto-tile-notice">@tileNotice</p> }
+                @if (_tileEditing)
+                {
+                    <BirkNext.Web.Components.ManualTesting.KpiTileEditor Tile="_tileEdit" Count="TileCountNow" Busy="_tileBusy"
+                        OnSave="SaveEditedTileAsync" OnCancel="() => _tileEditing = false" />
+                }
                 <section class="mto-kpis mto-kpis-secondary" aria-label="Flere nøkkeltall" data-testid="mto-kpis-secondary">
                     @if (On("metric.testPlans"))
                     {
@@ -142,8 +153,24 @@
                                             @onclick="@(() => ToggleDrill("panel.p1Attention", key))" data-testid="mto-attention-open"><span>@text</span><span class="mto-action-go" aria-hidden="true">›</span></button></li> }</ul>
                                     <p class="msb-small mto-card-links"><a href="@M.DiscoverRoute">Se scenarioer</a> · <a href="@M.PlanRoute">Se testtilfeller</a></p></section>
                             }
-                            @Chart("chart.blockers", "Testbarhet og blokkeringer", blockers, $"{O.NotReady(slice)} av {fig.Cases} testtilfeller er ikke klare. Ett testtilfelle kan ha flere årsaker.", false)
-                            @Chart("chart.sourceChanges", "Kildeendringer", changes, "Sammenlignet med testtilfellets egen spesifikasjon. «Kunne ikke sammenlignes» betyr ikke at noe er fjernet.", false)
+                            @ActionList("chart.blockers", "Testbarhet og blokkeringer", "blocker", blockers, $"{O.NotReady(slice)} av {fig.Cases} testtilfeller er ikke klare. Ett testtilfelle kan ha flere årsaker.")
+                            @ActionList("chart.sourceChanges", "Kildeendringer", "source", changes, "Sammenlignet med testtilfellets egen spesifikasjon. «Kunne ikke sammenlignes» betyr ikke at noe er fjernet.")
+                            @if (On("panel.testPlans") && ov.Plans.Where(pl => pl.Execution is { NotRun: > 0 } || pl.Execution is { Failed: > 0 } || pl.Execution is { Blocked: > 0 }).ToList() is { Count: > 0 } open)
+                            {
+                                <section class="mto-card mto-actions-card" data-testid="mto-widget" data-widget="panel.planExecution"><h3 class="mto-card-h">Sprintplaner med gjenstående AC-er</h3>
+                                    <p class="mt-muted msb-small mto-card-note">Resultater registreres per scenario i hver testplan.</p>
+                                    <ul class="mto-action-list">
+                                        @foreach (var pl in open.Take(5))
+                                        {
+                                            var ex = pl.Execution!;
+                                            <li><a class="mto-action-item" href="@M.PlansRoute" data-testid="mto-plan-open-items">
+                                                <span class="mto-action-icon is-plan" aria-hidden="true"></span>
+                                                <span class="mto-action-count">@ex.NotRun</span>
+                                                <span class="mto-action-text">ikke kjørt i «@pl.Name»@(ex.Failed + ex.Blocked > 0 ? $" · {ex.Failed} feilet · {ex.Blocked} blokkert" : "")</span>
+                                                <span class="mto-action-go" aria-hidden="true">›</span></a></li>
+                                        }
+                                    </ul></section>
+                            }
                         </div>
                     </section>
                 }
@@ -170,9 +197,16 @@
                             <h3 class="mto-card-h">@(_level switch { O.Level.Project => "Oversikt per modul", O.Level.Module => "Oversikt per spesifikasjon", _ => "Oversikt per brukerhistorie" })</h3>
                             <div class="mto-table-scroll" tabindex="0" role="region" aria-label="Tabell med tall per rad">
                             <table class="mto-table">
-                                <thead><tr><th scope="col">@(_level switch { O.Level.Project => "Modul", O.Level.Module => "Spesifikasjon", _ => "Brukerhistorie" })</th><th scope="col">Scenarioer</th><th scope="col">Med testtilfeller</th><th scope="col">Testtilfeller</th><th scope="col">Godkjent</th><th scope="col">Trenger oppfølging</th></tr></thead>
+                                <thead><tr>
+                                    @foreach (var (col, head) in new[] { ("name", _level switch { O.Level.Project => "Modul", O.Level.Module => "Spesifikasjon", _ => "Brukerhistorie" }), ("scenarios", "Scenarioer"), ("covered", "Med testtilfeller"), ("cases", "Testtilfeller"), ("approved", "Godkjent"), ("followup", "Trenger oppfølging") })
+                                    {
+                                        var c = col;
+                                        <th scope="col" aria-sort="@(_sortCol == c ? (_sortDesc ? "descending" : "ascending") : "none")">
+                                            <button type="button" class="mto-sort" @onclick="() => SortBy(c)" data-testid="mto-sort" data-col="@c">@head<span class="mto-sort-mark" aria-hidden="true">@(_sortCol == c ? (_sortDesc ? "▾" : "▴") : "")</span></button></th>
+                                    }
+                                </tr></thead>
                                 <tbody>
-                                    @foreach (var row in rows)
+                                    @foreach (var row in SortRows(rows))
                                     {
                                         var r = row;
                                         <tr data-testid="mto-row" data-key="@row.Key">
@@ -202,12 +236,21 @@
                         <div class="mto-grid mto-grid-3">
                             @if (On("panel.testPlans") && ov.Plans.Count > 0)
                             {
-                                <section class="mto-card" data-testid="mto-widget" data-widget="panel.testPlans"><h3 class="mto-card-h">Testplaner <span class="mt-muted msb-small">(hele prosjektet)</span></h3>
-                                    <ul class="mto-plan-list">@foreach (var pl in ov.Plans.Take(6))
+                                <section class="mto-card mto-plans-card is-wide" data-testid="mto-widget" data-widget="panel.testPlans"><h3 class="mto-card-h">Testplaner <span class="mt-muted msb-small">(hele prosjektet)</span></h3>
+                                    <ul class="mto-plan-cards">@foreach (var pl in ov.Plans.OrderByDescending(x => x.UpdatedAt).Take(6))
                                         {
-                                            <li><a class="mto-plan-name" href="@($"{M.PlanRoute}?draft={pl.Id}")">@pl.Name</a>
-                                                <span class="mto-plan-facts mt-muted msb-small">@pl.Cases testtilfeller · @pl.Approved godkjent@(pl.SourceAttention > 0 ? $" · {pl.SourceAttention} med kildeendring" : "")</span>
-                                                @if (pl.Cases > 0) { @Meter(pl.Approved, pl.Cases, "godkjent") }</li>
+                                            <li class="mto-plan-card" data-testid="mto-plan-card" data-plan="@pl.Id">
+                                                <div class="mto-plan-card-head">
+                                                    <a class="mto-plan-name" href="@($"{M.PlanRoute}?draft={pl.Id}")" title="@pl.Name">@pl.Name</a>
+                                                    @if (pl.SprintLabel is { Length: > 0 } sprint) { <span class="mto-plan-sprint">@sprint</span> }
+                                                </div>
+                                                <span class="mto-plan-facts mt-muted msb-small">Forberedelse: @pl.Cases testtilfeller · @pl.Approved godkjent@(pl.SourceAttention > 0 ? $" · {pl.SourceAttention} med kildeendring" : "") · endret @pl.UpdatedAt.ToLocalTime().ToString("dd.MM.yyyy")</span>
+                                                @if (pl.Execution is { Scenarios: > 0 } ex)
+                                                {
+                                                    @ExecutionBar(ex)
+                                                }
+                                                else { <span class="mt-muted msb-small" data-testid="mto-plan-no-exec">Gjennomføring: ingen scenarioer i planen</span> }
+                                            </li>
                                         }</ul>
                                     <p class="msb-small mto-card-links"><a href="@M.PlansRoute">Se alle testplaner</a></p></section>
                             }
@@ -492,6 +535,98 @@
     }
 
     /// <summary>An optional figure from the registry: «—» with a reason when it is unavailable, never 0.</summary>
+    // ── Custom KPI tiles (2026-11-26): display name + metric; the name never changes classification or counts ──
+
+    private string? _tileMenu, _tileError, _tileNotice;
+    private bool _tileEditing, _tileBusy;
+    private DashboardKpiTile? _tileEdit;
+
+    private RenderFragment Tile(DashboardKpiTile t, O.Slice slice, bool explain) => __builder =>
+    {
+        var title = DashboardKpiTiles.DisplayTitle(t);
+        var count = O.TileCount(slice, t);
+        var declared = O.TileDeclared(slice, t);
+        var metric = $"{DashboardKpiTiles.DimensionLabel(t.Dimension)} · {DashboardKpiTiles.MetricLabel(t.Dimension, t.Metric)}";
+        <div class="mto-kpi is-core mto-tile" data-testid="mto-tile" data-tile="@t.Id" data-dimension="@t.Dimension" data-metric="@t.Metric">
+            <button type="button" class="mto-tile-open" @onclick="() => OpenTileAsync(t)" title="@title" aria-label="@($"{title}: {(count?.ToString() ?? "ikke tilgjengelig")} ({metric}). Åpne i Finn og forstå")" data-testid="mto-tile-open">
+                <span class="mto-kpi-k"><span class="mto-kpi-icon is-scenarios" aria-hidden="true"></span><span class="mto-tile-title" data-testid="mto-tile-title">@title</span></span>
+                <span class="mto-kpi-v" data-testid="mto-tile-count">@(count?.ToString("N0", Nb) ?? "—")</span>
+                <span class="msb-tag mto-tile-badge" data-testid="mto-tile-metric">@metric</span>
+                @if (explain)
+                {
+                    <span class="mto-kpi-e" data-testid="mto-tile-explain">@(count is null ? "Ikke tilgjengelig: spesifikasjonen er ikke lagret for prosjektet"
+                        : declared > 0 ? $"{declared} dokumentert som E2E i kilden – ikke verifisert" : "Unike scenarioer i utvalget")</span>
+                }
+            </button>
+            <span class="mto-tile-tools">
+                <button type="button" class="mtp-icon mto-tile-menu-btn" aria-haspopup="menu" aria-expanded="@(_tileMenu == t.Id ? "true" : "false")" aria-label="@($"Innstillinger for flisen {title}")"
+                        @onclick="() => _tileMenu = _tileMenu == t.Id ? null : t.Id" data-testid="mto-tile-menu">⋯</button>
+                @if (_tileMenu == t.Id)
+                {
+                    <span class="mto-tile-menu" role="menu" data-testid="mto-tile-menu-list">
+                        <button type="button" role="menuitem" @onclick="() => EditTile(t)" data-testid="mto-tile-edit">Rediger flis</button>
+                        <button type="button" role="menuitem" @onclick="() => EditTile(null)" data-testid="mto-tile-add">Legg til flis</button>
+                        <button type="button" role="menuitem" @onclick="() => HideTileAsync(t)" data-testid="mto-tile-hide">Skjul flis</button>
+                        <button type="button" role="menuitem" @onclick="() => RemoveTileAsync(t)" data-testid="mto-tile-remove">Fjern flis</button>
+                        <button type="button" role="menuitem" @onclick="() => ResetTilesAsync()" data-testid="mto-tile-reset">Tilbakestill standard</button>
+                    </span>
+                }
+            </span>
+        </div>
+    };
+
+    private List<DashboardKpiTile> TilesWith(DashboardKpiTile changed)
+    {
+        var list = _dashboard.EffectiveTiles.ToList();
+        var i = list.FindIndex(x => x.Id == changed.Id);
+        if (i >= 0) list[i] = changed; else list.Add(changed with { Order = list.Count });
+        return list;
+    }
+
+    private Task HideTileAsync(DashboardKpiTile t) =>
+        SaveTilesAsync(TilesWith(t with { Visible = false }), $"«{DashboardKpiTiles.DisplayTitle(t)}» er skjult. Vis den igjen under Systeminnstillinger → Manuell testing → Testoversikt.");
+
+    /// <summary>Removes only the tile's configuration — never a scenario, case, plan or translation.</summary>
+    private Task RemoveTileAsync(DashboardKpiTile t) =>
+        SaveTilesAsync([.. _dashboard.EffectiveTiles.Where(x => x.Id != t.Id)], $"«{DashboardKpiTiles.DisplayTitle(t)}» er fjernet fra oversikten.");
+
+    private void EditTile(DashboardKpiTile? t) { _tileMenu = null; _tileEdit = t; _tileEditing = true; _tileError = null; _tileNotice = null; }
+
+    private int? TileCountNow(DashboardKpiTile t) => _overview is { } ov ? O.TileCount(O.Of(ov, CurrentScope), t) : null;
+
+    private Task SaveEditedTileAsync(DashboardKpiTile t) => SaveTilesAsync(TilesWith(t), null, close: true);
+
+    /// <summary>Saves the whole tile list in the dashboard setup (the existing settings store and permission); scenarios, cases and plans are untouched.</summary>
+    private async Task SaveTilesAsync(List<DashboardKpiTile> tiles, string? notice, bool close = false)
+    {
+        _tileMenu = null; _tileError = null; _tileNotice = null;
+        if (ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) { _tileError = "Innstillingene kan ikke lagres nå."; return; }
+        _tileBusy = true;
+        try
+        {
+            var (settings, error) = await api.SaveDashboardSettingsAsync(new SaveManualTestingDashboardSettingsRequest(null) { Tiles = [.. tiles.Select((x, i) => x with { Order = i })] });
+            if (settings is null) { _tileError = $"Flisene ble ikke lagret. {error}"; return; }
+            _dashboard = settings; _tileNotice = notice;
+            if (close) _tileEditing = false;
+        }
+        finally { _tileBusy = false; }
+    }
+
+    private async Task ResetTilesAsync()
+    {
+        _tileMenu = null; _tileError = null; _tileNotice = null;
+        if (ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) return;
+        var (settings, error) = await api.SaveDashboardSettingsAsync(new SaveManualTestingDashboardSettingsRequest(null) { ResetTiles = true });
+        if (settings is null) { _tileError = $"Flisene ble ikke tilbakestilt. {error}"; return; }
+        _dashboard = settings; _tileNotice = "Standardflisen «Ende-til-ende-tester» er gjenopprettet. Andre deler av oversikten er uendret.";
+    }
+
+    private async Task OpenTileAsync(DashboardKpiTile t)
+    {
+        if (_ws?.ProjectKey is not { } key) return;
+        await ManualTestingDrillNavigation.OpenFilteredAsync(JS, Nav, key, O.TileFilter(t));
+    }
+
     private RenderFragment Kpi(string id, string title, int? value, string explanation, bool explain) => __builder =>
     {
         if (!On(id)) return;
@@ -541,7 +676,7 @@
         <section class="mto-card @(wide ? "is-wide" : null)" data-testid="mto-widget" data-widget="@id">
             <h3 class="mto-card-h">@title</h3>
             <p class="mt-muted msb-small mto-card-note">@note</p>
-            <BirkNext.Web.Components.DeliveryBarChart Bars="shown" TestId="mto-bar" Label="@title" Percent="percent" Empty="Ingen data i utvalget."
+            <BirkNext.Web.Components.DashboardBarChart Bars="shown" TestId="mto-bar" Label="@title" Percent="percent" Empty="Ingen data i utvalget."
                 OnSelect="key => ToggleDrill(id, key)" SelectedKey="@(_drill is { } d && d.Chart == id ? d.Key : null)" />
             @if (limit > 0 && bars.Count > limit)
             {
@@ -550,6 +685,69 @@
             }
         </section>
     };
+
+    // ── Testoversikt v2 (2026-11-26): action rows, plan execution bar, table sorting ─────────────────────────────────────────────────────
+
+    /// <summary>A registry widget as counted action rows (only rows with a count); each row opens the same drill-down as the chart did.</summary>
+    private RenderFragment ActionList(string id, string title, string icon, IReadOnlyList<DeliveryBar> bars, string note) => __builder =>
+    {
+        if (!On(id)) return;
+        var active = bars.Where(b => b.Value > 0).ToList();
+        if (active.Count == 0 && On("display.hideEmpty")) return;
+        <section class="mto-card mto-actions-card" data-testid="mto-widget" data-widget="@id">
+            <h3 class="mto-card-h">@title</h3>
+            <p class="mt-muted msb-small mto-card-note">@note</p>
+            @if (active.Count == 0) { <p class="mt-muted msb-small" data-testid="mto-bar-empty">Ingenting i utvalget.</p> }
+            <ul class="mto-action-list">
+                @foreach (var b in active)
+                {
+                    var bar = b;
+                    <li data-testid="mto-bar" data-key="@b.Key">
+                        <button type="button" class="mto-action-item @(IsDrill(id, b.Key) ? "is-selected" : null)" aria-pressed="@(IsDrill(id, b.Key) ? "true" : "false")"
+                                aria-label="@($"{b.Label}: {b.Value}. {b.Info}. Vis hvilke.")" title="@b.Info" @onclick="@(() => ToggleDrill(id, bar.Key))" data-testid="mto-bar-open">
+                            <span class="mto-action-icon is-@icon is-@DeliveryDashboard.ToneClass(b.Tone)" aria-hidden="true"></span>
+                            <span class="mto-action-count">@b.Value</span><span class="mto-action-text">@b.Label</span><span class="mto-action-go" aria-hidden="true">›</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+        </section>
+    };
+
+    /// <summary>A plan's scenario-level execution as one segmented SVG bar with a printed legend (never colour alone; never across plans).</summary>
+    private static RenderFragment ExecutionBar(PlanExecutionCounts ex) => __builder =>
+    {
+        var total = Math.Max(1, ex.Scenarios);
+        var segments = new[] { ("passed", ex.Passed, "bestått"), ("failed", ex.Failed, "feilet"), ("blocked", ex.Blocked, "blokkert"), ("notrun", ex.NotRun, "ikke kjørt") };
+        var x = 0.0;
+        <div class="mto-exec" data-testid="mto-plan-exec" data-notrun="@ex.NotRun" data-passed="@ex.Passed" data-failed="@ex.Failed" data-blocked="@ex.Blocked">
+            <svg class="mto-exec-bar" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="@($"Gjennomføring i denne planen: {ex.Passed} bestått, {ex.Failed} feilet, {ex.Blocked} blokkert, {ex.NotRun} ikke kjørt av {ex.Scenarios} scenarioer")">
+                @foreach (var (key, n, _) in segments.Where(sg => sg.Item2 > 0))
+                {
+                    var w = 100.0 * n / total;
+                    <rect class="mto-exec-seg is-@key" x="@x.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)" y="0" width="@w.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)" height="6" />
+                    x += w;
+                }
+            </svg>
+            <span class="mto-exec-legend">@foreach (var (key, n, label) in segments) { <span class="mto-exec-item is-@key"><span class="mto-exec-dot" aria-hidden="true"></span>@n @label</span> }</span>
+        </div>
+    };
+
+    private string _sortCol = "name";
+    private bool _sortDesc;
+
+    private void SortBy(string col) { if (_sortCol == col) _sortDesc = !_sortDesc; else { _sortCol = col; _sortDesc = col != "name"; } }
+
+    private IEnumerable<O.Row> SortRows(IReadOnlyList<O.Row> rows)
+    {
+        if (_sortCol == "name" && !_sortDesc) return rows; // the presentation's own order
+        Func<O.Row, IComparable> key = _sortCol switch
+        {
+            "scenarios" => r => r.Scenarios ?? -1, "covered" => r => r.Covered ?? -1, "cases" => r => r.Cases, "approved" => r => r.Approved, "followup" => r => r.FollowUp,
+            _ => r => r.Label,
+        };
+        return _sortDesc ? rows.OrderByDescending(key) : rows.OrderBy(key);
+    }
 
     private readonly HashSet<string> _expandedCharts = new(StringComparer.Ordinal);
     private void ToggleAll(string id) { if (!_expandedCharts.Remove(id)) _expandedCharts.Add(id); }
@@ -728,7 +926,11 @@
 
     /// <summary>The structure the new plan gets — the same shared rules the server applies when it creates the plan.</summary>
     private PlanStructureResult ProposedStructure(string template) =>
-        PlanStructure.Build(template, [.. SelectedScenarios().Select(c => PlanStructure.FactsOf(c.CandidateId, c))]);
+        PlanStructure.Build(template, [.. SelectedScenarios().Select(c => PlanStructure.FactsOf(c.CandidateId, c, resolvedType: ResolvedType(c)))]);
+
+    /// <summary>The acceptance scenario's own type as the overview resolved it (reviewer's decision included); null = classify from the scenario.</summary>
+    private ScenarioRequirementType? ResolvedType(DiscoveredScenario c) =>
+        _overview?.Specifications.SelectMany(s => s.Scenarios).FirstOrDefault(x => !x.RequirementOnly && x.Identity == c.SourceIdentity)?.Type;
 
     /// <summary>The grouping chosen in Finn og forstå as a plan structure key (null when none is saved or it cannot be suites, e.g. test method).</summary>
     private string? _groupingStructure;
@@ -738,7 +940,9 @@
         try
         {
             var saved = ScenarioGrouping.Parse(await JS.InvokeAsync<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping"));
-            _groupingStructure = saved is { } g ? ScenarioGroupAxes.StructureKey(g.Primary, g.Secondary) : null;
+            // No saved choice = the tester sees the default grouping (Brukerhistorie → Scenariotype), so that is the grouping offered as suites.
+            var (primary, secondary) = saved ?? ScenarioGrouping.Default();
+            _groupingStructure = ScenarioGroupAxes.StructureKey(primary, secondary);
         }
         catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { _groupingStructure = null; }
     }

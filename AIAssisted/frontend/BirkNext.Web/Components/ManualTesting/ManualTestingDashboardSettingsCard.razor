@@ -51,6 +51,37 @@
                 }
             </ul>
         </div>
+        @* Custom KPI tiles (2026-11-26): the same tiles testers edit from the tile menu on Testoversikt; each change is saved at once. *@
+        <div class="gsx-panel" data-testid="mtds-tiles">
+            <div class="gsx-panel-head"><h3 class="gsx-panel-title">KPI tiles (Fliser)</h3></div>
+            <p class="gsx-muted mtds-desc">Custom key figures on Testoversikt. Each tile counts unique acceptance scenarios and standalone documented tests on one dimension
+                (test level or scenario type) in the dashboard's selected scope. The name is only a label. Removing a tile removes only its configuration.</p>
+            <ul class="mtds-list">
+                @foreach (var (tile, i) in Tiles.Select((t, i) => (t, i)))
+                {
+                    var t = tile; var index = i;
+                    <li class="mtds-tile" data-testid="mtds-tile" data-tile="@t.Id">
+                        <label class="mtds-switch"><input type="checkbox" role="switch" checked="@t.Visible" disabled="@_busy" @onchange="e => SetVisibleAsync(t, e)" data-testid="mtds-tile-visible" />
+                            <span><strong class="mtds-tile-name">@DashboardKpiTiles.DisplayTitle(t)</strong><span class="gsx-muted mtds-desc">@TileMeta(t)</span></span></label>
+                        <span class="mtds-tile-tools">
+                            <button type="button" class="btn-secondary btn-sm" disabled="@(_busy || index == 0)" @onclick="() => MoveTileAsync(index, -1)" aria-label="Move up" data-testid="mtds-tile-up">↑</button>
+                            <button type="button" class="btn-secondary btn-sm" disabled="@(_busy || index == Tiles.Count - 1)" @onclick="() => MoveTileAsync(index, 1)" aria-label="Move down" data-testid="mtds-tile-down">↓</button>
+                            <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => OpenTile(t)" data-testid="mtds-tile-edit">Edit</button>
+                            <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => RemoveTileAsync(t)" data-testid="mtds-tile-remove">Remove</button>
+                        </span>
+                    </li>
+                }
+            </ul>
+            @if (Tiles.Count == 0) { <p class="gsx-muted" data-testid="mtds-tiles-none">No tiles. Add one, or restore the default tile.</p> }
+            <div class="mtds-actions">
+                <button type="button" class="btn-secondary btn-sm" disabled="@(_busy || Tiles.Count >= DashboardKpiTiles.MaxTiles)" @onclick="() => OpenTile(null)" data-testid="mtds-tile-add">Add tile</button>
+                <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="ResetTilesAsync" data-testid="mtds-tiles-reset">Restore default tiles</button>
+            </div>
+            @if (_tileEditing)
+            {
+                <KpiTileEditor Tile="_tileEdit" English="true" Busy="_busy" OnSave="SaveTileAsync" OnCancel="CloseTile" />
+            }
+        </div>
         @if (_error is { } err) { <p class="gsx-error" role="alert" data-testid="mtds-error">The setup could not be saved. @err <button type="button" class="btn-secondary btn-sm" @onclick="SaveAsync">Retry</button></p> }
         @if (_notice is { } n) { <p class="gsx-muted" role="status" data-testid="mtds-notice">@n</p> }
         <div class="mtds-actions">
@@ -68,6 +99,65 @@
 
 @code {
     private ManualTestingDashboardSettings? _saved;
+
+    // ── KPI tiles (saved immediately; the switches above keep their own «Save changes») ──
+    private bool _tileEditing;
+    private DashboardKpiTile? _tileEdit;
+    private IReadOnlyList<DashboardKpiTile> Tiles => _saved?.EffectiveTiles ?? DashboardKpiTiles.Defaults;
+
+    private static string TileMeta(DashboardKpiTile t) =>
+        $"{DashboardKpiTiles.DimensionLabel(t.Dimension)} / {DashboardKpiTiles.MetricLabel(t.Dimension, t.Metric)}" + (t.Visible ? "" : " · hidden");
+
+    private void OpenTile(DashboardKpiTile? t) { _tileEdit = t; _tileEditing = true; }
+    private void CloseTile() => _tileEditing = false;
+
+    private Task SetVisibleAsync(DashboardKpiTile t, ChangeEventArgs e) => SaveTileAsync(t with { Visible = e.Value is true });
+
+    private Task SaveTileAsync(DashboardKpiTile t)
+    {
+        var list = Tiles.ToList();
+        var i = list.FindIndex(x => x.Id == t.Id);
+        if (i >= 0) list[i] = t; else list.Add(t);
+        return SaveTilesAsync(list, null);
+    }
+
+    private Task MoveTileAsync(int index, int delta)
+    {
+        var list = Tiles.ToList();
+        var to = index + delta;
+        if (to < 0 || to >= list.Count) return Task.CompletedTask;
+        (list[index], list[to]) = (list[to], list[index]);
+        return SaveTilesAsync(list, null);
+    }
+
+    private Task RemoveTileAsync(DashboardKpiTile t) =>
+        SaveTilesAsync([.. Tiles.Where(x => x.Id != t.Id)], "Tile «" + DashboardKpiTiles.DisplayTitle(t) + "» removed (only its configuration).");
+
+    private async Task SaveTilesAsync(List<DashboardKpiTile> tiles, string? notice)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null; _notice = null;
+        try
+        {
+            var (settings, error) = await api.SaveDashboardSettingsAsync(new SaveManualTestingDashboardSettingsRequest(null) { Tiles = [.. tiles.Select((x, i) => x with { Order = i })] });
+            if (settings is null) { _error = error; return; }
+            _saved = settings; _tileEditing = false; _notice = notice ?? "Tiles saved.";
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ResetTilesAsync()
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null; _notice = null;
+        try
+        {
+            var (settings, error) = await api.SaveDashboardSettingsAsync(new SaveManualTestingDashboardSettingsRequest(null) { ResetTiles = true });
+            if (settings is null) { _error = error; return; }
+            _saved = settings; _notice = "The default tile «Ende-til-ende-tester» is restored. Other dashboard settings are unchanged.";
+        }
+        finally { _busy = false; }
+    }
     private readonly Dictionary<string, bool> _edits = new(StringComparer.Ordinal);
     private bool _busy, _confirmReset;
     private string? _loadError, _error, _notice;

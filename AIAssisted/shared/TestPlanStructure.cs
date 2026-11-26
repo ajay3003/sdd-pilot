@@ -160,11 +160,14 @@ public static class PlanStructure
     }
 
     /// <summary>What the structure reads about one scenario (the same for the browser's preview and the server's creation).</summary>
-    public static PlanStructureFacts FactsOf(string caseId, DiscoveredScenario s, string? fallbackArea = null) =>
+    /// <remarks>AC-level classification (2026-11-26): the type is the acceptance scenario's OWN classification — a reviewer's decision for this
+    /// scenario when given (<paramref name="decision"/>, server) or already resolved (<paramref name="resolvedType"/>, the browser's overview),
+    /// else the proposal from the scenario's own text. Never the story's: a story is context, not a classification unit.</remarks>
+    public static PlanStructureFacts FactsOf(string caseId, DiscoveredScenario s, string? fallbackArea = null, ScenarioTypeDecision? decision = null, ScenarioRequirementType? resolvedType = null) =>
         new(caseId, TestLevelClassifier.Of(s.Type).Level, string.IsNullOrWhiteSpace(s.Area) ? fallbackArea : s.Area,
-            s.Story?.SpecificationPath is { Length: > 0 } spec ? ModuleOf(spec) : null,
+            s.Story?.SpecificationPath is { Length: > 0 } spec ? ModuleOf(spec) : s.CapabilityId == "test-specification" && s.Area is { Length: > 0 } docModule ? docModule : null,
             s.Story is { } story ? $"{story.StoryId} {story.Title}".Trim() : null,
-            s.CapabilityId == "specification" && s.CanonicalKey.StartsWith("scenario:", StringComparison.Ordinal) ? ScenarioTypeClassifier.Propose(s).Type : null);
+            ScenarioTypeClassifier.IsClassifiable(s) ? resolvedType ?? ScenarioTypeClassifier.Classify(s, decision).Type : null);
 
     // ── Tree helpers (Planlegg og klargjør, Testplaner, export) ──
 
@@ -249,7 +252,20 @@ public static class ScenarioGroupAxes
         ScenarioRequirementType.Functional => "Funksjonelle",
         ScenarioRequirementType.NonFunctional => "Ikke-funksjonelle",
         ScenarioRequirementType.Mixed => "Blandede",
-        _ => "Uavklart type",
+        _ => "Uavklarte",
+    };
+
+    /// <summary>«3 funksjonelle», «1 ikke-funksjonell», «2 blandede», «1 uavklart» — a count of acceptance scenarios of one type.</summary>
+    public static string TypeCount(ScenarioRequirementType t, int n) => $"{n} " + (t, n == 1) switch
+    {
+        (ScenarioRequirementType.Functional, true) => "funksjonell",
+        (ScenarioRequirementType.Functional, false) => "funksjonelle",
+        (ScenarioRequirementType.NonFunctional, true) => "ikke-funksjonell",
+        (ScenarioRequirementType.NonFunctional, false) => "ikke-funksjonelle",
+        (ScenarioRequirementType.Mixed, true) => "blandet",
+        (ScenarioRequirementType.Mixed, false) => "blandede",
+        (_, true) => "uavklart",
+        _ => "uavklarte",
     };
 
     public static int TypeRank(ScenarioRequirementType? t) => t is { } x ? Array.IndexOf(ScenarioTypeClassifier.Order, x) : 50;

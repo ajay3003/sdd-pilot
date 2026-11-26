@@ -58,6 +58,7 @@ public static class ScenarioGrouping
     /// <summary>The scenario's module: its specification's module (the same rule as the plan structure); null when it has none.</summary>
     public static string? ModuleOf(S.Item i) =>
         i.Candidate.Story?.SpecificationPath is { Length: > 0 } spec ? PlanStructure.ModuleOf(spec)
+        : i.Candidate.CapabilityId == "test-specification" && i.Candidate.Area is { Length: > 0 } docModule ? docModule
         : i.Candidate.Evidence.Select(e => e.Reference).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p) && p!.Contains("/specs/", StringComparison.OrdinalIgnoreCase)) is { } path
             ? PlanStructure.ModuleOf(path) : null;
 
@@ -92,9 +93,18 @@ public static class ScenarioGrouping
         return $"{spec}|{(int.TryParse(digits, out var n) ? n : 9999):D5}";
     }
 
-    /// <summary>The default when the tester has not chosen: a specification → by user story; otherwise test level → scenario type.</summary>
-    public static (ScenarioGroupAxis Primary, ScenarioGroupAxis Secondary) Default(bool specificationSelected) =>
-        specificationSelected ? (ScenarioGroupAxis.Story, ScenarioGroupAxis.None) : (ScenarioGroupAxis.TestLevel, ScenarioGroupAxis.ScenarioType);
+    /// <summary>The default for every tester, project, module and specification (2026-11-26, AC-level classification): Brukerhistorie →
+    /// Scenariotype, unless the tester saved another choice. The type groups classify the ACs inside the story, never the story itself.
+    /// (The argument is kept for callers; it does not change the default.)</summary>
+    public static (ScenarioGroupAxis Primary, ScenarioGroupAxis Secondary) Default(bool specificationSelected = false) => (ScenarioGroupAxis.Story, ScenarioGroupAxis.ScenarioType);
+
+    /// <summary>A story group's computed child summary: how many of its distinct acceptance scenarios have each type (only types present, in the
+    /// canonical order). A summary of the ACs — NOT a type of the story; nothing is stored.</summary>
+    public static IReadOnlyList<(ScenarioRequirementType Type, int Count)> TypeSummary(IEnumerable<S.Item> items)
+    {
+        var typed = items.Where(i => i.TypeResult is not null).DistinctBy(i => i.Id).ToList();
+        return [.. ScenarioTypeClassifier.Order.Select(t => (t, typed.Count(i => i.TypeResult!.Type == t))).Where(x => x.Item2 > 0)];
+    }
 
     /// <summary>A stored preference «Primary>Secondary»; null when absent or unreadable.</summary>
     public static (ScenarioGroupAxis Primary, ScenarioGroupAxis Secondary)? Parse(string? stored)

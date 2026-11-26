@@ -864,6 +864,7 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.AdoTestPlanSetting
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.AdoTestPlanTransferService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.AdoTestResultsService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.SpecificationScenarioProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.TestSpecificationScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.SystemGuideScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.UiSourceScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.ApiContractScenarioProvider>();

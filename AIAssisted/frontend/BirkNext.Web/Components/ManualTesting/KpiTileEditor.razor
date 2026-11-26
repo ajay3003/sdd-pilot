@@ -1,0 +1,100 @@
+@using BirkNext.TestPlanning
+@* «Tilpass flis» (2026-11-26): edits ONE custom KPI tile — its display name and the metric it counts. A dialog over the page (the same modal
+   pattern as the Planlegg preview); nothing is saved until «Lagre», and saving changes only the dashboard setup — never a scenario, case or plan.
+   Used on Testoversikt (Norwegian) and in System Settings (English labels, per the settings rule). *@
+
+<div class="mtp-preview-backdrop kte-backdrop" @onclick="CancelAsync" data-testid="kte">
+    <div class="mtp-preview kte" role="dialog" aria-modal="true" aria-labelledby="kte-title" tabindex="-1" @ref="_dialog"
+         @onclick:stopPropagation="true" @onkeydown="KeyAsync" data-testid="kte-dialog">
+        <header class="mtp-preview-head">
+            <h2 id="kte-title" class="mtp-preview-title">@(IsNew ? T("Legg til flis", "Add tile") : T("Tilpass flis", "Customize tile"))</h2>
+        </header>
+        <div class="kte-body">
+            <label class="kte-field">
+                <span>@T("Navn på flis", "Tile name")</span>
+                <input type="text" class="form-control" maxlength="@DashboardKpiTiles.MaxTitle" value="@_title" placeholder="@DashboardKpiTiles.DefaultTitle(_dimension, _metric)"
+                       @oninput="e => _title = e.Value?.ToString() ?? string.Empty" data-testid="kte-title" />
+                <small class="mt-muted">@T($"Valgfritt. Tomt navn gir «{DashboardKpiTiles.DefaultTitle(_dimension, _metric)}». Navnet endrer bare visningen, aldri tellingen.",
+                    $"Optional. An empty name shows «{DashboardKpiTiles.DefaultTitle(_dimension, _metric)}». The name only changes the label, never the count.")</small>
+            </label>
+            <label class="kte-field">
+                <span>@T("Hva skal flisen telle?", "What does the tile count?")</span>
+                <select class="form-select msb-select" @onchange="SetMetric" data-testid="kte-metric">
+                    @foreach (var (dimension, group, options) in DashboardKpiTiles.Choices)
+                    {
+                        <optgroup label="@group">
+                            @foreach (var (value, label) in options)
+                            {
+                                <option value="@($"{dimension}|{value}")" selected="@(dimension == _dimension && value == _metric)">@group / @label</option>
+                            }
+                        </optgroup>
+                    }
+                </select>
+                <small class="mt-muted">@T("Teller unike akseptansescenarioer og selvstendige dokumenterte tester i valgt utvalg — ikke brukerhistorier, testtilfeller eller forekomster i testplaner.",
+                    "Counts unique acceptance scenarios and standalone documented tests in the selected scope — never user stories, test cases or plan occurrences.")</small>
+            </label>
+            <div class="kte-preview" aria-live="polite" data-testid="kte-preview">
+                <span class="mtp-ctx-label">@T("Forhåndsvisning", "Preview")</span>
+                <div class="mto-kpi is-core kte-preview-tile">
+                    <span class="mto-kpi-k"><span class="mto-tile-title" data-testid="kte-preview-title">@Preview.Title</span></span>
+                    <span class="mto-kpi-v" data-testid="kte-preview-count">@(Count is null ? "—" : Count(Preview)?.ToString() ?? "—")</span>
+                    <span class="msb-tag mto-tile-badge">@DashboardKpiTiles.DimensionLabel(_dimension) · @DashboardKpiTiles.MetricLabel(_dimension, _metric)</span>
+                    @if (Count is null) { <span class="mto-kpi-e">@T("Antallet vises i Testoversikt for valgt utvalg.", "The count is shown on Testoversikt for the selected scope.")</span> }
+                </div>
+            </div>
+        </div>
+        <footer class="mtp-preview-foot kte-foot">
+            <button type="button" class="btn btn-secondary" @onclick="CancelAsync" data-testid="kte-cancel">@T("Avbryt", "Cancel")</button>
+            <button type="button" class="btn btn-primary" disabled="@Busy" @onclick="SaveAsync" data-testid="kte-save">@T("Lagre", "Save")</button>
+        </footer>
+    </div>
+</div>
+
+@code {
+    /// <summary>The tile to edit; null = a new tile (Testnivå / Ende til ende proposed).</summary>
+    [Parameter] public DashboardKpiTile? Tile { get; set; }
+    /// <summary>The live count for a tile in the current scope (Testoversikt); null where no scope is loaded (System Settings).</summary>
+    [Parameter] public Func<DashboardKpiTile, int?>? Count { get; set; }
+    [Parameter] public EventCallback<DashboardKpiTile> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public bool English { get; set; }
+    [Parameter] public bool Busy { get; set; }
+
+    private string _title = "";
+    private KpiTileDimension _dimension = KpiTileDimension.TestLevel;
+    private string _metric = nameof(ScenarioTestLevel.EndToEnd);
+    private ElementReference _dialog;
+    private bool _focused;
+    private bool IsNew => Tile is null;
+
+    private string T(string nb, string en) => English ? en : nb;
+
+    private (string Title, KpiTileDimension Dimension, string Metric) PreviewParts => (DashboardKpiTiles.Clean(_title) ?? DashboardKpiTiles.DefaultTitle(_dimension, _metric), _dimension, _metric);
+    private DashboardKpiTile Result => new(Tile?.Id ?? $"tile.{Guid.NewGuid():N}"[..17], DashboardKpiTiles.Clean(_title), _dimension, _metric, Tile?.Visible ?? true, Tile?.Order ?? int.MaxValue);
+    private DashboardKpiTile Preview => Result with { Title = PreviewParts.Title };
+
+    protected override void OnParametersSet()
+    {
+        if (_initialised) return;
+        _initialised = true;
+        if (Tile is { } t) (_title, _dimension, _metric) = (t.Title ?? "", t.Dimension, t.Metric);
+    }
+    private bool _initialised;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focused) return;
+        _focused = true;
+        try { await _dialog.FocusAsync(); } catch (Exception e) when (e is InvalidOperationException or Microsoft.JSInterop.JSException or TaskCanceledException) { }
+    }
+
+    private void SetMetric(ChangeEventArgs e)
+    {
+        var parts = (e.Value?.ToString() ?? "").Split('|');
+        if (parts.Length == 2 && Enum.TryParse<KpiTileDimension>(parts[0], out var d) && DashboardKpiTiles.IsValidMetric(d, parts[1])) (_dimension, _metric) = (d, parts[1]);
+    }
+
+    private Task SaveAsync() => OnSave.InvokeAsync(Result);
+    private Task CancelAsync() => OnCancel.InvokeAsync();
+    private Task KeyAsync(KeyboardEventArgs e) => e.Key == "Escape" ? CancelAsync() : Task.CompletedTask;
+}

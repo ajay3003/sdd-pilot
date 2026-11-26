@@ -221,14 +221,21 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
         var cut = Open(View());
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]"));
         cut.Find("[data-testid=mtd-list-group] option[selected]").GetAttribute("value").Should().Be("Story");
+        cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-secondary").Should().Be("ScenarioType", "the default is Brukerhistorie → Scenariotype (AC-level)");
+        cut.FindAll("[data-testid=mtd-groups-reset]").Should().BeEmpty("nothing to reset at the default");
         Groups(cut).Should().Equal(("US1 — Search for a Child", "2", "0"), ("US2 — View Child Profile Overview", "2", "0")); // counts are shown while collapsed
         cut.FindAll("[data-testid=mtd-sgroup-toggle]").Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "false", "every group starts collapsed — even a small list");
         cut.FindAll("[data-testid=mtd-scenario]").Should().BeEmpty("no rows are rendered for collapsed groups");
 
         cut.FindAll("[data-testid=mtd-sgroup-toggle]")[0].Click();
-        cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal("us1-1", "us1-4");
-        cut.FindAll("[data-testid=mtd-sgroup-toggle]")[1].GetAttribute("aria-expanded").Should().Be("false", "opening one group never opens another");
-        JSInterop.VerifyInvoke("sessionStorage.setItem").Arguments[0].Should().Be("birknext.manualTesting.openGroups.m2lb", "the tester's expansion is kept for the project");
+        var nested = cut.Find("[data-testid=mtd-sgroup][data-depth='1'] [data-testid=mtd-sgroup-toggle]");
+        nested.GetAttribute("aria-expanded").Should().Be("false", "the scenario-type group under the story starts collapsed too");
+        cut.FindAll("[data-testid=mtd-sgroup][data-depth='1']").Should().OnlyContain(g => g.GetAttribute("data-axis") == "ScenarioType");
+        cut.FindAll("[data-testid=mtd-scenario]").Should().BeEmpty();
+        cut.Find("[data-testid=mtd-sgroup][data-depth='1'] [data-testid=mtd-sgroup-toggle]").Click();
+        cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().NotBeEmpty().And.BeSubsetOf(["us1-1", "us1-4"]);
+        cut.FindAll("[data-testid=mtd-sgroup][data-depth='0'] > .mtg-head [data-testid=mtd-sgroup-toggle]")[1].GetAttribute("aria-expanded").Should().Be("false", "opening one group never opens another");
+        JSInterop.Invocations.Where(i => i.Identifier == "sessionStorage.setItem").Select(i => i.Arguments[0]).Should().Contain("birknext.manualTesting.openGroups.m2lb", "the tester's expansion is kept for the project");
 
         cut.Find("[data-testid=mtd-groups-expand]").Click();
         cut.FindAll("[data-testid=mtd-scenario]").Should().HaveCount(4);
@@ -258,15 +265,16 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
     public void G05_the_testers_open_groups_survive_leaving_and_coming_back_and_the_drawer()
     {
         FlatList = false;
-        JSInterop.Setup<string?>("sessionStorage.getItem", "birknext.manualTesting.openGroups.m2lb").SetResult(JsonSerializer.Serialize(new[] { $"/Story:{Spec}#{Us2.Key}" }));
+        JSInterop.Setup<string?>("sessionStorage.getItem", "birknext.manualTesting.openGroups.m2lb").SetResult(JsonSerializer.Serialize(new[] { $"/Story:{Spec}#{Us2.Key}" }
+            .Concat(new[] { "Functional", "NonFunctional", "Mixed", "Unclassified" }.Select(t => $"/Story:{Spec}#{Us2.Key}/ScenarioType:{t}"))));
         var cut = Open(View());
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal("us2-5", "us2-6"));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().BeEquivalentTo("us2-5", "us2-6"));
         cut.FindAll("[data-testid=mtd-sgroup-toggle]")[0].GetAttribute("aria-expanded").Should().Be("false", "only the group the tester had opened");
 
         cut.Find("[data-testid=mtd-scenario][data-id='us2-5'] [data-testid=mtd-show-details]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true"));
         cut.Find("[data-testid=mtd-drawer-close]").Click();
-        cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal(["us2-5", "us2-6"], "the drawer never changes expansion");
+        cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().BeEquivalentTo(["us2-5", "us2-6"], "the drawer never changes expansion");
     }
 
     [Fact]
@@ -384,5 +392,22 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
         ], new Dictionary<string, ScenarioBrowserPresentation.Prepared>());
         var stories = ScenarioWorkspacePresentation.Stories(items, ScenarioBrowserPresentation.FromOverview([Search.SourceIdentity, "tss-e2e-1"], "Utvalg"));
         stories.Select(st => (st.Key, st.Discovered)).Should().Equal((Us1.Key, 1), (ScenarioWorkspacePresentation.NoStory, 1));
+    }
+
+    [Fact]
+    public void G06_Tilbakestill_gruppering_restores_Brukerhistorie_then_Scenariotype_collapsed()
+    {
+        FlatList = false;
+        JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("Method>ScenarioType");
+        var cut = Open(View());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("Method"));
+        cut.Find("[data-testid=mtd-groups-reset]").Click();
+        var tree = cut.Find("[data-testid=mtd-group-tree]");
+        (tree.GetAttribute("data-primary"), tree.GetAttribute("data-secondary")).Should().Be(("Story", "ScenarioType"));
+        cut.FindAll("[data-testid=mtd-sgroup][data-depth='0'] [data-testid=mtd-sgroup-type-summary]").Should().NotBeEmpty("a story shows its ACs' summary");
+        cut.FindAll("[data-testid=mtd-sgroup-type-summary]").Should().OnlyContain(s => s.TextContent.Trim().StartsWith("Akseptansescenarioer:"), "a summary of ACs, never «US type»");
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]").Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "false", "collapsed");
+        JSInterop.VerifyInvoke("localStorage.removeItem").Arguments.Should().Equal("birknext.manualTesting.scenarioGrouping");
+        cut.FindAll("[data-testid=mtd-groups-reset]").Should().BeEmpty();
     }
 }

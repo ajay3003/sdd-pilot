@@ -158,4 +158,33 @@ public sealed class HierarchicalTestPlanTests
             ("Integrasjon", true, 101), ("Integrasjon / Mottak", false, null), ("Integrasjon / Rapportering", true, 102));
         items.Should().NotContain(i => i.Path == "Tom gruppe", "an empty suite is not created by a transfer of cases");
     }
+
+    private static DiscoveredScenario Ac(string id, string then, string fingerprint = "fp1") => new()
+    {
+        CandidateId = id, CapabilityId = "specification", CanonicalKey = $"scenario:M|{id}", Title = id, ExpectedBehaviour = then, Fingerprint = fingerprint,
+        Template = [new("then", "Then", then)],
+        Story = new BirkNext.TestCoverage.CoverageUserStory { Key = "spec#US2", StoryId = "US2", Title = "Same story", SpecificationPath = "M/specs/001-x/spec.md" },
+    };
+
+    [Fact]
+    public void AC_level_types_in_the_plan_structure_come_from_each_scenario_and_its_own_review_never_from_the_story()
+    {
+        var functional = Ac("ac1", "the report is accepted and stored");
+        var quality = Ac("ac2", "the response is returned within 2 seconds");
+        var (a, b) = (PlanStructure.FactsOf("ac1", functional), PlanStructure.FactsOf("ac2", quality));
+        (a.Story, b.Story).Should().Be(("US2 Same story", "US2 Same story"), "the same story");
+        a.Type.Should().Be(ScenarioTypeClassifier.Propose(functional).Type);
+        b.Type.Should().Be(ScenarioTypeClassifier.Propose(quality).Type);
+        a.Type.Should().NotBe(b.Type, "two ACs of one story keep their own types");
+
+        // A reviewer's decision for THIS scenario wins (before 2026-11-26 the structure read the proposal only); for another version it does not.
+        var reviewed = new ScenarioTypeDecision("ac1", "spec#US2", ScenarioRequirementType.Mixed, [], "both", "lead", DateTimeOffset.UnixEpoch, "fp1");
+        PlanStructure.FactsOf("ac1", functional, decision: reviewed).Type.Should().Be(ScenarioRequirementType.Mixed);
+        PlanStructure.FactsOf("ac1", functional with { Fingerprint = "fp2" }, decision: reviewed).Type.Should().Be(ScenarioTypeClassifier.Propose(functional).Type, "a review of an earlier text is not applied");
+        PlanStructure.FactsOf("ac2", quality, resolvedType: ScenarioRequirementType.Unclassified).Type.Should().Be(ScenarioRequirementType.Unclassified, "the browser's resolved type is used as given");
+
+        // A requirement without an acceptance scenario has no scenario type.
+        PlanStructure.FactsOf("r1", functional with { CanonicalKey = "requirement:M|FR-1" }).Type.Should().BeNull();
+        PlanStructure.Flatten(PlanStructure.Build(PlanStructureTemplates.TypeLevel, [a, b]).Suites).Where(x => x.Depth == 0).Should().HaveCount(2, "one suite per AC type, none for the story");
+    }
 }

@@ -1092,3 +1092,153 @@ a.mto-kpi:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 
 .mtx-title { flex: 1 1 18rem; }
 .mtx-detail { padding: .2rem .7rem .7rem; display: grid; gap: .4rem; }
 .mtx-result { border: 0; padding: 0; margin: 0; display: grid; gap: .3rem; }
+
+/* ── Testoversikt v2 (2026-11-26): SVG bar charts, action rows, plan cards ───────────────────────────────────────────────────────────── */
+.dbc { margin: 0; }
+.dbc-grid { display: grid; grid-template-columns: minmax(9rem, 40%) minmax(0, 1fr); column-gap: .9rem; }
+.dbc-labels { display: grid; grid-template-rows: repeat(var(--dbc-rows), 2.1rem); }
+.dbc-row { display: flex; align-items: center; min-width: 0; }
+.dbc-row-btn { display: flex; align-items: center; justify-content: space-between; gap: .6rem; width: 100%; min-height: 1.9rem; padding: 0 .45rem; border: 0; border-radius: 7px;
+    background: transparent; color: inherit; font: inherit; font-size: .9rem; text-align: left; cursor: pointer; }
+.dbc-row-btn.is-static { cursor: default; }
+.dbc-row-btn:not(.is-static):hover, .dbc-row.is-selected .dbc-row-btn { background: color-mix(in srgb, var(--msb-accent) 8%, transparent); }
+.dbc-row-btn:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 1px; }
+.dbc-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbc-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+.dbc-plot { position: relative; padding-bottom: 1.3rem; }
+.dbc-svg { display: block; width: 100%; height: calc(var(--dbc-rows) * 2.1rem); overflow: visible; }
+.dbc-gridline { stroke: color-mix(in srgb, var(--msb-border) 85%, transparent); stroke-width: 1; stroke-dasharray: 3 3; }
+.dbc-bar { fill: var(--tone, var(--msb-accent)); opacity: .9; }
+.dbc-bar.is-selected { opacity: 1; stroke: var(--msb-accent); stroke-width: .4; }
+.dbc-axis { position: absolute; left: 0; right: 0; bottom: 0; height: 1.1rem; font-size: .74rem; color: var(--clr-text-muted, #57606a); font-variant-numeric: tabular-nums; }
+.dbc-tick { position: absolute; transform: translateX(-50%); }
+.dbc-tick:first-child { transform: none; }
+.dbc-tick:last-child { transform: translateX(-100%); }
+.dbc-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.dbc-empty { margin: 0; color: var(--clr-text-muted, #57606a); font-size: .88rem; }
+
+/* KPI icons */
+.mto-kpi-k { display: inline-flex; align-items: center; gap: .4rem; }
+.mto-kpi-icon { display: inline-grid; place-items: center; width: 1.45rem; height: 1.45rem; border-radius: 7px; background: color-mix(in srgb, var(--msb-accent) 12%, transparent); color: var(--msb-accent); font-size: .8rem; }
+.mto-kpi-icon.is-scenarios::before { content: "◎"; }
+.mto-kpi-icon.is-cases::before { content: "☰"; }
+.mto-kpi-icon.is-approved::before { content: "✓"; }
+.mto-kpi-icon.is-ready::before { content: "▶"; }
+.mto-kpi-icon.is-approved { background: color-mix(in srgb, #15803d 14%, transparent); color: #15803d; }
+.mto-kpi-icon.is-ready { background: color-mix(in srgb, #0f766e 14%, transparent); color: #0f766e; }
+
+/* Action rows */
+.mto-action-item { display: flex; width: 100%; align-items: center; gap: .6rem; padding: .5rem .65rem; text-decoration: none; }
+.mto-action-icon { display: inline-grid; place-items: center; flex: 0 0 1.7rem; height: 1.7rem; border-radius: 8px; background: color-mix(in srgb, var(--tone, var(--msb-accent)) 14%, transparent); color: var(--tone, var(--msb-accent)); font-size: .85rem; }
+.mto-action-icon.is-blocker::before { content: "!"; font-weight: 800; }
+.mto-action-icon.is-source::before { content: "⟳"; }
+.mto-action-icon.is-plan::before { content: "▤"; }
+.mto-action-count { min-width: 2.2rem; font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.mto-action-text { flex: 1 1 auto; }
+.mto-action-item.is-selected { border-color: var(--msb-accent); }
+
+/* Plan cards with plan-specific execution */
+.mto-plan-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); }
+.mto-plan-card { display: grid; gap: .35rem; padding: .75rem .85rem; border: 1px solid var(--msb-border); border-radius: 10px; background: var(--msb-subtle); }
+.mto-plan-card-head { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.mto-plan-card .mto-plan-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mto-plan-sprint { flex: none; padding: 0 .5rem; border-radius: 999px; font-size: .75rem; font-weight: 700; background: color-mix(in srgb, var(--msb-accent) 12%, transparent); color: var(--msb-accent); }
+.mto-exec { display: grid; gap: .3rem; }
+.mto-exec-bar { display: block; width: 100%; height: .55rem; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--msb-border) 70%, transparent); }
+.mto-exec-seg.is-passed, .mto-exec-item.is-passed .mto-exec-dot { fill: #15803d; background: #15803d; }
+.mto-exec-seg.is-failed, .mto-exec-item.is-failed .mto-exec-dot { fill: #b91c1c; background: #b91c1c; }
+.mto-exec-seg.is-blocked, .mto-exec-item.is-blocked .mto-exec-dot { fill: #b45309; background: #b45309; }
+.mto-exec-seg.is-notrun, .mto-exec-item.is-notrun .mto-exec-dot { fill: #94a3b8; background: #94a3b8; }
+.mto-exec-legend { display: flex; flex-wrap: wrap; gap: .2rem .8rem; font-size: .78rem; color: var(--clr-text-muted, #57606a); font-variant-numeric: tabular-nums; }
+.mto-exec-item { display: inline-flex; align-items: center; gap: .3rem; }
+.mto-exec-dot { width: .55rem; height: .55rem; border-radius: 3px; }
+
+/* Sortable table headers */
+.mto-sort { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
+.mto-sort:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 2px; }
+.mto-sort-mark { margin-left: .2rem; }
+
+/* «Forhåndsvisning» (2026-11-26 fix): a real modal above the page (it had no styles and rendered as plain content at the top of the page). */
+.mtp-preview-backdrop { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: flex-start; justify-content: center; padding: 3vh 1rem;
+    background: rgba(15, 23, 42, .45); overflow: hidden; }
+.mtp-preview { display: flex; flex-direction: column; width: min(60rem, 100%); max-height: 94vh; border-radius: 14px; background: var(--msb-surface, #fff);
+    color: var(--clr-text, #1f2328); box-shadow: 0 24px 64px rgba(15, 23, 42, .35); outline: none; }
+.mtp-preview-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .6rem 1rem; padding: 1rem 1.2rem .8rem; border-bottom: 1px solid var(--msb-border); }
+.mtp-preview-head-text { display: grid; gap: .3rem; min-width: 0; flex: 1 1 24rem; }
+.mtp-preview-title { margin: 0; font-size: 1.2rem; font-weight: 700; }
+.mtp-preview-badges { display: flex; flex-wrap: wrap; gap: .35rem; }
+.mtp-preview-actions { display: flex; gap: .5rem; align-items: flex-start; }
+.mtp-preview-body { overflow-y: auto; overscroll-behavior: contain; padding: .4rem 1.2rem 1.2rem; }
+.mtp-preview-sec { padding: .8rem 0; border-bottom: 1px solid color-mix(in srgb, var(--msb-border) 70%, transparent); }
+.mtp-preview-sec:last-child { border-bottom: 0; }
+.mtp-preview-sec h3 { margin: 0 0 .5rem; font-size: 1rem; font-weight: 700; }
+.mtp-preview-meta { margin: 0 0 .4rem; font-size: .82rem; color: var(--clr-text-muted, #57606a); overflow-wrap: anywhere; }
+.mtp-preview-dl { display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: .35rem .9rem; margin: 0 0 .7rem; }
+.mtp-preview-dl dt { font-weight: 600; color: var(--clr-text-muted, #57606a); }
+.mtp-preview-dl dd { margin: 0; }
+.mtp-preview-og { color: var(--clr-text-muted, #57606a); font-size: .85rem; }
+td .mtp-preview-og { display: block; margin-top: .15rem; }
+.mtp-preview-steps { width: 100%; border-collapse: collapse; margin: .3rem 0 .7rem; font-size: .92rem; }
+.mtp-preview-steps th, .mtp-preview-steps td { padding: .45rem .6rem; border-bottom: 1px solid var(--msb-border); text-align: left; vertical-align: top; }
+.mtp-preview-steps th:first-child, .mtp-preview-steps td:first-child { width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .mtp-preview-dl { grid-template-columns: minmax(0, 1fr); } .mtp-preview-backdrop { padding: 0; } .mtp-preview { max-height: 100vh; border-radius: 0; } }
+@media print {
+    .mtp-preview-backdrop { position: static; background: none; padding: 0; }
+    .mtp-preview { box-shadow: none; max-height: none; width: 100%; }
+    .mtp-preview-actions { display: none; }
+    .mtp-preview-body { overflow: visible; }
+}
+
+/* ── Planlegg og klargjør UX v2 (2026-11-26): wide master–detail, step editor as a two-column grid, sticky action toolbar ── */
+.mt.mtp { max-width: min(100%, 110rem); }
+.mtp .mtp-layout { grid-template-columns: minmax(17rem, 24rem) minmax(0, 1fr); gap: 1.25rem; }
+@media (min-width: 1700px) { .mtp .mtp-layout { grid-template-columns: minmax(20rem, 26rem) minmax(0, 1fr); } }
+@media (max-width: 900px) { .mtp .mtp-layout { grid-template-columns: minmax(0, 1fr); } }
+.mtp .mtp-master { max-height: calc(100vh - 6rem); }
+.mtp-steps legend .msb-tag { margin-left: 0.3rem; font-weight: 600; }
+.mtp-steps-hint { margin: 0 0 0.4rem; }
+.mtp-steps ol { counter-reset: none; }
+.mtp-editor .mtp-step { padding: 0.55rem 0.5rem; border: 1px solid var(--msb-border); border-radius: 8px; background: var(--msb-surface); }
+.mtp-editor .mtp-step:focus-within { border-color: var(--clr-primary, #0969da); box-shadow: 0 0 0 2px color-mix(in srgb, var(--clr-primary, #0969da) 18%, transparent); }
+/* Single language: Handling | Forventet resultat side by side with the label above each box. */
+.mtp-editor:not(.is-compare) .mtp-step-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.6rem; }
+.mtp-editor:not(.is-compare) .mtp-step-body .mtp-lrow { grid-template-columns: minmax(0, 1fr); gap: 0.15rem; }
+.mtp-editor:not(.is-compare) .mtp-step-body .mtp-lrow-label { padding-top: 0; font-size: 0.78rem; color: var(--clr-text-muted, #57606a); }
+.mtp-editor .mtp-step-body textarea { min-height: 3.2rem; resize: vertical; }
+.mtp-editor .mtp-step-tools { display: grid; grid-template-columns: repeat(2, 2rem); gap: 0.2rem; }
+.mtp-icon-danger:hover:not(:disabled) { border-color: var(--clr-danger, #cf222e); color: var(--clr-danger, #cf222e); }
+@media (max-width: 1100px) { .mtp-editor:not(.is-compare) .mtp-step-body { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) {
+  .mtp-editor .mtp-step { grid-template-columns: 1.8rem minmax(0, 1fr); }
+  .mtp-editor .mtp-step-tools { grid-column: 1 / -1; grid-template-columns: repeat(5, 2.2rem); justify-content: end; }
+  .mtp-lrow, .mtp-editor.is-compare .mtp-lrow, .mtp-step-body .mtp-lrow, .mtp-editor.is-compare .mtp-step-body .mtp-lrow { grid-template-columns: minmax(0, 1fr); }
+}
+.mtp-actions.is-sticky { position: sticky; bottom: 0; z-index: 20; background: var(--msb-surface); margin-left: -1.1rem; margin-right: -1.1rem; padding: 0.6rem 1.1rem; box-shadow: 0 -4px 10px -6px rgba(0, 0, 0, 0.25); }
+.mtp-dirty-dot { font-size: 0.8rem; font-weight: 600; color: var(--clr-warning-text, #9a6700); }
+.mtp-dirty-dot::before { content: ""; display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; margin-right: 0.35rem; vertical-align: middle; }
+.mtp-readiness { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.6rem; margin-top: 0.4rem; }
+.mtp-readiness .mtp-problems { display: flex; flex-wrap: wrap; gap: 0.3rem; list-style: none; padding: 0; margin: 0; }
+.mtp-readiness .mtp-problems li { padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--msb-subtle); font-size: 0.8rem; }
+
+/* ── Custom KPI tiles (2026-11-26): native KPI look; the main area opens Finn og forstå, the ⋯ menu is a sibling (never nested in the link) ── */
+.mto-tile { position: relative; padding: 0; }
+.mto-tile-open { display: grid; gap: 0.25rem; width: 100%; height: 100%; padding: 0.85rem 2.4rem 0.85rem 1rem; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; border-radius: inherit; font: inherit; }
+.mto-tile-open:hover { background: var(--msb-subtle); }
+.mto-tile-open:focus-visible { outline: 2px solid var(--clr-primary, #0969da); outline-offset: -2px; }
+.mto-tile-title { display: inline-block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.mto-tile .mto-kpi-k { min-width: 0; display: flex; align-items: center; gap: 0.35rem; }
+.mto-tile-badge { justify-self: start; font-size: 0.72rem; }
+.mto-tile-tools { position: absolute; top: 0.45rem; right: 0.45rem; }
+.mto-tile-menu-btn { min-width: 1.9rem; min-height: 1.9rem; line-height: 1; }
+.mto-tile-menu { position: absolute; right: 0; top: 2.2rem; z-index: 30; display: grid; min-width: 12rem; padding: 0.3rem; border: 1px solid var(--msb-border); border-radius: 8px; background: var(--msb-surface); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); }
+.mto-tile-menu button { text-align: left; padding: 0.45rem 0.6rem; border: 0; background: transparent; color: inherit; border-radius: 6px; cursor: pointer; font: inherit; font-size: 0.88rem; }
+.mto-tile-menu button:hover, .mto-tile-menu button:focus-visible { background: var(--msb-subtle); }
+.kte.mtp-preview { max-width: 34rem; }
+.kte-body { display: grid; gap: 0.9rem; padding: 0.9rem 1.1rem; }
+.kte-field { display: grid; gap: 0.3rem; font-weight: 600; font-size: 0.9rem; }
+.kte-field small { font-weight: 400; }
+.kte-preview { display: grid; gap: 0.35rem; }
+.kte-preview-tile { max-width: 18rem; }
+.kte-foot { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.mtds-tile { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.4rem; }
+.mtds-tile-tools { display: flex; gap: 0.3rem; flex-wrap: wrap; }

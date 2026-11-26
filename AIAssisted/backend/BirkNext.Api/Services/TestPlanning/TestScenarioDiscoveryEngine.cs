@@ -38,6 +38,7 @@ public static class TestScenarioDiscoveryEngine
     public const string IntegrationJourneys = "integration-journeys";
     public const string ExistingTests = "existing-tests";
     public const string DeveloperTests = "developer-tests";
+    public const string TestSpecification = "test-specification";
 
     /// <summary>"tsc-" + 16 hex of project | capability | canonical key. The snapshot is not part of it: the same scenario keeps its id across imports.</summary>
     public static string CandidateId(string projectKey, string capability, string canonicalKey) => "tsc-" + E.Sha($"{projectKey.Trim()}|{capability}|{canonicalKey}")[..16];
@@ -91,6 +92,7 @@ public static class TestScenarioDiscoveryEngine
         IntegrationJourneys => "Integration journeys",
         ExistingTests => "Existing tests",
         DeveloperTests => "Behaviour from developer integration tests",
+        TestSpecification => "Documented end-to-end tests",
         _ => capability,
     };
 
@@ -103,6 +105,7 @@ public static class TestScenarioDiscoveryEngine
         IntegrationJourneys => "Journeys declared for this project, and test-pack journeys whose sources are this project's source.",
         ExistingTests => "xUnit tests in the project's source, associated with candidates only through explicit requirement references.",
         DeveloperTests => "For a project without a specification: developer tests that cross a real boundary (browser, hosted API or messaging), one candidate per test class.",
+        TestSpecification => "End-to-end tests written in the modules' test specification documents (TEST-E-01 …), one candidate per test, without an invented user story.",
         _ => "",
     };
 

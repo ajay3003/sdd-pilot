@@ -63,6 +63,15 @@ public static class ManualTestingDrillNavigation
         return null;
     }
 
+    /// <summary>A KPI tile's click-through (2026-11-26): Finn og forstå with exactly this filter, keeping the active project/module/specification
+    /// selection (the scope is not changed) and opening no earlier scenario.</summary>
+    public static async Task OpenFilteredAsync(IJSRuntime js, NavigationManager nav, string projectKey, ScenarioBrowserPresentation.Filter filter)
+    {
+        await TabDraftStore.WriteAsync(js, TabDraftStore.DiscoverFilterKey(projectKey), filter);
+        await TabDraftStore.WriteAsync(js, TabDraftStore.DiscoverContextKey(projectKey), new ScenarioWorkspacePresentation.WorkContext(null, null));
+        nav.NavigateTo(ManualTestingPresentation.DiscoverRoute);
+    }
+
     /// <summary>
     /// Opens Finn og forstå on <paramref name="specificationPath"/> with one user story (<paramref name="storyKey"/>, its canonical key) or every story
     /// of one implementation status (<paramref name="status"/>, the same engine's status the page shows). Returns null when opened, else why not.

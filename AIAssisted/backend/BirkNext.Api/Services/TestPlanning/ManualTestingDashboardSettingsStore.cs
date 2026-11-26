@@ -31,6 +31,7 @@ public sealed class ManualTestingDashboardSettingsStore(string directory)
         var unknown = (request.Visible?.Keys.AsEnumerable() ?? []).Where(k => !ManualTestingDashboard.IsKnown(k)).ToList();
         if (unknown.Count > 0) throw new ArgumentException($"Ukjent del av testoversikten: {string.Join(", ", unknown.Take(5))}.");
         if (request.PlanStructure is { } structure && !PlanStructureTemplates.Known(structure)) throw new ArgumentException($"Ukjent testplanstruktur: {structure}.");
+        var tiles = request.Tiles is { } requested ? DashboardKpiTiles.Normalize(requested) : null;
         lock (_gate)
         {
             var current = request.ResetToDefaults ? new ManualTestingDashboardSettings() : Read();
@@ -40,6 +41,8 @@ public sealed class ManualTestingDashboardSettingsStore(string directory)
             {
                 Visible = request.ResetToDefaults ? new(StringComparer.Ordinal) : visible, UpdatedAt = now, UpdatedBy = actor,
                 PlanStructure = request.ResetToDefaults ? null : request.PlanStructure ?? current.PlanStructure,
+                // Tiles: reset → the defaults (null); a list → exactly that list; otherwise kept. Never touches scenarios, plans or cases.
+                Tiles = request.ResetToDefaults || request.ResetTiles ? null : tiles ?? current.Tiles,
             };
             Directory.CreateDirectory(directory);
             var temp = FilePath + ".tmp";

@@ -1,0 +1,92 @@
+@using BirkNext.Web.Services
+@* Testoversikt v2 chart (2026-11-26): a horizontal bar chart drawn in SVG — nice-number scale, vertical gridlines, an x-axis with tick values,
+   bars that carry no text — with category labels and values OUTSIDE the plot at a readable size. Every row is a real drill-down button when
+   OnSelect is set (otherwise plain rows; never a fake link). A visually hidden table is the text alternative. Empty input renders the empty text,
+   never a chart of zeros. Hand SVG like SddRingChart: no chart library. *@
+@if (Bars.Count == 0)
+{
+    <p class="dbc-empty" data-testid="@($"{TestId}-empty")">@Empty</p>
+}
+else
+{
+    var max = Percent ? 100 : NiceMax(Bars.Max(b => Math.Abs(b.Value)));
+    var ticks = Ticks(max);
+    var rows = Bars.Count;
+    <figure class="dbc" style="--dbc-rows:@rows" aria-label="@Label">
+        <div class="dbc-grid">
+            <div class="dbc-labels">
+                @foreach (var b in Bars)
+                {
+                    var bar = b;
+                    <div class="dbc-row @(SelectedKey == b.Key ? "is-selected" : null)" title="@b.Info" data-testid="@TestId" data-key="@b.Key">
+                        @if (Selectable)
+                        {
+                            <button type="button" class="dbc-row-btn" aria-pressed="@(SelectedKey == b.Key ? "true" : "false")"
+                                    aria-label="@($"{b.Label}: {Value(b)}. {b.Info}. Vis hvilke.")" @onclick="() => OnSelect.InvokeAsync(bar.Key)" data-testid="@($"{TestId}-open")">
+                                <span class="dbc-label">@b.Label</span><span class="dbc-value" data-testid="@($"{TestId}-value")">@Value(b)</span>
+                            </button>
+                        }
+                        else
+                        {
+                            <span class="dbc-row-btn is-static"><span class="dbc-label">@b.Label</span><span class="dbc-value" data-testid="@($"{TestId}-value")">@Value(b)</span></span>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="dbc-plot">
+                <svg class="dbc-svg" viewBox="@($"0 0 100 {rows * 10}")" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                    @foreach (var t in ticks) { <line class="dbc-gridline" x1="@F(100.0 * t / max)" x2="@F(100.0 * t / max)" y1="0" y2="@(rows * 10)" vector-effect="non-scaling-stroke" /> }
+                    @for (var i = 0; i < rows; i++)
+                    {
+                        var b = Bars[i];
+                        var w = max <= 0 ? 0 : 100.0 * Math.Min(Math.Abs(b.Value), max) / max;
+                        <rect class="dbc-bar dd-tone-@DeliveryDashboard.ToneClass(b.Tone) @(SelectedKey == b.Key ? "is-selected" : null)" x="0" y="@F(i * 10 + 2.5)" width="@F(Math.Max(w, b.Value == 0 ? 0 : 0.6))" height="5" rx="0.8" ry="0.8" data-key="@b.Key">
+                            <title>@b.Label: @Value(b)</title>
+                        </rect>
+                    }
+                </svg>
+                <div class="dbc-axis" aria-hidden="true">
+                    @foreach (var t in ticks) { <span class="dbc-tick" style="left:@F(100.0 * t / max)%">@(t)@(Percent ? "%" : "")</span> }
+                </div>
+            </div>
+        </div>
+        <table class="dbc-sr">
+            <caption>@Label</caption>
+            <thead><tr><th scope="col">Kategori</th><th scope="col">Verdi</th></tr></thead>
+            <tbody>@foreach (var b in Bars) { <tr><th scope="row">@b.Label</th><td>@Value(b)</td></tr> }</tbody>
+        </table>
+    </figure>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<DeliveryBar> Bars { get; set; } = [];
+    [Parameter] public string TestId { get; set; } = "dbc-bar";
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public bool Percent { get; set; }
+    [Parameter] public string Empty { get; set; } = "Ingen data i utvalget.";
+    [Parameter] public EventCallback<string> OnSelect { get; set; }
+    [Parameter] public string? SelectedKey { get; set; }
+
+    private bool Selectable => OnSelect.HasDelegate;
+
+    private string Value(DeliveryBar b) => $"{b.Value}{(Percent ? "%" : "")}";
+
+    private static string F(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>A round axis maximum (1, 2, 2.5, 5 × 10^n) at or above the largest value.</summary>
+    public static int NiceMax(int value)
+    {
+        if (value <= 0) return 1;
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(value)));
+        foreach (var step in new[] { 1.0, 2.0, 2.5, 5.0, 10.0 })
+            if (step * magnitude >= value) return (int)Math.Ceiling(step * magnitude);
+        return value;
+    }
+
+    /// <summary>Four or five evenly spaced whole ticks from 0 to the maximum.</summary>
+    public static IReadOnlyList<int> Ticks(int max)
+    {
+        var parts = max % 4 == 0 ? 4 : max % 5 == 0 ? 5 : max <= 4 ? max : 4;
+        return [.. Enumerable.Range(0, parts + 1).Select(i => (int)Math.Round((double)max * i / parts)).Distinct()];
+    }
+}

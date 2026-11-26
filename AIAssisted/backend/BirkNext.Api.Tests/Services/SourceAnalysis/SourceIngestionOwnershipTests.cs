@@ -51,6 +51,7 @@ public sealed class SourceIngestionOwnershipTests
             ["Services/MarkdownDiagnosticsService.cs"] = "creates synthetic in-memory Markdown ZIP fixtures only; every fixture is still read by the canonical bounded archive reader",
             ["Services/ExecutionEvidence/ExecutionEvidenceManagement.cs"] = "writes the redacted execution-evidence export ZIP of selected runs (ZipArchiveMode.Create); never reads an archive",
             ["Services/TestPlanning/AdoTestPlanExporter.cs"] = "writes the Azure Test Plans XLSX import workbook (ZipArchiveMode.Create, in memory); never reads an archive",
+            ["Services/TestPlanning/AdoExportPackage.cs"] = "writes the hierarchical test plan export package (manifest, one import file per suite, guide; ZipArchiveMode.Create, in memory); never reads an archive",
             ["Services/WorkspaceTransfer/TransferArchive.cs"] = "Backup & Transfer: writes and reads BirkNext's own backup/package format (manifest, hashes, allow-listed folders) with the same path, symlink, duplicate, size and ratio checks; never source input, never Source Analysis",
         };
         Sources().Where(f => f.Text.Contains("new ZipArchive(", StringComparison.Ordinal)).Select(f => f.Rel)

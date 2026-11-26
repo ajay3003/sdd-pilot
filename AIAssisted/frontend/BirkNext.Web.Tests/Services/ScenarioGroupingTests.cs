@@ -37,11 +37,38 @@ public sealed class ScenarioGroupingTests
         ScenarioGrouping.Build(items, ScenarioGroupAxis.Module, ScenarioGroupAxis.None).Select(g => g.Label).Should().Equal("A", "Uten modultilknytning");
     }
 
+    private static S.Item Typed(string id, string? spec, string? storyId, ScenarioRequirementType type) =>
+        Item(id, spec, storyId) with { TypeResult = new ScenarioTypeResult(type, [], ScenarioTypeBasis.ScenarioContent, "", []) };
+
+    [Fact]
+    public void AC01_each_acceptance_scenario_is_grouped_by_its_own_type_under_the_story_and_the_story_only_gets_a_child_summary()
+    {
+        const string spec = "A/specs/001-x/spec.md";
+        var items = new[]
+        {
+            Typed("ac1", spec, "US2", ScenarioRequirementType.Functional), Typed("ac2", spec, "US2", ScenarioRequirementType.Functional),
+            Typed("ac3", spec, "US2", ScenarioRequirementType.NonFunctional), Typed("ac4", spec, "US2", ScenarioRequirementType.Mixed),
+            Typed("ac5", spec, "US2", ScenarioRequirementType.Unclassified), Typed("e2e", null, null, ScenarioRequirementType.NonFunctional),
+        };
+        var (primary, secondary) = ScenarioGrouping.Default();
+        var tree = ScenarioGrouping.Build(items, primary, secondary);
+        tree.Select(g => g.Label).Should().Equal("US2 — T", "Scenarioer uten brukerhistorie");
+        tree[0].Children.Select(g => (g.Label, string.Join(",", g.Items.Select(i => i.Id)))).Should().Equal(
+            ("Funksjonelle", "ac1,ac2"), ("Ikke-funksjonelle", "ac3"), ("Blandede", "ac4"), ("Uavklarte", "ac5"));
+        tree[1].Children.Single().Label.Should().Be("Ikke-funksjonelle", "a standalone scenario keeps its own type with no story invented");
+        // No majority vote, no story type: the summary counts the ACs; nothing classifies US2.
+        ScenarioGrouping.TypeSummary(tree[0].Items).Select(x => ScenarioGroupAxes.TypeCount(x.Type, x.Count)).Should().Equal("2 funksjonelle", "1 ikke-funksjonell", "1 blandet", "1 uavklart");
+        ScenarioGrouping.TypeSummary([.. tree[0].Items, .. tree[0].Items]).Sum(x => x.Count).Should().Be(5, "an AC is counted once");
+        // The dimensions stay independent: the same ACs grouped by test level do not change their type groups.
+        ScenarioGrouping.Build(items, ScenarioGroupAxis.TestLevel, ScenarioGroupAxis.ScenarioType).SelectMany(g => g.Children).Sum(g => g.Items.Count).Should().Be(6);
+    }
+
     [Fact]
     public void Defaults_and_preferences()
     {
-        ScenarioGrouping.Default(specificationSelected: true).Should().Be((ScenarioGroupAxis.Story, ScenarioGroupAxis.None));
-        ScenarioGrouping.Default(specificationSelected: false).Should().Be((ScenarioGroupAxis.TestLevel, ScenarioGroupAxis.ScenarioType));
+        // 2026-11-26 AC-level classification: Brukerhistorie → Scenariotype for every scope unless the tester saved another choice.
+        ScenarioGrouping.Default(specificationSelected: true).Should().Be((ScenarioGroupAxis.Story, ScenarioGroupAxis.ScenarioType));
+        ScenarioGrouping.Default(specificationSelected: false).Should().Be((ScenarioGroupAxis.Story, ScenarioGroupAxis.ScenarioType));
         ScenarioGrouping.Parse("Module>Story").Should().Be((ScenarioGroupAxis.Module, ScenarioGroupAxis.Story));
         ScenarioGrouping.Parse("Module>Module").Should().Be((ScenarioGroupAxis.Module, ScenarioGroupAxis.None));
         ScenarioGrouping.Parse("garbage").Should().BeNull();

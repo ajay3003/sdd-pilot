@@ -55,9 +55,90 @@ public static class ManualTestingDashboard
     public static bool IsKnown(string id) => Widgets.Any(w => w.Id == id);
 }
 
+// ── Custom KPI tiles (2026-11-26) ─────────────────────────────────────────────────────────────────────────────────────────────────
+// A tile counts the unique scenarios (acceptance scenarios and standalone documented tests — never user stories, cases or plan occurrences)
+// whose value on ONE classification dimension equals the tile's metric. The title is only a label: it never changes classification or counts.
+
+/// <summary>The classification dimension a tile counts on. Independent axes: test level is not a scenario type.</summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
+public enum KpiTileDimension { TestLevel, ScenarioType }
+
+/// <summary>One custom KPI tile. <see cref="Id"/> is stable and never derived from the title; <see cref="Metric"/> is the canonical enum value
+/// on <see cref="Dimension"/> («EndToEnd», «NonFunctional» …).</summary>
+public sealed record DashboardKpiTile(string Id, string? Title, KpiTileDimension Dimension, string Metric, bool Visible = true, int Order = 0);
+
+public static class DashboardKpiTiles
+{
+    public const string DefaultId = "tile.e2e";
+    public const int MaxTiles = 12, MaxTitle = 60;
+
+    /// <summary>The application's default: «Ende-til-ende-tester», Testnivå = Ende til ende.</summary>
+    public static readonly IReadOnlyList<DashboardKpiTile> Defaults = [new(DefaultId, "Ende-til-ende-tester", KpiTileDimension.TestLevel, nameof(ScenarioTestLevel.EndToEnd))];
+
+    /// <summary>Grouped metric choices (canonical value, Norwegian label) per dimension.</summary>
+    public static readonly IReadOnlyList<(KpiTileDimension Dimension, string Group, IReadOnlyList<(string Value, string Label)> Options)> Choices =
+    [
+        (KpiTileDimension.TestLevel, "Testnivå", [(nameof(ScenarioTestLevel.EndToEnd), "Ende til ende"), (nameof(ScenarioTestLevel.Integration), "Integrasjon"),
+            (nameof(ScenarioTestLevel.Component), "Komponent"), (nameof(ScenarioTestLevel.Unclassified), "Uavklart testnivå")]),
+        (KpiTileDimension.ScenarioType, "Scenariotype", [(nameof(ScenarioRequirementType.Functional), "Funksjonell"), (nameof(ScenarioRequirementType.NonFunctional), "Ikke-funksjonell"),
+            (nameof(ScenarioRequirementType.Mixed), "Blandet"), (nameof(ScenarioRequirementType.Unclassified), "Uavklart scenariotype")]),
+    ];
+
+    public static string DimensionLabel(KpiTileDimension d) => d == KpiTileDimension.TestLevel ? "Testnivå" : "Scenariotype";
+
+    public static string? MetricLabel(KpiTileDimension d, string metric) =>
+        Choices.FirstOrDefault(c => c.Dimension == d).Options?.FirstOrDefault(o => o.Value == metric).Label;
+
+    public static bool IsValidMetric(KpiTileDimension d, string? metric) => metric is not null && MetricLabel(d, metric) is not null;
+
+    /// <summary>The title shown: the custom one (trimmed), else the metric's own default name.</summary>
+    public static string DisplayTitle(DashboardKpiTile t) => Clean(t.Title) ?? DefaultTitle(t.Dimension, t.Metric);
+
+    public static string DefaultTitle(KpiTileDimension d, string metric) => (d, metric) switch
+    {
+        (KpiTileDimension.TestLevel, nameof(ScenarioTestLevel.EndToEnd)) => "Ende-til-ende-tester",
+        (KpiTileDimension.TestLevel, nameof(ScenarioTestLevel.Integration)) => "Integrasjonstester",
+        (KpiTileDimension.TestLevel, nameof(ScenarioTestLevel.Component)) => "Komponenttester",
+        (KpiTileDimension.ScenarioType, nameof(ScenarioRequirementType.Functional)) => "Funksjonelle scenarioer",
+        (KpiTileDimension.ScenarioType, nameof(ScenarioRequirementType.NonFunctional)) => "Ikke-funksjonelle scenarioer",
+        (KpiTileDimension.ScenarioType, nameof(ScenarioRequirementType.Mixed)) => "Blandede scenarioer",
+        _ => MetricLabel(d, metric) ?? metric,
+    };
+
+    /// <summary>Trimmed, whitespace-collapsed, at most <see cref="MaxTitle"/> characters; null when empty (then the default title is used).</summary>
+    public static string? Clean(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return null;
+        var t = System.Text.RegularExpressions.Regex.Replace(title.Trim(), @"\s+", " ");
+        return t.Length > MaxTitle ? t[..MaxTitle].TrimEnd() : t;
+    }
+
+    /// <summary>The tiles to store: validated, titles cleaned, ids unique, order renumbered in the given order. Throws on an invalid tile.</summary>
+    public static List<DashboardKpiTile> Normalize(IEnumerable<DashboardKpiTile> tiles)
+    {
+        var list = tiles.ToList();
+        if (list.Count > MaxTiles) throw new ArgumentException($"Høyst {MaxTiles} fliser.");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<DashboardKpiTile>();
+        foreach (var t in list.OrderBy(t => t.Order))
+        {
+            if (string.IsNullOrWhiteSpace(t.Id) || t.Id.Length > 64 || !System.Text.RegularExpressions.Regex.IsMatch(t.Id, @"^[A-Za-z0-9][A-Za-z0-9._\-]*$"))
+                throw new ArgumentException("Ugyldig id for flis.");
+            if (!ids.Add(t.Id)) throw new ArgumentException($"Flisen {t.Id} finnes to ganger.");
+            if (!Enum.IsDefined(t.Dimension) || !IsValidMetric(t.Dimension, t.Metric)) throw new ArgumentException($"Ukjent metrikk for flisen {t.Id}.");
+            result.Add(t with { Title = Clean(t.Title), Order = result.Count });
+        }
+        return result;
+    }
+}
+
 /// <summary>The saved Testoversikt setup: an explicit on/off per widget id; ids not present use their default.</summary>
 public sealed record ManualTestingDashboardSettings
 {
+    /// <summary>Custom KPI tiles (2026-11-26); null = never customised → <see cref="DashboardKpiTiles.Defaults"/>. An empty list is an explicit choice.</summary>
+    public List<DashboardKpiTile>? Tiles { get; init; }
+    public IReadOnlyList<DashboardKpiTile> EffectiveTiles => Tiles ?? DashboardKpiTiles.Defaults;
+
     public Dictionary<string, bool> Visible { get; init; } = new(StringComparer.Ordinal);
     public DateTimeOffset? UpdatedAt { get; init; }
     public string? UpdatedBy { get; init; }
@@ -70,7 +151,13 @@ public sealed record ManualTestingDashboardSettings
 }
 
 /// <summary>A change to the setup: the switches to store (unknown ids are refused), or <see cref="ResetToDefaults"/>.</summary>
-public sealed record SaveManualTestingDashboardSettingsRequest(Dictionary<string, bool>? Visible, bool ResetToDefaults = false, string? PlanStructure = null);
+public sealed record SaveManualTestingDashboardSettingsRequest(Dictionary<string, bool>? Visible, bool ResetToDefaults = false, string? PlanStructure = null)
+{
+    /// <summary>The complete tile list to store (null = keep the stored tiles).</summary>
+    public List<DashboardKpiTile>? Tiles { get; init; }
+    /// <summary>«Tilbakestill standard» for the tiles only: restores <see cref="DashboardKpiTiles.Defaults"/>; other widgets are kept.</summary>
+    public bool ResetTiles { get; init; }
+}
 
 /// <summary>The project's saved test work and its specifications' scenarios, for Testoversikt (read-only; no discovery is run, nothing is written).</summary>
 public sealed record ManualTestingOverview
@@ -100,6 +187,12 @@ public sealed record OverviewSpecification(string Path, string Module, string Ti
 public sealed record OverviewScenario(string Identity, string? StoryKey, string? StoryId, string? StoryTitle, int? Number, string? Priority, string Title,
     ScenarioRequirementType Type = ScenarioRequirementType.Unclassified, List<QualityAttribute>? Qualities = null, bool RequirementOnly = false)
 {
+    /// <summary>The scenario's test level (2026-11-26): what its source states (an acceptance scenario states none → Unclassified).</summary>
+    public ScenarioTestLevel Level { get; init; } = ScenarioTestLevel.Unclassified;
+    /// <summary>True when the level is only DECLARED by a document (e.g. a documented TEST-E): «Dokumentert E2E», not a verified boundary.</summary>
+    public bool LevelDeclared { get; init; }
+    /// <summary>A standalone documented test (no user story; never one invented).</summary>
+    public bool Standalone { get; init; }
     /// <summary>An acceptance scenario (not a requirement without one): only these are classified by type.</summary>
     public bool IsAcceptanceScenario => !RequirementOnly;
 }
@@ -131,6 +224,16 @@ public sealed record OverviewCase
     public TranslationOrigin? TranslationOrigin { get; init; }
 }
 
-public sealed record OverviewPlan(Guid Id, string Name, int Cases, int Approved, int Waiting, int SourceAttention, List<string> Modules, DateTimeOffset UpdatedAt);
+public sealed record OverviewPlan(Guid Id, string Name, int Cases, int Approved, int Waiting, int SourceAttention, List<string> Modules, DateTimeOffset UpdatedAt)
+{
+    /// <summary>The plan's sprint label (its delivery label), when set.</summary>
+    public string? SprintLabel { get; init; }
+    /// <summary>Scenario-level execution in THIS plan (2026-11-26): its scenario occurrences by current status. Never a global scenario result;
+    /// never a case or step count.</summary>
+    public PlanExecutionCounts? Execution { get; init; }
+}
+
+/// <summary>A plan's scenario occurrences by their current execution status in that plan.</summary>
+public sealed record PlanExecutionCounts(int Scenarios, int NotRun, int Passed, int Failed, int Blocked);
 
 public sealed record OverviewRevision(Guid PlanId, string PlanName, int Revision, string Reason, string SavedBy, DateTimeOffset SavedAt);

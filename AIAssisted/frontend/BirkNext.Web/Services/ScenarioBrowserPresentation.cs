@@ -288,7 +288,7 @@ public static partial class ScenarioBrowserPresentation
     public static List<Item> WithScenarioTypes(IReadOnlyList<Item> items, IReadOnlyDictionary<string, ScenarioTypeDecision> decisions, IReadOnlyDictionary<string, string>? requirementTexts = null) =>
         [.. items.Select(i => i with
         {
-            TypeResult = IsAcceptanceScenario(i.Candidate) ? ScenarioTypeClassifier.Classify(i.Candidate, decisions.GetValueOrDefault(i.Candidate.SourceIdentity), requirementTexts) : null,
+            TypeResult = ScenarioTypeClassifier.IsClassifiable(i.Candidate) ? ScenarioTypeClassifier.Classify(i.Candidate, decisions.GetValueOrDefault(i.Candidate.SourceIdentity), requirementTexts) : null,
         })];
 
     /// <summary>Each scenario's story task status (by canonical story key); scenarios without a story or a computed status keep none.</summary>

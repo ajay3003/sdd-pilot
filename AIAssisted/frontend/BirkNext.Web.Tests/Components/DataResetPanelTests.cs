@@ -103,16 +103,17 @@ public sealed class DataResetPanelTests : BunitContext
     [InlineData(DataResetMode.FullIncludingProtected, true)]
     [InlineData(DataResetMode.FullPreserveProtected, false)]
     [InlineData(DataResetMode.ProjectDataKeepSettings, false)]
-    public void Every_full_scope_says_the_plans_are_kept_and_only_reset_everything_offers_to_remove_them(DataResetMode mode, bool offered)
+    public void Reset_everything_removes_plans_by_default_and_every_other_scope_keeps_them(DataResetMode mode, bool offered)
     {
+        // 2026-11-26 blocker: «Reset everything» removes manual test plans by default (ticked, a backup first); other scopes always keep them.
         WithPlans(3);
         var cut = RenderPanel();
         cut.Find("[data-testid=reset-open]").Click();
         cut.Find($"[data-testid=reset-scope-{mode}] input").Change(true);
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-test-plans]").TextContent.Should().Contain("3 manual test plans will be kept"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-test-plans]").TextContent.Should().Contain(offered ? "3 manual test plans will be removed" : "3 manual test plans will be kept"));
         cut.FindAll("[data-testid=reset-remove-plans]").Should().HaveCount(offered ? 1 : 0);
-        if (offered) cut.Find("[data-testid=reset-remove-plans]").HasAttribute("checked").Should().BeFalse("removing plans is never the default");
+        if (offered) cut.Find("[data-testid=reset-remove-plans]").HasAttribute("checked").Should().BeTrue("«Reset everything» includes the plans unless the tester unticks it");
     }
 
     [Fact]
@@ -128,7 +129,7 @@ public sealed class DataResetPanelTests : BunitContext
     }
 
     [Fact]
-    public void Reset_everything_without_the_opt_in_sends_the_plain_request()
+    public void Reset_everything_with_the_plans_unticked_sends_the_plain_request()
     {
         WithPlans(2);
         _api.Setup(a => a.ResetDataAsync(DataResetMode.FullIncludingProtected, "RESET EVERYTHING"))
@@ -136,6 +137,7 @@ public sealed class DataResetPanelTests : BunitContext
         var cut = RenderPanel();
         cut.Find("[data-testid=reset-open]").Click();
         cut.Find("[data-testid=reset-scope-FullIncludingProtected] input").Change(true);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-remove-plans]").Change(false));
         cut.WaitForAssertion(() => cut.Find("[data-testid=reset-confirm-text]").Input("RESET EVERYTHING"));
         cut.Find("[data-testid=reset-run]").Click();
 
@@ -165,18 +167,19 @@ public sealed class DataResetPanelTests : BunitContext
     }
 
     [Fact]
-    public void Changing_scope_clears_the_remove_plans_choice()
+    public void Changing_scope_returns_to_each_scopes_default_for_plans()
     {
         WithPlans(2);
         var cut = RenderPanel();
         cut.Find("[data-testid=reset-open]").Click();
         cut.Find("[data-testid=reset-scope-FullIncludingProtected] input").Change(true);
-        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-remove-plans]").Change(true));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-remove-plans]").Change(false));
         cut.Find("[data-testid=reset-scope-FullPreserveProtected] input").Change(true);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-test-plans]").TextContent.Should().Contain("will be kept"));
         cut.Find("[data-testid=reset-scope-FullIncludingProtected] input").Change(true);
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-remove-plans]").HasAttribute("checked").Should().BeFalse());
-        cut.Find("[data-testid=reset-test-plans]").TextContent.Should().Contain("will be kept");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-remove-plans]").HasAttribute("checked").Should().BeTrue("«Reset everything» starts again from its default"));
+        cut.Find("[data-testid=reset-test-plans]").TextContent.Should().Contain("will be removed");
     }
 
     [Fact]

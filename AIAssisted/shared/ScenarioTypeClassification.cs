@@ -45,6 +45,12 @@ public static partial class ScenarioTypeClassifier
 {
     public const string RuleVersion = "scenario-type/1";
 
+    /// <summary>The scenarios that carry their OWN scenario type (2026-11-26): acceptance scenarios of a specification and documented standalone tests.
+    /// Never a user story, a requirement without a scenario, or a suggestion from code/contracts.</summary>
+    public static bool IsClassifiable(DiscoveredScenario c) =>
+        c.CapabilityId == "specification" && c.CanonicalKey.StartsWith("scenario:", StringComparison.Ordinal)
+        || c.CapabilityId == "test-specification" && c.CanonicalKey.StartsWith("testspec:", StringComparison.Ordinal);
+
     public static string Label(ScenarioRequirementType t) => t switch
     {
         ScenarioRequirementType.Functional => "Funksjonell",
