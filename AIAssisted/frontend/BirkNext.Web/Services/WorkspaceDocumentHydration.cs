@@ -98,9 +98,18 @@ public sealed class WorkspaceDocumentHydration(WorkspaceArtifactRepository repos
             Changed?.Invoke();
             return false;
         }
-        // The review context was not built from a manifest (it would have been empty); it is built now, from the bodies.
-        if (services.GetService<IReviewContextProvider>() is { } reviewContext) await reviewContext.RebuildAsync();
+        // The review context was not built from a manifest (it would have been empty); it is built now, from the bodies — in the background
+        // (measured ~4 s in WASM on M2LB): the bodies are available at once, and a reader of the context awaits WhenCurrentAsync. Before,
+        // every page (also those that never read the context) waited for this build.
+        if (services.GetService<IReviewContextProvider>() is { } reviewContext) _ = RebuildInBackgroundAsync(reviewContext);
         Changed?.Invoke();
         return true;
+    }
+
+    private async Task RebuildInBackgroundAsync(IReviewContextProvider reviewContext)
+    {
+        try { await reviewContext.RebuildAsync(); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { logger.LogWarning(ex, "Review context could not be rebuilt from the loaded documents"); }
+        Changed?.Invoke();
     }
 }

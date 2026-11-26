@@ -83,8 +83,10 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
         try
         {
             if (Get<IArtifactExplorerContext>() is { } artifacts) specification = await artifacts.GetStateAsync(WorkspaceArtifactType.Specification);
+            var reviewContext = Get<IReviewContextProvider>();
+            if (reviewContext is not null) await reviewContext.WhenCurrentAsync();
             if (Get<IWorkspaceSessionService>() is { } session)
-                return (TestCoveragePresentation.WorkspaceEvidence(session, Get<IReviewContextProvider>()?.GetCurrent(), projectName, specification), specification);
+                return (TestCoveragePresentation.WorkspaceEvidence(session, reviewContext?.GetCurrent(), projectName, specification), specification);
         }
         catch (Exception e) when (e is not OperationCanceledException) { }
         return (null, specification);

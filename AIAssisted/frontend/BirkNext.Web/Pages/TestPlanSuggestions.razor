@@ -748,6 +748,7 @@
                 }
                 catch (Exception e) when (e is not OperationCanceledException) { featureDocuments = null; }
             }
+            if (ServiceProvider.GetService(typeof(IReviewContextProvider)) is IReviewContextProvider reviewContext) await reviewContext.WhenCurrentAsync();
             if (ServiceProvider.GetService(typeof(IWorkspaceSessionService)) is IWorkspaceSessionService session)
             {
                 var evidence = TestCoveragePresentation.WorkspaceEvidence(session, (ServiceProvider.GetService(typeof(IReviewContextProvider)) as IReviewContextProvider)?.GetCurrent(), _projectName, specification, tasks, featureDocuments);

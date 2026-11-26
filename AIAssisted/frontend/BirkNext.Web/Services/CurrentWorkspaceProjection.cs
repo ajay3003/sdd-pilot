@@ -401,9 +401,9 @@ public sealed class CurrentWorkspaceProjection : ICurrentWorkspaceProjection, ID
     private async Task<CurrentWorkspaceSnapshot> BuildAsync(long version)
     {
         var scope = _artifacts.CurrentScope;
-        var states = new List<ArtifactExplorerState>();
-        foreach (var role in CurrentWorkspaceSnapshot.WorkflowRoles)
-            states.Add(await _artifacts.GetStateAsync(role));
+        // App-wide performance pass (2026-11-26, measured): one load of the scope for every role. The per-role GetStateAsync loop loaded the whole
+        // scope once per workflow role on every page start (the same fix the review context already uses).
+        var states = (await _artifacts.GetStatesAsync(CurrentWorkspaceSnapshot.WorkflowRoles)).ToList();
 
         var roles = states.Select(ToRoleStatus).ToList();
         var metadata = await _restore.GetCurrentWorkspaceMetadataAsync();

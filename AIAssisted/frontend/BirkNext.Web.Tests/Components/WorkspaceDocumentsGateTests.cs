@@ -79,6 +79,36 @@ public sealed class WorkspaceDocumentsGateTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("#page"));
     }
 
+    /// <summary>A review context whose rebuild is held open by the test (app-wide performance pass 2026-11-26).</summary>
+    private sealed class SlowContext : IReviewContextProvider
+    {
+        public readonly TaskCompletionSource Build = new();
+        public int Rebuilds;
+        private Task _running = Task.CompletedTask;
+        public BirkNext.Web.Models.ReviewContext? GetCurrent() => null;
+        public Task RebuildAsync() { Rebuilds++; return _running = Build.Task; }
+        public Task WhenCurrentAsync() => _running;
+        public event EventHandler? ReviewContextChanged { add { } remove { } }
+    }
+
+    [Fact]
+    public void Loading_the_documents_does_not_wait_for_the_review_context_build_and_only_pages_that_read_it_wait()
+    {
+        var context = new SlowContext();
+        Services.AddSingleton<IReviewContextProvider>(context);
+        _persistence.Setup(p => p.LoadDocumentsAsync(Workspace, It.IsAny<CancellationToken>())).ReturnsAsync(new WorkspaceDocumentsDto { Revisions = { [Revision] = "# Spec 1" } });
+
+        var manual = Gate(typeof(BirkNext.Web.Pages.ManualTesting));
+        manual.WaitForAssertion(() => manual.Find("#page"));
+        context.Rebuilds.Should().Be(1, "the context is still built from the loaded bodies");
+        Services.GetRequiredService<IWorkspaceDocumentHydration>().EnsureAsync().IsCompleted.Should().BeTrue("the documents are available before the build ends");
+
+        var reader = Gate(typeof(BirkNext.Web.Pages.ImplementationReview));
+        reader.FindAll("#page").Should().BeEmpty("a page that reads the context synchronously waits for the build");
+        context.Build.SetResult();
+        reader.WaitForAssertion(() => reader.Find("#page"));
+    }
+
     [Fact]
     public void A_body_added_in_this_session_is_never_replaced_by_the_stored_one()
     {

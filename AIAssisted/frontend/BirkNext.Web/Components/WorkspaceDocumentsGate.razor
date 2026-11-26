@@ -32,7 +32,10 @@ else
     private IWorkspaceDocumentHydration? _hydration;
 
     private bool Reads => PageType is not null && !Attribute.IsDefined(PageType, typeof(WorkspaceDocumentsNotReadAttribute));
-    private bool Pending => _hydration is { IsDeferred: true } && Reads;
+    private bool Pending => (_hydration is { IsDeferred: true } && Reads) || _awaitingContext;
+    /// <summary>The review context is built in the background after the documents load; a page that reads it synchronously waits for it.</summary>
+    private bool _awaitingContext;
+    private bool ReadsContext => Reads && !Attribute.IsDefined(PageType!, typeof(ReviewContextNotReadAttribute));
 
     protected override void OnInitialized()
     {
@@ -43,6 +46,7 @@ else
     protected override async Task OnParametersSetAsync()
     {
         if (Pending && _hydration!.State == WorkspaceDocumentsState.Deferred) await LoadAsync();
+        await AwaitContextAsync();
     }
 
     private async Task LoadAsync()
@@ -50,6 +54,16 @@ else
         if (_hydration is null) return;
         await _hydration.EnsureAsync();
         StateHasChanged();
+    }
+
+    private async Task AwaitContextAsync()
+    {
+        if (_hydration is null || !ReadsContext || Services.GetService<IReviewContextProvider>() is not { } provider) return;
+        var current = provider.WhenCurrentAsync();
+        if (current.IsCompleted) return;
+        _awaitingContext = true;
+        try { await current; }
+        finally { _awaitingContext = false; StateHasChanged(); }
     }
 
     private async Task RetryAsync()

@@ -25,7 +25,9 @@ public static class RequirementPopulation
         try
         {
             var specification = await artifacts.GetStateAsync(WorkspaceArtifactType.Specification, ct);
-            var context = (services.GetService(typeof(IReviewContextProvider)) as IReviewContextProvider)?.GetCurrent();
+            var provider = services.GetService(typeof(IReviewContextProvider)) as IReviewContextProvider;
+            if (provider is not null) await provider.WhenCurrentAsync();
+            var context = provider?.GetCurrent();
             var evidence = TestCoveragePresentation.WorkspaceEvidence(workspace, context, null, specification);
             return evidence.SpecificationAvailable ? Of(evidence.Requirements.Select(r => r.Id)) : null;
         }

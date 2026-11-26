@@ -629,6 +629,7 @@
         _busy = true; _runError = null;
         try
         {
+            if (Services.GetService<IReviewContextProvider>() is { } provider) await provider.WhenCurrentAsync();
             var context = Services.GetService<IReviewContextProvider>()?.GetCurrent();
             await LoadSpecificationAsync(_cts.Token);
             var evidence = P.WorkspaceEvidence(Workspace, context, _projectName, _specification);

@@ -27,6 +27,13 @@ public interface IReviewContextProvider
     Task RebuildAsync();
 
     /// <summary>
+    /// Completes when no rebuild is running (at once when none is). A reader that needs the context of the latest selection awaits this
+    /// before <see cref="GetCurrent"/>: the first build after the documents load runs in the background, so a page that does not read the
+    /// context is not held up by it (app-wide performance pass, 2026-11-26). Never throws; a failed rebuild leaves the previous context.
+    /// </summary>
+    Task WhenCurrentAsync() => Task.CompletedTask;
+
+    /// <summary>
     /// Fires when ReviewContext has been rebuilt and is ready for consumption.
     /// </summary>
     event EventHandler? ReviewContextChanged;
@@ -123,6 +130,15 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
     }
 
     public ReviewContext? GetCurrent() => _current;
+
+    public async Task WhenCurrentAsync()
+    {
+        while (_running is { IsCompleted: false } running)
+        {
+            try { await running; }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { _logger.LogWarning(ex, "ReviewContext rebuild failed"); return; }
+        }
+    }
 
     private readonly IWorkspaceDocumentHydration? _documents;
 
