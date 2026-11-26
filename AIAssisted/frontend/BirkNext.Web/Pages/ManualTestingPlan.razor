@@ -863,12 +863,12 @@
                                 <section class="mtp-runs" aria-label="Testgjennomføring" data-testid="mtp-runs">
                                     <div class="mtp-runs-head">
                                         <span class="mtp-ctx-label">Testgjennomføring</span>
-                                        @if (_executionEnabled && CanWrite && !ReadOnlyPlan && current.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded))
+                                        @* V5 (2026-11-26): execution lives in Testplaner only — no «Start test» here. Earlier runs stay listed below (read-only). *@
+                                        @if (_executionEnabled)
                                         {
-                                            @if (Dirty) { <span class="mt-muted msb-small" data-testid="mtp-run-save-first">Lagre endringene før du starter testen.</span> }
-                                            else { <a class="btn btn-primary btn-sm" href="@($"{MR.ExecuteRoute}?draft={_plan!.Id}&case={Uri.EscapeDataString(current.Source.ScenarioId)}")" data-testid="mtp-run-start">Start test i BirkNext</a> }
+                                            <a class="msb-link msb-small" href="@($"manual-testing/plan-execution?plan={_plan!.Id}")" data-testid="mtp-run-in-plans">Gjennomføres i Testplaner</a>
                                         }
-                                        else if (!_executionEnabled)
+                                        else
                                         {
                                             <span class="mt-muted msb-small" data-testid="mtp-run-off">Gjennomføres i Azure DevOps Test Plans.</span>
                                         }

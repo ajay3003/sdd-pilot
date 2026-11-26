@@ -13,8 +13,8 @@
         {
             <span class="msb-status msb-tone-@Tone(s.Status)" data-testid="spp-status">@ScenarioPreparationEngine.Label(s.Status)</span>
             <span class="spp-count" data-testid="spp-count">@ScenarioPreparationEngine.CountText(s)</span>
-            @if (s.Undecided > 0) { <span class="mt-muted msb-small" data-testid="spp-undecided">Relevans må vurderes for @s.Undecided punkt@(s.Undecided == 1 ? "" : "er")</span> }
-            @if (s.OptionalOpen > 0) { <span class="mt-muted msb-small" data-testid="spp-optional-open">@s.OptionalOpen valgfri@(s.OptionalOpen == 1 ? "" : "e") forbedring@(s.OptionalOpen == 1 ? "" : "er")</span> }
+            @if (ScenarioPreparationEngine.UndecidedText(s) is { } undecided) { <span class="mt-muted msb-small" data-testid="spp-undecided">@undecided</span> }
+            @if (s.OptionalOpen > 0) { <span class="mt-muted msb-small" data-testid="spp-optional-open">@s.OptionalOpen anbefalt@(s.OptionalOpen == 1 ? "" : "e") forbedring@(s.OptionalOpen == 1 ? "" : "er")</span> }
         }
     </header>
     @if (_loadError is { } le)

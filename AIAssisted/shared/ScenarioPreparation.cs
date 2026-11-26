@@ -159,6 +159,15 @@ public static partial class ScenarioPreparationEngine
     };
 
     /// <summary>«2 av 4 påkrevde punkter oppfylt», «Alle påkrevde punkter oppfylt», «Ingen påkrevde punkter» (never «0 av 0»).</summary>
+    /// <summary>The relevance decisions still open, said with what they mean for the count (V5, 2026-11-26): «0 av 2» is not a final assessment
+    /// while undecided items may still become required.</summary>
+    public static string? UndecidedText(PreparationSummary s) => s.Undecided switch
+    {
+        0 => null,
+        1 => "1 relevansvurdering gjenstår – antallet påkrevde punkter kan endres.",
+        var n => $"{n} relevansvurderinger gjenstår – antallet påkrevde punkter kan endres.",
+    };
+
     public static string CountText(PreparationSummary s) => s.Required == 0 ? "Ingen påkrevde punkter"
         : s.SatisfiedRequired == s.Required ? $"Alle påkrevde punkter oppfylt ({s.Required})"
         : $"{s.SatisfiedRequired} av {s.Required} påkrevde punkter oppfylt";

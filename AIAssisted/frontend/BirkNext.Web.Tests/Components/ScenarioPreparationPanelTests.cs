@@ -55,6 +55,8 @@ public sealed class ScenarioPreparationPanelTests : BunitContext
         cut.Find(".spp-title").TextContent.Should().StartWith("Klargjør AC");
         cut.Find("[data-testid=spp-status]").TextContent.Should().Be("Må vurderes");
         cut.Find("[data-testid=spp-count]").TextContent.Should().Be("0 av 2 påkrevde punkter oppfylt");
+        // V5: «0 av 2» is not final while three relevance decisions are open.
+        cut.Find("[data-testid=spp-undecided]").TextContent.Should().Be("3 relevansvurderinger gjenstår – antallet påkrevde punkter kan endres.");
         Group(cut, "required").Should().Equal("ExpectedBehaviour", "Verification");
         Group(cut, "undecided").Should().Equal("TestData", "Trigger", "Environment");
         Group(cut, "optional").Should().Equal("CaseReview");
@@ -126,7 +128,7 @@ public sealed class ScenarioPreparationPanelTests : BunitContext
             cut.Find("[data-testid=spp-save]").Click();
         }
         cut.Find("[data-testid=spp-status]").TextContent.Should().Be("Klar til kjøring", "optional trigger, environment and case review do not block");
-        cut.Find("[data-testid=spp-optional-open]").TextContent.Should().Be("3 valgfrie forbedringer");
+        cut.Find("[data-testid=spp-optional-open]").TextContent.Should().Be("3 anbefalte forbedringer", "V5: the group is «Anbefalt før testing»");
     }
 
     [Fact]
