@@ -445,7 +445,7 @@
                                 </section>
                             }
                             @* The scenario the selected case comes from: its acceptance criterion number, never "US1 — …" (the card above names the story). *@
-                            <h3 class="mtp-scenario-heading" data-testid="mtp-scenario-heading">@P.ScenarioHeading(current)</h3>
+                            <h3 class="mtp-scenario-heading" data-testid="mtp-scenario-heading">@P.ScenarioHeading(current, _lang)</h3>
                             @* «Hva er allerede kontrollert?» (2026-11-25): the scenario's source tests as Finn og forstå reviews them; read-only here, never a result. *@
                             @if (ScenarioCandidateOf(current) is { } scenarioCandidate)
                             {
@@ -507,7 +507,7 @@
                                         {
                                             var l = lang;
                                             <button type="button" role="radio" aria-checked="@(_lang == l ? "true" : "false")" class="mtp-seg-btn @(_lang == l ? "is-on" : "")"
-                                                    @onclick="() => _lang = l" data-lang="@l" data-testid="mtp-lang-option">@P.LanguageLabel(l)</button>
+                                                    @onclick="() => SetLangAsync(l)" data-lang="@l" data-testid="mtp-lang-option">@P.LanguageLabel(l)</button>
                                         }
                                     </div>
                                     @if (tstatus is { } ts) { <span class="msb-status msb-tone-@ts.Tone" data-testid="mtp-translation-state">@ts.Text</span> }
@@ -1024,6 +1024,10 @@
     private AutoTranslationRegistry Registry => ServiceProvider.GetService(typeof(AutoTranslationRegistry)) as AutoTranslationRegistry ?? (_ownRegistry ??= new());
     /// <summary>The editor's language view; reset to the default (Norsk when a translation exists) for each case.</summary>
     private EditorLanguage _lang = EditorLanguage.Original;
+    /// <summary>The Manual Testing language preference (shared with Finn og forstå; per browser); null until read or chosen.</summary>
+    private EditorLanguage? _langPref;
+
+    private async Task SetLangAsync(EditorLanguage language) { _lang = language; _langPref = language; await ManualTestingLanguage.WriteAsync(JS, language); }
     private bool _storyOpen;
     private string _query = string.Empty, _tool = "cases", _excludeWhy = string.Empty, _conflictText = string.Empty, _conflictWhy = string.Empty;
     private string? _error, _notice, _selectedId, _conflictChoice;
@@ -1051,6 +1055,7 @@
         if (PanelParameter is { } panel && Tools.Any(t => t.Key == panel)) _tool = panel;
         // Old links (?panel=export) open the transfer on the Testplaner tab.
         if (PanelParameter == "export" && DraftParameter is { } exportDraft) { Nav.NavigateTo(M.TransferRoute(exportDraft), replace: true); return; }
+        _langPref = await ManualTestingLanguage.ReadAsync(JS);
         await LoadAsync();
     }
 
@@ -1162,7 +1167,8 @@
     {
         _selectedId = caseId;
         _form = Selected is { } c ? P.CaseForm.From(c) : null;
-        _lang = _form is null ? EditorLanguage.Original : P.DefaultLanguage(_form);
+        // 2026-11-26: the tester's language choice is kept across cases, tabs and reloads (it was reset per case before).
+        _lang = _form is null ? EditorLanguage.Original : _langPref ?? P.DefaultLanguage(_form);
         _excludeAsk = false;
         _excludeWhy = string.Empty;
         _conflictChoice = null;

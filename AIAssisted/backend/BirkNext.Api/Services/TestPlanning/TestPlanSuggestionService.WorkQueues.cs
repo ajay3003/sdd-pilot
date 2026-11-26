@@ -41,11 +41,16 @@ public sealed partial class TestPlanSuggestionService
         var index = new CandidateIndex(discovery.Candidates);
         var byId = discovery.Candidates.GroupBy(c => c.CandidateId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var counts = new Dictionary<string, Tally>(StringComparer.Ordinal);
+        var translations = new Dictionary<string, ScenarioTranslationView>(StringComparer.Ordinal);
+        var storyTranslations = new Dictionary<string, StoryTranslation>(StringComparer.Ordinal);
         var unmatched = 0;
         foreach (var (stored, active) in plans)
         {
             var plan = FlagProject(stored);
             var moves = Renumbered(plan, discovery.Candidates);
+            foreach (var st in plan.StoryTranslations ?? [])
+                if (string.Equals(st.Language, ScenarioPlanning.Norwegian, StringComparison.OrdinalIgnoreCase) && (!storyTranslations.TryGetValue(st.StoryKey, out var held) || held.At < st.At))
+                    storyTranslations[st.StoryKey] = st;
             foreach (var c in plan.Cases)
             {
                 var target = c.Source.Kind switch
@@ -62,6 +67,11 @@ public sealed partial class TestPlanSuggestionService
                     continue;
                 }
                 if (!counts.TryGetValue(target.CandidateId, out var t)) counts[target.CandidateId] = t = new Tally();
+                // The scenario's stored Norwegian text: only from a case of the scenario itself (not a hand-written one) whose title a person kept.
+                if (counted && c.Source.Kind == ScenarioSourceKind.ProjectDiscovery && c.Edits.Title is null && c.Translation(ScenarioPlanning.Norwegian) is { } nb
+                    && (!translations.TryGetValue(target.CandidateId, out var had) || had.At < nb.At))
+                    translations[target.CandidateId] = new ScenarioTranslationView(nb.Title, nb.Given, nb.When, nb.Then, nb.ExpectedResult, nb.Origin,
+                        nb.SourceFingerprint == ScenarioPlanning.SourceFingerprint(c), nb.At);
                 if (counted)
                     t.Memberships.Add(new ScenarioPlanMembership(plan.Id, plan.PlanName, active, c.Source.ScenarioId, c.EffectiveTitle,
                         c.SuiteId is { } suite && plan.Suites.Any(s => s.Id == suite) ? PlanStructure.PathOf(plan.Suites, suite) : null, c.Review));
@@ -84,7 +94,9 @@ public sealed partial class TestPlanSuggestionService
         {
             DiscoveryId = discovery.DiscoveryId, DiscoveryCurrent = discoveryCurrent, CoverageComplete = unreadable == 0,
             PlansRead = plans.Count, PlansUnreadable = unreadable, UnmatchedCases = unmatched,
-            Items = ScenarioWorkQueues.Classify(discovery.Candidates, coverage, unreadable == 0, discoveryCurrent),
+            Items = [.. ScenarioWorkQueues.Classify(discovery.Candidates, coverage, unreadable == 0, discoveryCurrent)
+                .Select(i => translations.TryGetValue(i.CandidateId, out var tr) ? i with { Translation = tr } : i)],
+            StoryTranslations = [.. storyTranslations.Values.OrderBy(s => s.StoryKey, StringComparer.Ordinal)],
         };
     }
 

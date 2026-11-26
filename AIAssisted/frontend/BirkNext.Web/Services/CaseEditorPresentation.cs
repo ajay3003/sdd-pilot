@@ -37,6 +37,16 @@ public static partial class PlanPreparePresentation
         return c.Generated.Story is not null && c.Generated.NumberInStory is { } n ? $"{ScenarioWorkspacePresentation.AcLabel(n)} — {title}" : title;
     }
 
+    /// <summary>The scenario heading in the editor's language (2026-11-26): Norsk/Sammenlign use the case's stored translation of the scenario title when
+    /// it is current and the title was not rewritten by a person; otherwise the original (never a fresh translation).</summary>
+    public static string ScenarioHeading(TestCaseDraft c, EditorLanguage language)
+    {
+        if (language == EditorLanguage.Original || c.Edits.Title is not null || c.Translation(ScenarioPlanning.Norwegian) is not { Title: { Length: > 0 } nbTitle } nb
+            || nb.SourceFingerprint != ScenarioPlanning.SourceFingerprint(c)) return ScenarioHeading(c);
+        var title = c.Generated.Story?.StoryId is { Length: > 0 } id && nbTitle.StartsWith(id + " — ", StringComparison.Ordinal) ? nbTitle[(id.Length + 3)..] : nbTitle;
+        return c.Generated.Story is not null && c.Generated.NumberInStory is { } n ? $"{ScenarioWorkspacePresentation.AcLabel(n)} — {title}" : title;
+    }
+
     /// <summary>Norwegian when a translation exists, otherwise the original. Never "translate on open".</summary>
     public static EditorLanguage DefaultLanguage(CaseForm form) => form.HasTranslation ? EditorLanguage.Norwegian : EditorLanguage.Original;
 

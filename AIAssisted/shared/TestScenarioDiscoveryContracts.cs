@@ -485,6 +485,9 @@ public sealed record ScenarioCaseCoverage
     [JsonIgnore] public bool ArchivedOnly => Memberships.Count > 0 && Memberships.All(m => !m.Active);
 }
 
+/// <summary>A stored scenario translation for display (title, Given/When/Then, expected), its origin and whether it is current.</summary>
+public sealed record ScenarioTranslationView(string? Title, string? Given, string? When, string? Then, string? ExpectedResult, TranslationOrigin Origin, bool Current, DateTimeOffset At);
+
 /// <summary>One saved case of a scenario in one plan: where it lives and how to open it.</summary>
 public sealed record ScenarioPlanMembership(Guid PlanId, string PlanName, bool Active, string CaseId, string CaseTitle, string? SuitePath, TestCaseReviewState Review);
 
@@ -501,6 +504,9 @@ public sealed record ScenarioWorkItem
     public ScenarioCaseCoverage? Coverage { get; init; }
     /// <summary>Why the scenario is in its queues, short and in Norwegian (for example «Mangler testtilfelle», «Forventet resultat dokumentert»).</summary>
     public List<string> Reasons { get; init; } = [];
+    /// <summary>The scenario's saved Norwegian text (2026-11-26): the newest translation of a current case prepared from it whose title a person did not
+    /// rewrite (so the title is the scenario's), with whether it still matches the case's original text. Null when none is stored.</summary>
+    public ScenarioTranslationView? Translation { get; init; }
     /// <summary>What must be clarified before a test case can be prepared (empty when nothing).</summary>
     public List<string> Clarifications { get; init; } = [];
     /// <summary>Ready to prepare is not ready to execute: test data, access or a way to observe the result that the execution still needs.</summary>
@@ -520,4 +526,7 @@ public sealed record ScenarioWorkQueueView
     /// <summary>Current test cases whose scenario is not in this discovery (removed from the source, or source unavailable): shown, never dropped.</summary>
     public int UnmatchedCases { get; init; }
     public List<ScenarioWorkItem> Items { get; init; } = [];
+    /// <summary>Saved Norwegian user story translations (2026-11-26): the newest per story from the application's plans, so Finn og forstå shows
+    /// the same stored translation as Planlegg og klargjør. Nothing is translated to fill this; the client checks currency by fingerprint.</summary>
+    public List<StoryTranslation> StoryTranslations { get; init; } = [];
 }

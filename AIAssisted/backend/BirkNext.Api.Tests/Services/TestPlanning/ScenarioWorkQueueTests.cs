@@ -426,6 +426,34 @@ public sealed class ScenarioWorkQueueTests : IAsyncLifetime, IDisposable
         Of(await service.WorkQueuesAsync("import:other", other.DiscoveryId, default), Id(other, "Valid report")).Coverage.Should().BeNull("plans of another project are never shown");
     }
 
+    // ── Stored translations reused in Finn og forstå (2026-11-26) ──
+
+    [Fact]
+    public async Task The_work_view_reuses_a_stored_case_translation_for_its_scenario_and_translates_nothing_itself()
+    {
+        await using var db = Context();
+        var d = await DiscoverAsync("import:p1", Valid(), PastAge());
+        var service = Service(db);
+        var valid = Id(d, "Valid report");
+        Of(await service.WorkQueuesAsync("import:p1", d.DiscoveryId, default), valid).Translation.Should().BeNull("nothing stored: nothing shown, nothing translated");
+
+        var plan = await PlanAsync(service, d, "import:p1", valid);
+        var c = plan.Cases.Single();
+        plan = await service.SaveAsync(plan.Id, new SaveTestPlanDraftRequest
+        {
+            BaseRevision = plan.Revision, PlanName = plan.PlanName, ScenarioIds = [c.Source.ScenarioId], Suites = plan.Suites,
+            Cases = [new TestCaseHumanPart { ScenarioId = c.Source.ScenarioId, SuiteId = c.SuiteId, Edits = c.Edits,
+                Translations = new() { [ScenarioPlanning.Norwegian] = new TestCaseTranslation { Title = "Gyldig rapport", Then = "rapporten godtas" } } }],
+        }, "anna", default);
+        var revisions = (await service.RevisionsAsync(plan.Id, default)).Count;
+
+        var view = await service.WorkQueuesAsync("import:p1", d.DiscoveryId, default);
+        var t = Of(view, valid).Translation!;
+        (t.Title, t.Then, t.Current).Should().Be(("Gyldig rapport", "rapporten godtas", true));
+        Of(view, Id(d, "Child past compulsory school age")).Translation.Should().BeNull("a translation is never borrowed by another scenario");
+        (await service.RevisionsAsync(plan.Id, default)).Should().HaveCount(revisions, "reading translations writes nothing");
+    }
+
     [Fact]
     public async Task An_excluded_case_is_a_decision_not_coverage()
     {

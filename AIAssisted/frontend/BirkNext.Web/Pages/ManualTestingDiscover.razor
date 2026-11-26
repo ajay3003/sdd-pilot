@@ -220,7 +220,8 @@
                             }
                             <div class="mtw-story-card-head">
                                 <span class="mtw-us">@entryNow.Label</span>@if (us.Priority is { Length: > 0 } p) { <span class="mtw-prio">@p</span> }
-                                <h2 class="mtw-story-card-title">@W.StoryTitle(us)</h2>
+                                @{ var storyTitle = ManualTestingLanguage.StoryTitle(us, StoryTranslations, _language); }
+                                <h2 class="mtw-story-card-title" data-testid="mtd-story-title" data-language="@(storyTitle.Translated ? "nb" : "original")" title="@storyTitle.Note">@storyTitle.Text</h2>
                                 @if (prof is not null)
                                 {
                                     <button type="button" class="mtw-chip msb-tone-@G.StatusTone(prof)" aria-expanded="@(_storyGrouping ? "true" : "false")" title="@prof.Explanation"
@@ -706,14 +707,22 @@
                             <p class="msb-spec-note" data-testid="mtd-detail-outside">Dette scenarioet vises ikke med gjeldende brukerhistorie eller filter. Det er fortsatt åpent her.</p>
                         }
                         <div class="msb-detail-head mtw-ac-head">
-                            <h2 class="msb-detail-title" data-testid="mtd-detail-title">@W.DetailTitle(active)</h2>
+                            @{ var detailTitle = ManualTestingLanguage.ScenarioTitle(active, W.RowTitle(active), _language); }
+                            <h2 class="msb-detail-title" data-testid="mtd-detail-title" data-language="@(detailTitle.Translated ? "nb" : "original")">@(c.Story is not null && c.NumberInStory is { } acn ? $"{W.AcLabel(acn)} — {detailTitle.Text}" : detailTitle.Text)</h2>
                             <span class="msb-status msb-tone-@active.Status.Tone">@active.Status.Text</span>
                         </div>
                         @* Scenario details redesign (2026-11-26): what to expect, where the scenario is planned and what to do next come first; classification,
                            developer tests, readiness criteria and the source follow, the technical parts on demand. *@
+                        @if (detailTitle.Note is { } titleNote) { <p class="mt-muted msb-small mtw-lang-note" data-testid="mtd-detail-lang-note">@titleNote</p> }
+                        @if (detailTitle.Original is { } originalTitle) { <p class="msb-original" data-testid="mtd-detail-title-original"><span class="mtp-lang-tag">Original</span> @originalTitle</p> }
                         <section class="mtw-section mtw-expected" aria-label="Forventet resultat" data-testid="mtd-expected">
                             <span class="mtp-ctx-label">Forventet resultat</span>
-                            @if (c.ExpectedBehaviour is { Length: > 0 } expected) { <p class="mtw-expected-text" data-testid="mtd-expected-text">@expected</p> }
+                            @if (c.ExpectedBehaviour is { Length: > 0 } expected)
+                            {
+                                var shownExpected = ManualTestingLanguage.Expected(active, expected, _language);
+                                <p class="mtw-expected-text" data-testid="mtd-expected-text" data-language="@(shownExpected.Translated ? "nb" : "original")">@shownExpected.Text</p>
+                                @if (shownExpected.Original is { } originalExpected) { <p class="msb-original" data-testid="mtd-expected-original"><span class="mtp-lang-tag">Original</span> @originalExpected</p> }
+                            }
                             else { <p class="msb-tone-warn" data-testid="mtd-expected-missing">Forventet resultat må avklares — kilden oppgir det ikke.</p> }
                         </section>
                         @DrawerPlans(active)
@@ -2088,6 +2097,12 @@
     private const string GroupingPreferenceKey = "birknext.manualTesting.scenarioGrouping";
     private const int GroupRows = 50;
     private ScenarioGroupAxis _gPrimary = ScenarioGroupAxis.None, _gSecondary = ScenarioGroupAxis.None;
+    /// <summary>The Manual Testing language (shared with Planlegg og klargjør; per browser). Norsk shows stored translations only.</summary>
+    private EditorLanguage _language = ManualTestingLanguage.Default;
+
+    private async Task SetLanguageAsync(EditorLanguage language) { _language = language; await ManualTestingLanguage.WriteAsync(JS, language); }
+
+    private IReadOnlyList<StoryTranslation> StoryTranslations => _workView?.StoryTranslations ?? [];
     private bool _gChosen, _gLoaded;
     private readonly Dictionary<string, bool> _gOpen = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _gLimit = new(StringComparer.Ordinal);
@@ -2096,6 +2111,7 @@
     {
         if (_gLoaded) return;
         _gLoaded = true;
+        if (await ManualTestingLanguage.ReadAsync(JS) is { } language) _language = language;
         try
         {
             if (ScenarioGrouping.Parse(await JS.InvokeAsync<string?>("localStorage.getItem", GroupingPreferenceKey)) is { } saved)
@@ -2154,6 +2170,14 @@
                 <button type="button" class="msb-link" @onclick="() => SetAllGroups(ScenarioGrouping.Paths(tree), true)" data-testid="mtd-groups-expand">Vis alle grupper</button>
                 <button type="button" class="msb-link" @onclick="() => SetAllGroups(ScenarioGrouping.Paths(tree), false)" data-testid="mtd-groups-collapse">Skjul alle</button>
             }
+            <span class="mtp-seg mtg-lang" role="radiogroup" aria-label="Språk" data-testid="mtd-lang">
+                @foreach (var l in new[] { EditorLanguage.Norwegian, EditorLanguage.Original, EditorLanguage.Compare })
+                {
+                    var lang = l;
+                    <button type="button" role="radio" class="mtp-seg-btn @(_language == lang ? "is-on" : null)" aria-checked="@(_language == lang ? "true" : "false")"
+                            @onclick="() => SetLanguageAsync(lang)" data-lang="@lang" data-testid="mtd-lang-option">@BirkNext.Web.Services.PlanPreparePresentation.LanguageLabel(lang)</button>
+                }
+            </span>
             <span class="mtg-plan-summary mt-muted msb-small" data-testid="mtd-plan-summary">@shown.Count scenarioer · @shown.Count(S.InActivePlan) i aktive testplaner</span>
             <span class="mtg-summary mt-muted msb-small" data-testid="mtd-selection-summary">
                 @(_selected.Count) valgt totalt · @inView i gjeldende visning@(_selected.Count > inView ? $" · {_selected.Count - inView} utenfor gjeldende filter" : "")
@@ -2327,7 +2351,7 @@
                                 {
                                     <span class="mtw-row-label" data-testid="mtd-scenario-label">@W.ScenarioLabel(i)@(_filter.Story is null ? $" · {W.StoryLabel(rs)}" : "")</span>
                                 }
-                                <span class="msb-row-title" data-testid="mtd-scenario-title">@W.RowTitle(i)</span>
+                                @{ var rowTitle = ManualTestingLanguage.ScenarioTitle(i, W.RowTitle(i), _language); }<span class="msb-row-title" data-testid="mtd-scenario-title" data-language="@(rowTitle.Translated ? "nb" : "original")" title="@rowTitle.Note">@rowTitle.Text</span>
                                 <span class="msb-row-meta">@i.Area@(i.Candidate.Story?.Priority is { } pri ? $" · {pri}" : "")@(i.Relevance switch { S.Relevance.Technical => " · teknisk", S.Relevance.Both => " · manuell + teknisk", _ => i.KindDecided ? " · manuell" : "" })@(i.KindDecided ? " (valgt)" : "")@if (i.Tech is { } techState && TC.ListTag(techState) is { } techTag) { <span class="mtw-tech-tag is-@(techState.ToString().ToLowerInvariant())" data-testid="mtd-scenario-tech"> · @techTag</span> }<span class="msb-approach" title="@string.Join(" ", i.Suitability.Approaches.Select(a => a.Reason))" data-testid="mtd-scenario-approach"> · Foreslått: @string.Join(" · ", i.Suitability.Approaches.Take(2).Select(a => TestDesignAdvisor.ApproachLabel(a.Approach)))</span></span>
                                 @if (i.TypeResult is { } rowType && ScenarioTypeClassifier.RowLabel(rowType) is { } typeLabel)
                                 {
