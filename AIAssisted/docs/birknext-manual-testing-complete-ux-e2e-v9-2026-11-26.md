@@ -152,7 +152,7 @@ See the section appended below.
 | L | Explicit selections persist | VERIFIED (D) |
 | M | Large lists do not block | PARTIAL (2,015 verified; 12,000 see V2) |
 | N | No history corrupted | VERIFIED (C; the 409 fix prevents overwrites) |
-| O | Both suites green | **NOT MET**: the backend full suite is not green |
+| O | Both suites green | VERIFIED (2026-11-27): frontend 9,876/9,876; backend 7,626 passed, 0 failed, 20 skipped in a complete **partitioned** run (a single-process run still exhausts memory; see the backend stability report) |
 
 ## Final rerun (isolated v1env30, all fixes up to `956ce3d7`)
 **Main run, 21/23:** journeys A (up to the step check), D and E pass.

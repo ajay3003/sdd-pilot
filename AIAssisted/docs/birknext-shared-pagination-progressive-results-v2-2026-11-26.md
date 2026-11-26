@@ -134,7 +134,7 @@ See S below.
 | 11 | Truthful spinner | VERIFIED (tests) |
 | 12 | Recoverable errors | IMPLEMENTED (ShowMore retry) |
 | 13 | Performance measured | PARTIAL |
-| 14 | Regression suites pass | Frontend VERIFIED. **Backend full suite NOT green** (see the backend stability report). |
+| 14 | Regression suites pass | VERIFIED (2026-11-27): frontend 9,876/9,876; backend 7,626/0 failed/20 skipped, partitioned (see the backend stability report). |
 | 15 | Browser verification | see S |
 
 ## S. Browser — scenario beyond 10,000 (VERIFIED, 6/6)
