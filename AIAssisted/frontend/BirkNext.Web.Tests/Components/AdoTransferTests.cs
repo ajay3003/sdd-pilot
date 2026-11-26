@@ -113,7 +113,8 @@ public sealed class AdoTransferTests : BunitContext
         Setup();
         var cut = Panel();
         cut.Find("[data-testid=atp-file-safe]").TextContent.Should().Be("Ingenting blir endret i Azure DevOps.");
-        cut.Find("[data-testid=atp-file-reminder]").TextContent.Should().Be("Testplanen bør være godkjent av testleder før den tas i bruk.");
+        // Export v4: no plan-approval workflow exists, so the reminder no longer implies one (case approval is per case).
+        cut.Find("[data-testid=atp-file-reminder]").TextContent.Should().StartWith("Anbefaling: la testleder se over testtilfellene før eksport.");
         cut.FindAll("[data-testid=adt-declare]").Should().BeEmpty("downloading a file needs no approval checkbox");
         cut.WaitForAssertion(() => cut.Find("[data-testid=adx-format-note]").TextContent.Should().Contain("oppretter ikke testplanen eller testgruppen"));
         cut.Find("[data-testid=adx-howto]").TextContent.Should().Contain("Import test cases from CSV/XLSX");
@@ -361,5 +362,24 @@ public sealed class AdoTransferTests : BunitContext
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=adp-project-option]").Should().HaveCount(2));
         cut.Find("[data-testid=adp-connection-state]").TextContent.Should().Be("Tilkoblet");
         cut.Find("[data-testid=adp-check]").TextContent.Should().Be("Kontroller tilkobling");
+    }
+
+    [Fact]
+    public void X01_an_empty_plan_and_a_scenario_only_plan_get_honest_states_instead_of_the_wizard_and_no_case_is_invented()
+    {
+        var empty = Render<AdoTransferPanel>(p => p.Add(x => x.Draft, Draft() with { Cases = [], PlannedScenarios = [] }).Add(x => x.ProjectKey, "m2lb").Add(x => x.CanWrite, true));
+        empty.Find("[data-testid=atp-empty]").TextContent.Should().Contain("ingen scenarioer eller testtilfeller");
+        empty.FindAll("[data-testid=adx]").Should().BeEmpty("no export wizard with «0 klare» for an empty plan");
+        empty.Find("[data-testid=atp-empty-add]").GetAttribute("href").Should().Be("manual-testing/plans");
+
+        var scenarioOnly = Render<AdoTransferPanel>(p => p.Add(x => x.Draft, Draft() with
+        {
+            Cases = [], PlannedScenarios = [new PlannedScenario { ScenarioId = "s1", Title = "AC1" }, new PlannedScenario { ScenarioId = "s2", Title = "TEST-E-01" }],
+        }).Add(x => x.ProjectKey, "m2lb").Add(x => x.CanWrite, true));
+        scenarioOnly.Find("[data-testid=atp-empty]").GetAttribute("data-planned").Should().Be("2");
+        scenarioOnly.Find("[data-testid=atp-empty]").TextContent.Should().Contain("men ingen eksporterbare testtilfeller");
+        scenarioOnly.Find("[data-testid=atp-empty-prepare]").TextContent.Should().Be("Forbered testtilfeller");
+        scenarioOnly.Find("[data-testid=atp-method-direct]").Click();
+        scenarioOnly.FindAll("[data-testid=atp-empty]").Should().ContainSingle("direct transfer has nothing to send either");
     }
 }

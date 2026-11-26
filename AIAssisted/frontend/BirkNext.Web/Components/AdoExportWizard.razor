@@ -84,7 +84,15 @@
                         <option value="Server" selected="@(_profile.Target == AdoTarget.Server)">Azure DevOps Server 2022 eller nyere</option>
                     </select></label>
                 <label class="adx-field"><span>Area Path @(_profile.Target == AdoTarget.Services ? "(må fylles ut)" : "(valgfritt)")</span>
-                    <input value="@_profile.AreaPath" placeholder="Project\Area" maxlength="4000" @onchange="e => Set(() => _profile = _profile with { AreaPath = e.Value?.ToString() })" data-testid="adx-area" /></label>
+                    @* 2026-11-26: the placeholder «Project\Area» looked like a configured value while the field was empty (validation said «mangler»).
+                       The empty state is now said in words next to the field; the format hint is clearly an example. Nothing is checked against Azure DevOps. *@
+                    <input value="@_profile.AreaPath" placeholder="Ikke angitt — f.eks. MittProsjekt\MittOmråde" maxlength="4000" aria-describedby="adx-area-state"
+                           aria-invalid="@(_profile.Target == AdoTarget.Services && string.IsNullOrWhiteSpace(_profile.AreaPath) ? "true" : "false")"
+                           @onchange="e => Set(() => _profile = _profile with { AreaPath = e.Value?.ToString()?.Trim() })" data-testid="adx-area" />
+                    <small id="adx-area-state" class="@(_profile.Target == AdoTarget.Services && string.IsNullOrWhiteSpace(_profile.AreaPath) ? "adx-field-error" : "mt-muted")" data-testid="adx-area-state">
+                        @(string.IsNullOrWhiteSpace(_profile.AreaPath)
+                            ? _profile.Target == AdoTarget.Services ? "Area Path er ikke angitt. Skriv området testtilfellene skal ligge i (som i Azure DevOps)." : "Ikke angitt (valgfritt)."
+                            : "Brukes slik det er skrevet. BirkNext kontrollerer ikke at området finnes i Azure DevOps.")</small></label>
                 <label class="adx-field"><span>Assigned To (valgfritt)</span>
                     <input value="@_profile.AssignedTo" placeholder="navn@organisasjon.no" maxlength="256" @onchange="e => Set(() => _profile = _profile with { AssignedTo = e.Value?.ToString() })" data-testid="adx-assigned" /></label>
                 <label class="adx-field"><span>Startstatus (State)</span>

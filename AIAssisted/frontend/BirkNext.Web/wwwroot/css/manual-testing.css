@@ -1325,3 +1325,4 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .mtx-page { max-width: min(100%, 100rem); }
 .mtx-crumbs { margin-bottom: 0.3rem; }
 .mtx-h { font-size: 1.4rem; margin: 0 0 0.3rem; }
+.adx-field-error { color: var(--clr-danger, #cf222e); font-weight: 600; }

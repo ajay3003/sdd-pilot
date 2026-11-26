@@ -96,7 +96,9 @@ public sealed class AdoTestPlanExporterTests
             for (var i = 1; i < 4; i++)
             {
                 var r = preview.Rows[i - 1];
-                var expected = new[] { r.Id, r.WorkItemType, r.Title, r.TestStep.ToString(), r.StepAction, r.StepExpected, r.AreaPath, r.AssignedTo, r.State, r.Description! };
+                // Continuation rows (step 2+) leave the case fields empty — Azure DevOps' own export layout, so one case stays one case on import.
+                string C(string v) => r.TestStep == 1 ? v : "";
+                var expected = new[] { C(r.Id), C(r.WorkItemType), C(r.Title), r.TestStep.ToString(), r.StepAction, r.StepExpected, C(r.AreaPath), C(r.AssignedTo), C(r.State), C(r.Description!) };
                 csv[i].Should().Equal(expected, $"CSV row {i}");
                 string Cell(string col) => xlsx[i].TryGetValue(col, out var v) ? v.Text : "";
                 new[] { Cell("A"), Cell("B"), Cell("C"), Cell("D"), Cell("E"), Cell("F"), Cell("G"), Cell("H"), Cell("I"), Cell("J") }.Should().Equal(expected, $"XLSX row {i}");

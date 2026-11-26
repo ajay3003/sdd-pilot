@@ -251,11 +251,18 @@ public static partial class AdoTestPlanExporter
 
     private static bool Risky(string value) => value.Length > 0 && value[0] is '=' or '+' or '-' or '@' or '\t';
 
+    /// <summary>One written row. The first step of a test case carries the case fields (ID, Work Item Type, Title, Area Path, Assigned To, State,
+    /// Priority, Description); every further step of the same case leaves them empty and carries only Test Step, Step Action and Step Expected —
+    /// the layout Azure DevOps itself writes when it exports test cases (2026-11-26). Repeating the title on every step row risks one test case per
+    /// step on import. A real import is not verified here (no Azure DevOps organization is used).</summary>
     private static IReadOnlyList<string> Values(AdoExportRow r, bool priority, bool description)
     {
-        List<string> values = [r.Id, r.WorkItemType, r.Title, r.TestStep.ToString(System.Globalization.CultureInfo.InvariantCulture), r.StepAction, r.StepExpected, r.AreaPath, r.AssignedTo, r.State];
-        if (priority) values.Add(r.Priority ?? "");
-        if (description) values.Add(r.Description ?? "");
+        var first = r.TestStep <= 1;
+        string Case(string v) => first ? v : "";
+        List<string> values = [Case(r.Id), Case(r.WorkItemType), Case(r.Title), r.TestStep.ToString(System.Globalization.CultureInfo.InvariantCulture), r.StepAction, r.StepExpected,
+            Case(r.AreaPath), Case(r.AssignedTo), Case(r.State)];
+        if (priority) values.Add(Case(r.Priority ?? ""));
+        if (description) values.Add(Case(r.Description ?? ""));
         return values;
     }
 

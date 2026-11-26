@@ -24,10 +24,35 @@
     </div>
 
     <div id="atp-method" role="tabpanel" aria-labelledby="@(_direct ? "atp-tab-direct" : "atp-tab-file")" class="gsx-panel" data-testid="atp-panel" data-method="@(_direct ? "direct" : "file")">
-        @if (!_direct)
+        @* Export v4 (2026-11-26): what Azure DevOps can receive is a TEST CASE. An empty plan, or a plan of scenarios without cases, gets an honest
+           state and a way forward — never the full wizard with «0 klare», and never an invented test case for a scenario-only item. *@
+        @{ var exportable = Draft.Cases.Count(c => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)); var plannedOnly = PlannedOnly(Draft); }
+        @if (exportable == 0)
         {
-            <p class="gsx-muted" data-testid="atp-file-intro">Last ned testplanen som en fil og importer den i Azure DevOps. <span data-testid="atp-file-safe">Ingenting blir endret i Azure DevOps.</span>
-                <span class="gar-help" data-testid="atp-file-reminder">Testplanen bør være godkjent av testleder før den tas i bruk.</span></p>
+            <div class="msb-empty atp-empty" data-testid="atp-empty" data-planned="@plannedOnly">
+                @if (plannedOnly == 0)
+                {
+                    <p><strong>Denne testplanen inneholder ennå ingen scenarioer eller testtilfeller.</strong> Det er ingenting å eksportere.</p>
+                }
+                else
+                {
+                    <p><strong>Testplanen inneholder @plannedOnly scenario@(plannedOnly == 1 ? "" : "er"), men ingen eksporterbare testtilfeller.</strong>
+                        Scenarioer kan planlegges og gjennomføres i BirkNext, men kan ikke eksporteres som Azure DevOps-testtilfeller uten et faktisk testtilfelle.</p>
+                }
+                <span class="atp-empty-actions">
+                    @if (plannedOnly > 0) { <a class="btn btn-primary btn-sm" href="@($"manual-testing/plan?draft={Draft.Id}")" data-testid="atp-empty-prepare">Forbered testtilfeller</a> }
+                    else { <a class="btn btn-primary btn-sm" href="manual-testing/plans" data-testid="atp-empty-add">Legg til scenarioer</a> }
+                    <a class="btn btn-secondary btn-sm" href="@($"manual-testing/plan?draft={Draft.Id}")" data-testid="atp-empty-open">Åpne testplan</a>
+                    <a class="msb-link" href="manual-testing/discover" data-testid="atp-empty-find">Finn scenarioer</a>
+                </span>
+            </div>
+        }
+        else if (!_direct)
+        {
+            <p class="gsx-muted" data-testid="atp-file-intro">Last ned testtilfellene som Excel/CSV og importer dem i Azure DevOps. Testplan og testgrupper må eventuelt opprettes eller velges i Azure DevOps.
+                <span data-testid="atp-file-safe">Ingenting blir endret i Azure DevOps.</span>
+                <span class="gar-help" data-testid="atp-file-reminder">Anbefaling: la testleder se over testtilfellene før eksport. BirkNext har ingen egen godkjenning av testplaner; hvert testtilfelle godkjennes for seg.</span></p>
+            @if (plannedOnly > 0) { <p class="gsx-muted msb-small" data-testid="atp-planned-only">@plannedOnly planlagt@(plannedOnly == 1 ? "" : "e") scenario@(plannedOnly == 1 ? "" : "er") uten testtilfelle eksporteres ikke (ingen testtilfeller blir laget for dem).</p> }
             <BirkNext.Web.Components.AdoExportWizard Draft="Draft" ProjectKey="@ProjectKey" CanWrite="CanWrite" Dirty="Dirty" OnExported="LoadHistoryAsync" />
         }
         else
@@ -114,6 +139,10 @@
 </section>
 
 @code {
+    /// <summary>Scenario-only items of the plan (planned without a case); they are not Azure DevOps test cases.</summary>
+    private static int PlannedOnly(TestPlanDraft d) =>
+        (d.PlannedScenarios ?? []).Count(p => d.Cases.All(c => c.Source.ScenarioId != p.ScenarioId && c.ParentScenario != p.ScenarioId));
+
     [Parameter, EditorRequired] public TestPlanDraft Draft { get; set; } = new();
     [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
     [Parameter] public bool CanWrite { get; set; }
