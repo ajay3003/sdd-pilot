@@ -1375,3 +1375,7 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 @media (max-width: 720px) { .mtp-review-group { padding-left: 0; border-left: 0; } }
 /* AC readiness: compact head, groups as rows; only real missing items carry the warning tone (set by the status chips). */
 .spp { border-left: 3px solid var(--mt-ac-accent); }
+.spp-group > summary.spp-group-h { cursor: pointer; list-style: none; }
+.spp-group > summary.spp-group-h::-webkit-details-marker { display: none; }
+.spp-group > summary.spp-group-h::before { content: "▸ "; color: var(--clr-text-muted, #57606a); }
+.spp-group[open] > summary.spp-group-h::before { content: "▾ "; }

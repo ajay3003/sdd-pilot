@@ -60,6 +60,10 @@ public sealed class ScenarioPreparationPanelTests : BunitContext
         Group(cut, "required").Should().Equal("ExpectedBehaviour", "Verification");
         Group(cut, "undecided").Should().Equal("TestData", "Trigger", "Environment");
         Group(cut, "optional").Should().Equal("CaseReview");
+        // V5: required and undecided stay open; the recommendation folds away (its count is in the head).
+        cut.Find("[data-testid=spp-group][data-group=required]").HasAttribute("open").Should().BeTrue();
+        cut.Find("[data-testid=spp-group][data-group=undecided]").HasAttribute("open").Should().BeTrue();
+        cut.Find("[data-testid=spp-group][data-group=optional]").HasAttribute("open").Should().BeFalse();
         cut.Find("[data-testid=spp-item][data-criterion=TestData] [data-testid=spp-suggested]").TextContent.Should().StartWith("Foreslått: Påkrevd");
         cut.Find("[data-testid=spp-item][data-criterion=CaseReview] [data-testid=spp-evidence]").TextContent.Should().Contain("kan testes uten");
         cut.Find("[data-testid=spp-item][data-criterion=TestData] [data-testid=spp-act]").TextContent.Should().Be("Angi testdata");

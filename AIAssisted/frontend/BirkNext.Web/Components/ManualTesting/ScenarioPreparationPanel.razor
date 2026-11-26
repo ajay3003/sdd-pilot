@@ -104,8 +104,10 @@
     {
         var items = s.InGroup(a).ToList();
         if (items.Count == 0) return;
-        <div class="spp-group" data-testid="spp-group" data-group="@key">
-            <h4 class="spp-group-h">@title</h4>
+        @* V5 (2026-11-26): required and undecided items are always open; recommended and not-relevant items fold away (counted in the head). *@
+        var folded = a is CriterionApplicability.Optional or CriterionApplicability.NotApplicable;
+        <details class="spp-group" data-testid="spp-group" data-group="@key" open="@(!folded)">
+            <summary class="spp-group-h">@title <span class="mt-muted msb-small">(@items.Count)</span></summary>
             <ul class="spp-list">
                 @foreach (var c in items)
                 {
@@ -131,7 +133,7 @@
                     @if (_edit is { } e && e.Criterion == c.Criterion) { @Editor(e) }
                 }
             </ul>
-        </div>
+        </details>
     };
 
     private static string Mark(CriterionState c) => c.Applicability switch
