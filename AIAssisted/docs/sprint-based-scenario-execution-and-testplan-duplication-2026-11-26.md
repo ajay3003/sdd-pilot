@@ -90,7 +90,7 @@
   - `PlanExecutionTests` X01–X03: counts add up; a scenario without a case is executed at scenario level with no step execution; save → notice and counts; a case is an instruction link; history; a conflict keeps the comment and the write names the latest event; an archived plan has no controls;
   - `ManualTestingTestplanerTabTests.Copying_a_plan_…`: the preview text, the reset statement, nothing copied before confirmation, name and sprint sent, a request id.
   - **Passed.**
-  - The full frontend suite was running at commit time.
+  - **Full frontend suite after this delivery: 9,804 / 9,804.**
 
 ## Y. Browser
 
