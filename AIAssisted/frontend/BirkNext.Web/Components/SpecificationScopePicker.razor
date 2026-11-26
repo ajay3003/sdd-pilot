@@ -6,7 +6,7 @@
 @* Which specification manual testing reads, chosen where the tester works: the module, its feature and (when a feature has several) the
    specification, as dropdowns. The choice is the same one the explorers save (one authority), so every explorer and review follows it.
    Nothing is chosen automatically: an empty dropdown says what still has to be chosen. *@
-@if (_state is { } s && (s.HasModules || s.HasPacks || s.Artifacts.Count > 1 || s.Status == ExplorerArtifactStatus.Loaded))
+@if (_state is { } s && (s.HasModules || s.Packs is { Count: > 0 } || s.Artifacts.Count > 1 || s.Status is ExplorerArtifactStatus.Loaded or ExplorerArtifactStatus.SelectionRequired))
 {
     var chosen = s.Status == ExplorerArtifactStatus.Loaded && s.Selected is not null;
     <section class="ssp" data-testid="ssp" aria-label="Spesifikasjonen manuell testing bruker" aria-busy="@(_busy ? "true" : "false")">
@@ -25,7 +25,8 @@
                         }
                     </select></label>
             }
-            @if (s.HasPacks && !s.ModuleRequired)
+            @* V8: the specification (pack) is offered even when the module has only one — it is never chosen by itself (CdcReplay). *@
+            @if (s.Packs is { Count: > 0 } && !s.ModuleRequired)
             {
                 <label class="ssp-field"><span class="ssp-k">Spesifikasjon</span>
                     <select class="ssp-select" data-testid="ssp-feature" disabled="@_busy" value="@(s.PackRequired ? "" : s.Pack ?? "")" @onchange="OnFeature">
@@ -36,11 +37,14 @@
                         }
                     </select></label>
             }
-            @if (!s.ModuleRequired && !s.PackRequired && SpecificationChoices(s) is { Count: > 1 } choices)
+            @* A choice is offered whenever one is needed: several documents, or one that is not chosen yet (V8: never chosen by itself). Without
+               packs the documents ARE the specifications («Spesifikasjon»); inside a chosen pack they are its documents («Dokument»). *@
+            @if (!s.ModuleRequired && !s.PackRequired && SpecificationChoices(s) is { Count: > 0 } choices && (choices.Count > 1 || s.Selected is null))
             {
-                <label class="ssp-field"><span class="ssp-k">Dokument</span>
+                var documentsAreSpecs = s.Packs is not { Count: > 0 };
+                <label class="ssp-field"><span class="ssp-k">@(documentsAreSpecs ? "Spesifikasjon" : "Dokument")</span>
                     <select @key="_renderKey" class="ssp-select" data-testid="ssp-specification" disabled="@_busy" value="@(s.Selected?.Id ?? "")" @onchange="OnSpecification">
-                        @if (s.Selected is null) { <option value="">Velg dokument …</option> }
+                        @if (s.Selected is null) { <option value="">@(documentsAreSpecs ? "Velg spesifikasjon …" : "Velg dokument …")</option> }
                         @foreach (var a in choices)
                         {
                             <option value="@a.Id">@(a.DisplayName == a.FileName ? a.FileName : $"{a.DisplayName} ({a.SourcePath ?? a.FileName})")</option>
@@ -68,7 +72,7 @@
             }
             else if (s.Status == ExplorerArtifactStatus.SelectionRequired)
             {
-                <span>Spesifikasjonen har flere dokumenter; velg det du tester.</span>
+                <span>@(s.Packs is { Count: > 0 } ? "Spesifikasjonen har flere dokumenter; velg det du tester." : "Velg spesifikasjonen du tester.")</span>
             }
             else if (s.Status == ExplorerArtifactStatus.Empty && s.PackSummary is { } pack)
             {
@@ -152,7 +156,10 @@ else if (Actions is not null)
         s.Status == ExplorerArtifactStatus.Loaded ? "chosen" : s.ModuleRequired ? "module" : s.PackRequired ? "feature" : s.Status == ExplorerArtifactStatus.SelectionRequired ? "specification" : "none";
 
     private static string ModuleText(ArtifactModuleRoleState m) =>
-        m.Packs > 1 ? $"{m.Label} — {m.Packs} funksjoner" : $"{m.Label} — {m.Candidates} spesifikasjon{(m.Candidates == 1 ? "" : "er")}";
+        // A pack is one specification however many documents it holds (CdcReplay: one pack, four specification documents, was «4 spesifikasjoner»).
+        m.Packs > 1 ? $"{m.Label} — {m.Packs} funksjoner"
+        : m.Packs == 1 ? $"{m.Label} — 1 spesifikasjon{(m.Candidates > 1 ? $" ({m.Candidates} dokumenter)" : "")}"
+        : $"{m.Label} — {m.Candidates} spesifikasjon{(m.Candidates == 1 ? "" : "er")}";
 
     /// <summary>The project-level module's key is "" — the same as "nothing chosen" — so it has its own option value.</summary>
     private const string ProjectLevelValue = "(project-level)";

@@ -50,6 +50,8 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
     private TaskCompletionSource<(ScenarioDiscoveryResult?, string?)>? _discovery;
     /// <summary>False = the server has no discovery for the page's selection yet (until a discovery completes).</summary>
     private bool _known = true;
+    /// <summary>Candidates the discovery did not keep (above the safety limit); null = a complete population.</summary>
+    private int? _notKept;
     private readonly List<string?> _scopes = [];
 
     private IRenderedComponent<ManualTestingDiscover> Open(string? selectedSpecification, params DiscoveredScenario[] candidates) => Open(selectedSpecification, true, candidates);
@@ -76,7 +78,7 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
             .ReturnsAsync((new TestPlanWorkspace { ProjectKey = "library", GuideKey = "project:library", CanWrite = true }, (string?)null));
         _api.Setup(x => x.LastDiscoveryAsync("library", It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Callback<string, Guid?, string?, CancellationToken>((_, _, scope, _) => _scopes.Add(scope))
-            .ReturnsAsync(() => _known ? (new ScenarioDiscoveryResult { DiscoveryId = "d1", ProjectKey = "library", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = [.. candidates] }, (string?)null) : (null, null));
+            .ReturnsAsync(() => _known ? (new ScenarioDiscoveryResult { DiscoveryId = "d1", ProjectKey = "library", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = [.. candidates], NotKept = _notKept }, (string?)null) : (null, null));
         _api.Setup(x => x.WorkQueuesAsync("library", "d1", It.IsAny<CancellationToken>())).ReturnsAsync((new ScenarioWorkQueueView
         {
             DiscoveryId = "d1", DiscoveryCurrent = true, CoverageComplete = true,
@@ -186,6 +188,23 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
     }
 
     // ── 2026-11-24 top-section refinement: hierarchy, filters on demand, consistent counts, selection kept ─────────────
+
+    [Fact]
+    public void An_incomplete_population_is_said_where_the_scenarios_are_listed_and_a_complete_one_says_nothing()
+    {
+        // 2026-11-26: the safety limit never silently hides scenarios — the page says how many are not kept and how to reach them.
+        _notKept = 15;
+        var cut = Open(MainPath, Spec1, Spec2);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-not-kept]").TextContent.Should().Contain("15 scenarioer").And.Contain("Velg en modul og spesifikasjon"));
+    }
+
+    [Fact]
+    public void A_complete_population_shows_no_incompleteness_notice()
+    {
+        var cut = Open(MainPath, Spec1, Spec2);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-scenarios]"));
+        cut.FindAll("[data-testid=mtd-not-kept]").Should().BeEmpty();
+    }
 
     private static string[] Rows(IRenderedComponent<ManualTestingDiscover> cut) => [.. cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")!)];
     private static int Tab(IRenderedComponent<ManualTestingDiscover> cut, string queue) =>

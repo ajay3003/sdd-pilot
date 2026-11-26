@@ -29,7 +29,11 @@ public sealed record RequirementTestLink(string RequirementId, CandidateTestAsso
 public static class TestScenarioDiscoveryEngine
 {
     public const string RuleVersion = "tsd-1";
-    public const int MaxCandidates = 2000;
+    /// <summary>
+    /// A safety limit, not a working size (2026-11-26): 2,000 dropped 15 of M2LB's 2,015 candidates. Finn og forstå shows the list in batches
+    /// (ShowMore) and the payload is compact, so a real project is kept whole; a result above this limit says so on the page (NotKept).
+    /// </summary>
+    public const int MaxCandidates = 10000;
 
     public const string Specification = "specification";
     public const string SystemGuide = "system-guide";

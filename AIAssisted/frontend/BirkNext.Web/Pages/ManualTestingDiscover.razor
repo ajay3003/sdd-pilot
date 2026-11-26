@@ -641,6 +641,11 @@
 
                         @* The scenario collection: compact rows, paged, keyboard-navigable, multi-select. *@
                         <section class="msb-list" aria-label="Scenarioer" data-testid="mtd-scenarios">
+                            @if (_ws?.Discovery?.NotKept is > 0 and var notKept)
+                            {
+                                @* An incomplete population is said where the scenarios are listed (2026-11-26), with the way to the rest. *@
+                                <p class="mt-alert msb-small" role="status" data-testid="mtd-not-kept">Ikke alle scenarioer er med: @notKept scenario@(notKept == 1 ? "" : "er") over sikkerhetsgrensen på @(_ws.Discovery.Candidates.Count) er ikke tatt med (kildescenarioer prioriteres). Velg en modul og spesifikasjon for å se alle scenarioene der.</p>
+                            }
                             @if (shown.Count == 0)
                             {
                                 <p class="msb-empty" data-testid="mtd-empty">@EmptyText() <button type="button" class="msb-link" @onclick="() => Set(DefaultFilter with { Story = _filter.Story })">Nullstill filter</button>

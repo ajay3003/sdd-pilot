@@ -79,16 +79,34 @@ public sealed class ArtifactExplorerContextTests
     }
 
     [Fact]
-    public async Task MultipleArtifacts_OneAuthoritative_OpensTheAuthoritativeOne()
+    public async Task MultipleArtifacts_OneAuthoritative_SpecificationStillRequiresChoice_OtherRolesOpenTheAuthoritativeOne()
     {
+        // V8 decision (2026-11-26): no automatic specification
         Import(WorkspaceArtifactType.Specification, "requirements-a.md", "# A");
         var b = Import(WorkspaceArtifactType.Specification, "requirements-b.md", "# B");
         _workspace.SetArtifactAuthority(b.Revision.RevisionId, "Approved");
 
-        var state = await _context.GetStateAsync(WorkspaceArtifactType.Specification);
+        var spec = await _context.GetStateAsync(WorkspaceArtifactType.Specification);
+
+        spec.Status.Should().Be(ExplorerArtifactStatus.SelectionRequired, "authority never chooses a specification");
+        spec.Selected.Should().BeNull();
+        spec.Content.Should().BeNull();
+
+        _context.Select(WorkspaceArtifactType.Specification, ArtifactExplorerContext.WorkspacePrefix + "requirements-b.md");
+        spec = await _context.GetStateAsync(WorkspaceArtifactType.Specification);
+        spec.Status.Should().Be(ExplorerArtifactStatus.Loaded);
+        spec.Selected!.FileName.Should().Be("requirements-b.md");
+        spec.Reason.Should().Be(ExplorerSelectionReason.Explicit);
+        spec.Selected.IsAuthoritative.Should().BeTrue();
+
+        Import(WorkspaceArtifactType.Plan, "plan-a.md", "# Plan A");
+        var planB = Import(WorkspaceArtifactType.Plan, "plan-b.md", "# Plan B");
+        _workspace.SetArtifactAuthority(planB.Revision.RevisionId, "Approved");
+
+        var state = await _context.GetStateAsync(WorkspaceArtifactType.Plan);
 
         state.Status.Should().Be(ExplorerArtifactStatus.Loaded);
-        state.Selected!.FileName.Should().Be("requirements-b.md");
+        state.Selected!.FileName.Should().Be("plan-b.md");
         state.Reason.Should().Be(ExplorerSelectionReason.Authoritative);
         state.Selected.IsAuthoritative.Should().BeTrue();
     }
@@ -138,6 +156,7 @@ public sealed class ArtifactExplorerContextTests
     {
         _samples.AddDocument("skole", WorkspaceArtifactType.Specification, "Skole/specs/001-elevfravaer/requirements.md", "# Elevfravær\n");
         _samples.SetSelectedProject("skole");
+        _samples.ChooseDocument("skole", WorkspaceArtifactType.Specification, "Skole/specs/001-elevfravaer/requirements.md");
 
         var state = await _context.GetStateAsync(WorkspaceArtifactType.Specification);
 
@@ -196,6 +215,8 @@ public sealed class ArtifactExplorerContextTests
     {
         _samples.SetProjectSpecification("project-a", "# A spec");
         _samples.SetProjectSpecification("project-b", "# B spec");
+        _samples.ChooseDocument("project-a", WorkspaceArtifactType.Specification, "spec.md");
+        _samples.ChooseDocument("project-b", WorkspaceArtifactType.Specification, "spec.md");
         _samples.SetSelectedProject("project-a");
         (await _context.GetStateAsync(WorkspaceArtifactType.Specification)).Content.Should().Be("# A spec");
 
@@ -232,6 +253,7 @@ public sealed class ArtifactExplorerContextTests
     {
         _workspace.Set(WorkspaceArtifactType.Specification, "# Old manual spec");
         _samples.SetProjectSpecification("project-a", "# Project spec");
+        _samples.ChooseDocument("project-a", WorkspaceArtifactType.Specification, "spec.md");
         _samples.SetSelectedProject("project-a");
 
         var state = await _context.GetStateAsync(WorkspaceArtifactType.Specification);

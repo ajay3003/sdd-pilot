@@ -326,7 +326,8 @@ public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources,
         }
         var snapshotKey = primary?.Id.ToString() ?? "";
         var final = D.Finalize(projectKey, snapshotKey, candidates, links, scenarioLinks);
-        if (candidates.Count > D.MaxCandidates && D.DroppedByCap(projectKey, candidates) is { Count: > 0 } dropped)
+        var notKept = candidates.Count > D.MaxCandidates ? D.DroppedByCap(projectKey, candidates) : null;
+        if (notKept is { Count: > 0 } dropped)
             limitations.Add($"Only {D.MaxCandidates} candidates are kept (specification and documented tests first); not kept: "
                 + string.Join(", ", dropped.OrderBy(d => D.CapPriority(d.Key)).Select(d => $"{d.Value} {d.Key}")) + ".");
         var fingerprint = E.Sha(string.Join("\n", final.Select(c => c.CandidateId + ":" + c.Fingerprint)));
@@ -342,6 +343,7 @@ public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources,
             RuleVersion = D.RuleVersion, DiscoveredAt = (clock ?? TimeProvider.System).GetUtcNow(),
             Capabilities = [.. capabilities.Select(c => c.State == DiscoveryCapabilityState.Available ? c with { Candidates = final.Count(x => x.CapabilityId == c.Id) } : c)],
             Candidates = final, Limitations = [.. limitations.Distinct(StringComparer.Ordinal)], Basis = basis,
+            NotKept = notKept is { Count: > 0 } nk ? nk.Values.Sum() : null,
         };
         cache.Store(result);
         if (store is not null)

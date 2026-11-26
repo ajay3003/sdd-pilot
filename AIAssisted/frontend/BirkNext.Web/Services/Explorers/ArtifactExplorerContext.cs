@@ -827,7 +827,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
     {
         var names = packs.Select(p => p.Pack).ToHashSet(StringComparer.Ordinal);
         var viewing = (viewPack is not null && names.Contains(viewPack) ? viewPack : null) ?? _workspace.SddLifecycle.PackFocus.LastOrDefault(f => f.WorkspaceScope == model.Scope && f.Module == module && names.Contains(f.Pack))?.Pack
-            ?? (packs.Count == 1 ? packs[0].Pack : null)
+            // V8 decision (2026-11-26): no automatic specification — a module with ONE specification pack asks for it like one with several.
             ?? _workspace.SddLifecycle.ExplorerSelections.Where(s => s.WorkspaceScope == model.Scope && (s.Module ?? ArtifactModules.ProjectLevel) == module)
                 .Select(s => s.Pack ?? model.Roles.Values.SelectMany(l => l).FirstOrDefault(e => e.Artifact.Id == s.ArtifactId)?.Artifact.Feature)
                 .LastOrDefault(p => p is not null && names.Contains(p));
@@ -1185,9 +1185,16 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
             var chosenSample = chosenSamplePath is null ? null : SamplePrefix + chosenSamplePath;
             if (Exists(chosenSample)) return (chosenSample, ExplorerSelectionReason.Explicit);
 
+            // The repository's current document is set when an import settles its documents — not by the tester. For a specification only a
+            // stored explorer choice (above) or a Demo Project choice counts as explicit (V8 decision, 2026-11-26).
             var repositoryCurrent = entries.Where(a => a.IsRepositoryCurrent).Select(a => a.Artifact.Id).ToList();
-            if (repositoryCurrent.Count == 1) return (repositoryCurrent[0], ExplorerSelectionReason.Explicit);
+            if (repositoryCurrent.Count == 1 && role != WorkspaceArtifactType.Specification) return (repositoryCurrent[0], ExplorerSelectionReason.Explicit);
         }
+
+        // V8 decision (2026-11-26): a specification is only ever an explicit choice (a stored selection, a Demo Project choice, the repository's
+        // current one or a validated deep link) — never the only, the only authoritative or the only Spec-Kit document. Other roles keep their
+        // resolution. Before, a module with module-level specification documents (CdcReplay: four, no feature folders) showed one as chosen.
+        if (role == WorkspaceArtifactType.Specification) return (null, null);
 
         var authoritative = entries.Where(a => a.Artifact.IsAuthoritative).Select(a => a.Artifact.Id).ToList();
         if (authoritative.Count == 1) return (authoritative[0], ExplorerSelectionReason.Authoritative);

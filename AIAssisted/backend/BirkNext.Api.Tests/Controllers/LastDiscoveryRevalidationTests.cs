@@ -26,12 +26,12 @@ public sealed class LastDiscoveryRevalidationTests
         Candidates = [new DiscoveredScenario { CandidateId = "c1", ProjectKey = "project-a", Title = title }],
     };
 
-    private async Task<(IActionResult Result, HttpContext Http)> GetAsync(string? ifNoneMatch = null)
+    private async Task<(IActionResult Result, HttpContext Http)> GetAsync(string? ifNoneMatch = null, bool compact = false)
     {
         var http = new DefaultHttpContext();
         if (ifNoneMatch is not null) http.Request.Headers.IfNoneMatch = ifNoneMatch;
         var controller = new TestPlanSuggestionsController(null!, null!) { ControllerContext = new ControllerContext { HttpContext = http } };
-        var result = await controller.LastDiscovery("project-a", null, null, Discovery(),
+        var result = await controller.LastDiscovery("project-a", null, null, compact, Discovery(),
             Microsoft.Extensions.Options.Options.Create(new JsonOptions { JsonSerializerOptions = { PropertyNamingPolicy = JsonNamingPolicy.CamelCase } }), default);
         return (result, http);
     }
@@ -81,5 +81,16 @@ public sealed class LastDiscoveryRevalidationTests
     public async Task No_last_discovery_is_still_no_content()
     {
         (await GetAsync()).Result.Should().BeOfType<NoContentResult>();
+    }
+
+    [Fact]
+    public async Task The_compact_form_is_served_on_request_and_has_its_own_etag()
+    {
+        // compact=true (2026-11-26): each story and test once; the ETag hashes the bytes actually sent, so the two forms never share one.
+        _cache.Store(Result("Søknad"));
+        var (_, full) = await GetAsync();
+        var (_, compact) = await GetAsync(compact: true);
+        compact.Response.Headers.ETag.ToString().Should().NotBeNullOrEmpty();
+        compact.Response.Headers.ETag.ToString().Should().NotBe(full.Response.Headers.ETag.ToString());
     }
 }

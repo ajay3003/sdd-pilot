@@ -43,6 +43,8 @@ public sealed class ExplorerSourceSelectionTests : BunitContext
 
         Import("import-m2lb", "M2LB", 1, (WorkspaceArtifactType.Specification, "specs/001-person/spec.md", BirkNext.Web.Tests.Services.ProjectImportActivationTests.Spec),
             (WorkspaceArtifactType.Plan, "specs/001-person/plan.md", Plan), (WorkspaceArtifactType.Tasks, "specs/001-person/tasks.md", Tasks));
+        // The tester chose M2LB's feature earlier (no specification or pack is ever chosen automatically).
+        _workspace.SddLifecycle.PackFocus.Add(new SddPackFocus { WorkspaceScope = ProjectImportScope.For("import-m2lb"), Module = ArtifactModules.ProjectLevel, Pack = "001-person" });
         Import("import-common", "M2LB.Common", 2);
         Import("import-tiltak", "Tiltak 2 - Sikkert digitalt økosystem", 3);
         // The user's legacy workspace: the last import is the current one.

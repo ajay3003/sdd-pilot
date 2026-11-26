@@ -68,6 +68,7 @@ public sealed class ProjectImportActivationTests
         var record = Activate(preview, ProjectImportSourceState.Created, snapshot);
 
         _explorers.CurrentScope.Should().Be("import:" + preview.ImportId);
+        await _explorers.SelectPackAsync("001-cart");
         var spec = await State(WorkspaceArtifactType.Specification);
         spec.Status.Should().Be(ExplorerArtifactStatus.Loaded);
         spec.ProjectName.Should().Be("shop");
@@ -129,6 +130,7 @@ public sealed class ProjectImportActivationTests
 
         (await State(WorkspaceArtifactType.Plan)).Status.Should().Be(ExplorerArtifactStatus.Empty, "v1's plan never mixes into v2");
         _repository.Get(WorkspaceArtifactType.Plan).Should().BeNull();
+        _explorers.Select(WorkspaceArtifactType.Specification, (await State(WorkspaceArtifactType.Specification)).Artifacts.Single().Id);
         (await State(WorkspaceArtifactType.Specification)).Content.Should().Contain("FR-002");
         _repository.SddLifecycle.ProjectImports.Should().HaveCount(2, "the earlier import stays as history");
         _repository.SddLifecycle.CurrentProjectImportId.Should().Be(v2.ImportId);
@@ -172,12 +174,14 @@ public sealed class ProjectImportActivationTests
     {
         _samples.RegisterProject("autorisasjon");
         _samples.SetProjectSpecification("autorisasjon", "# Sample spec");
+        _samples.ChooseDocument("autorisasjon", WorkspaceArtifactType.Specification, "spec.md");
         _repository.ProjectName = "autorisasjon";
         var preview = Preview(new string('f', 64), source: false, ("spec.md", Spec));
 
         Activate(preview);
 
         _repository.ProjectName.Should().BeNull("the import replaces the selected Sample Project");
+        _explorers.Select(WorkspaceArtifactType.Specification, (await State(WorkspaceArtifactType.Specification)).Artifacts.Single().Id);
         (await State(WorkspaceArtifactType.Specification)).Content.Should().Contain("FR-001");
 
         _repository.ProjectName = "autorisasjon";

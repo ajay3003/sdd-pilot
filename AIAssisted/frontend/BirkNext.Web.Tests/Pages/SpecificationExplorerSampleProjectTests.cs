@@ -17,6 +17,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
     private readonly Mock<IScenarioExtractionService> _extractionService = new();
     private readonly Mock<IExtractionSessionService> _session = new();
     private readonly Mock<ISaveReviewedCandidatesMutation> _saveReviewed = new();
+    private readonly BirkNext.Web.Services.Explorers.ArtifactExplorerContext _explorers;
 
     public SpecificationExplorerSampleProjectTests()
     {
@@ -27,7 +28,8 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         Services.AddSingleton<MarkdownRenderingService>();
         Services.AddSingleton<ISampleProjectDocumentResolver>(_documentResolver);
         Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(_documentResolver);
-        Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(_workspace, _documentResolver, _documentResolver));
+        _explorers = new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(_workspace, _documentResolver, _documentResolver);
+        Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(_explorers);
         Services.AddSingleton(_extractionService.Object);
         Services.AddSingleton<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
         Services.AddSingleton(new FeatureVisibilityService());
@@ -156,6 +158,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         const string projectSpec = "# Project A Specification";
 
         _documentResolver.SetProjectSpecification(projectSlug, projectSpec);
+        _documentResolver.ChooseDocument(projectSlug, WorkspaceArtifactType.Specification, "spec.md");
         _documentResolver.SetSelectedProject(projectSlug);
 
         var cut = Render<SpecificationExplorer>();
@@ -195,6 +198,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         const string projectSpec = "# Project A Specification\n\n## Feature\nTest feature";
 
         _documentResolver.SetProjectSpecification(projectSlug, projectSpec);
+        _documentResolver.ChooseDocument(projectSlug, WorkspaceArtifactType.Specification, "spec.md");
         _documentResolver.SetSelectedProject(projectSlug);
 
         var cut = Render<SpecificationExplorer>();
@@ -226,6 +230,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         string? analyzedText = null;
 
         _documentResolver.SetProjectSpecification(projectSlug, sampleProjectSpec);
+        _documentResolver.ChooseDocument(projectSlug, WorkspaceArtifactType.Specification, "spec.md");
         _documentResolver.SetSelectedProject(projectSlug);
         _workspace.Set(WorkspaceArtifactKind.Specification, workspaceSpec);
         _extractionService
@@ -259,6 +264,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
     {
         const string spec = "# School attendance requirements\n\n## Requirements\n\n- FR-001: The system shall record absence.\n\n## Tests\n\n- Given an absence, when saved, then it is recorded.";
         _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "requirements-person.md", null, null, "File", select: true);
+        _explorers.Select(WorkspaceArtifactType.Specification, BirkNext.Web.Services.Explorers.ArtifactExplorerContext.WorkspacePrefix + "requirements-person.md");
         _extractionService.Setup(s => s.ExtractAsync(spec, ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeResult([], spec));
 
@@ -284,6 +290,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
     {
         const string spec = "# Empty review spec\n\n## Notes\nNo candidate patterns.";
         _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "custom-spec.txt", null, null, "File", select: true);
+        _explorers.Select(WorkspaceArtifactType.Specification, BirkNext.Web.Services.Explorers.ArtifactExplorerContext.WorkspacePrefix + "custom-spec.txt");
         _extractionService.Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
             .ReturnsAsync(ExtractionPipelineResult.NonSuccess(PipelineStatus.NoResults, spec.Length, spec.Split('\n').Length, 1, ExtractionProfile.Speckit));
 
@@ -304,6 +311,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
     {
         const string spec = "# Cached specification";
         _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "requirements-person.md", null, null, "File", select: true);
+        _explorers.Select(WorkspaceArtifactType.Specification, BirkNext.Web.Services.Explorers.ArtifactExplorerContext.WorkspacePrefix + "requirements-person.md");
         var candidate = new CandidateSnapshot(
             Guid.NewGuid(), "FR-007: Cached candidate", ScenarioKind.Requirement,
             ClassificationSignal.Rfc2119Lowercase, null, BlockType.UnorderedListItem,
@@ -327,6 +335,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
     {
         const string spec = "# Retry specification";
         _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "retry-spec.md", null, null, "File", select: true);
+        _explorers.Select(WorkspaceArtifactType.Specification, BirkNext.Web.Services.Explorers.ArtifactExplorerContext.WorkspacePrefix + "retry-spec.md");
         _extractionService.SetupSequence(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("private internal detail"))
             .ReturnsAsync(MakeResult([], spec));
@@ -351,7 +360,9 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         const string projectBSlug = "project-b";
 
         _documentResolver.SetProjectSpecification(projectASlug, "# Project A Specification\n\n- FR-001: The system shall approve requests.");
+        _documentResolver.ChooseDocument(projectASlug, WorkspaceArtifactType.Specification, "spec.md");
         _documentResolver.SetProjectSpecification(projectBSlug, "# Project B Specification");
+        _documentResolver.ChooseDocument(projectBSlug, WorkspaceArtifactType.Specification, "spec.md");
         _documentResolver.SetSelectedProject(projectASlug);
         _extractionService
             .Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
@@ -392,7 +403,9 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         const string specB = "# Project B Specification";
         var pendingA = new TaskCompletionSource<ExtractionPipelineResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         _documentResolver.SetProjectSpecification(projectA, specA);
+        _documentResolver.ChooseDocument(projectA, WorkspaceArtifactType.Specification, "spec.md");
         _documentResolver.SetProjectSpecification(projectB, specB);
+        _documentResolver.ChooseDocument(projectB, WorkspaceArtifactType.Specification, "spec.md");
         _documentResolver.SetSelectedProject(projectA);
         _extractionService.Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
             .Returns<string, ExtractionProfile, CancellationToken>((text, _, _) => text == specA
@@ -457,6 +470,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         const string spec = "# School attendance requirements\n\n- FR-001: The system shall record absence.";
         string? analyzedText = null;
         _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "requirements.md", null, null, "File", select: true);
+        _explorers.Select(WorkspaceArtifactType.Specification, BirkNext.Web.Services.Explorers.ArtifactExplorerContext.WorkspacePrefix + "requirements.md");
         _extractionService
             .Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
             .Callback<string, ExtractionProfile, CancellationToken>((text, _, _) => analyzedText = text)

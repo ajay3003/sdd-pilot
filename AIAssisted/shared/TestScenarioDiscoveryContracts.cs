@@ -364,6 +364,9 @@ public sealed record ScenarioDiscoveryResult
     public DateTimeOffset DiscoveredAt { get; init; }
     public List<DiscoveryCapability> Capabilities { get; init; } = [];
     public List<DiscoveredScenario> Candidates { get; init; } = [];
+    /// <summary>Candidates beyond the safety limit that this result does NOT hold (2026-11-26); null when the population is complete. The page says
+    /// so where the scenarios are listed — never only in a collapsed detail — and how to reach the rest (a narrower module/specification).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? NotKept { get; init; }
     /// <summary>Compact wire form only (<see cref="ScenarioDiscoveryWire"/>): each distinct user story once, by key.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Dictionary<string, BirkNext.TestCoverage.CoverageUserStory>? StoryTable { get; init; }
     /// <summary>Compact wire form only: each distinct existing test once, by test id (the per-scenario link keeps basis, confirmation, origin).</summary>

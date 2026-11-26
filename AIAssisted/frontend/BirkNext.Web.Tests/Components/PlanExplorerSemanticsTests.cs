@@ -386,6 +386,8 @@ public sealed class PlanExplorerArtifactSourceTests : BunitContext
         _samples.AddDocument(project, WorkspaceArtifactType.Plan, "specs/001-demo/plan.md",
             $"# Implementation Plan: Demo\n\n**Spec**: custom-requirements.md\n**Input**: {path}\n\n## Testing\n\nxUnit.");
         _samples.AddDocument(project, WorkspaceArtifactType.Specification, path, "# Feature Specification: Demo\n");
+        // The tester chose the feature (no specification is ever chosen automatically).
+        _workspace.SddLifecycle.PackFocus.Add(new SddPackFocus { WorkspaceScope = project, Module = ArtifactModules.ProjectLevel, Pack = "001-demo" });
 
         var cut = Render<PlanExplorer>();
 

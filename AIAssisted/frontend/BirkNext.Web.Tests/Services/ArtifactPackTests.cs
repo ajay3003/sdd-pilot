@@ -70,16 +70,25 @@ public sealed class ArtifactPackTests : BunitContext
     }
 
     [Fact]
-    public async Task A_single_pack_is_selected_automatically()
+    public async Task A_single_pack_is_never_selected_automatically_and_loads_once_chosen()
     {
+        // V8 decision (2026-11-26): no automatic specification
         Import(("specs/001-cart/spec.md", Spec), ("specs/001-cart/plan.md", Plan));
 
+        var pending = await State(WorkspaceArtifactType.Specification);
+        pending.Status.Should().Be(ExplorerArtifactStatus.SelectionRequired, "one pack is asked for like several");
+        pending.PackRequired.Should().BeTrue();
+        pending.Selected.Should().BeNull();
+        pending.Content.Should().BeNull();
+
+        await _explorers.SelectPackAsync("001-cart");
         var spec = await State(WorkspaceArtifactType.Specification);
         spec.Status.Should().Be(ExplorerArtifactStatus.Loaded);
         spec.PackRequired.Should().BeFalse();
         spec.HasPacks.Should().BeFalse("one pack is simply the project's documents");
         spec.Pack.Should().Be("001-cart");
         spec.Reason.Should().Be(ExplorerSelectionReason.OnlyArtifact);
+        spec.Content.Should().Be(Spec);
     }
 
     [Fact]
@@ -183,6 +192,7 @@ public sealed class ArtifactPackTests : BunitContext
         // Seen in a real repository: the project's .specify/memory/constitution.md next to a governance document that reads like one.
         Import((".specify/memory/constitution.md", Constitution), ("docs/governance.md", Constitution.Replace("Test first", "Shared libraries")),
             ("specs/001-cart/spec.md", Spec));
+        await _explorers.SelectPackAsync("001-cart");
         var constitution = await State(WorkspaceArtifactType.Constitution);
         constitution.Should().Match<ArtifactExplorerState>(s => s.Status == ExplorerArtifactStatus.Loaded && s.Reason == ExplorerSelectionReason.SharedArtifact);
         constitution.Selected!.SourcePath.Should().Be(".specify/memory/constitution.md");

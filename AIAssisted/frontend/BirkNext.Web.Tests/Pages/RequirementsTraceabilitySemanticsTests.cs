@@ -53,6 +53,7 @@ public sealed class RequirementsTraceabilitySemanticsTests : BunitContext
     {
         _samples.SetProjectConstitution("access", Constitution);
         _samples.SetProjectSpecification("access", Spec);
+        _samples.ChooseDocument("access", WorkspaceArtifactType.Specification, "spec.md");
         _samples.SetProjectPlan("access", Plan);
         _samples.SetProjectTasks("access", Tasks);
         _workspace.CurrentProject = "access";

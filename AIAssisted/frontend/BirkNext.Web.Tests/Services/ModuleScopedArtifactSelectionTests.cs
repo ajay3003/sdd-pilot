@@ -75,6 +75,7 @@ public sealed class ModuleScopedArtifactSelectionTests
     public async Task AllCandidatesAreKept_GroupedByModule_TemplatesExcluded()
     {
         ImportMonorepo();
+        await _explorers.SelectPackAsync("001-cart", "cart");
 
         var overview = await _explorers.GetModuleOverviewAsync();
         overview.HasModules.Should().BeTrue();
@@ -102,11 +103,20 @@ public sealed class ModuleScopedArtifactSelectionTests
     }
 
     [Fact]
-    public async Task FocusedModule_WithOneCandidate_AutoSelects_AndOtherModulesDoNotLeak()
+    public async Task FocusedModule_WithOneCandidate_AsksForIt_ThenLoads_AndOtherModulesDoNotLeak()
     {
+        // V8 decision (2026-11-26): no automatic specification
         ImportMonorepo();
 
         await _explorers.SelectModuleAsync("cart");
+
+        var pending = await _explorers.GetStateAsync(WorkspaceArtifactType.Specification);
+        pending.Status.Should().Be(ExplorerArtifactStatus.SelectionRequired, "the module's only specification is still chosen by the user");
+        pending.PackRequired.Should().BeTrue();
+        pending.Selected.Should().BeNull();
+        pending.Artifacts.Should().OnlyContain(a => a.Module == "cart");
+
+        await _explorers.SelectPackAsync("001-cart");
 
         var spec = await _explorers.GetStateAsync(WorkspaceArtifactType.Specification);
         spec.Status.Should().Be(ExplorerArtifactStatus.Loaded);
@@ -141,6 +151,7 @@ public sealed class ModuleScopedArtifactSelectionTests
     {
         ImportMonorepo();
         await _explorers.SelectModuleAsync("cart");
+        _explorers.Select(WorkspaceArtifactType.Specification, "workspace:cart/specs/001-cart/spec.md", "cart");
 
         _explorers.Select(WorkspaceArtifactType.Specification, "workspace:billing/specs/001-pay/spec.md", "billing");
 
@@ -188,15 +199,23 @@ public sealed class ModuleScopedArtifactSelectionTests
     }
 
     [Fact]
-    public async Task SimpleProject_StaysProjectLevel_AndAutoSelectsAsBefore()
+    public async Task SimpleProject_StaysProjectLevel_AndItsSpecificationIsChosenExplicitly()
     {
+        // V8 decision (2026-11-26): no automatic specification
         var preview = Preview(new string('e', 64), source: true,
             ("shop/.specify/memory/constitution.md", Constitution), ("shop/specs/001-cart/spec.md", Spec),
             ("shop/specs/001-cart/plan.md", Plan), ("shop/specs/001-cart/tasks.md", Tasks));
         _activation.Activate(preview, ProjectImportArtifactDiscovery.From(preview), Commit(preview, ProjectImportSourceState.Created, Guid.NewGuid()));
 
+        var pending = await _explorers.GetStateAsync(WorkspaceArtifactType.Specification);
+        pending.Status.Should().Be(ExplorerArtifactStatus.SelectionRequired, "one specification is not chosen automatically");
+        pending.Selected.Should().BeNull();
+        pending.HasModules.Should().BeFalse();
+
+        await _explorers.SelectPackAsync("001-cart");
         var spec = await _explorers.GetStateAsync(WorkspaceArtifactType.Specification);
         spec.Status.Should().Be(ExplorerArtifactStatus.Loaded);
+        spec.Selected!.SourcePath.Should().Be("shop/specs/001-cart/spec.md");
         spec.HasModules.Should().BeFalse("one Spec-Kit project is not a monorepo: no module choice appears");
         spec.ModuleLabel.Should().BeNull();
         (await _explorers.GetModuleOverviewAsync()).HasModules.Should().BeFalse();

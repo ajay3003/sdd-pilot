@@ -179,16 +179,24 @@ public sealed class MultipleDocumentsPerFeatureTests
         (await Shown(WorkspaceArtifactType.Specification)).Should().Be("school/docs/annex-spec.md");
 
         await _explorers.SelectModuleAsync("billing");
+        await _explorers.SelectPackAsync("001-pay");
         (await Shown(WorkspaceArtifactType.Specification)).Should().Be("billing/specs/001-pay/spec.md");
         await _explorers.SelectModuleAsync("school");
         (await Shown(WorkspaceArtifactType.Specification)).Should().Be("school/docs/annex-spec.md", "the module keeps its choice");
     }
 
     [Fact]
-    public async Task A_single_feature_module_shows_its_spec_and_keeps_the_module_document_as_an_alternative()
+    public async Task A_single_feature_module_asks_for_its_spec_and_keeps_the_module_document_as_an_alternative()
     {
+        // V8 decision (2026-11-26): no automatic specification
         ImportServices();
         await _explorers.SelectModuleAsync("attendance");
+        var pending = await State(WorkspaceArtifactType.Specification);
+        pending.Status.Should().Be(ExplorerArtifactStatus.SelectionRequired, "the only feature is not chosen automatically");
+        pending.PackRequired.Should().BeTrue();
+        pending.Selected.Should().BeNull();
+
+        await _explorers.SelectPackAsync("001-attendance");
         var spec = await State(WorkspaceArtifactType.Specification);
         spec.Status.Should().Be(ExplorerArtifactStatus.Loaded);
         spec.Selected!.SourcePath.Should().Be("attendance/specs/001-attendance/spec.md");
@@ -206,6 +214,7 @@ public sealed class MultipleDocumentsPerFeatureTests
     {
         ImportServices();
         await _explorers.SelectModuleAsync("attendance");
+        await _explorers.SelectPackAsync("001-attendance");
         var listed = (await State(WorkspaceArtifactType.Specification)).Artifacts;
         string Id(string path) => listed.Single(a => a.SourcePath == path).Id;
 
@@ -228,6 +237,7 @@ public sealed class MultipleDocumentsPerFeatureTests
     {
         ImportServices();
         await _explorers.SelectModuleAsync("attendance");
+        await _explorers.SelectPackAsync("001-attendance");
         var dependencies = (await State(WorkspaceArtifactType.Specification)).Artifacts.Single(a => a.SourcePath == "attendance/docs/dependencies.md").Id;
         _explorers.Select(WorkspaceArtifactType.Specification, dependencies);
 
@@ -245,6 +255,7 @@ public sealed class MultipleDocumentsPerFeatureTests
         var provider = new ReviewContextProvider(_repository, new WorkspaceUpdateCoordinator(), new ConstitutionAnalysisService(), new PlanAnalysisService(), new DataModelAnalysisService(),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<ReviewContextProvider>.Instance, _explorers);
         await _explorers.SelectModuleAsync("attendance");
+        await _explorers.SelectPackAsync("001-attendance");
         await provider.RebuildAsync();
         provider.GetCurrent()!.GetRequirements().Select(r => r.Id).Should().Equal("FR-601");
 

@@ -116,6 +116,7 @@ public sealed class PackEvidenceTests
     public async Task A_single_pack_is_still_scoped_so_its_requirements_never_collide_with_another_module_s()
     {
         Import(("specs/001-cart/spec.md", Spec), ("specs/001-cart/plan.md", Plan));
+        await _explorers.SelectPackAsync("001-cart");
         await State(WorkspaceArtifactType.Specification);
         _repository.SddLifecycle.ActiveRequirementScope.Should().EndWith("|001-cart", "FR-001 of the only pack is still that pack's FR-001");
         RequirementKey.Of(null, "FR-001").Display.Should().Be("FR-001", "legacy unscoped identity remains readable");

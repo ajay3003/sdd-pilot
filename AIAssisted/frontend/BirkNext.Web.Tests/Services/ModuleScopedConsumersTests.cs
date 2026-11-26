@@ -57,6 +57,7 @@ public sealed class ModuleScopedConsumersTests : BunitContext
         before.ModuleRequired.Should().BeTrue();
 
         await _explorers.SelectModuleAsync("cart");
+        await _explorers.SelectPackAsync("001-cart");
         var cart = await TraceabilityInputs.ResolveAsync(_explorers);
         cart.Status.Should().Be(TraceabilityInputStatus.Ready);
         cart.ModuleLabel.Should().Be("cart");
@@ -83,6 +84,7 @@ public sealed class ModuleScopedConsumersTests : BunitContext
         TestCoveragePresentation.SpecificationScope(none).Should().StartWith("Needs selection");
 
         await _explorers.SelectModuleAsync("cart");
+        await _explorers.SelectPackAsync("001-cart");
         var spec = await _explorers.GetStateAsync(WorkspaceArtifactType.Specification);
         var evidence = TestCoveragePresentation.WorkspaceEvidence(_repository, null, "shop", spec);
         evidence.SpecificationAvailable.Should().BeTrue();
@@ -99,6 +101,7 @@ public sealed class ModuleScopedConsumersTests : BunitContext
     public async Task WorkspaceProjection_SummarizesCandidatesPerModule_AndAsksForTheModuleFirst()
     {
         ImportMonorepo();
+        await _explorers.SelectPackAsync("001-cart", "cart");
         var specification = await _explorers.GetStateAsync(WorkspaceArtifactType.Specification);
         var status = new ArtifactRoleStatus(WorkspaceArtifactType.Specification, ArtifactRoleAvailability.Available, specification.Artifacts.Count,
             ArtifactRoleSelection.SelectionRequired, null, null, null, specification.Modules, specification.Module);
@@ -212,6 +215,7 @@ public sealed class ModuleScopedConsumersTests : BunitContext
         spec.Modules!.Select(m => m.Module).Should().Equal("billing", "orders");
 
         await _explorers.SelectModuleAsync("orders");
+        await _explorers.SelectPackAsync("001-a");
         var orders = await _explorers.GetStateAsync(WorkspaceArtifactType.Specification);
         orders.Status.Should().Be(ExplorerArtifactStatus.Loaded);
         orders.Selected!.SourcePath.Should().Be("orders/specs/001-a/spec.md");

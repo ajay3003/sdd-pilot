@@ -68,6 +68,7 @@ public sealed class RequirementsTraceabilityWorkspaceTests : BunitContext
     {
         _samples.SetProjectConstitution(slug, Constitution);
         _samples.SetProjectSpecification(slug, Spec(requirementId));
+        _samples.ChooseDocument(slug, WorkspaceArtifactType.Specification, "spec.md");
         _samples.SetProjectPlan(slug, Plan);
         _samples.SetProjectTasks(slug, Tasks);
         _workspace.CurrentProject = slug;
@@ -90,6 +91,7 @@ public sealed class RequirementsTraceabilityWorkspaceTests : BunitContext
     {
         Import(new string('a', 64), ("shop/.specify/memory/constitution.md", Constitution), ("shop/specs/001-cart/spec.md", Spec("FR-201")),
             ("shop/specs/001-cart/plan.md", Plan), ("shop/specs/001-cart/tasks.md", Tasks));
+        _explorers.SelectPackAsync("001-cart").GetAwaiter().GetResult();
 
         var cut = Render<ArtifactTraceability>();
 
@@ -106,6 +108,7 @@ public sealed class RequirementsTraceabilityWorkspaceTests : BunitContext
     {
         Import(new string('c', 64), ("shop/.specify/memory/constitution.md", Constitution), ("shop/specs/001-cart/spec.md", Spec("FR-201")),
             ("shop/specs/001-cart/plan.md", Plan), ("shop/specs/001-cart/tasks.md", Tasks));
+        _explorers.SelectPackAsync("001-cart").GetAwaiter().GetResult();
         var plans = new Mock<ITestPlanSuggestionsApiService>();
         (string Project, BirkNext.TestPlanning.PreparedCaseTraceRequest Request)? asked = null;
         var draft = Guid.NewGuid();
@@ -196,6 +199,7 @@ public sealed class RequirementsTraceabilityWorkspaceTests : BunitContext
         cut.WaitForAssertion(() => LatestRequirementIds.Should().Equal("FR-501"));
 
         Import(new string('d', 64), ("b/spec.md", Spec("FR-502")), ("b/plan.md", Plan));
+        _explorers.Select(WorkspaceArtifactType.Specification, _explorers.GetStateAsync(WorkspaceArtifactType.Specification).GetAwaiter().GetResult().Artifacts.Single().Id);
         cut.WaitForAssertion(() => LatestRequirementIds.Should().Equal("FR-502"));
         cut.Find("[data-testid='at-workspace-context']").TextContent.Should().Contain("Project Import");
 
@@ -210,6 +214,9 @@ public sealed class RequirementsTraceabilityWorkspaceTests : BunitContext
     {
         Import(new string('e', 64), ("v1/spec.md", Spec("FR-601")), ("v1/plan.md", Plan));
         Import(new string('f', 64), ("v2/spec.md", Spec("FR-602")), ("v2/plan.md", Plan));
+        var listed = _explorers.GetStateAsync(WorkspaceArtifactType.Specification).GetAwaiter().GetResult().Artifacts;
+        listed.Should().ContainSingle("v1's specification never leaks into the current import's choices");
+        _explorers.Select(WorkspaceArtifactType.Specification, listed.Single().Id);
 
         var cut = Render<ArtifactTraceability>();
 

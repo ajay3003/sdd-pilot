@@ -343,7 +343,7 @@
                 <div class="axh-card axh-choose" role="status" data-testid="artifact-explorer-choose-pack">
                     <h2 class="axh-title">Choose a feature to explore</h2>
                     <p class="axh-text" data-testid="artifact-explorer-pack-candidates">
-                        @(_state.ModuleLabel is { } packModule ? $"Module {packModule}" : WorkspaceName) has @_state.Packs!.Count features (feature packs).
+                        @(_state.ModuleLabel is { } packModule ? $"Module {packModule}" : WorkspaceName) has @_state.Packs!.Count @(_state.Packs!.Count == 1 ? "feature (feature pack)" : "features (feature packs)").
                         Each feature keeps its own documents; shared project documents apply to every feature.
                     </p>
                     <ul class="axh-choices axh-packs">

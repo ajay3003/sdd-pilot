@@ -47,10 +47,15 @@ public sealed class ImplementationReviewWorkspaceTests : BunitContext
             ProjectImportActivationTests.Commit(preview, ProjectImportSourceState.NotDetected));
     }
 
+    /// <summary>The tester chooses the scope's only specification (no specification is ever chosen automatically).</summary>
+    private void ChooseTheSpecification() =>
+        _explorers.Select(WorkspaceArtifactType.Specification, _explorers.GetStateAsync(WorkspaceArtifactType.Specification).GetAwaiter().GetResult().Artifacts.Single().Id);
+
     [Fact]
     public void ImportedProject_WithSpecificationAndTasks_IsReviewed_WithoutASampleProject()
     {
         Import(new string('a', 64), ("shop/specs/001/spec.md", Spec), ("shop/specs/001/tasks.md", Tasks));
+        _explorers.SelectPackAsync("001").GetAwaiter().GetResult();
 
         var cut = Render<TaskToSpecAlignment>();
 
@@ -87,6 +92,7 @@ public sealed class ImplementationReviewWorkspaceTests : BunitContext
     {
         Import(new string('d', 64), ("shop/specs/001/feature.md", Spec), ("shop/specs/001/feature-draft.md", Spec.Replace("Cart", "Checkout")),
             ("shop/specs/001/tasks.md", Tasks));
+        _explorers.SelectPackAsync("001").GetAwaiter().GetResult();
 
         var cut = Render<TaskToSpecAlignment>();
 
@@ -105,11 +111,16 @@ public sealed class ImplementationReviewWorkspaceTests : BunitContext
     public void SwitchingProjects_DropsTheEarlierResult()
     {
         Import(new string('c', 64), ("one/spec.md", Spec), ("one/tasks.md", Tasks));
+        ChooseTheSpecification();
         var cut = Render<TaskToSpecAlignment>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=ir-status]").GetAttribute("data-state").Should().Be("Current"));
         var first = _session.Snapshot!.ProjectName;
 
-        cut.InvokeAsync(() => Import(new string('d', 64), ("two/spec.md", Spec), ("two/tasks.md", Tasks + "- [ ] T003 Add checkout\n")));
+        cut.InvokeAsync(() =>
+        {
+            Import(new string('d', 64), ("two/spec.md", Spec), ("two/tasks.md", Tasks + "- [ ] T003 Add checkout\n"));
+            ChooseTheSpecification();
+        });
 
         cut.WaitForAssertion(() => _session.Snapshot!.ProjectName.Should().NotBe(first));
         _session.Report!.TotalTasks.Should().Be(3);

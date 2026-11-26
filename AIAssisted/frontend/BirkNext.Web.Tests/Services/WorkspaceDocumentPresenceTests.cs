@@ -54,6 +54,7 @@ public sealed class WorkspaceDocumentPresenceTests
         var spec = _repository.SddLifecycle.Revisions[0].RevisionId;
         _persistence.Setup(p => p.LoadDocumentsAsync(Workspace, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new WorkspaceDocumentsDto { Revisions = { [spec] = "# Shop specification\n\n### FR-001: Orders" } });
+        _explorers.Select(WorkspaceArtifactType.Specification, (await _explorers.GetStateAsync(WorkspaceArtifactType.Specification)).Artifacts.Single().Id);
 
         var state = await _explorers.GetStateAsync(WorkspaceArtifactType.Specification);
 

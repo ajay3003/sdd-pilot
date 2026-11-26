@@ -17,6 +17,7 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
     private readonly MockSampleProjectDocumentResolver _documentResolver = new();
     private readonly ScenarioExtractionService _analyzer = new(new ExtractionConfiguration());
     private int _analysisRuns;
+    private readonly BirkNext.Web.Services.Explorers.ArtifactExplorerContext _explorers;
 
     public SpecificationExplorerReviewCountsTests()
     {
@@ -25,8 +26,8 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
         Services.AddSingleton<MarkdownRenderingService>();
         Services.AddSingleton<ISampleProjectDocumentResolver>(_documentResolver);
         Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(_documentResolver);
-        Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(
-            new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(_workspace, _documentResolver, _documentResolver));
+        _explorers = new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(_workspace, _documentResolver, _documentResolver);
+        Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(_explorers);
         var extraction = new Mock<IScenarioExtractionService>();
         extraction.Setup(s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .Returns<string, ExtractionProfile, CancellationToken>((text, profile, token) =>
@@ -46,6 +47,7 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
     public void PersonAdapterAnalysisCountsUniqueEntitiesAndKeepsCandidateDistributionSeparate()
     {
         _documentResolver.SetProjectSpecification("person-adapter", PersonAdapterSpec());
+        _documentResolver.ChooseDocument("person-adapter", WorkspaceArtifactType.Specification, "spec.md");
         _documentResolver.SetSelectedProject("person-adapter");
 
         var cut = Render<SpecificationExplorer>();
@@ -84,7 +86,9 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
     public void ArtifactSwitchReplacesRelationshipsAndCountsWithoutLeakingThePreviousSpecification()
     {
         _documentResolver.SetProjectSpecification("project-a", "# A\n\n## Requirements\n\n- **FR-001**: A MUST hold.\n- **FR-002**: B MUST hold.\n");
+        _documentResolver.ChooseDocument("project-a", WorkspaceArtifactType.Specification, "spec.md");
         _documentResolver.SetProjectSpecification("project-b", "# B\n\n## Requirements\n\n- **FR-101**: C MUST hold.\n");
+        _documentResolver.ChooseDocument("project-b", WorkspaceArtifactType.Specification, "spec.md");
         _documentResolver.SetSelectedProject("project-a");
 
         var cut = Render<SpecificationExplorer>();
@@ -113,6 +117,7 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
     {
         const string spec = "# School attendance\n\n## Requirements\n\n- **FR-001**: The system MUST record absence.\n\n## Clarifications\n\n### Session 2026-04-20\n\n- Q: Does FR-001 include late arrivals? → A: Yes.\n";
         _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "requirements-person.md", null, null, "File", select: true);
+        _explorers.Select(WorkspaceArtifactType.Specification, BirkNext.Web.Services.Explorers.ArtifactExplorerContext.WorkspacePrefix + "requirements-person.md");
 
         var cut = Render<SpecificationExplorer>();
         cut.WaitForAssertion(() => cut.Find("[data-testid='artifact-explorer-file']").TextContent.Should().Be("requirements-person.md"), TimeSpan.FromSeconds(10));

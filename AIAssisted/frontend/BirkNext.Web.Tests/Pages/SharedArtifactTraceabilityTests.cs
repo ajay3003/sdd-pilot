@@ -27,6 +27,7 @@ public sealed class SharedArtifactTraceabilityTests : BunitContext
         {
             fixture.Samples.RegisterProject("person-module");
             fixture.Samples.AddDocument("person-module", WorkspaceArtifactType.Specification, "docs/requirements-school.md", specification);
+            fixture.Samples.ChooseDocument("person-module", WorkspaceArtifactType.Specification, "docs/requirements-school.md");
             await fixture.MutateAndWaitForRebuild(() => fixture.Workspace.CurrentProject = "person-module");
         }
 
@@ -75,6 +76,8 @@ public sealed class SharedArtifactTraceabilityTests : BunitContext
         const string specB = "# Feature Specification\n\n## Requirements\n\n### FR-032 Authoritative B\nCandidate B is authoritative.";
         fixture.Workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, specA, "requirements-a.md", null, null, "File", select: false);
         var revisionB = fixture.Workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, specB, "requirements-school.md", null, null, "File", select: false)!;
+        // Authority never chooses a specification (V8, 2026-11-26): the tester opens the authoritative one; both consumers then read that choice.
+        fixture.ArtifactContext.Select(WorkspaceArtifactType.Specification, ArtifactExplorerContext.WorkspacePrefix + "requirements-school.md");
         await fixture.MutateAndWaitForRebuild(() => fixture.Workspace.SetArtifactAuthority(revisionB.RevisionId, "Approved"));
 
         var resolved = await fixture.ArtifactContext.GetStateAsync(WorkspaceArtifactType.Specification);

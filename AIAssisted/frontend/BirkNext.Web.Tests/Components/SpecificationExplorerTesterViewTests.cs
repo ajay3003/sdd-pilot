@@ -67,11 +67,15 @@ public class SpecificationExplorerTesterViewTests : BunitContext
         packs.Single().DisplayName.Should().Be("Missing Parent Failure Code");
     }
 
-    private IRenderedComponent<ArtifactExplorerHost> RenderHost(params SampleFileDto[] files)
+    /// <summary>Renders the Specification Explorer of the "person" Demo Project with <paramref name="pack"/> chosen by the tester (no pack or
+    /// specification is ever chosen automatically).</summary>
+    private IRenderedComponent<ArtifactExplorerHost> RenderHost(string pack, params SampleFileDto[] files)
     {
         var handler = new DashboardPageTests.SampleProjectsHttpHandler();
         handler.SetProjects(new SampleProjectDto("person", "Person", "PERSON", "", "C:/SampleData/person", true, files));
-        DashboardPageTests.AddCurrentWorkspace(Services, new WorkspaceArtifactRepository { CurrentProject = "person" }, handler);
+        var repository = new WorkspaceArtifactRepository { CurrentProject = "person" };
+        repository.SddLifecycle.PackFocus.Add(new SddPackFocus { WorkspaceScope = "person", Module = BirkNext.Web.Services.Explorers.ArtifactModules.ProjectLevel, Pack = pack });
+        DashboardPageTests.AddCurrentWorkspace(Services, repository, handler);
         return Render<ArtifactExplorerHost>(p => p.Add(x => x.Role, WorkspaceArtifactType.Specification));
     }
 
@@ -80,7 +84,7 @@ public class SpecificationExplorerTesterViewTests : BunitContext
     [Fact]
     public void PrimarySpecification_IsDistinguishedFromSupportingDocuments_AndProvenanceIsUnderDetails()
     {
-        var cut = RenderHost(File("specs/002-barn/spec.md"), File("specs/002-barn/specification.md"));
+        var cut = RenderHost("002-barn", File("specs/002-barn/spec.md"), File("specs/002-barn/specification.md"));
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=artifact-explorer]").GetAttribute("data-status").Should().Be("Loaded"));
         cut.FindAll("[data-testid=artifact-explorer-choose]").Should().BeEmpty("a supporting document never competes with the Spec-Kit spec.md");
@@ -98,7 +102,7 @@ public class SpecificationExplorerTesterViewTests : BunitContext
     [Fact]
     public void ManualImport_IsASecondaryAction_UnderDetails()
     {
-        var cut = RenderHost(File("specs/001-person/spec.md"));
+        var cut = RenderHost("001-person", File("specs/001-person/spec.md"));
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=artifact-explorer]").GetAttribute("data-status").Should().Be("Loaded"));
         cut.Find("[data-testid=artifact-explorer-details] [data-testid=artifact-explorer-import-toggle]").TextContent.Trim()

@@ -306,6 +306,7 @@ public sealed class ProjectEvidenceBindingTests
     {
         SourceAndDocs();
         _repository.SddLifecycle.CurrentProjectImportId = "a";
+        await _explorers.SelectPackAsync("001-person");
 
         var state = await _explorers.GetStateAsync(role);
 
@@ -328,6 +329,7 @@ public sealed class ProjectEvidenceBindingTests
         _repository.SddLifecycle.CurrentProjectImportId = currentImport;
 
         _explorers.CurrentScope.Should().Be("import:a", "the Target Environment Project decides, not the last imported/selected package");
+        await _explorers.SelectPackAsync("001-person");
         (await _explorers.GetStateAsync(WorkspaceArtifactType.Specification)).Selected!.EvidenceSource.Should().Be("M2LB-docs.zip");
         _repository.SddLifecycle.CurrentProjectImportId.Should().Be(currentImport, "the user's current project is never changed");
     }
@@ -354,6 +356,7 @@ public sealed class ProjectEvidenceBindingTests
 
         _explorers.CurrentScope.Should().Be("import:a", "within one application the environment's project still decides");
         _explorers.EnvironmentBoundElsewhere.Should().BeNull("the environment belongs to the chosen application");
+        await _explorers.SelectPackAsync("001-person");
         (await _explorers.GetStateAsync(WorkspaceArtifactType.Specification)).Selected!.EvidenceSource.Should().Be("M2LB-docs.zip");
     }
 
@@ -367,6 +370,7 @@ public sealed class ProjectEvidenceBindingTests
         _repository.SddLifecycle.CurrentProjectImportId = "c";
 
         _explorers.CurrentScope.Should().Be("import:c", "the workspaces follow the application the tester chose");
+        await _explorers.SelectPackAsync("001-orders");
         (await _explorers.GetStateAsync(WorkspaceArtifactType.Specification)).Selected!.SourcePath.Should().Be("specs/001-orders/spec.md");
         _explorers.EnvironmentBoundElsewhere.Should().Be(new EnvironmentBindingElsewhere(Dev.Name, "M2LB"));
         Dev.Project.Should().NotBeNull("following the chosen application never changes the environment's binding");
@@ -468,6 +472,7 @@ public sealed class ProjectEvidenceBindingTests
         ProjectEvidenceResolver.Bind(project, ProjectEvidenceRoles.Documentation, Package(d1), T0);
         ProjectEvidenceResolver.Bind(project, ProjectEvidenceRoles.Documentation, Package(d2), T0);
         Dev.Project = project;
+        _explorers.Select(WorkspaceArtifactType.Specification, (await _explorers.GetStateAsync(WorkspaceArtifactType.Specification)).Artifacts.Single().Id);
 
         (await _explorers.GetStateAsync(WorkspaceArtifactType.Constitution)).Selected!.EvidenceSource.Should().Be("M2LB-docs.zip");
         (await _explorers.GetStateAsync(WorkspaceArtifactType.Specification)).Selected!.EvidenceSource.Should().Be("M2LB-docs.zip");

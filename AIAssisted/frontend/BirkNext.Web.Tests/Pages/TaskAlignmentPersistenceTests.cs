@@ -35,6 +35,7 @@ public sealed class TaskAlignmentPersistenceTests : IDisposable
         var preview = ProjectImportActivationTests.Preview(new string('e', 64), false, ("shop/specs/001/spec.md", Spec), ("shop/specs/001/tasks.md", Tasks));
         new ProjectImportActivation(_workspace).Activate(preview, ProjectImportArtifactDiscovery.From(preview),
             ProjectImportActivationTests.Commit(preview, ProjectImportSourceState.NotDetected));
+        _explorers.SelectPackAsync("001").GetAwaiter().GetResult();
     }
 
     public void Dispose()

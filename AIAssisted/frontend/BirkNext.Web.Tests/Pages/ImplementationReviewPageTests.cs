@@ -50,6 +50,7 @@ public sealed class ImplementationReviewPageTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         _samples.Repository = _workspace;
         _samples.SetProjectSpecification(Project, Spec);
+        _samples.ChooseDocument(Project, WorkspaceArtifactType.Specification, "spec.md");
         SetTasks(Tasks);
         _workspace.CurrentProject = Project;
 
