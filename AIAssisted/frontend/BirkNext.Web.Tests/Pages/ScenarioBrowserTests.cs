@@ -165,6 +165,9 @@ public sealed class ScenarioBrowserTests : BunitContext
     public void A_scenario_shows_its_story_requirements_clarification_and_evidence_on_demand_and_hands_the_selection_to_Plan_and_prepare()
     {
         var cut = Open(Spec, Unclear);
+        // Keyboard Home/End move within one list; this checks the flat list (grouping, 2026-11-26, gives each group its own list).
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-list-group]"));
+        cut.Find("[data-testid=mtd-list-group]").Change("None");
         cut.FindAll("[data-testid=mtd-scenario]").Single(e => e.GetAttribute("data-id") == "c-unclear").Click();
         var detail = cut.Find("[data-testid=mtd-detail]");
         detail.QuerySelector("[data-testid=mtd-detail-title]")!.TextContent.Should().Be("US-014 — A report for a closed period");

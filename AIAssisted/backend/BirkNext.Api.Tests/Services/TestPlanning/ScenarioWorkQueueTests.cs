@@ -361,6 +361,71 @@ public sealed class ScenarioWorkQueueTests : IAsyncLifetime, IDisposable
         archived.Reasons.Should().Contain("Finnes også i en arkivert plan");
     }
 
+    // ── Saved test plan membership (2026-11-26) ──
+
+    [Fact]
+    public async Task Membership_names_each_saved_plan_with_its_case_and_follows_archive_restore_and_rename_without_writing()
+    {
+        await using var db = Context();
+        var d = await DiscoverAsync("import:p1", Valid(), PastAge());
+        var service = Service(db);
+        var valid = Id(d, "Valid report");
+        var age = Id(d, "Child past compulsory school age");
+
+        Of(await service.WorkQueuesAsync("import:p1", d.DiscoveryId, default), valid).Coverage.Should().BeNull("no plan: no membership");
+
+        var first = await PlanAsync(service, d, "import:p1", valid);
+        var second = await PlanAsync(service, d, "import:p1", valid, age);
+        var cov = Of(await service.WorkQueuesAsync("import:p1", d.DiscoveryId, default), valid).Coverage!;
+        cov.Memberships.Should().HaveCount(2);
+        cov.ActivePlans.Select(m => m.PlanId).Should().BeEquivalentTo([first.Id, second.Id], "one scenario in two active plans");
+        cov.InActivePlan.Should().BeTrue();
+        var inFirst = cov.Memberships.Single(m => m.PlanId == first.Id);
+        (inFirst.PlanName, inFirst.CaseId, inFirst.Active).Should().Be((first.PlanName, first.Cases.Single().Source.ScenarioId, true));
+        inFirst.SuitePath.Should().Be(PlanStructure.PathOf(first.Suites, first.Cases.Single().SuiteId), "the saved suite path, not a constructed one");
+        Of(await service.WorkQueuesAsync("import:p1", d.DiscoveryId, default), age).Coverage!.ActivePlans.Select(m => m.PlanId).Should().Equal(second.Id);
+
+        // Read-only: computing membership never writes a revision.
+        (await service.RevisionsAsync(first.Id, default)).Should().HaveCount(1);
+
+        // Archive: the plan is no longer active membership, but is kept as archived history.
+        await service.ArchiveAsync(first.Id, new TestPlanLifecycleRequest(first.Revision), "lead", default);
+        cov = Of(await service.WorkQueuesAsync("import:p1", d.DiscoveryId, default), valid).Coverage!;
+        cov.ActivePlans.Select(m => m.PlanId).Should().Equal(second.Id);
+        cov.Memberships.Single(m => m.PlanId == first.Id).Active.Should().BeFalse();
+
+        await service.ArchiveAsync(second.Id, new TestPlanLifecycleRequest(second.Revision), "lead", default);
+        cov = Of(await service.WorkQueuesAsync("import:p1", d.DiscoveryId, default), valid).Coverage!;
+        (cov.InActivePlan, cov.ArchivedOnly).Should().Be((false, true), "archived only: history, not active membership");
+
+        // Restore and rename: the current name is shown.
+        var restored = await service.RestoreFromArchiveAsync(first.Id, new TestPlanLifecycleRequest((await service.DraftAsync(first.Id, default)).Revision), "lead", default);
+        var current = await service.DraftAsync(first.Id, default);
+        await service.SaveAsync(first.Id, new SaveTestPlanDraftRequest
+        {
+            BaseRevision = current.Revision, PlanName = "Skolenærvær – E2E", ScenarioIds = [.. current.Cases.Select(c => c.Source.ScenarioId)], Suites = current.Suites,
+            Cases = [.. current.Cases.Select(c => new TestCaseHumanPart { ScenarioId = c.Source.ScenarioId, SuiteId = c.SuiteId, Edits = c.Edits })],
+        }, "lead", default);
+        cov = Of(await service.WorkQueuesAsync("import:p1", d.DiscoveryId, default), valid).Coverage!;
+        cov.ActivePlans.Single().PlanName.Should().Be("Skolenærvær – E2E", "a renamed plan shows its current name");
+    }
+
+    [Fact]
+    public async Task An_excluded_case_is_not_membership_and_another_project_never_shows_this_projects_plans()
+    {
+        await using var db = Context();
+        var d = await DiscoverAsync("import:p1", Valid());
+        var service = Service(db);
+        var valid = Id(d, "Valid report");
+        var plan = await PlanAsync(service, d, "import:p1", valid);
+        var caseId = plan.Cases.Single().Source.ScenarioId;
+        await service.ReviewAsync(plan.Id, new ReviewTestCaseRequest(plan.Revision, caseId, TestCaseReviewState.Excluded, "ikke relevant"), "lead", default);
+        Of(await service.WorkQueuesAsync("import:p1", d.DiscoveryId, default), valid).Coverage!.Memberships.Should().BeEmpty("an excluded case is a decision, not membership");
+
+        var other = await DiscoverAsync("import:other", Valid());
+        Of(await service.WorkQueuesAsync("import:other", other.DiscoveryId, default), Id(other, "Valid report")).Coverage.Should().BeNull("plans of another project are never shown");
+    }
+
     [Fact]
     public async Task An_excluded_case_is_a_decision_not_coverage()
     {

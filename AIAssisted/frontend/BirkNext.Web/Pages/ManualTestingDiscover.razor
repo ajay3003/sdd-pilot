@@ -616,6 +616,17 @@
                                     <option value="">Alle (automatiske tester)</option>
                                     @foreach (var (key, label) in TC.Filters) { <option value="@key" selected="@(_filter.Tech == key)">@label</option> }
                                 </select>
+                                <select class="msb-select" aria-label="Testplanstatus" @onchange="e => Set(_filter with { PlanStatus = Opt(e) })" data-testid="mtd-filter-plan-status">
+                                    <option value="">Alle (testplanstatus)</option>
+                                    @foreach (var (key, label) in S.PlanStatusFilters) { <option value="@key" selected="@(_filter.PlanStatus == key)" disabled="@(key is "inchosen" or "notinchosen" && _filter.Plan is null)">@label</option> }
+                                </select>
+                                @if (S.ActivePlans(_items) is { Count: > 0 } planChoices)
+                                {
+                                    <select class="msb-select" aria-label="Testplan" @onchange="SetPlanFilter" data-testid="mtd-filter-plan">
+                                        <option value="">Velg testplan …</option>
+                                        @foreach (var (pid, pname) in planChoices) { <option value="@pid" selected="@(_filter.Plan == pid)">@pname</option> }
+                                    </select>
+                                }
                             </div>
                         }
 
@@ -698,6 +709,14 @@
                             <h2 class="msb-detail-title" data-testid="mtd-detail-title">@W.DetailTitle(active)</h2>
                             <span class="msb-status msb-tone-@active.Status.Tone">@active.Status.Text</span>
                         </div>
+                        @* Scenario details redesign (2026-11-26): what to expect, where the scenario is planned and what to do next come first; classification,
+                           developer tests, readiness criteria and the source follow, the technical parts on demand. *@
+                        <section class="mtw-section mtw-expected" aria-label="Forventet resultat" data-testid="mtd-expected">
+                            <span class="mtp-ctx-label">Forventet resultat</span>
+                            @if (c.ExpectedBehaviour is { Length: > 0 } expected) { <p class="mtw-expected-text" data-testid="mtd-expected-text">@expected</p> }
+                            else { <p class="msb-tone-warn" data-testid="mtd-expected-missing">Forventet resultat må avklares — kilden oppgir det ikke.</p> }
+                        </section>
+                        @DrawerPlans(active)
                         @ScenarioTypeSection(active)
                         @if (!string.Equals(W.RowTitle(active), c.Title, StringComparison.Ordinal) && !string.Equals(active.Title, c.Title, StringComparison.Ordinal)) { <p class="msb-original" data-testid="mtd-detail-original">Opprinnelig tittel: @c.Title</p> }
                         <p class="msb-chips"><span>@active.TypeLabel</span><span>@active.Area</span>@if (active.Relevance != S.Relevance.Manual) { <span>@(active.Relevance == S.Relevance.Both ? "Manuell + teknisk" : "Teknisk")</span> }</p>
@@ -901,8 +920,11 @@
 
                         var checklist = Checklist(active);
                         var met = checklist.Count(x => x.State == Tri.Yes);
-                        <section class="mtw-section" aria-label="Klar til kjøring" data-testid="mtd-readiness">
-                            <span class="mtp-ctx-label">Klar til kjøring? <span class="mtw-met" data-testid="mtd-readiness-count">@met / @checklist.Count</span></span>
+                        <section class="mtw-section" aria-label="Testberedskap" data-testid="mtd-readiness">
+                            <details class="mtw-ready-details" data-testid="mtd-readiness-details">
+                            <summary><span class="mtp-ctx-label">Testberedskap</span> <span class="mtw-met" data-testid="mtd-readiness-count">@met / @checklist.Count</span>
+                                <span class="mt-muted msb-small">kriterier oppfylt · @(met == checklist.Count ? "Klar til kjøring" : "Ikke klar til kjøring")</span>
+                                <span class="msb-link msb-small mtw-ready-more">Vis kriterier og mangler</span></summary>
                             <ul class="mtw-checklist">
                                 @foreach (var item in checklist)
                                 {
@@ -914,6 +936,7 @@
                                 }
                             </ul>
                             <span class="mt-muted msb-small">Fra det kilden og lagrede data viser for scenarioet. Ukjent teller aldri som oppfylt. Hvert testtilfelle har sin egen status i Planlegg og klargjør.</span>
+                            </details>
                             @if (active.Work is { ExecutionNeeds.Count: > 0 } needs) { <p class="msb-exec" data-testid="mtd-detail-exec"><strong>Før kjøring trengs:</strong> @string.Join("; ", needs.ExecutionNeeds)</p> }
                         </section>
 
@@ -2131,6 +2154,7 @@
                 <button type="button" class="msb-link" @onclick="() => SetAllGroups(ScenarioGrouping.Paths(tree), true)" data-testid="mtd-groups-expand">Vis alle grupper</button>
                 <button type="button" class="msb-link" @onclick="() => SetAllGroups(ScenarioGrouping.Paths(tree), false)" data-testid="mtd-groups-collapse">Skjul alle</button>
             }
+            <span class="mtg-plan-summary mt-muted msb-small" data-testid="mtd-plan-summary">@shown.Count scenarioer · @shown.Count(S.InActivePlan) i aktive testplaner</span>
             <span class="mtg-summary mt-muted msb-small" data-testid="mtd-selection-summary">
                 @(_selected.Count) valgt totalt · @inView i gjeldende visning@(_selected.Count > inView ? $" · {_selected.Count - inView} utenfor gjeldende filter" : "")
             </span>
@@ -2165,7 +2189,7 @@
                 }
                 else
                 {
-                    <ul class="msb-rows mtg-rows" role="listbox" aria-multiselectable="true" aria-label="@g.Label" tabindex="0" @onkeydown="e => KeyAsync(e, rows)" data-testid="mtd-sgroup-rows">
+                    <ul class="msb-rows mtg-rows" role="listbox" aria-multiselectable="true" aria-label="@g.Label" tabindex="0" @onkeydown="e => KeyAsync(e, rows)" data-testid="mtd-rows">
                         @foreach (var i in rows) { @Row(i) }
                     </ul>
                     @if (g.Items.Count > limit)
@@ -2177,11 +2201,124 @@
         </section>
     };
 
+    /// <summary>The drawer's «Testplaner» (2026-11-26): the scenario's saved plan membership from the server (active first, archived on demand),
+    /// each with its suite and case, and ONE primary action from the real state (open the case, or prepare one). Nothing is created on open.</summary>
+    private RenderFragment DrawerPlans(S.Item i) => __builder =>
+    {
+        var all = S.Memberships(i);
+        var active = all.Where(m => m.Active).ToList();
+        var archived = all.Where(m => !m.Active).ToList();
+        <section class="mtw-section mtw-plans @(active.Count > 0 ? "is-in-plan" : null)" aria-label="Testplaner" data-testid="mtd-plans">
+            <span class="mtp-ctx-label">Testplaner</span>
+            @if (i.Work is null)
+            {
+                <p class="mt-muted msb-small" data-testid="mtd-plans-unknown">Testplankoblingene er ikke hentet ennå.</p>
+            }
+            else if (active.Count == 0)
+            {
+                <p class="msb-small" data-testid="mtd-plans-none">Ikke lagt til i en aktiv testplan.</p>
+            }
+            else
+            {
+                <ul class="mtw-plan-list">
+                    @foreach (var m in active)
+                    {
+                        <li data-testid="mtd-plans-item" data-plan="@m.PlanId">
+                            <a class="mtw-plan-name" href="@($"{M.PlanRoute}?draft={m.PlanId}")" title="@m.PlanName" data-testid="mtd-plans-plan">@m.PlanName</a>
+                            <span class="mt-muted msb-small">@(m.SuitePath is { } sp ? $"{sp} · " : "")@m.CaseTitle · @ReviewLabel(m.Review)</span>
+                            <a class="msb-small" href="@($"{M.PlanRoute}?draft={m.PlanId}&case={Uri.EscapeDataString(m.CaseId)}")" data-testid="mtd-plans-case">Åpne testtilfelle</a>
+                        </li>
+                    }
+                </ul>
+            }
+            @if (archived.Count > 0)
+            {
+                <details class="mtw-why" data-testid="mtd-plans-archived"><summary>Arkiverte testplaner (@archived.DistinctBy(m => m.PlanId).Count())</summary>
+                    <ul class="mtw-plan-list">@foreach (var m in archived) { <li><a href="@($"{M.PlanRoute}?draft={m.PlanId}")">@m.PlanName</a> <span class="mt-muted msb-small">@m.CaseTitle</span></li> }</ul>
+                </details>
+            }
+            <div class="mtw-plans-actions">
+                @if (active.Count == 1)
+                {
+                    var only = active[0];
+                    <a class="btn btn-primary btn-sm" href="@($"{M.PlanRoute}?draft={only.PlanId}&case={Uri.EscapeDataString(only.CaseId)}")" data-testid="mtd-plans-primary">Åpne testtilfelle</a>
+                }
+                else if (active.Count > 1)
+                {
+                    <a class="btn btn-primary btn-sm" href="@($"{M.PlanRoute}?draft={active[0].PlanId}&case={Uri.EscapeDataString(active[0].CaseId)}")" data-testid="mtd-plans-primary">Åpne første testtilfelle</a>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="() => PrepareOnlyAsync(i.Id)" data-testid="mtd-plans-primary">Forbered testtilfelle</button>
+                }
+            </div>
+        </section>
+    };
+
+    private static string ReviewLabel(TestCaseReviewState r) => r switch
+    {
+        TestCaseReviewState.Accepted => "godkjent",
+        TestCaseReviewState.Generated => "utkast",
+        TestCaseReviewState.NeedsClarification => "trenger avklaring",
+        _ => "under arbeid",
+    };
+
+    // ── Saved test plan membership on the row (2026-11-26) ───────────────────────────────────────────────────────────────────────────────
+    // Only from the server's stored plans. Nothing is shown while the work view is not loaded (never a false «Ikke i testplan»).
+    private string? _plansOpenFor;
+
+    /// <summary>The chosen plan for «I/Ikke i valgt testplan»; clearing it also clears those two statuses (they need a plan).</summary>
+    private void SetPlanFilter(ChangeEventArgs e)
+    {
+        var plan = Guid.TryParse(e.Value?.ToString(), out var id) ? id : (Guid?)null;
+        Set(_filter with { Plan = plan, PlanStatus = plan is null && _filter.PlanStatus is "inchosen" or "notinchosen" ? null : _filter.PlanStatus });
+    }
+
+    private RenderFragment PlanLine(S.Item i) => __builder =>
+    {
+        if (i.Work is null) return;
+        var all = S.Memberships(i);
+        var active = all.Where(m => m.Active).DistinctBy(m => m.PlanId).ToList();
+        var open = _plansOpenFor == i.Id;
+        <span class="mtw-row-plans @(active.Count > 0 ? "is-in-plan" : all.Count > 0 ? "is-archived" : "is-none")" data-testid="mtd-scenario-plans" data-plans="@active.Count">
+            @if (active.Count > 0)
+            {
+                var first = active[0];
+                <span class="mtw-plan-icon" aria-hidden="true">▤</span>
+                <a class="mtw-plan-name" href="@($"{M.PlanRoute}?draft={first.PlanId}&case={Uri.EscapeDataString(first.CaseId)}")" title="@first.PlanName" @onclick:stopPropagation="true" data-testid="mtd-scenario-plan">@first.PlanName</a>
+                <button type="button" class="msb-link mtw-plan-more" aria-expanded="@(open ? "true" : "false")" @onclick:stopPropagation="true" @onclick="() => _plansOpenFor = open ? null : i.Id" data-testid="mtd-scenario-plans-more">
+                    @(active.Count > 1 ? $"+{active.Count - 1} plan{(active.Count == 2 ? "" : "er")}" : "Se testplaner")</button>
+            }
+            else if (all.Count > 0)
+            {
+                <button type="button" class="msb-link mtw-plan-more" aria-expanded="@(open ? "true" : "false")" @onclick:stopPropagation="true" @onclick="() => _plansOpenFor = open ? null : i.Id" data-testid="mtd-scenario-plans-more">Kun i arkivert testplan</button>
+            }
+            else
+            {
+                <span data-testid="mtd-scenario-no-plan">Ikke i testplan</span>
+            }
+        </span>
+        @if (open && all.Count > 0)
+        {
+            <span class="mtw-plan-pop" role="group" aria-label="Testplaner for scenarioet" @onclick:stopPropagation="true" data-testid="mtd-plan-pop">
+                <span class="mtw-plan-pop-h">@(active.Count > 0 ? $"Ligger i {active.Count} aktiv{(active.Count == 1 ? "" : "e")} testplan{(active.Count == 1 ? "" : "er")}" : "Bare i arkiverte testplaner")</span>
+                @foreach (var m in all)
+                {
+                    <span class="mtw-plan-pop-row @(m.Active ? null : "is-archived")" data-testid="mtd-plan-pop-row" data-plan="@m.PlanId" data-active="@(m.Active ? "true" : "false")">
+                        <a href="@($"{M.PlanRoute}?draft={m.PlanId}")" data-testid="mtd-plan-pop-plan">@m.PlanName</a>@(m.Active ? "" : " (arkivert)")
+                        <span class="mt-muted msb-small">@(m.SuitePath is { } sp ? $"Testgruppe: {sp} · " : "")@m.CaseTitle</span>
+                        <a class="msb-small" href="@($"{M.PlanRoute}?draft={m.PlanId}&case={Uri.EscapeDataString(m.CaseId)}")" data-testid="mtd-plan-pop-case">Åpne testtilfelle</a>
+                    </span>
+                }
+            </span>
+        }
+    };
+
     /// <summary>One scenario row (the same row in the flat list and inside a group).</summary>
     private RenderFragment Row(S.Item i) => __builder =>
     {
         var selected = _selected.Contains(i.Id);
-                        <li id="@($"msb-row-{i.Id}")" role="option" aria-selected="@(selected ? "true" : "false")" class="msb-row mtw-ac-row @(i.Id == _active ? "is-active" : null) @(selected ? "is-selected" : null)"
+                        <li id="@($"msb-row-{i.Id}")" role="option" aria-selected="@(selected ? "true" : "false")" class="msb-row mtw-ac-row @(i.Id == _active ? "is-active" : null) @(selected ? "is-selected" : null) @(S.InActivePlan(i) ? "is-in-plan" : null)"
                             data-testid="mtd-scenario" data-id="@i.Id" data-relevance="@i.Relevance" @onclick="() => Open(i.Id)">
                             <input type="checkbox" class="msb-check" checked="@selected" aria-label="@($"Velg {i.Title}")" @onclick:stopPropagation="true"
                                    @onchange="() => ToggleAsync(i.Id)" data-testid="mtd-select" />
@@ -2191,7 +2328,7 @@
                                     <span class="mtw-row-label" data-testid="mtd-scenario-label">@W.ScenarioLabel(i)@(_filter.Story is null ? $" · {W.StoryLabel(rs)}" : "")</span>
                                 }
                                 <span class="msb-row-title" data-testid="mtd-scenario-title">@W.RowTitle(i)</span>
-                                <span class="msb-row-meta">@i.Area@(i.Candidate.Story?.Priority is { } pri ? $" · {pri}" : "")@(i.Relevance switch { S.Relevance.Technical => " · teknisk", S.Relevance.Both => " · manuell + teknisk", _ => i.KindDecided ? " · manuell" : "" })@(i.KindDecided ? " (valgt)" : "")@if (i.Tech is { } techState && TC.ListTag(techState) is { } techTag) { <span class="mtw-tech-tag is-@(techState.ToString().ToLowerInvariant())" data-testid="mtd-scenario-tech"> · @techTag</span> }<span class="msb-approach" title="@string.Join(" ", i.Suitability.Approaches.Select(a => a.Reason))" data-testid="mtd-scenario-approach"> · @string.Join(" · ", i.Suitability.Approaches.Take(2).Select(a => TestDesignAdvisor.ApproachLabel(a.Approach)))</span></span>
+                                <span class="msb-row-meta">@i.Area@(i.Candidate.Story?.Priority is { } pri ? $" · {pri}" : "")@(i.Relevance switch { S.Relevance.Technical => " · teknisk", S.Relevance.Both => " · manuell + teknisk", _ => i.KindDecided ? " · manuell" : "" })@(i.KindDecided ? " (valgt)" : "")@if (i.Tech is { } techState && TC.ListTag(techState) is { } techTag) { <span class="mtw-tech-tag is-@(techState.ToString().ToLowerInvariant())" data-testid="mtd-scenario-tech"> · @techTag</span> }<span class="msb-approach" title="@string.Join(" ", i.Suitability.Approaches.Select(a => a.Reason))" data-testid="mtd-scenario-approach"> · Foreslått: @string.Join(" · ", i.Suitability.Approaches.Take(2).Select(a => TestDesignAdvisor.ApproachLabel(a.Approach)))</span></span>
                                 @if (i.TypeResult is { } rowType && ScenarioTypeClassifier.RowLabel(rowType) is { } typeLabel)
                                 {
                                     <span class="mtw-type-tag is-@rowType.Type.ToString().ToLowerInvariant()" data-testid="mtd-scenario-type" data-type="@rowType.Type">@typeLabel</span>
@@ -2200,6 +2337,7 @@
                                 {
                                     <span class="mtw-row-reqs" data-testid="mtd-scenario-reqs">@foreach (var r in i.Candidate.RequirementIds.Take(4)) { <span class="mtw-fr">@r</span> }@if (i.Candidate.RequirementIds.Count > 4) { <span class="mtw-fr is-more">+@(i.Candidate.RequirementIds.Count - 4)</span> }</span>
                                 }
+                                @PlanLine(i)
                             </span>
                             @if (i.Prepared is { Cases: > 0 } prep) { <span class="msb-count" title="Testtilfeller i lagrede planer">@prep.Cases</span> }
                             <span class="msb-status msb-tone-@i.Status.Tone" data-testid="mtd-scenario-status">@i.Status.Text</span>

@@ -230,7 +230,36 @@ public static partial class ScenarioBrowserPresentation
     /// <summary>All filters compose. <see cref="Queue"/> null = every scenario (Finn og forstå starts on <see cref="DefaultView"/>).</summary>
     public sealed record Filter(string Query = "", string? Area = null, string? Type = null, string? Status = null, string? Story = null, string? Requirement = null, bool Technical = false, bool All = false,
         ScenarioWorkQueue? Queue = null, string? Priority = null, ExecutionApproach? Approach = null, bool OnlyTechnical = false, string? Tech = null,
-        string[]? Identities = null, string? Selection = null, string? ScenarioType = null, string? ImplementationStatus = null, string? TestLevel = null);
+        string[]? Identities = null, string? Selection = null, string? ScenarioType = null, string? ImplementationStatus = null, string? TestLevel = null,
+        string? PlanStatus = null, Guid? Plan = null);
+
+    // ── Saved test plan membership (2026-11-26) ──
+    // From the server's stored plans (ScenarioCaseCoverage.Memberships), never from a selection, a prepared-case count or a developer test.
+
+    /// <summary>«Testplanstatus»: in an active plan, not in one, only archived; «in/not in the chosen plan» need <see cref="Filter.Plan"/>.</summary>
+    public static readonly IReadOnlyList<(string Key, string Label)> PlanStatusFilters =
+    [
+        ("inplan", "I aktiv testplan"), ("notinplan", "Ikke i aktiv testplan"), ("archived", "Kun arkivert"), ("inchosen", "I valgt testplan"), ("notinchosen", "Ikke i valgt testplan"),
+    ];
+
+    public static IReadOnlyList<ScenarioPlanMembership> Memberships(Item i) => i.Work?.Coverage?.Memberships ?? [];
+
+    public static bool InActivePlan(Item i) => Memberships(i).Any(m => m.Active);
+
+    public static bool MatchesPlanStatus(Item i, string? status, Guid? plan) => status switch
+    {
+        null => true,
+        "inplan" => InActivePlan(i),
+        "notinplan" => !InActivePlan(i),
+        "archived" => Memberships(i) is { Count: > 0 } ms && ms.All(m => !m.Active),
+        "inchosen" => plan is { } p && Memberships(i).Any(m => m.Active && m.PlanId == p),
+        "notinchosen" => plan is { } p2 && !Memberships(i).Any(m => m.Active && m.PlanId == p2),
+        _ => true,
+    };
+
+    /// <summary>The project's active plans that hold at least one scenario of the list (for the «Testplan» chooser), by current name.</summary>
+    public static IReadOnlyList<(Guid Id, string Name)> ActivePlans(IEnumerable<Item> items) =>
+        [.. items.SelectMany(Memberships).Where(m => m.Active).DistinctBy(m => m.PlanId).OrderBy(m => m.PlanName, StringComparer.CurrentCultureIgnoreCase).Select(m => (m.PlanId, m.PlanName))];
 
     /// <summary>Type-group keys besides <see cref="ScenarioRequirementType"/>: a requirement without an acceptance scenario, and proposals that are
     /// not acceptance scenarios of the specification (contracts, code, flows). Neither is part of the scenario-type classification.</summary>
@@ -287,7 +316,7 @@ public static partial class ScenarioBrowserPresentation
 
     /// <summary>Filters behind «Flere filtre» that are set (status, type, user story, requirement, priority).</summary>
     public static int AdvancedFilterCount(Filter f) =>
-        new[] { f.Status, f.Type, f.Story, f.Requirement, f.Priority, f.Approach?.ToString(), f.Tech, f.ScenarioType, f.ImplementationStatus, f.TestLevel }.Count(v => v is not null);
+        new[] { f.Status, f.Type, f.Story, f.Requirement, f.Priority, f.Approach?.ToString(), f.Tech, f.ScenarioType, f.ImplementationStatus, f.TestLevel, f.PlanStatus }.Count(v => v is not null);
 
     /// <summary>Whether search or any filter narrows the view (the queue and «Vis teknisk innhold» are views, not filters).</summary>
     public static bool HasFilters(Filter f) => f.Query.Length > 0 || f.Area is not null || AdvancedFilterCount(f) > 0 || f.Identities is not null;
@@ -329,6 +358,7 @@ public static partial class ScenarioBrowserPresentation
                 : string.Equals(i.Candidate.Story?.Priority, f.Priority, StringComparison.OrdinalIgnoreCase)))
             && (f.Approach is not { } approach || i.Suitability.Has(approach))
             && (f.Tech is null || i.Tech is { } tech && TechnicalCoveragePresentation.Matches(tech, f.Tech))
+            && MatchesPlanStatus(i, f.PlanStatus, f.Plan)
             && words.All(w => $"{i.Title} {i.Candidate.Title} {i.Candidate.Purpose} {i.Area} {string.Join(' ', i.Candidate.RequirementIds)}".Contains(w, StringComparison.CurrentCultureIgnoreCase));
         bool InQueue(Item i) => f.Queue is not { } q || i.In(q);
         var shown = items.Where(i => InQueue(i) && Match(i)).ToList();

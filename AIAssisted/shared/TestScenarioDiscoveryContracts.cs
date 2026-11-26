@@ -474,8 +474,19 @@ public sealed record ScenarioCaseCoverage
     public int Conflicts { get; init; }
     /// <summary>The active plans holding current cases of the scenario.</summary>
     public List<Guid> Plans { get; init; } = [];
+    /// <summary>Saved test plan membership (2026-11-26): every current case of the scenario in a saved plan — active and archived — with the
+    /// plan's CURRENT name, the case and its suite path. Read from the stored plans by the same identity match as the counts; never inferred from
+    /// a title, a selection or a developer test.</summary>
+    public List<ScenarioPlanMembership> Memberships { get; init; } = [];
     [JsonIgnore] public int Current => Draft + InProgress + Approved;
+    /// <summary>Distinct active plans (one scenario may have several cases in one plan).</summary>
+    [JsonIgnore] public IReadOnlyList<ScenarioPlanMembership> ActivePlans => [.. Memberships.Where(m => m.Active).DistinctBy(m => m.PlanId)];
+    [JsonIgnore] public bool InActivePlan => Memberships.Any(m => m.Active);
+    [JsonIgnore] public bool ArchivedOnly => Memberships.Count > 0 && Memberships.All(m => !m.Active);
 }
+
+/// <summary>One saved case of a scenario in one plan: where it lives and how to open it.</summary>
+public sealed record ScenarioPlanMembership(Guid PlanId, string PlanName, bool Active, string CaseId, string CaseTitle, string? SuitePath, TestCaseReviewState Review);
 
 /// <summary>One scenario's place in the work queues, with plain-Norwegian reasons (no score) and what stands between it and execution.</summary>
 public sealed record ScenarioWorkItem

@@ -62,6 +62,9 @@ public sealed partial class TestPlanSuggestionService
                     continue;
                 }
                 if (!counts.TryGetValue(target.CandidateId, out var t)) counts[target.CandidateId] = t = new Tally();
+                if (counted)
+                    t.Memberships.Add(new ScenarioPlanMembership(plan.Id, plan.PlanName, active, c.Source.ScenarioId, c.EffectiveTitle,
+                        c.SuiteId is { } suite && plan.Suites.Any(s => s.Id == suite) ? PlanStructure.PathOf(plan.Suites, suite) : null, c.Review));
                 if (!active) { if (counted) t.Archived++; continue; }
                 switch (c.Review)
                 {
@@ -89,11 +92,13 @@ public sealed partial class TestPlanSuggestionService
     {
         public int Draft, InProgress, Approved, Excluded, Historical, Archived, SourceChanged, Conflicts;
         public HashSet<Guid> Plans { get; } = [];
+        public List<ScenarioPlanMembership> Memberships { get; } = [];
 
         public ScenarioCaseCoverage ToCoverage() => new()
         {
             Draft = Draft, InProgress = InProgress, Approved = Approved, Excluded = Excluded, Historical = Historical, Archived = Archived,
             SourceChanged = SourceChanged, Conflicts = Conflicts, Plans = [.. Plans.Order()],
+            Memberships = [.. Memberships.OrderBy(m => m.Active ? 0 : 1).ThenBy(m => m.PlanName, StringComparer.CurrentCultureIgnoreCase).ThenBy(m => m.CaseId, StringComparer.Ordinal)],
         };
     }
 }

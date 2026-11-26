@@ -1053,3 +1053,21 @@ a.mto-kpi:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 
 .mtg-children { padding-bottom: .3rem; }
 .mtg-rows { margin: 0 .5rem .5rem; }
 .mtg-group .msb-more { margin: 0 .6rem .6rem; }
+
+/* Saved test plan membership (2026-11-26): ONE subtle turquoise surface for a scenario in one or more ACTIVE plans — not approval (green),
+   not coverage, not execution. It covers the whole row and survives hover; the active row keeps its blue bar, focus keeps its outline. */
+.msb-page { --mt-in-plan-bg: #e8f8f8; --mt-in-plan-border: #8bd2d0; --mt-in-plan-accent: #0f766e; }
+@media (prefers-color-scheme: dark) { .msb-page { --mt-in-plan-bg: #0f3534; --mt-in-plan-border: #2b7a76; --mt-in-plan-accent: #5eead4; } }
+.msb-row.is-in-plan { background: var(--mt-in-plan-bg); box-shadow: inset 0 0 0 1px var(--mt-in-plan-border); }
+.msb-row.is-in-plan:hover { background: color-mix(in srgb, var(--mt-in-plan-bg) 82%, var(--msb-accent) 6%); }
+.msb-row.is-in-plan.is-active { background: color-mix(in srgb, var(--mt-in-plan-bg) 88%, var(--msb-accent) 10%); box-shadow: inset 3px 0 0 var(--msb-accent), inset 0 0 0 1px var(--mt-in-plan-border); }
+.mtw-row-plans { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-top: .15rem; font-size: .8rem; min-width: 0; }
+.mtw-row-plans.is-none, .mtw-row-plans.is-archived { color: var(--clr-text-muted, #57606a); }
+.mtw-plan-icon { color: var(--mt-in-plan-accent); }
+.mtw-plan-name { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--mt-in-plan-accent); }
+.mtw-plan-more { font-size: .8rem; }
+.mtw-plan-pop { display: grid; gap: .35rem; margin-top: .35rem; padding: .5rem .65rem; border: 1px solid var(--mt-in-plan-border); border-radius: 8px; background: var(--msb-surface); cursor: default; }
+.mtw-plan-pop-h { font-weight: 600; font-size: .82rem; }
+.mtw-plan-pop-row { display: flex; flex-wrap: wrap; gap: .2rem .6rem; align-items: baseline; font-size: .84rem; }
+.mtw-plan-pop-row.is-archived { opacity: .8; }
+.mtg-plan-summary { white-space: nowrap; }

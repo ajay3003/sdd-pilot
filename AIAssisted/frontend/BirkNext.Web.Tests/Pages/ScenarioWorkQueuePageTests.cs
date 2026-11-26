@@ -110,6 +110,9 @@ public sealed class ScenarioWorkQueuePageTests : BunitContext
     public void Queues_compose_with_the_technical_preference_and_search()
     {
         var cut = Open(View());
+        // The recommended queue's rank order is checked as one flat list (grouping, 2026-11-26, would group it by user story).
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-list-group]"));
+        cut.Find("[data-testid=mtd-list-group]").Change("None");
 
         cut.Find("[data-testid=mtd-kind-view-option][data-view=All]").Click();
         Rows(cut).Should().Equal(["c-first", "c-second", "c-auth", "c-smoke"]);
@@ -240,5 +243,103 @@ public sealed class ScenarioWorkQueuePageTests : BunitContext
         counts[Q.NeedsClarification].Should().Be(666);
         all.Should().Be(2000);
         watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(30), "hang guard only; the measured cost is reported from the real M2LB data");
+    }
+
+    // ── Saved test plan membership on the rows (2026-11-26) ───────────────────────────────────────────────────────────────────────────────
+
+    private static readonly Guid PlanA = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001"), PlanB = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002"), PlanOld = Guid.Parse("cccccccc-0000-0000-0000-000000000003");
+
+    private static ScenarioWorkQueueView MemberView() => View() with
+    {
+        Items =
+        [
+            .. View().Items.Where(i => i.CandidateId is not ("c-done" or "c-changed")),
+            W(Done, [Q.Prepared], coverage: new ScenarioCaseCoverage
+            {
+                Draft = 1, Approved = 1, Plans = [PlanA, PlanB],
+                Memberships =
+                [
+                    new(PlanA, "Skolenærvær – E2E", true, "case-1", "Gyldig rapport", "Ende til ende / Rapportering", TestCaseReviewState.Accepted),
+                    new(PlanB, "CDC – Integrasjon med et svært langt navn", true, "case-9", "Gyldig rapport", null, TestCaseReviewState.Generated),
+                ],
+            }),
+            W(Changed, [Q.Prepared], coverage: new ScenarioCaseCoverage { Archived = 1, Memberships = [new(PlanOld, "Gammel plan", false, "case-3", "Endret", null, TestCaseReviewState.Generated)] }),
+        ],
+    };
+
+    [Fact]
+    public void M01_rows_in_an_active_plan_are_turquoise_name_the_saved_plan_and_list_every_plan_on_demand()
+    {
+        var cut = Open(MemberView());
+        cut.Find("[data-testid=mtd-queue][data-queue='All']").Click();
+        cut.Find("[data-testid=mtd-kind-view-option][data-view=All]").Click();
+        string Sel(string id) => $"[data-testid=mtd-scenario][data-id='{id}']";
+
+        var done = cut.Find(Sel("c-done"));
+        done.ClassList.Should().Contain("is-in-plan", "the whole row carries the membership surface");
+        done.QuerySelector("[data-testid=mtd-scenario-plan]")!.TextContent.Should().Be("Skolenærvær – E2E");
+        done.QuerySelector("[data-testid=mtd-scenario-plan]")!.GetAttribute("href").Should().Be($"manual-testing/plan?draft={PlanA}&case=case-1");
+        done.QuerySelector("[data-testid=mtd-scenario-plans-more]")!.TextContent.Trim().Should().Be("+1 plan");
+        cut.Find($"{Sel("c-done")} [data-testid=mtd-scenario-plans-more]").Click();
+        cut.FindAll($"{Sel("c-done")} [data-testid=mtd-plan-pop-row]").Select(r => r.GetAttribute("data-plan")).Should().Equal(PlanA.ToString(), PlanB.ToString());
+        cut.Find($"{Sel("c-done")} [data-testid=mtd-plan-pop-row]").TextContent.Should().Contain("Testgruppe: Ende til ende / Rapportering");
+
+        var archived = cut.Find(Sel("c-changed"));
+        archived.ClassList.Should().NotContain("is-in-plan", "archived-only membership is history, not active membership");
+        archived.QuerySelector("[data-testid=mtd-scenario-plans-more]")!.TextContent.Should().Be("Kun i arkivert testplan");
+        cut.Find(Sel("c-first")).ClassList.Should().NotContain("is-in-plan");
+        cut.Find(Sel("c-first")).QuerySelector("[data-testid=mtd-scenario-no-plan]")!.TextContent.Should().Be("Ikke i testplan");
+    }
+
+    [Fact]
+    public void M02_the_plan_status_filter_and_summary_count_distinct_scenarios_and_combine_with_other_filters()
+    {
+        var cut = Open(MemberView());
+        cut.Find("[data-testid=mtd-queue][data-queue='All']").Click();
+        cut.Find("[data-testid=mtd-kind-view-option][data-view=All]").Click();
+        cut.Find("[data-testid=mtd-plan-summary]").TextContent.Should().Contain("1 i aktive testplaner", "one scenario, however many plans or cases");
+
+        cut.Find("[data-testid=mtd-more-filters]").Click();
+        cut.Find("[data-testid=mtd-filter-plan-status]").Change("inplan");
+        Rows(cut).Should().Equal(["c-done"]);
+        cut.Find("[data-testid=mtd-filter-plan-status]").Change("archived");
+        Rows(cut).Should().Equal(["c-changed"]);
+        cut.Find("[data-testid=mtd-filter-plan-status]").Change("notinplan");
+        Rows(cut).Should().NotContain("c-done").And.Contain(["c-first", "c-changed"]);
+
+        cut.Find("[data-testid=mtd-filter-plan]").Change(PlanB.ToString());
+        cut.Find("[data-testid=mtd-filter-plan-status]").Change("inchosen");
+        Rows(cut).Should().Equal(["c-done"]);
+        cut.Find("[data-testid=mtd-search]").Input("nothing matches this");
+        Rows(cut).Should().BeEmpty("the plan filter combines with search");
+    }
+
+    // ── Scenario details: plans, primary action, expected result once, compact readiness (2026-11-26) ───────────────────────────────────
+
+    [Fact]
+    public void D01_the_drawer_names_the_saved_plans_offers_one_primary_action_and_shows_the_expected_result_once()
+    {
+        var cut = Open(MemberView());
+        cut.Find("[data-testid=mtd-queue][data-queue='All']").Click();
+        cut.Find("[data-testid=mtd-kind-view-option][data-view=All]").Click();
+
+        cut.Find("[data-testid=mtd-scenario][data-id='c-done'] [data-testid=mtd-show-details]").Click(); cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail-title]").Should().NotBeNull()); cut.WaitForState(() => cut.FindAll("[data-testid=mtd-plans]").Count == 1);
+        var drawer = cut.Find("[data-testid=mtd-detail]");
+        drawer.QuerySelectorAll("[data-testid=mtd-plans-item]").Select(li => li.GetAttribute("data-plan")).Should().Equal(PlanA.ToString(), PlanB.ToString());
+        drawer.QuerySelector("[data-testid=mtd-plans-item]")!.TextContent.Should().Contain("Ende til ende / Rapportering").And.Contain("godkjent");
+        drawer.QuerySelector("[data-testid=mtd-plans-primary]")!.TextContent.Should().Be("Åpne første testtilfelle");
+        drawer.QuerySelector("[data-testid=mtd-plans-primary]")!.GetAttribute("href").Should().Be($"manual-testing/plan?draft={PlanA}&case=case-1");
+        drawer.QuerySelectorAll("[data-testid=mtd-expected]").Should().ContainSingle("one primary «Forventet resultat»");
+
+        var readiness = cut.Find("[data-testid=mtd-readiness-details]");
+        readiness.HasAttribute("open").Should().BeFalse("the criteria are on demand");
+        readiness.QuerySelector("summary")!.TextContent.Should().Contain("Testberedskap").And.Contain("kriterier oppfylt");
+
+        cut.Find("[data-testid=mtd-scenario][data-id='c-changed'] [data-testid=mtd-show-details]").Click(); cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail-title]").Should().NotBeNull()); cut.WaitForState(() => cut.FindAll("[data-testid=mtd-plans]").Count == 1);
+        cut.Find("[data-testid=mtd-plans-none]").TextContent.Should().Contain("Ikke lagt til i en aktiv testplan", "archived only is not active membership");
+        cut.Find("[data-testid=mtd-plans-archived] summary").TextContent.Should().Contain("Arkiverte testplaner (1)");
+
+        cut.Find("[data-testid=mtd-scenario][data-id='c-first'] [data-testid=mtd-show-details]").Click(); cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail-title]").Should().NotBeNull()); cut.WaitForState(() => cut.FindAll("[data-testid=mtd-plans]").Count == 1);
+        cut.Find("[data-testid=mtd-plans-primary]").TextContent.Should().Be("Forbered testtilfelle", "no case yet: prepare (nothing is created by opening)");
     }
 }
