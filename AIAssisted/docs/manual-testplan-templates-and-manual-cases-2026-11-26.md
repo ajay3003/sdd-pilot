@@ -95,4 +95,5 @@
 - Targeted runs before commit:
   - backend template, hierarchy and scenario-centric tests: 45/45, plus 5/5 for TestPlanTemplateTests;
   - frontend Planlegg, Testplaner and settings tests: 194/194, including 25 new tests.
-- The full backend TestPlanning/TestEvidence/ImplementationGap suite and the full frontend suite were still running at commit time. Their results follow in a later commit.
+- **Full backend TestPlanning/TestEvidence/ImplementationGap suite:** 673 passed / 3 skipped / 0 failed.
+- **Full frontend suite:** 9,766 / 9,767. The one failure was a real bug found by the suite: the «Fra valgte scenarioer» structure preview was nested inside the «Fra mal» block, so it never showed. It is fixed in a follow-up commit, and the affected tests pass (37/37).

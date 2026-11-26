@@ -228,8 +228,9 @@
                                 </ul>
                             </div>
                         }
-                        @if (draft.WithSelection)
-                        {
+                    }
+                    @if (draft.WithSelection)
+                    {
                             <label class="mtp-field" for="mt-new-plan-structure"><span>Testplanstruktur</span></label>
                             <select id="mt-new-plan-structure" class="form-select form-select-sm mt-new-plan-structure" disabled="@_creating" @onchange="e => draft.Structure = e.Value?.ToString() ?? PlanStructureTemplates.Default" data-testid="mt-new-plan-structure">
                                 @foreach (var (key, label, _) in PlanStructureTemplates.All) { <option value="@key" selected="@(draft.Structure == key)">@label</option> }
@@ -249,7 +250,6 @@
                                     <p class="mt-muted msb-small" data-testid="mt-new-plan-e2e-candidates">E2E-scenarioene er kandidater fra dokumenterte forretningsflyter. Testtilfellene lages som utkast og må gjennomgås.</p>
                                 }
                             </div>
-                        }
                     }
                     @if (_createError is { } ce) { <p class="mt-alert" role="alert" data-testid="mt-new-plan-error">@ce</p> }
                     <div class="mt-new-plan-actions">
