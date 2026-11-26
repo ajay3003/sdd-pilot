@@ -153,3 +153,33 @@ See the section appended below.
 | M | Large lists do not block | PARTIAL (2,015 verified; 12,000 see V2) |
 | N | No history corrupted | VERIFIED (C; the 409 fix prevents overwrites) |
 | O | Both suites green | **NOT MET**: the backend full suite is not green |
+
+## Final rerun (isolated v1env30, all fixes up to `956ce3d7`)
+**Main run, 21/23:** journeys A (up to the step check), D and E pass.
+- **A-step-persisted:** a script fault. The automatic translation now succeeds, so the editor opens in «Norsk», where the step field has another test id. Re-checked in «Original» view: PASS.
+- **Console 409s:** the automatic translate-all now **retries and succeeds** (API log: 409 → 409 → **200**, then the tester's save 200). The two console lines are the browser logging those handled responses; nothing is lost and no error is shown.
+
+**Follow-up on the same instance** (`v1_v9_followup.py`):
+
+| Check | Result |
+|---|---|
+| A-step-persisted (Original view) | PASS |
+| A occurrence recorded Passed | PASS |
+| A result on Testoversikt | PASS |
+| C copy created | PASS |
+| C copy starts NotRun | PASS |
+| C original keeps Passed | PASS |
+| Console | no errors |
+
+**Defect 4, found by journey B in this rerun and FIXED (`6ba944a6`):**
+- After journey D switched module, Finn og forstå for the first module said «Ingen anbefalinger: oppdagelsen er gjort på en eldre kildeversjon enn den gjeldende» and recommended nothing, although no source had changed.
+- **Cause:** the work queue counted any newer discovery of the application as newer source. Discoveries are made per selection.
+- **Now:** a discovery is outdated only by other source versions (repository and snapshot) or by a newer result for the same selection.
+- Backend test; it fails without the fix.
+- Journey B's scenario-only flow was verified in the second run (no phantom case, Blocked recorded). It was not re-run in a browser after this fix.
+
+### Summary of defects found by the V9 browser journeys (all fixed, each with a test that fails without the fix)
+1. 500 on concurrent plan writes → 409 conflict (`7b1eee79`)
+2. New case hidden behind «Klargjør» → opens in the editor (`7b1eee79`)
+3. Automatic translation gave up after a conflict → retries (`956ce3d7`; browser: 409 → 409 → 200)
+4. False «eldre kildeversjon» after a module switch → per-selection currency (`6ba944a6`)
