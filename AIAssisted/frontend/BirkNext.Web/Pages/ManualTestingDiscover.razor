@@ -558,9 +558,17 @@
                         <div class="msb-toolbar" role="search" data-testid="mtd-toolbar">
                             <input type="search" class="msb-search" placeholder="Søk i scenarioer, krav og områder" aria-label="Søk i scenarioer" value="@_filter.Query"
                                    @oninput="e => Set(_filter with { Query = e.Value?.ToString() ?? string.Empty })" data-testid="mtd-search" />
-                            <select class="msb-select" aria-label="Område" @onchange="e => Set(_filter with { Area = Opt(e) })" data-testid="mtd-filter-area">
-                                <option value="">Alle områder</option>
-                                @foreach (var a in _areas) { <option value="@a" selected="@(_filter.Area == a)">@a</option> }
+                            @* V9 (2026-11-26): the main row holds what a tester filters by most — priority and preparation state; the rest is under «Flere filtre». *@
+                            @if (_priorities.Count > 0)
+                            {
+                                <select class="msb-select" aria-label="Prioritet" @onchange="e => Set(_filter with { Priority = Opt(e) })" data-testid="mtd-filter-priority">
+                                    <option value="">Alle prioriteter</option>
+                                    @foreach (var pr in _priorities) { <option value="@pr" selected="@(_filter.Priority == pr)">@(pr == S.NoPriority ? "Prioritet ikke oppgitt" : pr)</option> }
+                                </select>
+                            }
+                            <select class="msb-select" aria-label="Status" @onchange="e => Set(_filter with { Status = Opt(e) })" data-testid="mtd-filter-status">
+                                <option value="">Alle statuser</option>
+                                @foreach (var (key, label) in S.Statuses) { <option value="@key" selected="@(_filter.Status == key)">@label</option> }
                             </select>
                             @{ var advanced = S.AdvancedFilterCount(_filter with { Story = null }); }
                             <button type="button" class="msb-more-filters @(advanced > 0 ? "is-active" : null)" aria-expanded="@(_moreFilters ? "true" : "false")" aria-controls="mtd-more-filters"
@@ -580,12 +588,21 @@
                         {
                             <p class="msb-spec-note" data-testid="mtd-search-elsewhere">@elsewhere treff i andre brukerhistorier. <button type="button" class="msb-link" @onclick="() => SelectStory(null)">Søk i alle scenarioer</button></p>
                         }
+                        @if (ActiveChips() is { Count: > 0 } chips)
+                        {
+                            <ul class="msb-chips-active" aria-label="Aktive filtre" data-testid="mtd-filter-chips">
+                                @foreach (var (label, clear) in chips)
+                                {
+                                    <li><button type="button" class="msb-chip-x" @onclick="() => Set(clear(_filter))" aria-label="@($"Fjern filter: {label}")" data-testid="mtd-filter-chip">@label <span aria-hidden="true">×</span></button></li>
+                                }
+                            </ul>
+                        }
                         @if (_moreFilters)
                         {
                             <div class="msb-filters-more" id="mtd-more-filters" data-testid="mtd-filters-panel">
-                                <select class="msb-select" aria-label="Status" @onchange="e => Set(_filter with { Status = Opt(e) })" data-testid="mtd-filter-status">
-                                    <option value="">Alle statuser</option>
-                                    @foreach (var (key, label) in S.Statuses) { <option value="@key" selected="@(_filter.Status == key)">@label</option> }
+                                <select class="msb-select" aria-label="Område" @onchange="e => Set(_filter with { Area = Opt(e) })" data-testid="mtd-filter-area">
+                                    <option value="">Alle områder</option>
+                                    @foreach (var a in _areas) { <option value="@a" selected="@(_filter.Area == a)">@a</option> }
                                 </select>
                                 <select class="msb-select" aria-label="Type" @onchange="e => Set(_filter with { Type = Opt(e) })" data-testid="mtd-filter-type">
                                     <option value="">Alle typer</option>
@@ -596,13 +613,6 @@
                                     <select class="msb-select" aria-label="Krav" @onchange="e => Set(_filter with { Requirement = Opt(e) })" data-testid="mtd-filter-requirement">
                                         <option value="">Alle krav</option>
                                         @foreach (var r in _requirementIds) { <option value="@r" selected="@(_filter.Requirement == r)">@r</option> }
-                                    </select>
-                                }
-                                @if (_priorities.Count > 0)
-                                {
-                                    <select class="msb-select" aria-label="Prioritet" @onchange="e => Set(_filter with { Priority = Opt(e) })" data-testid="mtd-filter-priority">
-                                        <option value="">Alle prioriteter</option>
-                                        @foreach (var pr in _priorities) { <option value="@pr" selected="@(_filter.Priority == pr)">@(pr == S.NoPriority ? "Prioritet ikke oppgitt" : pr)</option> }
                                     </select>
                                 }
                                 <select class="msb-select" aria-label="Testtilnærming" @onchange="e => Set(_filter with { Approach = Enum.TryParse<ExecutionApproach>(Opt(e), out var ap) ? ap : null })" data-testid="mtd-filter-approach">
@@ -641,10 +651,35 @@
 
                         @* The scenario collection: compact rows, paged, keyboard-navigable, multi-select. *@
                         <section class="msb-list" aria-label="Scenarioer" data-testid="mtd-scenarios">
+                            @if (_ws?.Discovery?.NotKept is > 0 && _filter.Query.Trim().Length >= 2)
+                            {
+                                @* Server-side search (2026-11-26): the matches among the scenarios this page did not load — found without loading the ones before them. *@
+                                <section class="msb-beyond" aria-label="Treff i hele utvalget" data-testid="mtd-beyond">
+                                    <h3 class="mtp-ctx-label">Treff blant scenarioene som ikke er lastet inn@(_beyond is { } bp ? $" ({bp.Total})" : "")</h3>
+                                    @if (_beyond is { Items.Count: > 0 } beyondPage)
+                                    {
+                                        <ul class="msb-rows">
+                                            @foreach (var c in _beyondItems)
+                                            {
+                                                var cand = c;
+                                                <li class="msb-row" data-testid="mtd-beyond-row" data-id="@cand.CandidateId" @onclick="() => OpenBeyond(cand)">
+                                                    <span class="msb-row-main"><span class="msb-row-title">@cand.Title</span>
+                                                        <span class="msb-row-meta">@cand.Area@(cand.Story is { } bs ? $" · {bs.StoryId}" : "") · @cand.SourceCategory</span></span>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick:stopPropagation="true" @onclick="() => OpenBeyond(cand)" data-testid="mtd-beyond-open">Vis detaljer</button>
+                                                </li>
+                                            }
+                                        </ul>
+                                        <ShowMore Shown="@_beyondItems.Count" Total="@beyondPage.Total" Step="40" Noun="treff" OnMore="() => SearchBeyondAsync(more: true)" Error="@_beyondError" TestId="mtd-beyond-more" />
+                                    }
+                                    else if (_beyondError is { } be) { <p class="mt-alert msb-small" role="alert" data-testid="mtd-beyond-error">@be <button type="button" class="msb-link" @onclick="() => SearchBeyondAsync(more: false)">Prøv igjen</button></p> }
+                                    else if (_beyond is { Total: 0 }) { <p class="mt-muted msb-small" data-testid="mtd-beyond-none">Ingen treff blant scenarioene som ikke er lastet inn.</p> }
+                                    else { <InlineLoading Text="Søker i hele utvalget …" TestId="mtd-beyond-loading" /> }
+                                </section>
+                            }
                             @if (_ws?.Discovery?.NotKept is > 0 and var notKept)
                             {
                                 @* An incomplete population is said where the scenarios are listed (2026-11-26), with the way to the rest. *@
-                                <p class="mt-alert msb-small" role="status" data-testid="mtd-not-kept">Ikke alle scenarioer er med: @notKept scenario@(notKept == 1 ? "" : "er") over sikkerhetsgrensen på @(_ws.Discovery.Candidates.Count) er ikke tatt med (kildescenarioer prioriteres). Velg en modul og spesifikasjon for å se alle scenarioene der.</p>
+                                <p class="mt-alert msb-small" role="status" data-testid="mtd-not-kept">Ikke alle scenarioer er lastet inn: @notKept scenario@(notKept == 1 ? "" : "er") utover de første @(_ws.Discovery.Candidates.Count) vises ikke i listen (kildescenarioer først). Søk finner dem i hele utvalget.</p>
                             }
                             @if (shown.Count == 0)
                             {
@@ -722,6 +757,11 @@
                             <h2 class="msb-detail-title" data-testid="mtd-detail-title" data-language="@(detailTitle.Translated ? "nb" : "original")">@(c.Story is not null && c.NumberInStory is { } acn ? $"{W.AcLabel(acn)} — {detailTitle.Text}" : detailTitle.Text)</h2>
                             <span class="msb-status msb-tone-@active.Status.Tone">@active.Status.Text</span>
                         </div>
+                        @* V9 (2026-11-26): the tester's next step first — above the fold, not after classification and evidence. *@
+                        <div class="msb-detail-actions mtw-primary-actions" data-testid="mtd-detail-actions">
+                                <button type="button" class="btn btn-primary btn-sm mtw-primary-action" @onclick="() => PrepareOnlyAsync(c.CandidateId)" data-testid="mtd-detail-prepare">@(active.Prepared is { Cases: > 0 } ? "Lag enda et testtilfelle" : "Forbered testtilfelle")</button>
+                                <button type="button" class="btn btn-secondary btn-sm" @onclick="() => ToggleAsync(c.CandidateId)" data-testid="mtd-detail-select">@(_selected.Contains(c.CandidateId) ? "Fjern fra valget" : "Velg")</button>
+                        </div>
                         @* Scenario details redesign (2026-11-26): what to expect, where the scenario is planned and what to do next come first; classification,
                            developer tests, readiness criteria and the source follow, the technical parts on demand. *@
                         @if (detailTitle.Note is { } titleNote) { <p class="mt-muted msb-small mtw-lang-note" data-testid="mtd-detail-lang-note">@titleNote</p> }
@@ -737,10 +777,22 @@
                             else { <p class="msb-tone-warn" data-testid="mtd-expected-missing">Forventet resultat må avklares — kilden oppgir det ikke.</p> }
                         </section>
                         @DrawerPlans(active)
+                        <section class="mtw-section" aria-label="Testtilfeller" data-testid="mtd-detail-cases">
+                            <span class="mtp-ctx-label">Testtilfeller</span>
+                            <p class="msb-small" data-testid="mtd-detail-coverage">@CoverageText(active)@if (c.ExistingTests.Count > 0) { <span class="msb-basis">@c.ExistingTests.Count automatisk(e) test(er) refererer kravet — det betyr at testen finnes, ikke at den er bestått.</span> }</p>
+                            @if (cases.Count > 0)
+                            {
+                                <ul class="mtw-cases">@foreach (var k in cases) { <li data-testid="mtd-detail-case"><a href="@W.CaseHref(k)" data-testid="mtd-detail-case-open">@k.Title</a> <span class="msb-status msb-tone-@CaseTone(k)">@W.StageText(k.Stage)</span> <span class="mt-muted msb-small">@W.ExecutionText(k.Execution)</span></li> }</ul>
+                            }
+                            <span class="mt-muted msb-small">Nye testtilfeller beholder koblingen til scenarioet@(c.Story is { } ks ? $" og {W.StoryLabel(ks)}" : "") automatisk.</span>
+                        </section>
+
+                        <details class="mtw-more mtw-secondary" data-testid="mtd-detail-secondary">
+                        <summary>Klassifisering, kilde og sporbarhet</summary>
                         @ScenarioTypeSection(active)
                         @if (!string.Equals(W.RowTitle(active), c.Title, StringComparison.Ordinal) && !string.Equals(active.Title, c.Title, StringComparison.Ordinal)) { <p class="msb-original" data-testid="mtd-detail-original">Opprinnelig tittel: @c.Title</p> }
                         <p class="msb-chips"><span>@active.TypeLabel</span><span>@active.Area</span>@if (active.Relevance != S.Relevance.Manual) { <span>@(active.Relevance == S.Relevance.Both ? "Manuell + teknisk" : "Teknisk")</span> }</p>
-                        var kindDecision = StoryGroupingEngine.TestKindDecision(_groupDoc, active.Id); var canSetKind = CanSetKind(active);
+                        @{ var kindDecision = StoryGroupingEngine.TestKindDecision(_groupDoc, active.Id); var canSetKind = CanSetKind(active); }
                         <div class="mtw-kind" data-testid="mtd-kind" data-kind="@active.Relevance" data-decided="@(active.KindDecided ? "true" : "false")">
                             <span class="mtp-ctx-label">Testtype</span>
                             <div class="mtw-seg" role="radiogroup" aria-label="Testtype for scenarioet">
@@ -768,7 +820,7 @@
                             }
                             @if (_kindError is not null) { <span class="msb-small msb-tone-warn" role="alert" data-testid="mtd-kind-error">@_kindError</span> }
                         </div>
-                        var tech = TC.Of(c, TechDecisions, _ws?.Discovery?.TestsReadForScenarios ?? false);
+                        @{ var tech = TC.Of(c, TechDecisions, _ws?.Discovery?.TestsReadForScenarios ?? false); }
                         <section class="mtw-tech" aria-label="Hva er allerede kontrollert?" data-testid="mtd-tech" data-state="@tech.State">
                             <div class="mtw-tech-head">
                                 <span class="mtp-ctx-label">Hva er allerede kontrollert?</span>
@@ -882,7 +934,7 @@
                             </div>
                         }
 
-                        var gwt = SourceGwt(c);
+                        @{ var gwt = SourceGwt(c); }
                         @if (gwt.Count > 0)
                         {
                             @* «Fra kilden (ordrett)» collapsed by default (2026-11-25), the same accordion as «Kildegrunnlag» in Planlegg og klargjør: open only for the
@@ -938,8 +990,8 @@
                             }
                         </section>
 
-                        var checklist = Checklist(active);
-                        var met = checklist.Count(x => x.State == Tri.Yes);
+                        @{ var checklist = Checklist(active); }
+                        @{ var met = checklist.Count(x => x.State == Tri.Yes); }
                         <section class="mtw-section" aria-label="Kildegrunnlag" data-testid="mtd-readiness">
                             <details class="mtw-ready-details" data-testid="mtd-readiness-details">
                             @* Finn og forstå v3 (2026-11-26): these are SOURCE checkpoints (what the source and stored data say), not execution readiness —
@@ -962,19 +1014,7 @@
                             @if (active.Work is { ExecutionNeeds.Count: > 0 } needs) { <p class="msb-exec" data-testid="mtd-detail-exec"><strong>Før kjøring trengs:</strong> @string.Join("; ", needs.ExecutionNeeds)</p> }
                         </section>
 
-                        <section class="mtw-section" aria-label="Testtilfeller" data-testid="mtd-detail-cases">
-                            <span class="mtp-ctx-label">Testtilfeller</span>
-                            <p class="msb-small" data-testid="mtd-detail-coverage">@CoverageText(active)@if (c.ExistingTests.Count > 0) { <span class="msb-basis">@c.ExistingTests.Count automatisk(e) test(er) refererer kravet — det betyr at testen finnes, ikke at den er bestått.</span> }</p>
-                            @if (cases.Count > 0)
-                            {
-                                <ul class="mtw-cases">@foreach (var k in cases) { <li data-testid="mtd-detail-case"><a href="@W.CaseHref(k)" data-testid="mtd-detail-case-open">@k.Title</a> <span class="msb-status msb-tone-@CaseTone(k)">@W.StageText(k.Stage)</span> <span class="mt-muted msb-small">@W.ExecutionText(k.Execution)</span></li> }</ul>
-                            }
-                            <div class="msb-detail-actions">
-                                <button type="button" class="btn btn-secondary btn-sm" @onclick="() => ToggleAsync(c.CandidateId)" data-testid="mtd-detail-select">@(_selected.Contains(c.CandidateId) ? "Fjern fra valget" : "Velg")</button>
-                                <button type="button" class="btn btn-primary btn-sm" @onclick="() => PrepareOnlyAsync(c.CandidateId)" data-testid="mtd-detail-prepare">@(active.Prepared is { Cases: > 0 } ? "Lag enda et testtilfelle" : "Forbered testtilfeller")</button>
-                            </div>
-                            <span class="mt-muted msb-small">Nye testtilfeller beholder koblingen til scenarioet@(c.Story is { } ks ? $" og {W.StoryLabel(ks)}" : "") automatisk.</span>
-                        </section>
+                        </details>
 
                         @if (active.Work is { } work)
                         {
@@ -1389,6 +1429,7 @@
         if (_ws?.ProjectKey is { } filterKey) _ = TabDraftStore.WriteAsync(JS, TabDraftStore.DiscoverFilterKey(filterKey), filter);
         (_queueCounts, _allCount) = S.QueueCounts(_items, _filter);
         var shown = S.Apply(_items, _filter).Shown;
+        _ = SearchBeyondAsync(more: false);
         // The open scenario stays open when a filter hides it (the detail says so); only an empty detail takes the first shown one.
         if (_active is null && _missingScenario is null) _active = shown.FirstOrDefault()?.Id;
         _ = SaveContextAsync();
@@ -1537,6 +1578,42 @@
             @if (both > 0) { <span class="mtw-kind-tag is-both">@both begge</span> }
         </span>
     };
+
+    // ── Server-side search beyond the loaded window (2026-11-26) ──
+    private ScenarioSearchPage? _beyond;
+    private List<DiscoveredScenario> _beyondItems = [];
+    private string? _beyondError;
+    private int _beyondGeneration;
+
+    /// <summary>Searches the scenarios the discovery did not send (only when it did not send all). A newer query wins: an older answer is dropped.
+    /// The first page waits briefly for typing to settle; «Vis flere» fetches the next page at once (with the shared spinner).</summary>
+    private async Task SearchBeyondAsync(bool more)
+    {
+        var query = _filter.Query.Trim();
+        var generation = more ? _beyondGeneration : ++_beyondGeneration;
+        if (!more) { _beyond = null; _beyondItems = []; _beyondError = null; }
+        if (_ws?.Discovery is not { NotKept: > 0 } || query.Length < 2 || _ws.ProjectKey is not { } key
+            || ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) return;
+        if (!more) { await Task.Delay(250); if (generation != _beyondGeneration) return; }
+        var (page, error) = await api.SearchDiscoveryAsync(key, _ws.DiscoveryScope, query, more ? _beyondItems.Count : 0, 40);
+        if (generation != _beyondGeneration) return;
+        if (page is null) { _beyondError = error ?? "Søket i hele utvalget feilet."; StateHasChanged(); return; }
+        _beyondError = null;
+        _beyond = page;
+        _beyondItems = [.. _beyondItems, .. page.Items.Where(c => _beyondItems.All(b => b.CandidateId != c.CandidateId))];
+        StateHasChanged();
+    }
+
+    /// <summary>Opens a server match: it joins the page's scenarios (classified like the others) and its detail opens.</summary>
+    private void OpenBeyond(DiscoveredScenario candidate)
+    {
+        if (_items.All(i => i.Id != candidate.CandidateId))
+        {
+            _items = [.. _items, .. S.Items([candidate], new Dictionary<string, S.Prepared>())];
+            Recompute();
+        }
+        _ = OpenDetails(candidate.CandidateId);
+    }
 
     private void Recompute()
     {
@@ -2126,6 +2203,24 @@
     // view only: nothing is copied, classified or saved on a scenario. The choice is a personal preference kept in this browser (localStorage).
     private const string GroupingPreferenceKey = "birknext.manualTesting.scenarioGrouping";
     private const int GroupRows = 50;
+
+    /// <summary>V9 (2026-11-26): the active filters as removable chips (label, how to clear it) — the search text and the story have their own controls.</summary>
+    private List<(string Label, Func<S.Filter, S.Filter> Clear)> ActiveChips()
+    {
+        var f = _filter; var chips = new List<(string, Func<S.Filter, S.Filter>)>();
+        if (f.Priority is { } pr) chips.Add((pr == S.NoPriority ? "Prioritet ikke oppgitt" : $"Prioritet {pr}", x => x with { Priority = null }));
+        if (f.Status is { } st) chips.Add((S.Statuses.FirstOrDefault(x => x.Item1 == st).Item2 ?? st, x => x with { Status = null }));
+        if (f.Area is { } ar) chips.Add(($"Område: {ar}", x => x with { Area = null }));
+        if (f.Type is { } ty) chips.Add(($"Type: {ty}", x => x with { Type = null }));
+        if (f.Requirement is { } rq) chips.Add(($"Krav: {rq}", x => x with { Requirement = null }));
+        if (f.Approach is { } ap) chips.Add((TestDesignAdvisor.ApproachLabel(ap), x => x with { Approach = null }));
+        if (f.ScenarioType is { } sc) chips.Add((S.TypeFilters.FirstOrDefault(x => x.Item1 == sc).Item2 ?? sc, x => x with { ScenarioType = null }));
+        if (f.TestLevel is { } tl && Enum.TryParse<ScenarioTestLevel>(tl, out var lv)) chips.Add((TestLevelClassifier.Label(lv), x => x with { TestLevel = null }));
+        if (f.ImplementationStatus is { } im && Enum.TryParse<UserStoryTaskStatus>(im, out var us)) chips.Add((UserStoryStatusText.Label(us), x => x with { ImplementationStatus = null }));
+        if (f.Tech is { } te) chips.Add((TC.Filters.FirstOrDefault(x => x.Item1 == te).Item2 ?? te, x => x with { Tech = null }));
+        if (f.PlanStatus is { } ps) chips.Add((S.PlanStatusFilters.FirstOrDefault(x => x.Item1 == ps).Item2 ?? ps, x => x with { PlanStatus = null, Plan = null }));
+        return chips;
+    }
     private ScenarioGroupAxis _gPrimary = ScenarioGroupAxis.None, _gSecondary = ScenarioGroupAxis.None;
     /// <summary>The Manual Testing language (shared with Planlegg og klargjør; per browser). Norsk shows stored translations only.</summary>
     private EditorLanguage _language = ManualTestingLanguage.Default;

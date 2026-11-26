@@ -195,7 +195,65 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
         // 2026-11-26: the safety limit never silently hides scenarios — the page says how many are not kept and how to reach them.
         _notKept = 15;
         var cut = Open(MainPath, Spec1, Spec2);
-        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-not-kept]").TextContent.Should().Contain("15 scenarioer").And.Contain("Velg en modul og spesifikasjon"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-not-kept]").TextContent.Should().Contain("15 scenarioer").And.Contain("Søk finner dem i hele utvalget"));
+    }
+
+    [Fact]
+    public void Searching_an_incomplete_population_also_searches_the_server_and_a_match_far_beyond_the_loaded_window_opens()
+    {
+        // Pagination V2 (2026-11-26): scenario no. 12,000 is found on the server without loading the 11,999 before it, and opens like any other.
+        _notKept = 2_000;
+        var far = C("c-12000", "Scenario nummer 12000 sendes på nytt");
+        var calls = new List<(string Query, int Skip)>();
+        _api.Setup(x => x.SearchDiscoveryAsync("library", It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string?, string, int, int, CancellationToken>((_, _, q, skip, _, _) => calls.Add((q, skip)))
+            .ReturnsAsync((string _, string? _, string q, int skip, int _, CancellationToken _) =>
+                (new ScenarioSearchPage("d1", q, 41, skip, skip == 0 ? [far, .. Enumerable.Range(1, 39).Select(i => C($"x{i}", $"Scenario nummer 12000 variant {i}"))] : [C("x40", "Scenario nummer 12000 variant 40")]), (string?)null));
+        var cut = Open(MainPath, Spec1, Spec2);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-scenarios]"));
+
+        cut.Find("[data-testid=mtd-search]").Input("nummer 12000");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-beyond-row]").Should().HaveCount(40), TimeSpan.FromSeconds(5));
+        calls.Should().ContainSingle().Which.Should().Be(("nummer 12000", 0), "one request for the settled query, not one per keystroke result");
+        cut.Find("[data-testid=mtd-beyond]").TextContent.Should().Contain("(41)");
+        cut.Find("[data-testid=mtd-beyond-more-count]").TextContent.Should().Be("Viser 40 av 41 treff");
+
+        cut.Find("[data-testid=mtd-beyond-more]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-beyond-row]").Should().HaveCount(41));
+        calls.Last().Should().Be(("nummer 12000", 40), "«Vis flere» continues where the page ended");
+
+        cut.Find("[data-testid=mtd-beyond-row][data-id=c-12000] [data-testid=mtd-beyond-open]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail-title]").TextContent.Should().Contain("Scenario nummer 12000"));
+    }
+
+    [Fact]
+    public void The_detail_panel_leads_with_the_testers_next_step_and_folds_classification_and_evidence()
+    {
+        // V9 (2026-11-26): «Forbered testtilfelle» right under the title; classification, test type, automated tests and the source in one folded section.
+        var cut = Open(MainPath, Spec1, Spec2);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-show-details]"));
+        cut.Find("[data-testid=mtd-show-details]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail-actions]"));
+
+        var html = cut.Find("[data-testid=mtd-detail]").InnerHtml;
+        html.IndexOf("mtd-detail-actions", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf("mtd-expected", StringComparison.Ordinal), "the action comes first");
+        html.IndexOf("mtd-detail-cases", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf("mtd-detail-secondary", StringComparison.Ordinal));
+        cut.Find("[data-testid=mtd-detail-actions] [data-testid=mtd-detail-prepare]").TextContent.Should().Be("Forbered testtilfelle");
+        var secondary = cut.Find("[data-testid=mtd-detail-secondary]");
+        secondary.HasAttribute("open").Should().BeFalse("classification and evidence are on demand");
+        secondary.QuerySelector("[data-testid=mtd-kind]").Should().NotBeNull("nothing is removed, only folded");
+        secondary.QuerySelector("[data-testid=mtd-tech]").Should().NotBeNull();
+        cut.FindAll("[data-testid=mtd-detail-prepare]").Should().ContainSingle("one primary action, not repeated");
+    }
+
+    [Fact]
+    public void A_complete_population_never_asks_the_server()
+    {
+        var cut = Open(MainPath, Spec1, Spec2);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-scenarios]"));
+        cut.Find("[data-testid=mtd-search]").Input("report");
+        cut.FindAll("[data-testid=mtd-beyond]").Should().BeEmpty();
+        _api.Verify(x => x.SearchDiscoveryAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -254,16 +312,24 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
     {
         var cut = Open(MainPath, Spec1, Spec2, Ui);
         cut.Find("[data-testid=mtd-search]").Should().NotBeNull("search is always visible");
-        cut.Find("[data-testid=mtd-filter-area]").Should().NotBeNull("the common filter is always visible");
+        // V9 (2026-11-26): priority and preparation state are on the main row; area and the rest wait behind «Flere filtre».
+        cut.Find("[data-testid=mtd-filter-priority]").Should().NotBeNull("priority is always visible");
+        cut.Find("[data-testid=mtd-filter-status]").Should().NotBeNull("preparation state is always visible");
+        cut.FindAll("[data-testid=mtd-filter-area]").Should().BeEmpty("area is under «Flere filtre»");
         cut.FindAll("[data-testid=mtd-filters-panel]").Should().BeEmpty("the other filters wait behind «Flere filtre»");
 
         cut.Find("[data-testid=mtd-more-filters]").Click();
         cut.Find("[data-testid=mtd-more-filters]").GetAttribute("aria-expanded").Should().Be("true");
+        cut.Find("[data-testid=mtd-filters-panel] [data-testid=mtd-filter-area]").Should().NotBeNull();
         cut.Find("[data-testid=mtd-filter-priority]").Change("P1");
         cut.Find("[data-testid=mtd-active-filters]").TextContent.Should().Be("1");
+        cut.FindAll("[data-testid=mtd-filter-chip]").Select(c => c.TextContent.Replace("×", "").Trim()).Should().Equal(["Prioritet P1"], "each active filter is a removable chip");
         Rows(cut).Should().Equal(["c-1"], "the recommended queue, narrowed to declared P1");
         Queue(cut, "NeedsClarification");
         Rows(cut).Should().Equal(["c-2"], "the filter stays when the queue changes");
+        cut.Find("[data-testid=mtd-filter-chip]").Click();
+        cut.FindAll("[data-testid=mtd-filter-chip]").Should().BeEmpty("removing the chip removes that filter");
+        cut.Find("[data-testid=mtd-filter-priority]").Change("P1");
 
         cut.Find("[data-testid=mtd-reset-filters]").Click();
         cut.FindAll("[data-testid=mtd-active-filters]").Should().BeEmpty();

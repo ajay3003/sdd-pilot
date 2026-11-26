@@ -30,10 +30,47 @@ public static class TestScenarioDiscoveryEngine
 {
     public const string RuleVersion = "tsd-1";
     /// <summary>
-    /// A safety limit, not a working size (2026-11-26): 2,000 dropped 15 of M2LB's 2,015 candidates. Finn og forstå shows the list in batches
-    /// (ShowMore) and the payload is compact, so a real project is kept whole; a result above this limit says so on the page (NotKept).
+    /// The window a client receives at once (2026-11-26), NOT a limit on the population: discovery keeps and stores every candidate (source-backed
+    /// first); a result sent to a client holds the first <see cref="MaxCandidates"/> and says how many it does not (<see cref="Window"/>); the rest
+    /// is searched on the server (<see cref="Search"/>).
     /// </summary>
     public const int MaxCandidates = 10000;
+
+    /// <summary>The order the window is cut in: source priority (specification and documented tests first), stable within a source — the same order
+    /// for <see cref="Window"/> and <see cref="Search"/>, so "beyond the window" means the same candidates for both.</summary>
+    private static IEnumerable<DiscoveredScenario> WindowOrder(ScenarioDiscoveryResult result) => result.Candidates.OrderBy(c => CapPriority(c.CapabilityId));
+
+    /// <summary>The result as sent to a client: at most <paramref name="max"/> candidates (the stored order, source-backed first), NotKept and a
+    /// limitation naming what was not sent. The stored result itself is never cut.</summary>
+    public static ScenarioDiscoveryResult Window(ScenarioDiscoveryResult result, int max = MaxCandidates)
+    {
+        if (result.Candidates.Count <= max) return result;
+        var ordered = WindowOrder(result);
+        var rest = ordered.Skip(max).GroupBy(c => c.CapabilityId).ToDictionary(g => g.Key, g => g.Count());
+        return result with
+        {
+            Candidates = [.. ordered.Take(max)],
+            NotKept = result.Candidates.Count - max,
+            Limitations = [.. result.Limitations, $"{result.Candidates.Count - max} of {result.Candidates.Count} candidates are not sent at once (source-backed first); "
+                + "search finds them on the server. Not sent: " + string.Join(", ", rest.OrderBy(d => CapPriority(d.Key)).Select(d => $"{d.Value} {d.Key}")) + "."],
+        };
+    }
+
+    /// <summary>
+    /// Server-side search over the candidates a client did not receive (from <paramref name="fromIndex"/> on), every word matched (case-insensitive)
+    /// against what Finn og forstå's own search reads: title, purpose, expected result, area, requirement ids and the user story. Stable order.
+    /// </summary>
+    public static ScenarioSearchPage Search(ScenarioDiscoveryResult result, string? query, int fromIndex, int skip, int take)
+    {
+        var words = (query ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        take = Math.Clamp(take, 1, 200); skip = Math.Max(0, skip);
+        if (words.Length == 0) return new(result.DiscoveryId, query ?? "", 0, skip, []);
+        static string Text(DiscoveredScenario c) => string.Join(' ', c.Title, c.Purpose, c.ExpectedBehaviour, c.Area, string.Join(' ', c.RequirementIds),
+            c.Story?.StoryId, c.Story?.Title);
+        var matches = WindowOrder(result).Skip(Math.Max(0, fromIndex))
+            .Where(c => Text(c) is var t && words.All(w => t.Contains(w, StringComparison.OrdinalIgnoreCase))).ToList();
+        return new(result.DiscoveryId, query ?? "", matches.Count, skip, [.. matches.Skip(skip).Take(take)]);
+    }
 
     public const string Specification = "specification";
     public const string SystemGuide = "system-guide";
@@ -674,13 +711,6 @@ public static class TestScenarioDiscoveryEngine
         _ => 8,
     };
 
-    /// <summary>What the cap dropped, per capability (for the limitation text): the merged candidates beyond <see cref="MaxCandidates"/>.</summary>
-    public static IReadOnlyDictionary<string, int> DroppedByCap(string projectKey, IEnumerable<DiscoveredScenario> candidates)
-    {
-        var all = candidates.Where(c => c.ProjectKey == projectKey).DistinctBy(c => c.CandidateId).OrderBy(c => CapPriority(c.CapabilityId)).ToList();
-        return all.Skip(MaxCandidates).GroupBy(c => c.CapabilityId).ToDictionary(g => g.Key, g => g.Count());
-    }
-
     public static List<DiscoveredScenario> Finalize(string projectKey, string snapshotKey, IEnumerable<DiscoveredScenario> candidates, IEnumerable<RequirementTestLink> links,
         IEnumerable<ScenarioTestLink>? scenarioLinks = null)
     {
@@ -689,7 +719,7 @@ public static class TestScenarioDiscoveryEngine
             Evidence = [.. a.Evidence.Concat(b.Evidence).DistinctBy(e => (e.Kind, e.Reference))],
             RequirementIds = [.. a.RequirementIds.Concat(b.RequirementIds).Distinct(StringComparer.OrdinalIgnoreCase)],
             ScopeKeys = [.. a.ScopeKeys.Concat(b.ScopeKeys).Distinct(StringComparer.Ordinal)],
-        })).OrderBy(c => CapPriority(c.CapabilityId)).Take(MaxCandidates).Select(c => c with { SnapshotKey = c.SnapshotKey.Length > 0 ? c.SnapshotKey : snapshotKey }).ToList();
+        })).Select(c => c with { SnapshotKey = c.SnapshotKey.Length > 0 ? c.SnapshotKey : snapshotKey }).ToList();
         // Two scenarios of one file with the same situation (different outcomes) keep distinct identities, in their order.
         // They are told apart by their expected result (never by position, which shifts when one is removed); only identical twins get an ordinal.
         merged = [.. merged.GroupBy(c => c.SourceIdentity, StringComparer.Ordinal).SelectMany(g => g.Count() == 1 || g.Key.Length == 0 ? g

@@ -641,7 +641,8 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach (var row in VisibleMatrix.Take(500))
+                                @* Numbered pages (2026-11-26) instead of the first 500 rows only: every row of the filtered matrix is reachable. *@
+                                @foreach (var row in MatrixPageRows)
                                 {
                                     <tr>
                                         <td>
@@ -679,16 +680,9 @@
                                         </td>
                                     </tr>
                                 }
-                                @if (VisibleMatrix.Count() > 500)
-                                {
-                                    <tr>
-                                        <td colspan="5" style="text-align:center;color:var(--clr-text-muted);font-size:.8rem;padding:.75rem;">
-                                            Showing 500 of @VisibleMatrix.Count() rows. Use search or filters to narrow down.
-                                        </td>
-                                    </tr>
-                                }
                             </tbody>
                         </table>
+                        <Pager PageIndex="@MatrixPage" PageSize="MatrixPageSize" Total="@VisibleMatrix.Count()" Noun="rader" OnPage="p => _matrixPage = p" TestId="at-matrix-pager" />
                     </div>
                 }
             }
@@ -778,6 +772,22 @@
                 (!_policyOnly || TraceabilityLabels.CategoryOf(g) == TraceabilityObservationCategory.PolicyRequiredTraceNotEstablished)
                 && (_categoryFilter is null || TraceabilityLabels.CategoryOf(g) == _categoryFilter)), _gapArtifactFilter),
             _search);
+
+    private const int MatrixPageSize = 50;
+    private int _matrixPage;
+    private string? _matrixQuery;
+    /// <summary>The page of the filtered matrix shown; a changed search or status filter starts at the first page again.</summary>
+    private int MatrixPage
+    {
+        get
+        {
+            var query = $"{_search}|{_statusFilter}";
+            if (_matrixQuery != query) { _matrixQuery = query; _matrixPage = 0; }
+            var pages = Math.Max(1, (int)Math.Ceiling(VisibleMatrix.Count() / (double)MatrixPageSize));
+            return Math.Clamp(_matrixPage, 0, pages - 1);
+        }
+    }
+    private IEnumerable<TraceabilityMatrixRow> MatrixPageRows => VisibleMatrix.Skip(MatrixPage * MatrixPageSize).Take(MatrixPageSize);
 
     private IEnumerable<TraceabilityMatrixRow> VisibleMatrix =>
         _report is null ? [] :

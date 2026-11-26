@@ -1516,3 +1516,11 @@ button.is-busy { cursor: progress; }
 .sm-more { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; margin: 0.6rem 0 0.2rem; }
 .sm-button { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 8.5rem; justify-content: center; }
 .sm-error { color: var(--clr-danger, #b42318); font-size: 0.85rem; }
+
+/* Numbered pagination (Pager, 2026-11-26): one compact row; the current page is marked by aria-current, weight and border (not colour only). */
+.pg { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin: 0.6rem 0; }
+.pg-count { margin-right: 0.5rem; }
+.pg-btn { min-width: 2rem; padding: 0.15rem 0.5rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; background: var(--clr-surface-white, #fff); color: inherit; }
+.pg-btn.is-current { font-weight: 700; border-color: var(--clr-primary, #2563eb); box-shadow: inset 0 -2px 0 var(--clr-primary, #2563eb); }
+.pg-btn:disabled { opacity: 0.5; }
+.pg-gap { padding: 0 0.2rem; }

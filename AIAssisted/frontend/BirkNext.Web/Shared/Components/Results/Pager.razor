@@ -1,0 +1,48 @@
+@* Numbered pagination (application-wide, 2026-11-26) for large TABLES; discovery lists keep «Vis flere» (ShowMore). The table filters, searches and
+   sorts its complete population first and shows page PageIndex of it. A compact window of page numbers (first, last, the current ±1, ellipsis) —
+   never hundreds of buttons. With an unknown total no last page is invented. Hidden when everything fits on one page. *@
+@if (Total is { } total && total > PageSize)
+{
+    var pages = (int)Math.Ceiling(total / (double)PageSize);
+    var current = Math.Clamp(PageIndex, 0, pages - 1);
+    var first = current * PageSize + 1;
+    var last = Math.Min(total, first + PageSize - 1);
+    <nav class="pg" aria-label="@($"Sider{(Noun.Length > 0 ? " for " + Noun : "")}")" data-testid="@TestId">
+        <span class="pg-count mt-muted msb-small" role="status" aria-live="polite" data-testid="@($"{TestId}-count")">Viser @first–@last av @total@(Noun.Length > 0 ? " " + Noun : "") · Side @(current + 1) av @pages</span>
+        <button type="button" class="pg-btn" disabled="@(current == 0)" @onclick="() => Go(current - 1)" aria-label="Forrige side" data-testid="@($"{TestId}-prev")">‹ Forrige</button>
+        @foreach (var p in Window(current, pages))
+        {
+            if (p < 0) { <span class="pg-gap" aria-hidden="true">…</span> continue; }
+            var page = p;
+            <button type="button" class="pg-btn @(page == current ? "is-current" : null)" aria-current="@(page == current ? "page" : null)" aria-label="@($"Side {page + 1}")"
+                    @onclick="() => Go(page)" data-testid="@($"{TestId}-page")" data-page="@(page + 1)">@(page + 1)</button>
+        }
+        <button type="button" class="pg-btn" disabled="@(current >= pages - 1)" @onclick="() => Go(current + 1)" aria-label="Neste side" data-testid="@($"{TestId}-next")">Neste ›</button>
+    </nav>
+}
+
+@code {
+    /// <summary>The page shown (0-based); the caller keeps it and resets it when its query changes.</summary>
+    [Parameter, EditorRequired] public int PageIndex { get; set; }
+    [Parameter] public int PageSize { get; set; } = 50;
+    /// <summary>Rows in the complete filtered population (null = unknown: no pager is shown rather than an invented page count).</summary>
+    [Parameter] public int? Total { get; set; }
+    [Parameter] public EventCallback<int> OnPage { get; set; }
+    [Parameter] public string Noun { get; set; } = "";
+    [Parameter] public string TestId { get; set; } = "pager";
+
+    private Task Go(int page) => OnPage.InvokeAsync(page);
+
+    /// <summary>First, last, the current page and its neighbours; -1 marks a gap.</summary>
+    public static IReadOnlyList<int> Window(int current, int pages)
+    {
+        var keep = new SortedSet<int> { 0, pages - 1, current - 1, current, current + 1 };
+        var result = new List<int>();
+        foreach (var p in keep.Where(p => p >= 0 && p < pages))
+        {
+            if (result.Count > 0 && p - result[^1] > 1) result.Add(-1);
+            result.Add(p);
+        }
+        return result;
+    }
+}

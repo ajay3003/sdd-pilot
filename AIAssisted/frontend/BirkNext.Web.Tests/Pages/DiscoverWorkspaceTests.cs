@@ -166,7 +166,7 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         State("env").Should().Be("Unknown", "nobody recorded the environment");
         State("review").Should().Be("No");
         cut.Find("[data-testid=mtd-readiness-count]").TextContent.Should().Be("1 / 6");
-        cut.Find("[data-testid=mtd-detail-prepare]").TextContent.Should().Be("Forbered testtilfeller");
+        cut.Find("[data-testid=mtd-detail-prepare]").TextContent.Should().Be("Forbered testtilfelle");
     }
 
     [Fact]

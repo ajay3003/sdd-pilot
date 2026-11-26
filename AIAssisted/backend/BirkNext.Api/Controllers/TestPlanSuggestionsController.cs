@@ -138,7 +138,20 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     /// <summary>Runs the registered discovery capabilities for one project (explicit; never on navigation). Read-only towards the evidence.</summary>
     [HttpPost("discover")]
     public Task<ActionResult> Discover([FromBody] ScenarioDiscoveryRequest request, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>
-        Run(async () => Ok(await discovery.DiscoverAsync(request, ct)));
+        Run(async () => Ok(TestScenarioDiscoveryEngine.Window(await discovery.DiscoverAsync(request, ct))));
+
+    /// <summary>
+    /// Server-side scenario search (2026-11-26) over the candidates of the project's last discovery (for the selection) that were not sent with it
+    /// (beyond the window): a page of matches and their total. 204 when there is no discovery.
+    /// </summary>
+    [HttpGet("discover/search")]
+    public Task<ActionResult> SearchDiscovery([FromQuery] string projectKey, [FromQuery] string? scope, [FromQuery] string? q, [FromQuery] int skip,
+        [FromQuery] int take, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>
+        Run(async () =>
+        {
+            if (await discovery.LastAsync(projectKey, null, ct, scope) is not { } result) return NoContent();
+            return Ok(TestScenarioDiscoveryEngine.Search(result, q, TestScenarioDiscoveryEngine.MaxCandidates, skip, take <= 0 ? 40 : take));
+        });
 
     /// <summary>Scenario changes of a new import against the application's previous current discovery (runs discovery; only computed counts).</summary>
     [HttpPost("discover/changes")]
@@ -164,7 +177,8 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
             // With a scope (module + specification, DiscoveryScope): only a result computed for exactly that selection (2026-11-25).
             if (await discovery.LastAsync(projectKey, snapshotId, ct, scope) is not { } result) return NoContent();
             // compact=true (2026-11-26): each user story and existing test once (ScenarioDiscoveryWire); the client expands it to the same result.
-            var body = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(compact ? ScenarioDiscoveryWire.Compact(result) : result, json.Value.JsonSerializerOptions);
+            var sent = TestScenarioDiscoveryEngine.Window(result); // at most MaxCandidates; the rest is searched on the server (discover/search)
+            var body = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(compact ? ScenarioDiscoveryWire.Compact(sent) : sent, json.Value.JsonSerializerOptions);
             var etag = $"\"{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(body))}\"";
             Response.Headers.ETag = etag;
             Response.Headers.CacheControl = "no-cache";

@@ -346,6 +346,16 @@ public static class DiscoveryScope
     }
 }
 
+/// <summary>
+/// One page of a server-side scenario search (2026-11-26): the matches among the candidates the discovery holds but did not send (beyond the
+/// <see cref="ScenarioDiscoveryResult.Candidates"/> window, see <see cref="ScenarioDiscoveryResult.NotKept"/>), in the stored source-priority
+/// order. <see cref="Total"/> counts every match, so a scenario at position 12,000 is found without loading the 11,999 before it.
+/// </summary>
+public sealed record ScenarioSearchPage(string DiscoveryId, string Query, int Total, int Skip, List<DiscoveredScenario> Items)
+{
+    public bool HasMore => Skip + Items.Count < Total;
+}
+
 public sealed record ScenarioDiscoveryResult
 {
     /// <summary>The selection (<see cref="DiscoveryScope"/>) this result was computed for; null for results stored before 2026-11-25 (never shown
