@@ -50,6 +50,28 @@ public sealed class AdoTestPlanTransferService(AppDbContext db, AdoTestPlanExpor
 
     private sealed record Built(AdoTransferPreview Preview, TestPlanDraft Plan, AdoExportPreview Export, List<AdoTestCaseLinkRecord> Links, HashSet<int> InSuite);
 
+    /// <summary>
+    /// The remote suite tree a transfer with suite placement needs (2026-11-26): every BirkNext suite holding a ready case (or a descendant that
+    /// does), parent before child, matched to an existing Static Test Suite with the same name under the matched parent (the destination suite at
+    /// the top). Parent-aware: two suites with one name under different parents are different suites. Pure.
+    /// </summary>
+    internal static List<AdoSuitePlanItem> SuitePlan(TestPlanDraft plan, IReadOnlySet<string> readyCaseIds, IReadOnlyList<AdoTestSuiteInfo> remote, int destinationSuiteId)
+    {
+        var suites = plan.Suites;
+        var counts = plan.Cases.Where(c => readyCaseIds.Contains(c.Source.ScenarioId)).GroupBy(c => c.SuiteId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        bool Needed(string id) => counts.ContainsKey(id) || suites.Any(c => c.ParentId == id && Needed(c.Id));
+        var matched = new Dictionary<string, int?>(StringComparer.Ordinal);
+        var items = new List<AdoSuitePlanItem>();
+        foreach (var (suite, depth) in PlanStructure.Flatten(suites).Where(x => Needed(x.Suite.Id)))
+        {
+            int? parentRemote = suite.ParentId is null || suites.All(x => x.Id != suite.ParentId) ? destinationSuiteId : matched.GetValueOrDefault(suite.ParentId);
+            var existing = parentRemote is null ? null : remote.FirstOrDefault(r => r.ParentId == parentRemote && string.Equals(r.Name.Trim(), suite.Name.Trim(), StringComparison.OrdinalIgnoreCase));
+            matched[suite.Id] = existing?.Id;
+            items.Add(new AdoSuitePlanItem(suite.Id, PlanStructure.PathOf(suites, suite.Id), depth, counts.GetValueOrDefault(suite.Id), existing is not null, existing?.Id));
+        }
+        return items;
+    }
+
     private async Task<Built> BuildAsync(AdoTransferRequest request, CancellationToken ct)
     {
         var plan = await export.PlanAsync(ExportRequest(request), ct);
@@ -122,6 +144,13 @@ public sealed class AdoTestPlanTransferService(AppDbContext db, AdoTestPlanExpor
         AdoTransferAction Effective(AdoTransferCase c) => request.Actions.TryGetValue(c.CaseId, out var chosen) && c.Allowed.Contains(chosen) ? chosen : c.Suggested;
         var toCreate = cases.Count(c => c.Allowed.Count > 0 && Effective(c) == AdoTransferAction.Create);
         var toUpdate = cases.Count(c => c.Allowed.Count > 0 && Effective(c) == AdoTransferAction.Update);
+        // Suite placement (2026-11-26): the remote tree under the destination suite, read only (nothing is created by a preview).
+        var suitePlan = new List<AdoSuitePlanItem>();
+        if (request.PreserveSuites && problem is null && destination is { Complete: true })
+        {
+            try { suitePlan = SuitePlan(plan, cases.Where(c => c.Ready).Select(c => c.CaseId).ToHashSet(StringComparer.Ordinal), await ado.SuitesAsync(destination.ConnectionId, destination.Project, destination.PlanId, ct), destination.SuiteId); }
+            catch (AzureDevOpsTestPlansException e) { problem = $"Testgruppene i målet kunne ikke leses: {e.Message}"; }
+        }
         var preview = new AdoTransferPreview
         {
             Destination = destination, DestinationSource = destination is null ? AdoDestinationSource.None : source, DestinationProblem = problem,
@@ -130,7 +159,7 @@ public sealed class AdoTestPlanTransferService(AppDbContext db, AdoTestPlanExpor
             NeedReview = cases.Count(c => c.Ready && c.Link.State == AdoLinkState.Uncertain),
             // The file-only notes (mapping report, CSV cells, import columns) do not apply to a direct transfer.
             Issues = [.. checks.Issues.Where(i => i.CaseId is not null || i.Level == AdoIssueLevel.Warning).Where(i => !i.Message.Contains("CSV", StringComparison.Ordinal))],
-            CanTransfer = problem is null && toCreate + toUpdate > 0,
+            CanTransfer = problem is null && toCreate + toUpdate > 0, SuitePlan = suitePlan,
         };
         return new(preview, plan, checks, links, inSuite);
     }
@@ -284,18 +313,49 @@ public sealed class AdoTestPlanTransferService(AppDbContext db, AdoTestPlanExpor
             }
         }
 
-        // Add to the suite once, only what is not there already (a repeated transfer never adds a test case twice).
-        if (toSuite.Count > 0)
+        // Suite placement (2026-11-26): the suite tree is created or reused parent before child, through the same safe creation as «Opprett
+        // testgruppe» (an existing suite with the same name under the same parent is reused; an uncertain earlier create blocks a blind second one).
+        var suiteResults = new List<AdoSuiteResult>();
+        var remoteSuite = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (request.PreserveSuites && toSuite.Count > 0)
         {
-            var missing = toSuite.Where(t => !built.InSuite.Contains(t.Id)).Select(t => t.Id).Distinct().ToList();
+            foreach (var item in preview.SuitePlan)
+            {
+                var local = built.Plan.Suites.First(x => x.Id == item.LocalSuiteId);
+                int? parent = local.ParentId is null || built.Plan.Suites.All(x => x.Id != local.ParentId) ? d.SuiteId : remoteSuite.TryGetValue(local.ParentId, out var p) ? p : null;
+                if (parent is null) { suiteResults.Add(new(item.LocalSuiteId, item.Path, AdoCreateOutcome.Failed, null, "Den overordnede testgruppen ble ikke opprettet.")); continue; }
+                var created = await settings.CreateSuiteAsync(new AdoCreateSuiteRequest(d.ConnectionId, d.Project, d.PlanId, parent.Value, local.Name, Confirmed: true), actor, ct);
+                if (created.Suite is { } suite) remoteSuite[item.LocalSuiteId] = suite.Id;
+                suiteResults.Add(new(item.LocalSuiteId, item.Path, created.Outcome, created.Suite?.Id, created.Message));
+            }
+        }
+        // Add each test case once to its suite, only what is not there already (a repeated transfer never adds a test case twice).
+        var caseSuite = built.Plan.Cases.ToDictionary(c => c.Source.ScenarioId, c => c.SuiteId, StringComparer.Ordinal);
+        int? TargetOf(AdoTransferCase c) => !request.PreserveSuites ? d.SuiteId
+            : caseSuite.TryGetValue(c.CaseId, out var local) && remoteSuite.TryGetValue(local, out var remote) ? remote
+            : built.Plan.Suites.Any(x => x.Id == caseSuite.GetValueOrDefault(c.CaseId)) ? null : d.SuiteId;
+        foreach (var group in toSuite.GroupBy(t => TargetOf(t.Case)))
+        {
             string? suiteError = null;
             var suiteUncertain = false;
-            try { await ado.AddToSuiteAsync(d.ConnectionId, d.Project, d.PlanId, d.SuiteId, missing, ct); }
-            catch (AzureDevOpsTestPlansException e) { suiteError = e.Message; suiteUncertain = e.Uncertain; }
-            foreach (var (id, c, outcome) in toSuite)
+            var missing = new List<int>();
+            if (group.Key is not { } target)
+                suiteError = "Testgruppen den skal ligge i kunne ikke opprettes eller gjenbrukes i Azure DevOps (se testgruppene over).";
+            else
+            {
+                var present = target == d.SuiteId ? built.InSuite : [];
+                if (target != d.SuiteId)
+                    try { present = [.. (await ado.SuiteTestCasesAsync(d.ConnectionId, d.Project, d.PlanId, target, ct)).Select(x => x.Id)]; }
+                    catch (AzureDevOpsTestPlansException e) { suiteError = e.Message; suiteUncertain = e.Uncertain; }
+                missing = [.. group.Where(t => !present.Contains(t.Id)).Select(t => t.Id).Distinct()];
+                if (suiteError is null && missing.Count > 0)
+                    try { await ado.AddToSuiteAsync(d.ConnectionId, d.Project, d.PlanId, target, missing, ct); }
+                    catch (AzureDevOpsTestPlansException e) { suiteError = e.Message; suiteUncertain = e.Uncertain; }
+            }
+            foreach (var (id, c, outcome) in group)
             {
                 var url = ado.WorkItemUrl(d.Organization, d.Project, id);
-                if (suiteError is not null && missing.Contains(id))
+                if (suiteError is not null && (group.Key is null || missing.Contains(id)))
                     results.Add(new(c.CaseId, c.Title, AdoTransferOutcome.NotInSuite,
                         $"Testtilfelle {id} ble {(outcome == AdoTransferOutcome.Created ? "opprettet" : "oppdatert")}, men {(suiteUncertain ? "vi vet ikke om det ble lagt i testgruppen" : "kunne ikke legges i testgruppen")}: {suiteError} Overfør på nytt for å legge det til (det lages ikke på nytt).")
                         { TestCaseId = id, WebUrl = url });
@@ -305,7 +365,7 @@ public sealed class AdoTestPlanTransferService(AppDbContext db, AdoTestPlanExpor
         }
 
         var ordered = preview.Cases.Select(c => results.FirstOrDefault(r => r.CaseId == c.CaseId)).OfType<AdoTransferCaseResult>().ToList();
-        var result = new AdoTransferResult { Destination = d, SuiteUrl = ado.PlanUrl(d.Organization, d.Project, d.PlanId, d.SuiteId), Cases = ordered };
+        var result = new AdoTransferResult { Destination = d, SuiteUrl = ado.PlanUrl(d.Organization, d.Project, d.PlanId, d.SuiteId), Cases = ordered, Suites = suiteResults };
 
         // Export history (date, time, who, where, what happened): the same history as the file exports.
         db.AdoExports.Add(new AdoExportRecord
@@ -319,6 +379,7 @@ public sealed class AdoTestPlanTransferService(AppDbContext db, AdoTestPlanExpor
                 outcomes = ordered.Select(o => new { o.CaseId, outcome = o.Outcome.ToString(), o.TestCaseId }),
                 selected = preview.Cases.Where(c => c.Ready).Select(c => c.CaseId),
                 destination = new { d.Organization, d.Project, d.PlanId, d.SuiteId },
+                suites = suiteResults.Select(x => new { x.LocalSuiteId, x.Path, outcome = x.Outcome.ToString(), x.RemoteSuiteId }),
                 status = Status(ordered), startedAt = started, completedAt = Now,
                 created = ordered.Count(o => o.Outcome == AdoTransferOutcome.Created), updated = ordered.Count(o => o.Outcome == AdoTransferOutcome.Updated),
                 skipped = ordered.Count(o => o.Outcome == AdoTransferOutcome.Skipped), problems = result.Problems,

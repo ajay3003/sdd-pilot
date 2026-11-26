@@ -364,7 +364,15 @@ public sealed record TestCaseDraft
 }
 
 /// <summary>A suite of the proposal. Origin "stage" = proposed from the guide's business-process stage; "reviewer" = created by a person.</summary>
-public sealed record TestSuiteDraft(string Id, string Name, string Origin, string? StageId);
+public sealed record TestSuiteDraft(string Id, string Name, string Origin, string? StageId)
+{
+    /// <summary>The parent suite (2026-11-26, hierarchical plans); null = a top-level suite. A plan saved before has only top-level suites.</summary>
+    public string? ParentId { get; init; }
+    /// <summary>Position among its siblings (ascending); suites with the same order keep their stored order.</summary>
+    public int Order { get; init; }
+    /// <summary>The test level this suite stands for, when it was created for one (organisational metadata; never rewrites a case's own level).</summary>
+    public ScenarioTestLevel? TestLevel { get; init; }
+}
 
 /// <summary>The guide revision and the source snapshots a proposal is based on (identity only).</summary>
 public sealed record TestPlanSourceBasis

@@ -38,6 +38,19 @@
                 </ul>
             </div>
         }
+        <div class="gsx-panel" data-testid="mtds-plan-structure">
+            <div class="gsx-panel-head"><h3 class="gsx-panel-title">Test plan structure (Testplanstruktur)</h3></div>
+            <p class="gsx-muted mtds-desc">The suite structure proposed when a new test plan is created from selected scenarios. Testers can choose another when they create a plan. Existing plans keep their saved structure.</p>
+            <ul class="mtds-list">
+                @foreach (var (key, label, description) in PlanStructureTemplates.All)
+                {
+                    var k = key;
+                    <li><label class="mtds-switch">
+                        <input type="radio" name="mtds-plan-structure" checked="@(EffectiveStructure == k)" disabled="@_busy" @onchange="() => _structureEdit = k" data-testid="mtds-plan-structure-option" data-structure="@k" />
+                        <span><strong>@label</strong><span class="gsx-muted mtds-desc">@description</span></span></label></li>
+                }
+            </ul>
+        </div>
         @if (_error is { } err) { <p class="gsx-error" role="alert" data-testid="mtds-error">The setup could not be saved. @err <button type="button" class="btn-secondary btn-sm" @onclick="SaveAsync">Retry</button></p> }
         @if (_notice is { } n) { <p class="gsx-muted" role="status" data-testid="mtds-notice">@n</p> }
         <div class="mtds-actions">
@@ -61,7 +74,9 @@
     private ITestPlanSuggestionsApiService? Api => Services.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
 
     private bool IsOn(string id) => _edits.TryGetValue(id, out var on) ? on : _saved!.IsOn(id);
-    private bool Dirty => _saved is not null && _edits.Any(e => e.Value != _saved.IsOn(e.Key));
+    private bool Dirty => _saved is not null && (_edits.Any(e => e.Value != _saved.IsOn(e.Key)) || _structureEdit is not null && _structureEdit != _saved.EffectivePlanStructure);
+    private string? _structureEdit;
+    private string EffectiveStructure => _structureEdit ?? _saved?.EffectivePlanStructure ?? PlanStructureTemplates.Default;
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -80,9 +95,10 @@
         try
         {
             var changed = _edits.Where(e => e.Value != _saved!.IsOn(e.Key)).ToDictionary(e => e.Key, e => e.Value, StringComparer.Ordinal);
-            var (settings, error) = await api.SaveDashboardSettingsAsync(new SaveManualTestingDashboardSettingsRequest(changed));
+            var structure = _structureEdit is not null && _structureEdit != _saved!.EffectivePlanStructure ? _structureEdit : null;
+            var (settings, error) = await api.SaveDashboardSettingsAsync(new SaveManualTestingDashboardSettingsRequest(changed, PlanStructure: structure));
             if (settings is null) { _error = error; return; }
-            _saved = settings; _edits.Clear(); _notice = "Saved. The dashboard uses the new setup the next time it is opened.";
+            _saved = settings; _edits.Clear(); _structureEdit = null; _notice = "Saved. The dashboard uses the new setup the next time it is opened.";
         }
         finally { _busy = false; }
     }
@@ -95,7 +111,7 @@
         {
             var (settings, error) = await api.SaveDashboardSettingsAsync(new SaveManualTestingDashboardSettingsRequest(null, ResetToDefaults: true));
             if (settings is null) { _error = error; return; }
-            _saved = settings; _edits.Clear(); _confirmReset = false; _notice = "The default dashboard is restored.";
+            _saved = settings; _edits.Clear(); _structureEdit = null; _confirmReset = false; _notice = "The default dashboard is restored.";
         }
         finally { _busy = false; }
     }

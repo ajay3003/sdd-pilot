@@ -900,3 +900,26 @@ a.mto-kpi:hover, a.mto-kpi:focus-visible { border-color: var(--msb-accent); }
 .mtw-quality-picks legend { font-size: .76rem; width: auto; float: none; margin: 0; padding: 0 .2rem; }
 @media (max-width: 640px) { .mtw-task { grid-template-columns: auto 1fr; } .mtw-task-meta, .mtw-task-text { grid-column: 1 / -1; } .mtw-impl-bar { width: 5rem; } }
 .msb-tone-neutral { background: var(--msb-subtle); color: var(--clr-text-muted, #57606a); }
+
+/* Hierarchical test plans (2026-11-26): a compact suite tree in Planlegg, the suite panel, the structure preview and the remote suite plan. */
+.mtp-suite-tools { display: flex; flex-wrap: wrap; gap: .25rem .8rem; margin: .1rem 0 .4rem; font-size: .82rem; }
+.mtp-suite { list-style: none; margin: 0; }
+.mtp-suite-head { display: flex; align-items: center; gap: .4rem; width: 100%; padding: .35rem .3rem; border: 0; border-radius: 6px; background: none; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: pointer; }
+.mtp-suite-head:hover { background: var(--msb-subtle); }
+.mtp-suite-head:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 1px; }
+.mtp-suite.is-child > .mtp-suite-head { font-weight: 500; }
+.mtp-suite-caret { width: .9rem; color: var(--clr-text-muted, #57606a); }
+.mtp-suite-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mtp-suite-count { font-size: .74rem; min-width: 1.4rem; text-align: center; border-radius: 999px; background: var(--msb-subtle); padding: 0 .35rem; font-weight: 500; }
+.mtp-suite-level { font-size: .7rem; color: var(--clr-text-muted, #57606a); font-weight: 400; }
+.mtp-scenarios.is-nested { padding-left: .9rem; border-left: 1px solid var(--msb-border); margin-left: .45rem; }
+.mtp-suite-empty { list-style: none; padding: .2rem .3rem; }
+.mtp-suite-panel { border: 1px solid var(--msb-border); border-radius: 8px; padding: .5rem .6rem; margin: 0 0 .6rem; display: grid; gap: .4rem; background: var(--msb-surface); }
+.mtp-suite-edit-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+.mtp-suite-edit-list li { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+.mtp-suite-rename { max-width: 12rem; }
+.mtp-suite-new { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+.mtp-case-suite { display: flex; gap: .4rem; align-items: center; margin-bottom: .3rem; }
+.mt-new-plan-preview { border: 1px dashed var(--msb-border); border-radius: 6px; padding: .4rem .6rem; margin: .3rem 0 .5rem; }
+.mt-structure-tree, .adt-suite-tree { list-style: none; margin: .25rem 0 0; padding: 0; font-size: .86rem; display: grid; gap: .15rem; }
+.mtw-level { margin: .1rem 0 .4rem; }

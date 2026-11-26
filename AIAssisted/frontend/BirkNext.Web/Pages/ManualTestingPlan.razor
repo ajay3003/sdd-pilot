@@ -188,53 +188,35 @@
                                 <span class="mt-muted msb-small" data-testid="mtp-hidden">@hidden teknisk@(hidden == 1 ? "" : "e") testtilfelle@(hidden == 1 ? "" : "r") skjult</span>
                             }
                         </div>
+                        @if (PlanSuiteEditing.Hierarchical(plan))
+                        {
+                            <div class="mtp-suite-tools" data-testid="mtp-suite-tools">
+                                <button type="button" class="msb-link" @onclick="() => _collapsedSuites.Clear()" data-testid="mtp-suites-expand">Vis alle grupper</button>
+                                <button type="button" class="msb-link" @onclick="() => _collapsedSuites = [.. plan.Suites.Select(x => x.Id)]" data-testid="mtp-suites-collapse">Skjul alle</button>
+                                @if (CanWrite && !ReadOnlyPlan)
+                                {
+                                    <button type="button" class="msb-link" aria-expanded="@(_manageSuites ? "true" : "false")" @onclick="() => { _manageSuites = !_manageSuites; _suiteError = null; }" data-testid="mtp-suites-manage">Testgrupper</button>
+                                }
+                            </div>
+                        }
+                        else if (CanWrite && !ReadOnlyPlan && plan.Suites.Count > 0)
+                        {
+                            <div class="mtp-suite-tools"><button type="button" class="msb-link" aria-expanded="@(_manageSuites ? "true" : "false")" @onclick="() => { _manageSuites = !_manageSuites; _suiteError = null; }" data-testid="mtp-suites-manage">Testgrupper</button></div>
+                        }
+                        @if (_manageSuites) { @SuitePanel(plan) }
                         @if (rows.Count == 0)
                         {
                             <p class="msb-empty" data-testid="mtp-rows-none">@(hidden > 0 && !_showTechnical ? "Alle testtilfellene i testplanen er tekniske. Slå på «Vis teknisk innhold» for å se dem." : "Ingen treff.")</p>
                         }
                         <ul class="mtp-scenarios">
-                            @foreach (var row in rows)
+                            @if (PlanSuiteEditing.Hierarchical(plan))
                             {
-                                var holdsSelected = row.Cases.Any(x => P.IdOf(x) == _selectedId);
-                                var collapsible = row.Cases.Count >= 3;
-                                <li class="mtp-scenario @(holdsSelected ? "has-selected" : null)" data-testid="mtp-scenario" data-key="@row.Key" data-cases="@row.Cases.Count">
-                                    <div class="mtp-scenario-head">
-                                        @if (row.StoryId is { } sid) { <span class="mtp-story" title="@row.StoryTitle" data-testid="mtp-row-story">@sid</span> }
-                                        @* The acceptance scenario next to the story (2026-11-25): the saved source identity the detail heading uses, never a list position.
-                                           Static text: «Vis scenarioet i Finn og forstå» in the detail opens the scenario. *@
-                                        @if (row.Ac is { } ac) { <span class="mtp-ac" title="@($"Akseptansescenario {ac}{(row.StoryId is { } acStory ? $" i {acStory}" : "")}")" data-testid="mtp-row-ac">@ac</span> }
-                                        else if (row.AcAmbiguous) { <span class="mtp-ac is-unclear" title="Testtilfellene her viser til flere akseptansescenarioer, så ingen er valgt. Åpne et testtilfelle for å se hvilket det gjelder." data-testid="mtp-row-ac" data-state="ambiguous">Flere AC</span> }
-                                        <span class="mtp-scenario-title">@row.Title</span>
-                                    </div>
-                                    @* Scenario-first (2026-11-25): the scenario title once; a case whose title is the scenario's is shown by its type and status only.
-                                       Distinct case titles are always kept; three or more cases fold under a count and open when one of them is selected. *@
-                                    <details class="mtp-case-group" open="@(!collapsible || holdsSelected)" data-testid="mtp-case-group">
-                                    <summary class="mtp-case-count @(collapsible ? null : "is-static")" data-testid="mtp-case-count" tabindex="@(collapsible ? null : "-1")">@row.Cases.Count testtilfelle@(row.Cases.Count == 1 ? "" : "r")@P.ApprovalSummary(row.Cases)</summary>
-                                    <ul class="mtp-cases">
-                                        @foreach (var c in row.Cases)
-                                        {
-                                            var id = P.IdOf(c);
-                                            var source = P.SourceLabel(c);
-                                            var sameTitle = P.SameAsScenario(c.EffectiveTitle, row.Title);
-                                            <li>
-                                                <button type="button" class="mtp-case @(id == _selectedId ? "is-selected" : null) @(sameTitle ? "is-same-title" : null)" aria-current="@(id == _selectedId ? "true" : null)"
-                                                        aria-label="@(sameTitle ? c.EffectiveTitle : null)" @onclick="() => SelectAsync(id)" data-testid="mtp-case" data-case="@id">
-                                                    @if (sameTitle) { <span class="mtp-case-title is-same" data-testid="mtp-case-same">@(Dirty && id == _selectedId ? "● " : "")Testtilfellet</span> }
-                                                    else { <span class="mtp-case-title">@(Dirty && id == _selectedId ? "● " : "")@c.EffectiveTitle</span> }
-                                                    @if (c.Edits.TestKind is { } savedKind) { <span class="mtw-kind-tag is-@savedKind.ToString().ToLowerInvariant()" data-testid="mtp-case-kind" data-kind="@savedKind">@P.CaseKindLabel(savedKind)</span> }
-                                                    <span class="msb-status msb-tone-@P.ReviewTone(c.Review)" data-testid="mtp-case-state">@P.ReviewLabel(c.Review)</span>
-                                                    @if (c.HasUnresolvedConflict) { <span class="msb-status msb-tone-bad" data-testid="mtp-case-conflict">Kildekonflikt</span> }
-                                                    else if (source is not null) { <span class="msb-status msb-tone-warn" data-testid="mtp-case-source">@source</span> }
-                                                </button>
-                                            </li>
-                                        }
-                                    </ul>
-                                    </details>
-                                    @if (CanWrite && !ReadOnlyPlan && row.Key.Length > 0)
-                                    {
-                                        <button type="button" class="msb-link mtp-add-case" disabled="@_busy" @onclick="() => OpenNewCaseAsync(row.Key, row.Title)" data-testid="mtp-add-case">+ Testtilfelle</button>
-                                    }
-                                </li>
+                                @SuiteTree(plan, rows, null, 0)
+                                @foreach (var loose in rows.Where(r => plan.Suites.All(x => x.Id != r.Cases.FirstOrDefault()?.SuiteId))) { @RowItem(loose) }
+                            }
+                            else
+                            {
+                                @foreach (var row in rows) { @RowItem(row) }
                             }
                         </ul>
                     </nav>
@@ -282,6 +264,14 @@
                         {
                             var readonlyCase = !CanWrite || ReadOnlyPlan || current.Review is TestCaseReviewState.Excluded or TestCaseReviewState.Superseded;
                             var crumbScenario = current.ParentScenario is { } crumbKey ? _plan!.Cases.FirstOrDefault(x => x.Source.Kind != ScenarioSourceKind.Manual && x.Source.ScenarioId == crumbKey) : null;
+                            @if (plan.Suites.Count > 1 || PlanSuiteEditing.Hierarchical(plan))
+                            {
+                                <label class="mtp-case-suite msb-small" data-testid="mtp-case-suite-label">Testgruppe
+                                    <select class="msb-select" disabled="@(_busy || !CanWrite || ReadOnlyPlan || Dirty)" title="@(Dirty ? "Lagre endringene i testtilfellet før du flytter det." : null)"
+                                            @onchange="e => MoveCaseAsync(current.Source.ScenarioId, e.Value?.ToString())" data-testid="mtp-case-suite">
+                                        @foreach (var (sid, spath) in PlanSuiteEditing.Choices(plan)) { <option value="@sid" selected="@(current.SuiteId == sid)">@spath</option> }
+                                    </select></label>
+                            }
                             <nav class="mtw-crumbs" aria-label="Plassering" data-testid="mtp-breadcrumb">
                                 @if (current.Generated.Story is { } crumbStory) { <span data-testid="mtp-breadcrumb-story">@ScenarioWorkspacePresentation.StoryLabel(crumbStory)</span><span aria-hidden="true"> › </span> }
                                 else { <span class="mt-muted">Uten brukerhistorie</span><span aria-hidden="true"> › </span> }
@@ -1180,6 +1170,160 @@
     }
 
     private void Discard() { if (Selected is { } c) _form = P.CaseForm.From(c); _notice = null; }
+    // ── One scenario row of the left list (shared by the flat list and the suite tree, 2026-11-26) ──
+    private RenderFragment RowItem(P.ScenarioRow row) => __builder =>
+    {
+                        var holdsSelected = row.Cases.Any(x => P.IdOf(x) == _selectedId);
+                        var collapsible = row.Cases.Count >= 3;
+                        <li class="mtp-scenario @(holdsSelected ? "has-selected" : null)" data-testid="mtp-scenario" data-key="@row.Key" data-cases="@row.Cases.Count">
+                            <div class="mtp-scenario-head">
+                                @if (row.StoryId is { } sid) { <span class="mtp-story" title="@row.StoryTitle" data-testid="mtp-row-story">@sid</span> }
+                                @* The acceptance scenario next to the story (2026-11-25): the saved source identity the detail heading uses, never a list position.
+                                   Static text: «Vis scenarioet i Finn og forstå» in the detail opens the scenario. *@
+                                @if (row.Ac is { } ac) { <span class="mtp-ac" title="@($"Akseptansescenario {ac}{(row.StoryId is { } acStory ? $" i {acStory}" : "")}")" data-testid="mtp-row-ac">@ac</span> }
+                                else if (row.AcAmbiguous) { <span class="mtp-ac is-unclear" title="Testtilfellene her viser til flere akseptansescenarioer, så ingen er valgt. Åpne et testtilfelle for å se hvilket det gjelder." data-testid="mtp-row-ac" data-state="ambiguous">Flere AC</span> }
+                                <span class="mtp-scenario-title">@row.Title</span>
+                            </div>
+                            @* Scenario-first (2026-11-25): the scenario title once; a case whose title is the scenario's is shown by its type and status only.
+                               Distinct case titles are always kept; three or more cases fold under a count and open when one of them is selected. *@
+                            <details class="mtp-case-group" open="@(!collapsible || holdsSelected)" data-testid="mtp-case-group">
+                            <summary class="mtp-case-count @(collapsible ? null : "is-static")" data-testid="mtp-case-count" tabindex="@(collapsible ? null : "-1")">@row.Cases.Count testtilfelle@(row.Cases.Count == 1 ? "" : "r")@P.ApprovalSummary(row.Cases)</summary>
+                            <ul class="mtp-cases">
+                                @foreach (var c in row.Cases)
+                                {
+                                    var id = P.IdOf(c);
+                                    var source = P.SourceLabel(c);
+                                    var sameTitle = P.SameAsScenario(c.EffectiveTitle, row.Title);
+                                    <li>
+                                        <button type="button" class="mtp-case @(id == _selectedId ? "is-selected" : null) @(sameTitle ? "is-same-title" : null)" aria-current="@(id == _selectedId ? "true" : null)"
+                                                aria-label="@(sameTitle ? c.EffectiveTitle : null)" @onclick="() => SelectAsync(id)" data-testid="mtp-case" data-case="@id">
+                                            @if (sameTitle) { <span class="mtp-case-title is-same" data-testid="mtp-case-same">@(Dirty && id == _selectedId ? "● " : "")Testtilfellet</span> }
+                                            else { <span class="mtp-case-title">@(Dirty && id == _selectedId ? "● " : "")@c.EffectiveTitle</span> }
+                                            @if (c.Edits.TestKind is { } savedKind) { <span class="mtw-kind-tag is-@savedKind.ToString().ToLowerInvariant()" data-testid="mtp-case-kind" data-kind="@savedKind">@P.CaseKindLabel(savedKind)</span> }
+                                            <span class="msb-status msb-tone-@P.ReviewTone(c.Review)" data-testid="mtp-case-state">@P.ReviewLabel(c.Review)</span>
+                                            @if (c.HasUnresolvedConflict) { <span class="msb-status msb-tone-bad" data-testid="mtp-case-conflict">Kildekonflikt</span> }
+                                            else if (source is not null) { <span class="msb-status msb-tone-warn" data-testid="mtp-case-source">@source</span> }
+                                        </button>
+                                    </li>
+                                }
+                            </ul>
+                            </details>
+                            @if (CanWrite && !ReadOnlyPlan && row.Key.Length > 0)
+                            {
+                                <button type="button" class="msb-link mtp-add-case" disabled="@_busy" @onclick="() => OpenNewCaseAsync(row.Key, row.Title)" data-testid="mtp-add-case">+ Testtilfelle</button>
+                            }
+                        </li>
+    };
+
+    // ── Suite tree and suite management (2026-11-26) ───────────────────────────────────────────────────────────────────────────
+    // Expanding and collapsing are view state only (never saved). A suite change is one saved revision through the normal plan save.
+    private HashSet<string> _collapsedSuites = new(StringComparer.Ordinal);
+    private bool _manageSuites;
+    private string? _suiteError;
+    private string _newSuiteName = "";
+    private string? _newSuiteParent;
+    private readonly Dictionary<string, string> _suiteMoveTarget = new(StringComparer.Ordinal);
+
+    private RenderFragment SuiteTree(TestPlanDraft plan, List<P.ScenarioRow> rows, string? parent, int depth) => __builder =>
+    {
+        foreach (var suite in PlanStructure.Children(plan.Suites, parent).ToList())
+        {
+            var id = suite.Id;
+            var mine = rows.Where(r => r.Cases.FirstOrDefault()?.SuiteId == id).ToList();
+            var count = PlanSuiteEditing.CasesIn(plan, id);
+            var holdsSelected = _selectedId is not null && plan.Cases.FirstOrDefault(c => P.IdOf(c) == _selectedId) is { } sel && (sel.SuiteId == id || PlanSuiteEditing.IsDescendant(plan.Suites, sel.SuiteId, id));
+            var open = holdsSelected || !_collapsedSuites.Contains(id);
+            if (_query.Length > 0 && mine.Count == 0 && !rows.Any(r => PlanSuiteEditing.IsDescendant(plan.Suites, r.Cases.FirstOrDefault()?.SuiteId, id))) continue;
+            <li class="mtp-suite @(depth > 0 ? "is-child" : null)" data-testid="mtp-suite" data-suite="@id" data-depth="@depth">
+                <button type="button" class="mtp-suite-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleSuite(id)" data-testid="mtp-suite-toggle">
+                    <span class="mtp-suite-caret" aria-hidden="true">@(open ? "▾" : "▸")</span><span class="mtp-suite-name">@suite.Name</span>
+                    <span class="mtp-suite-count" data-testid="mtp-suite-count">@count</span>
+                    @if (suite.TestLevel is { } level && depth == 0 && suite.Name != TestLevelClassifier.Label(level)) { <span class="mtp-suite-level">@TestLevelClassifier.Label(level)</span> }
+                </button>
+                @if (open)
+                {
+                    <ul class="mtp-scenarios is-nested">
+                        @foreach (var row in mine) { @RowItem(row) }
+                        @SuiteTree(plan, rows, id, depth + 1)
+                        @if (count == 0 && mine.Count == 0) { <li class="mt-muted msb-small mtp-suite-empty" data-testid="mtp-suite-empty">0 testtilfeller</li> }
+                    </ul>
+                }
+            </li>
+        }
+    };
+
+    private void ToggleSuite(string id) { if (!_collapsedSuites.Remove(id)) _collapsedSuites.Add(id); }
+
+    private RenderFragment SuitePanel(TestPlanDraft plan) => __builder =>
+    {
+        var choices = PlanSuiteEditing.Choices(plan);
+        <section class="mtp-suite-panel" aria-label="Testgrupper" data-testid="mtp-suite-panel">
+            <p class="mt-muted msb-small">Endringer i testgruppene lagres som en ny versjon av testplanen. Testtilfellene, stegene og godkjenningene endres ikke.</p>
+            <ul class="mtp-suite-edit-list">
+                @foreach (var (suite, depth) in PlanStructure.Flatten(plan.Suites))
+                {
+                    var s = suite;
+                    var cases = plan.Cases.Count(c => c.SuiteId == s.Id);
+                    <li style="padding-left:@(depth * 1.1)rem" data-testid="mtp-suite-edit" data-suite="@s.Id">
+                        <input class="mtp-lcell mtp-suite-rename" value="@s.Name" aria-label="@($"Navn på testgruppen {s.Name}")" disabled="@_busy"
+                               @onchange="e => ApplySuiteAsync(PlanSuiteEditing.Rename(plan, s.Id, e.Value?.ToString() ?? string.Empty))" data-testid="mtp-suite-rename" />
+                        <select class="msb-select" aria-label="@($"Flytt testgruppen {s.Name}")" disabled="@_busy" @onchange="e => ApplySuiteAsync(PlanSuiteEditing.Move(plan, s.Id, NullIfEmpty(e.Value?.ToString())))" data-testid="mtp-suite-move">
+                            <option value="" selected="@(s.ParentId is null)">Øverst</option>
+                            @foreach (var (cid, cpath) in choices.Where(c => c.Id != s.Id && !PlanSuiteEditing.IsDescendant(plan.Suites, c.Id, s.Id))) { <option value="@cid" selected="@(s.ParentId == cid)">Under: @cpath</option> }
+                        </select>
+                        @if (cases > 0)
+                        {
+                            <select class="msb-select" aria-label="Flytt testtilfellene til" @onchange="e => _suiteMoveTarget[s.Id] = e.Value?.ToString() ?? string.Empty" data-testid="mtp-suite-remove-target">
+                                <option value="">Flytt @cases testtilfelle@(cases == 1 ? "" : "r") til …</option>
+                                @foreach (var (cid, cpath) in choices.Where(c => c.Id != s.Id)) { <option value="@cid">@cpath</option> }
+                            </select>
+                        }
+                        <button type="button" class="msb-link" disabled="@_busy" @onclick="() => ApplySuiteAsync(PlanSuiteEditing.Remove(plan, s.Id, NullIfEmpty(_suiteMoveTarget.GetValueOrDefault(s.Id))))" data-testid="mtp-suite-remove">Fjern gruppe</button>
+                    </li>
+                }
+            </ul>
+            <div class="mtp-suite-new" data-testid="mtp-suite-new">
+                <input class="mtp-lcell" placeholder="Ny testgruppe" value="@_newSuiteName" @oninput="e => _newSuiteName = e.Value?.ToString() ?? string.Empty" data-testid="mtp-suite-new-name" />
+                <select class="msb-select" aria-label="Plassering" @onchange="e => _newSuiteParent = NullIfEmpty(e.Value?.ToString())" data-testid="mtp-suite-new-parent">
+                    <option value="">Øverst</option>
+                    @foreach (var (cid, cpath) in choices) { <option value="@cid" selected="@(_newSuiteParent == cid)">Under: @cpath</option> }
+                </select>
+                <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || _newSuiteName.Trim().Length == 0)" @onclick="AddSuiteAsync" data-testid="mtp-suite-add">Ny gruppe</button>
+            </div>
+            @if (_suiteError is { } se) { <p class="mt-alert msb-small" role="alert" data-testid="mtp-suite-error">@se</p> }
+        </section>
+    };
+
+    private static string? NullIfEmpty(string? v) => string.IsNullOrWhiteSpace(v) ? null : v;
+
+    private async Task AddSuiteAsync()
+    {
+        if (_plan is null) return;
+        if (await ApplySuiteAsync(PlanSuiteEditing.Add(_plan, _newSuiteName, _newSuiteParent))) { _newSuiteName = ""; }
+    }
+
+    private Task MoveCaseAsync(string caseId, string? suiteId) =>
+        _plan is null || suiteId is null ? Task.CompletedTask : ApplySuiteAsync(PlanSuiteEditing.MoveCase(_plan, caseId, suiteId), "Testtilfellet er flyttet.");
+
+    /// <summary>Saves a suite change as one revision (the plan as stored with the new suites/memberships). Refused while the case form has unsaved edits.</summary>
+    private async Task<bool> ApplySuiteAsync(PlanSuiteEditing.Edit edit, string notice = "Testgruppene er lagret.")
+    {
+        _suiteError = edit.Error;
+        if (edit.Error is not null || _plan is null || Api is not { } api) return false;
+        if (Dirty) { _suiteError = "Lagre eller forkast endringene i testtilfellet først."; return false; }
+        _busy = true;
+        try
+        {
+            var (draft, error) = await api.SaveAsync(_plan.Id, TestPlanSuggestionsPresentation.ToSaveRequest(edit.Plan));
+            if (draft is null) { _suiteError = P.Friendly(error, "Testgruppene kunne ikke lagres."); return false; }
+            _plan = draft;
+            if (_selectedId is { } keep) Open(keep);
+            _notice = notice;
+            return true;
+        }
+        finally { _busy = false; }
+    }
+
 
     private async Task<bool> SaveAsync()
     {

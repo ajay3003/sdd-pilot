@@ -63,10 +63,14 @@ public sealed record ManualTestingDashboardSettings
     public string? UpdatedBy { get; init; }
 
     public bool IsOn(string id) => Visible.TryGetValue(id, out var on) ? on : ManualTestingDashboard.Widgets.FirstOrDefault(w => w.Id == id)?.DefaultOn ?? false;
+    /// <summary>System Settings → Manuell testing → Testplanstruktur (2026-11-26): the grouping template proposed for NEW plans; null = the default.
+    /// Existing plans keep their saved structure.</summary>
+    public string? PlanStructure { get; init; }
+    public string EffectivePlanStructure => PlanStructureTemplates.Known(PlanStructure) ? PlanStructure! : PlanStructureTemplates.Default;
 }
 
 /// <summary>A change to the setup: the switches to store (unknown ids are refused), or <see cref="ResetToDefaults"/>.</summary>
-public sealed record SaveManualTestingDashboardSettingsRequest(Dictionary<string, bool>? Visible, bool ResetToDefaults = false);
+public sealed record SaveManualTestingDashboardSettingsRequest(Dictionary<string, bool>? Visible, bool ResetToDefaults = false, string? PlanStructure = null);
 
 /// <summary>The project's saved test work and its specifications' scenarios, for Testoversikt (read-only; no discovery is run, nothing is written).</summary>
 public sealed record ManualTestingOverview

@@ -200,6 +200,28 @@
                     {
                         <label class="adx-check"><input type="checkbox" checked="@draft.WithSelection" disabled="@_creating" @onchange="e => draft.WithSelection = e.Value is true" data-testid="mt-new-plan-selection" />
                             Ta med @_selection.Count scenario@(_selection.Count == 1 ? "" : "er") valgt i Finn og forstå</label>
+                        @if (draft.WithSelection)
+                        {
+                            <label class="mtp-field" for="mt-new-plan-structure"><span>Testplanstruktur</span></label>
+                            <select id="mt-new-plan-structure" class="form-select form-select-sm mt-new-plan-structure" disabled="@_creating" @onchange="e => draft.Structure = e.Value?.ToString() ?? PlanStructureTemplates.Default" data-testid="mt-new-plan-structure">
+                                @foreach (var (key, label, _) in PlanStructureTemplates.All) { <option value="@key" selected="@(draft.Structure == key)">@label</option> }
+                            </select>
+                            var proposed = ProposedStructure(draft.Structure);
+                            <div class="mt-new-plan-preview" data-testid="mt-new-plan-preview">
+                                <span class="mt-muted msb-small">Testgruppene i den nye testplanen (@proposed.Suites.Count testgrupper, @proposed.Assignment.Count testtilfeller):</span>
+                                <ul class="mt-structure-tree">
+                                    @foreach (var (suite, depth) in PlanStructure.Flatten(proposed.Suites))
+                                    {
+                                        var count = proposed.Assignment.Values.Count(v => v == suite.Id);
+                                        <li style="padding-left:@(depth * 1.1)rem" data-testid="mt-new-plan-suite" data-depth="@depth">@suite.Name@if (count > 0) { <span class="mt-muted msb-small"> · @count testtilfelle@(count == 1 ? "" : "r")</span> }</li>
+                                    }
+                                </ul>
+                                @if (proposed.Suites.Any(x => x.TestLevel == ScenarioTestLevel.EndToEnd) && SelectedScenarios().Any(c => TestLevelClassifier.Of(c.Type).Candidate))
+                                {
+                                    <p class="mt-muted msb-small" data-testid="mt-new-plan-e2e-candidates">E2E-scenarioene er kandidater fra dokumenterte forretningsflyter. Testtilfellene lages som utkast og må gjennomgås.</p>
+                                }
+                            </div>
+                        }
                     }
                     @if (_createError is { } ce) { <p class="mt-alert" role="alert" data-testid="mt-new-plan-error">@ce</p> }
                     <div class="mt-new-plan-actions">
@@ -508,6 +530,8 @@
     {
         public string Name { get; set; } = name;
         public bool WithSelection { get; set; }
+        /// <summary>The grouping template of the new plan (2026-11-26); the System Settings default unless the tester picks another.</summary>
+        public string Structure { get; set; } = PlanStructureTemplates.Default;
         public string RequestId { get; } = Guid.NewGuid().ToString("N");
     }
 
@@ -578,10 +602,23 @@
         try { return await runs.AvailabilityAsync(); } catch (Exception e) when (e is not OperationCanceledException) { return false; }
     }
 
+    /// <summary>The scenarios chosen in Finn og forstå that the current discovery still holds (only those are ever added).</summary>
+    private List<DiscoveredScenario> SelectedScenarios() =>
+        _ws?.Discovery is { } d ? [.. d.Candidates.Where(c => _selection.Contains(c.CandidateId))] : [];
+
+    /// <summary>The structure the new plan gets — the same shared rules the server applies when it creates the plan.</summary>
+    private PlanStructureResult ProposedStructure(string template) =>
+        PlanStructure.Build(template, [.. SelectedScenarios().Select(c => PlanStructure.FactsOf(c.CandidateId, c))]);
+
     private void StartNew()
     {
         // Every start is a new draft: a new suggested name (local time now) and a new request id; the previous draft is never reused.
-        _new = new NewPlanDraft(M.SuggestedPlanName(DateTime.Now));
+        _new = new NewPlanDraft(M.SuggestedPlanName(DateTime.Now)) { Structure = _dashboard.EffectivePlanStructure };
+        if (Api is { } api) _ = InvokeAsync(async () =>
+        {
+            var (settings, _) = await api.DashboardSettingsAsync();
+            if (settings is not null) { _dashboard = settings; if (_new is { } n) n.Structure = settings.EffectivePlanStructure; StateHasChanged(); }
+        });
         (_createError, _created) = (null, null);
     }
 
@@ -597,6 +634,7 @@
             {
                 ProjectKey = key, ProjectName = _ws.ProjectName, PlanName = draft.Name.Trim(), CreationRequestId = draft.RequestId,
                 DiscoveryId = withSelection ? _ws.Discovery!.DiscoveryId : "", CandidateIds = withSelection ? [.. _selection] : [], AllowEmpty = !withSelection,
+                Structure = withSelection ? draft.Structure : null,
             });
             // A failed save keeps the draft (same name, same request id: a retry never creates a second test plan).
             if (plan is null) { _createError = P.Friendly(error, "Kunne ikke opprette testplan."); return; }

@@ -657,6 +657,12 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             Suites = TestScenarioDiscoveryEngine.ProjectSuites(cases.Select(c => c.Generated)), Cases = cases, RuleVersion = E.RuleVersion,
             CreatedBy = actor, CreatedAt = Now, UpdatedBy = actor, UpdatedAt = Now,
         };
+        // Hierarchical plan (2026-11-26): the chosen template becomes the saved suite structure — the same rules as the browser's preview.
+        if (PlanStructureTemplates.Known(request.Structure) && cases.Count > 0)
+        {
+            var structure = PlanStructure.Build(request.Structure!, [.. cases.Select((c, i) => StructureFacts(c, i < chosen.Count ? chosen[i] : null))]);
+            plan = plan with { Suites = structure.Suites, Cases = [.. cases.Select(c => structure.Assignment.TryGetValue(c.Source.ScenarioId, out var suite) ? c with { SuiteId = suite } : c)] };
+        }
         Bound(plan);
         db.TestPlanDrafts.Add(new TestPlanDraftRecord
         {
@@ -667,6 +673,11 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         await db.SaveChangesAsync(ct);
         return plan;
     }
+
+    /// <summary>What the plan structure reads about one new case: its scenario's facts (shared with the browser's preview), or a hand-written case.</summary>
+    internal static PlanStructureFacts StructureFacts(TestCaseDraft c, DiscoveredScenario? scenario) => scenario is null
+        ? new(c.Source.ScenarioId, ScenarioTestLevel.Unclassified, c.Generated.GroupTitle ?? "Skrevet for hånd", null, null, null)
+        : PlanStructure.FactsOf(c.Source.ScenarioId, scenario, c.Generated.GroupTitle);
 
     /// <summary>The project's plan created from this browser draft id, if any (archived and active; never another project's).</summary>
     private async Task<TestPlanDraft?> CreatedFromAsync(string key, string creationRequestId, CancellationToken ct)
@@ -991,8 +1002,14 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         if (ids.Count == 0) throw new TestPlanException(400, "no-scenarios", "A plan keeps at least one test case.");
         var human = request.Cases.GroupBy(c => c.ScenarioId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Last(), StringComparer.Ordinal);
         var suites = request.Suites.Where(s => !string.IsNullOrWhiteSpace(s.Id) && !string.IsNullOrWhiteSpace(s.Name)).GroupBy(s => s.Id, StringComparer.Ordinal).Select(g => g.Last())
-            .Take(50).Select(s => s with { Name = s.Name.Trim()[..Math.Min(s.Name.Trim().Length, 200)], Origin = s.Origin is "area" or "stage" ? s.Origin : "reviewer" }).ToList();
+            .Take(200).Select(s => s with
+            {
+                Name = s.Name.Trim()[..Math.Min(s.Name.Trim().Length, 200)], Origin = s.Origin is "area" or "stage" or "structure" ? s.Origin : "reviewer",
+                ParentId = string.IsNullOrWhiteSpace(s.ParentId) ? null : s.ParentId,
+            }).ToList();
         if (suites.Count == 0) suites = current.Suites;
+        // The suite hierarchy is saved business data (2026-11-26): an unknown parent, a cycle or a duplicate id is refused, never repaired silently.
+        if (PlanStructure.Validate(suites) is { } invalid) throw new TestPlanException(400, "invalid-suites", invalid);
         var assets = await AssetsAsync(ct);
         var executables = Executables().GroupBy(e => e.Reference.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var catalog = RequirementCatalog(current.ProjectKey!, request.RequirementCatalog);

@@ -137,6 +137,8 @@ public static partial class ScenarioBrowserPresentation
         public UserStoryTaskStatus? StoryStatus { get; init; }
         /// <summary>The type group the scenario belongs to: its type, «Krav uten akseptansescenario» or «Andre forslag».</summary>
         public string TypeKey => TypeResult?.Type.ToString() ?? (IsRequirementOnly(Candidate) ? RequirementGroup : OtherGroup);
+        /// <summary>The test level the evidence states (2026-11-26; its own dimension, never the type or the method).</summary>
+        public TestLevelResult Level => TestLevelClassifier.Of(Candidate.Type);
         public Relevance Suggested => AutomaticRelevance ?? Relevance;
     }
 
@@ -228,7 +230,7 @@ public static partial class ScenarioBrowserPresentation
     /// <summary>All filters compose. <see cref="Queue"/> null = every scenario (Finn og forstå starts on <see cref="DefaultView"/>).</summary>
     public sealed record Filter(string Query = "", string? Area = null, string? Type = null, string? Status = null, string? Story = null, string? Requirement = null, bool Technical = false, bool All = false,
         ScenarioWorkQueue? Queue = null, string? Priority = null, ExecutionApproach? Approach = null, bool OnlyTechnical = false, string? Tech = null,
-        string[]? Identities = null, string? Selection = null, string? ScenarioType = null, string? ImplementationStatus = null);
+        string[]? Identities = null, string? Selection = null, string? ScenarioType = null, string? ImplementationStatus = null, string? TestLevel = null);
 
     /// <summary>Type-group keys besides <see cref="ScenarioRequirementType"/>: a requirement without an acceptance scenario, and proposals that are
     /// not acceptance scenarios of the specification (contracts, code, flows). Neither is part of the scenario-type classification.</summary>
@@ -285,7 +287,7 @@ public static partial class ScenarioBrowserPresentation
 
     /// <summary>Filters behind «Flere filtre» that are set (status, type, user story, requirement, priority).</summary>
     public static int AdvancedFilterCount(Filter f) =>
-        new[] { f.Status, f.Type, f.Story, f.Requirement, f.Priority, f.Approach?.ToString(), f.Tech, f.ScenarioType, f.ImplementationStatus }.Count(v => v is not null);
+        new[] { f.Status, f.Type, f.Story, f.Requirement, f.Priority, f.Approach?.ToString(), f.Tech, f.ScenarioType, f.ImplementationStatus, f.TestLevel }.Count(v => v is not null);
 
     /// <summary>Whether search or any filter narrows the view (the queue and «Vis teknisk innhold» are views, not filters).</summary>
     public static bool HasFilters(Filter f) => f.Query.Length > 0 || f.Area is not null || AdvancedFilterCount(f) > 0 || f.Identities is not null;
@@ -319,6 +321,7 @@ public static partial class ScenarioBrowserPresentation
             && (f.Story is null || (f.Story == ScenarioWorkspacePresentation.NoStory ? i.Candidate.Story is null : i.Candidate.Story?.Key == f.Story))
             && (f.Identities is null || f.Identities.Contains(i.Candidate.SourceIdentity, StringComparer.Ordinal))
             && (f.ScenarioType is null || i.TypeKey == f.ScenarioType)
+            && (f.TestLevel is null || i.Level.Level.ToString() == f.TestLevel)
             // «Ukjent» also covers a story whose status is not computed; a scenario without a story has no implementation status to filter on.
             && (f.ImplementationStatus is null || i.Candidate.Story is not null && (i.StoryStatus ?? UserStoryTaskStatus.Unknown).ToString() == f.ImplementationStatus)
             && (f.Requirement is null || i.Candidate.RequirementIds.Contains(f.Requirement, StringComparer.OrdinalIgnoreCase))

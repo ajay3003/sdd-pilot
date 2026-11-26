@@ -437,4 +437,35 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         // Without the shared selection nothing opens (the explorer is not registered in this test).
         cut.WaitForAssertion(() => cut.Find("[data-testid=mto-drill-error]"));
     }
+
+    // ── Hierarchical plans: the structure of a new plan from a selection (2026-11-26) ─────────────────────────────────────────
+
+    [Fact]
+    public void A_new_plan_from_a_selection_previews_its_suite_tree_and_creates_it_with_the_chosen_structure()
+    {
+        var discovery = Discovery(3) with
+        {
+            Candidates =
+            [
+                new DiscoveredScenario { CandidateId = "c1", ProjectKey = "library", Title = "Gyldig rapport", Type = ScenarioCandidateType.BusinessE2E, Area = "Rapportering" },
+                new DiscoveredScenario { CandidateId = "c2", ProjectKey = "library", Title = "Gyldig XML", Type = ScenarioCandidateType.Integration, Area = "Meldingsmottak" },
+                new DiscoveredScenario { CandidateId = "c3", ProjectKey = "library", Title = "Ikke valgt", Type = ScenarioCandidateType.Integration, Area = "Annet" },
+            ],
+        };
+        Setup([Summary()], discovery);
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ManualTestingDashboardSettings(), (string?)null));
+        _plans.Setup(x => x.CreateProjectAsync(It.IsAny<CreateProjectTestPlanRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync((new TestPlanDraft { Id = PlanId, PlanName = "Ny" }, (string?)null));
+        JSInterop.Setup<string?>("sessionStorage.getItem", TabDraftStore.SelectionKey("library")).SetResult(System.Text.Json.JsonSerializer.Serialize(new List<string> { "c1", "c2" }));
+        var cut = Open<ManualTesting>("manual-testing/plans");
+        cut.Find("[data-testid=mt-new-plan]").Click();
+        cut.Find("[data-testid=mt-new-plan-selection]").Change(true);
+        cut.FindAll("[data-testid=mt-new-plan-suite]").Select(e => (e.TextContent.Split('·')[0].Trim(), e.GetAttribute("data-depth"))).Should().Equal(
+            ("Ende til ende", "0"), ("Rapportering", "1"), ("Integrasjon", "0"), ("Meldingsmottak", "1"));
+        cut.Find("[data-testid=mt-new-plan-e2e-candidates]").TextContent.Should().Contain("kandidater");
+        cut.Find("[data-testid=mt-new-plan-structure]").Change(PlanStructureTemplates.None);
+        cut.FindAll("[data-testid=mt-new-plan-suite]").Should().OnlyContain(e => e.GetAttribute("data-depth") == "0");
+        cut.Find("[data-testid=mt-new-plan-structure]").Change(PlanStructureTemplates.LevelArea);
+        cut.Find("[data-testid=mt-new-plan-create]").Click();
+        _plans.Verify(x => x.CreateProjectAsync(It.Is<CreateProjectTestPlanRequest>(r => r.Structure == PlanStructureTemplates.LevelArea && r.CandidateIds.SequenceEqual(new[] { "c1", "c2" })), It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

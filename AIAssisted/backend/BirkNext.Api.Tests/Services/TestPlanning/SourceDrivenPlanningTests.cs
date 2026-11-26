@@ -586,6 +586,38 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task A_plan_created_with_a_structure_keeps_its_suite_tree_and_a_moved_case_keeps_its_identity_and_approval()
+    {
+        await using var db = Context();
+        var x = Services(db);
+        var flow = InSpec("e1", SkoleSpec, "US1", "f1") with { Type = ScenarioCandidateType.BusinessE2E, Area = "Rapportering" };
+        var receive = InSpec("i1", SkoleSpec, "US2", "f2") with { Type = ScenarioCandidateType.Integration, Area = "Meldingsmottak" };
+        _discoveries.Store(Selected("d-tree", DateTimeOffset.UtcNow, SkoleSpec, flow, receive));
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-tree", CandidateIds = ["e1", "i1"],
+            PlanName = "Skolenærvær", Structure = PlanStructureTemplates.LevelArea, CreationRequestId = "tree-1" }, "anna", default);
+
+        PlanStructure.Flatten(plan.Suites).Select(t => new string(' ', t.Depth * 2) + t.Suite.Name).Should().Equal("Ende til ende", "  Rapportering", "Integrasjon", "  Meldingsmottak");
+        PlanStructure.PathOf(plan.Suites, plan.Cases.Single(c => c.Source.ScenarioId == "e1").SuiteId).Should().Be("Ende til ende / Rapportering");
+
+        // A reviewer adds a child suite under «Integrasjon» and moves the integration case into it; the case is approved first.
+        var integration = plan.Suites.Single(t => t.Name == "Integrasjon");
+        var mine = new TestSuiteDraft("suite:r:1", "Duplikater", "reviewer", null) { ParentId = integration.Id, Order = 1 };
+        plan = await x.Plans.SaveAsync(plan.Id, Human(plan, (c, part) => part) with { Suites = [.. plan.Suites, mine] }, "anna", default);
+        var before = plan.Cases.Single(c => c.Source.ScenarioId == "i1");
+        var request = Human(plan, (c, part) => c.Source.ScenarioId == "i1" ? part with { SuiteId = mine.Id } : part);
+        plan = await x.Plans.SaveAsync(plan.Id, request, "anna", default);
+        var moved = (await x.Plans.DraftAsync(plan.Id, default)).Cases.Single(c => c.Source.ScenarioId == "i1");
+        moved.SuiteId.Should().Be(mine.Id);
+        (moved.Source.ScenarioId, moved.Generated.SourceIdentity, moved.Review).Should().Be((before.Source.ScenarioId, before.Generated.SourceIdentity, before.Review), "moving never changes identity, source or review");
+        PlanStructure.PathOf(plan.Suites, moved.SuiteId).Should().Be("Integrasjon / Duplikater");
+        (await x.Plans.RevisionsAsync(plan.Id, default)).Should().HaveCount(3, "created, suite added, case moved — each a revision");
+
+        // A cycle is refused, never repaired silently.
+        var cyclic = Human(plan, (c, part) => part) with { Suites = [.. plan.Suites.Select(t => t.Id == integration.Id ? t with { ParentId = mine.Id } : t)] };
+        (await FluentActions.Awaiting(() => x.Plans.SaveAsync(plan.Id, cyclic, "anna", default)).Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("invalid-suites");
+    }
+
+    [Fact]
     public async Task A_historical_inspection_can_never_extend_a_plan_or_move_its_basis()
     {
         await using var db = Context();

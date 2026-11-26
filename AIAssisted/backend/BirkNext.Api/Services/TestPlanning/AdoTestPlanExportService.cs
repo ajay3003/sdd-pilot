@@ -104,6 +104,34 @@ public sealed class AdoTestPlanExportService(AppDbContext db, TestPlanSuggestion
         return new AdoExportFile(name, xlsx ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv", Convert.ToBase64String(bytes), preview.Rows.Count, ready.Count);
     }
 
+    /// <summary>
+    /// The export package of a hierarchical plan (2026-11-26): a ZIP with the plan overview, the suite hierarchy manifest, one import file per
+    /// suite that holds ready cases (the SAME exporter and format as the single file, so every file follows the import contract), and an import
+    /// guide generated from the manifest. A file import does not create suites: the guide says to create the Static Test Suite tree first and import
+    /// each file into its leaf suite. Refused (409) while anything blocks the export; nothing is sent anywhere.
+    /// </summary>
+    public async Task<AdoExportFile> PackageAsync(AdoExportRequest request, string actor, CancellationToken ct)
+    {
+        var plan = await PlanAsync(request, ct);
+        var preview = AdoTestPlanExporter.Preview(plan, request);
+        if (!preview.CanDownload)
+            throw new TestPlanException(409, "export-blocked", string.Join(" ", preview.Issues.Where(i => i.Level == AdoIssueLevel.Blocking).Select(i => i.Message).Distinct().Take(5)));
+        var xlsx = request.Profile.Format == AdoExportFormat.Xlsx;
+        var ready = preview.Cases.Where(c => c.Included && c.Issues.All(i => i.Level != AdoIssueLevel.Blocking)).Select(c => c.CaseId).ToHashSet(StringComparer.Ordinal);
+        var package = AdoExportPackage.Build(plan, ready, subset => AdoTestPlanExporter.Preview(plan with { Cases = subset }, request),
+            rows => xlsx ? AdoTestPlanExporter.Xlsx(rows.Rows, rows.Headers) : AdoTestPlanExporter.Csv(rows.Rows, rows.Headers, request.Profile.CsvSpreadsheetSafe), xlsx ? "xlsx" : "csv");
+        var revisions = Revisions(plan);
+        db.AdoExports.Add(new AdoExportRecord
+        {
+            Id = Guid.NewGuid(), ProjectKey = plan.ProjectKey!, DraftId = plan.Id, PlanName = plan.PlanName.Length <= 300 ? plan.PlanName : plan.PlanName[..300], PlanRevision = plan.Revision,
+            Format = "Package", Mode = request.Mode.ToString(), Cases = ready.Count, Rows = package.Rows, Destination = Trim(request.Profile.DestinationLabel, 300),
+            ContentJson = JsonSerializer.Serialize(new { cases = ready.Select(c => $"{c}@{revisions.GetValueOrDefault(c)}"), files = package.Files, profile = request.Profile with { } }, E.Json),
+            ExportedBy = actor.Length <= 200 ? actor : actor[..200], ExportedAt = Now,
+        });
+        await db.SaveChangesAsync(ct);
+        return new AdoExportFile($"{FileStem(plan.PlanName)}-azure-test-plans-pakke-r{plan.Revision}.zip", "application/zip", Convert.ToBase64String(package.Zip), package.Rows, ready.Count);
+    }
+
     /// <summary>The mapping report: what the import file cannot carry (requirements, Test Data names, preconditions, BirkNext identity).</summary>
     public async Task<AdoExportFile> ReportAsync(AdoExportRequest request, CancellationToken ct)
     {

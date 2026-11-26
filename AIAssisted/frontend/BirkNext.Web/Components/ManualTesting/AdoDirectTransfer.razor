@@ -113,6 +113,24 @@
             <div class="gsx-panel" data-testid="adt-cases">
                 <div class="gsx-panel-head"><h3 class="gsx-panel-title">Testtilfeller</h3><span class="gsx-pill gsx-pill-neutral" data-testid="adt-ready-count">@(ready.Count + duplicates.Count) klare</span></div>
                 <label class="adx-check"><input type="checkbox" checked="@_includeNotApproved" @onchange="e => SetAsync(() => _includeNotApproved = e.Value is true)" data-testid="adt-include-unapproved" /> Ta med testtilfeller som ikke er godkjent ennå</label>
+                @if (Hierarchical)
+                {
+                    <label class="adx-check"><input type="checkbox" checked="@_preserveSuites" @onchange="e => SetAsync(() => _preserveSuites = e.Value is true)" data-testid="adt-preserve-suites" />
+                        Behold testgruppene: legg testtilfellene i testgrupper under målet, som i testplanen</label>
+                    @if (_preserveSuites && _preview is { SuitePlan.Count: > 0 } sp)
+                    {
+                        <details class="adt-more" open data-testid="adt-suite-plan"><summary>Testgrupper under «@(_destination?.SuitePath ?? _destination?.SuiteName)» (@sp.SuitePlan.Count(i => !i.Exists) opprettes, @sp.SuitePlan.Count(i => i.Exists) finnes)</summary>
+                            <ul class="adt-suite-tree">
+                                @foreach (var i in sp.SuitePlan)
+                                {
+                                    <li style="padding-left:@(i.Depth * 1.1)rem" data-testid="adt-suite" data-exists="@(i.Exists ? "true" : "false")">@i.Path.Split(" / ")[^1]
+                                        <span class="gsx-muted">@(i.Exists ? "finnes" : "opprettes")@(i.Cases > 0 ? $" · {i.Cases} testtilfelle{(i.Cases == 1 ? "" : "r")}" : "")</span></li>
+                                }
+                            </ul>
+                            <p class="gar-help">Lest fra Azure DevOps nå; ingenting er opprettet ennå. En testgruppe med samme navn under samme overordnede gruppe brukes på nytt.</p>
+                        </details>
+                    }
+                }
                 @if (ready.Count == 0 && duplicates.Count == 0) { <p class="gsx-state" data-testid="adt-none-ready">Ingen testtilfeller er klare. Godkjenn testtilfeller i testplanen, eller ta med de som ikke er godkjent.</p> }
                 <ul class="adt-list" aria-label="Testtilfeller som kan overføres">@foreach (var c in ready) { @CaseRow(c) }</ul>
                 @if (duplicates.Count > 0)
@@ -172,7 +190,14 @@
                             ? $"«{c.Title}» opprettes som nytt testtilfelle"
                             : $"Testtilfelle {c.Link.TestCaseId} («{c.Title}») oppdateres — tittel og steg erstattes med versjonen i BirkNext")</li>
                     }
-                    <li>Testtilfellene legges i testgruppen «@(rd.SuitePath ?? rd.SuiteName)» hvis de ikke ligger der fra før.</li>
+                    @if (_preserveSuites && rp.SuitePlan.Count > 0)
+                    {
+                        <li data-testid="adt-review-suites">@rp.SuitePlan.Count(i => !i.Exists) testgrupper opprettes og @rp.SuitePlan.Count(i => i.Exists) brukes på nytt under «@(rd.SuitePath ?? rd.SuiteName)»; hvert testtilfelle legges i sin egen testgruppe.</li>
+                    }
+                    else
+                    {
+                        <li>Testtilfellene legges i testgruppen «@(rd.SuitePath ?? rd.SuiteName)» hvis de ikke ligger der fra før.</li>
+                    }
                 </ul>
             </details>
             @{ var warnings = rp.Issues.Where(i => i.Level == AdoIssueLevel.Warning).ToList(); }
@@ -203,6 +228,11 @@
                 <span class="gsx-muted">@ok.Count overført · @problems.Count må følges opp · @skipped.Count hoppet over</span>
             </div>
             <p class="gar-help" data-testid="adt-not-execution">Overført betyr at testtilfellene finnes i Azure DevOps — ikke at testene er kjørt eller bestått.</p>
+            @if (r.Suites.Count > 0)
+            {
+                <details class="adt-more" open="@(r.Suites.Any(x => x.RemoteSuiteId is null))" data-testid="adt-result-suites"><summary>Testgrupper (@r.Suites.Count(x => x.Outcome == AdoCreateOutcome.Created) opprettet, @r.Suites.Count(x => x.Outcome == AdoCreateOutcome.AlreadyExists) gjenbrukt, @r.Suites.Count(x => x.RemoteSuiteId is null) feilet)</summary>
+                    <ul>@foreach (var x in r.Suites) { <li data-testid="adt-result-suite" data-outcome="@x.Outcome">@x.Path — @x.Message</li> }</ul></details>
+            }
             @if (ok.Count > 0)
             {
                 <h4 class="adt-sub">Overført (@ok.Count)</h4>
@@ -250,8 +280,12 @@
     private AdoTransferRequest Request(bool send = false) => new()
     {
         ProjectKey = ProjectKey, DraftId = Draft.Id, PlanRevision = Draft.Revision, IncludeNotApproved = _includeNotApproved, Profile = _profile, Destination = _destination,
-        Actions = new(_actions), Confirmed = send, LeadApprovalDeclared = send && _declared,
+        Actions = new(_actions), Confirmed = send, LeadApprovalDeclared = send && _declared, PreserveSuites = Hierarchical && _preserveSuites,
     };
+
+    /// <summary>The plan has a suite tree (2026-11-26): the transfer can keep it as Static Test Suites under the destination (on by default).</summary>
+    private bool Hierarchical => Draft.Suites.Any(s => s.ParentId is not null);
+    private bool _preserveSuites = true;
 
     private async Task ContinueAsync()
     {

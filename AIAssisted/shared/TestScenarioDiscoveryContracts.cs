@@ -390,6 +390,9 @@ public sealed record CreateProjectTestPlanRequest
     /// <summary>One id per «Opprett testplan» draft in the browser: a double-click or a retry of the same draft returns the plan already created from
     /// it instead of a second plan.</summary>
     public string? CreationRequestId { get; init; }
+    /// <summary>Hierarchical plans (2026-11-26): the grouping template of a NEW plan from a selection (<see cref="PlanStructureTemplates"/>); null =
+    /// the earlier flat area suites. Ignored when adding to an existing plan (a saved plan is never reorganised).</summary>
+    public string? Structure { get; init; }
 }
 
 /// <summary>A test case a person writes by hand: title and purpose; steps are added while editing. <see cref="ScenarioKey"/> = write it under that

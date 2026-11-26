@@ -30,12 +30,17 @@ public sealed class ManualTestingDashboardSettingsStore(string directory)
     {
         var unknown = (request.Visible?.Keys.AsEnumerable() ?? []).Where(k => !ManualTestingDashboard.IsKnown(k)).ToList();
         if (unknown.Count > 0) throw new ArgumentException($"Ukjent del av testoversikten: {string.Join(", ", unknown.Take(5))}.");
+        if (request.PlanStructure is { } structure && !PlanStructureTemplates.Known(structure)) throw new ArgumentException($"Ukjent testplanstruktur: {structure}.");
         lock (_gate)
         {
             var current = request.ResetToDefaults ? new ManualTestingDashboardSettings() : Read();
             var visible = new Dictionary<string, bool>(current.Visible, StringComparer.Ordinal);
             foreach (var (id, on) in request.Visible ?? []) visible[id] = on;
-            var saved = new ManualTestingDashboardSettings { Visible = request.ResetToDefaults ? new(StringComparer.Ordinal) : visible, UpdatedAt = now, UpdatedBy = actor };
+            var saved = new ManualTestingDashboardSettings
+            {
+                Visible = request.ResetToDefaults ? new(StringComparer.Ordinal) : visible, UpdatedAt = now, UpdatedBy = actor,
+                PlanStructure = request.ResetToDefaults ? null : request.PlanStructure ?? current.PlanStructure,
+            };
             Directory.CreateDirectory(directory);
             var temp = FilePath + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(saved, Json));

@@ -156,7 +156,7 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
     public void Rows_carry_one_short_type_label_and_grouping_by_type_shows_each_scenario_once_under_its_type()
     {
         var cut = Open(View());
-        cut.FindAll("[data-testid=mtd-group-mode] option").Select(o => o.TextContent).Should().StartWith(["Brukerhistorier", "Scenariotype"]);
+        cut.FindAll("[data-testid=mtd-group-mode] option").Select(o => o.TextContent).Should().StartWith(["Brukerhistorier", "Testnivå", "Scenariotype"]);
         cut.FindAll("[data-testid=mtd-group-mode] option").First(o => o.HasAttribute("selected")).TextContent.Should().Be("Brukerhistorier", "the default grouping is unchanged");
         string? Label(DiscoveredScenario c) => cut.Find($"[data-testid=mtd-scenario][data-id='{c.CandidateId}']").QuerySelector("[data-testid=mtd-scenario-type]")?.TextContent;
         Label(Search).Should().BeNull("a functional scenario needs no label");

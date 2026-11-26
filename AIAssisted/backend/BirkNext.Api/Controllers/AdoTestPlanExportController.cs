@@ -31,6 +31,10 @@ public sealed class AdoTestPlanExportController(AdoTestPlanExportService export)
     [HttpPost("file")]
     public Task<ActionResult> File([FromBody] AdoExportRequest request, CancellationToken ct) => Run(async () => Ok(await export.FileAsync(request, Actor, ct)));
 
+    /// <summary>The export package of a hierarchical plan (2026-11-26): overview, suite manifest, one import file per suite and the import guide (ZIP; no remote call).</summary>
+    [HttpPost("package")]
+    public Task<ActionResult> Package([FromBody] AdoExportRequest request, CancellationToken ct) => Run(async () => Ok(await export.PackageAsync(request, Actor, ct)));
+
     [HttpPost("report")]
     public Task<ActionResult> Report([FromBody] AdoExportRequest request, CancellationToken ct) => Run(async () => Ok(await export.ReportAsync(request, ct)));
 

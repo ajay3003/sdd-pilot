@@ -277,6 +277,69 @@ public sealed class AdoTestPlanTransferTests : IAsyncLifetime, IDisposable
         LeadApprovalDeclared = declared, Actions = actions ?? [],
     };
 
+    /// <summary>The plan with a suite tree (2026-11-26): «Ende til ende / Rapportering» holds the first case, «Integrasjon / Mottak» the second.</summary>
+    private async Task<TestPlanDraft> TreeAsync(AppDbContext db)
+    {
+        var plan = await PlanAsync(db);
+        var suites = new List<TestSuiteDraft>
+        {
+            new("s-e2e", "Ende til ende", "structure", null) { TestLevel = ScenarioTestLevel.EndToEnd }, new("s-rapp", "Rapportering", "structure", null) { ParentId = "s-e2e" },
+            new("s-int", "Integrasjon", "structure", null) { Order = 1 }, new("s-mott", "Mottak", "structure", null) { ParentId = "s-int" },
+        };
+        var target = new[] { "s-rapp", "s-mott" };
+        return await Plans(db).SaveAsync(plan.Id, new SaveTestPlanDraftRequest
+        {
+            BaseRevision = plan.Revision, PlanName = plan.PlanName, ScenarioIds = [.. plan.Cases.Select(c => c.Source.ScenarioId)], Suites = suites,
+            Cases = [.. plan.Cases.Select((c, i) => new TestCaseHumanPart { ScenarioId = c.Source.ScenarioId, SuiteId = target[i], Edits = c.Edits, Risk = c.Risk, RequirementLinks = [.. c.RequirementLinks] })],
+        }, "tester", default);
+    }
+
+    [Fact]
+    public async Task A_transfer_with_suite_placement_creates_the_static_suite_tree_parent_first_reuses_it_on_retry_and_never_writes_on_preview()
+    {
+        await using var db = Context();
+        var plan = await TreeAsync(db);
+        var sut = Build(db);
+        var writes = _ado.Writes.Count;
+
+        var preview = await sut.Transfer.PreviewAsync(Request(plan) with { PreserveSuites = true }, default);
+        preview.SuitePlan.Select(i => (i.Path, i.Depth, i.Cases, i.Exists)).Should().Equal(
+            ("Ende til ende", 0, 0, false), ("Ende til ende / Rapportering", 1, 1, false), ("Integrasjon", 0, 0, false), ("Integrasjon / Mottak", 1, 1, false));
+        _ado.Writes.Count.Should().Be(writes, "a preview never writes");
+
+        var result = await sut.Transfer.TransferAsync(Request(plan) with { PreserveSuites = true }, "tester", default);
+        result.Suites.Select(x => (x.Path, x.Outcome)).Should().Equal(("Ende til ende", AdoCreateOutcome.Created), ("Ende til ende / Rapportering", AdoCreateOutcome.Created),
+            ("Integrasjon", AdoCreateOutcome.Created), ("Integrasjon / Mottak", AdoCreateOutcome.Created));
+        int Remote(string path) => result.Suites.Single(x => x.Path == path).RemoteSuiteId!.Value;
+        _ado.Suites.Single(x => x.Id == Remote("Ende til ende / Rapportering")).Parent.Should().Be(Remote("Ende til ende"));
+        _ado.Suites.Single(x => x.Id == Remote("Ende til ende")).Parent.Should().Be(70002, "the tree hangs under the chosen destination suite");
+        result.Cases.Should().OnlyContain(c => c.Outcome == AdoTransferOutcome.Created);
+        _ado.SuiteCases[Remote("Ende til ende / Rapportering")].Should().ContainSingle();
+        _ado.SuiteCases[Remote("Integrasjon / Mottak")].Should().ContainSingle();
+        _ado.SuiteCases.GetValueOrDefault(70002).Should().BeNullOrEmpty("no case lands in the destination suite itself");
+
+        var suitesBefore = _ado.Suites.Count;
+        plan = await Plans(db).DraftAsync(plan.Id, default);
+        var again = await sut.Transfer.TransferAsync(Request(plan, actions: plan.Cases.ToDictionary(c => c.Source.ScenarioId, _ => AdoTransferAction.Update)) with { PreserveSuites = true }, "tester", default);
+        again.Suites.Should().OnlyContain(x => x.Outcome == AdoCreateOutcome.AlreadyExists, "a retry reuses the suites");
+        _ado.Suites.Count.Should().Be(suitesBefore, "no duplicate suite");
+        _ado.SuiteCases[Remote("Integrasjon / Mottak")].Should().ContainSingle("no duplicate membership");
+    }
+
+    [Fact]
+    public async Task A_refused_suite_leaves_its_cases_not_in_a_suite_and_is_reported_as_partial()
+    {
+        await using var db = Context();
+        var plan = await TreeAsync(db);
+        var sut = Build(db);
+        _ado.Refuse = ("/suites", HttpStatusCode.Forbidden);
+        var result = await sut.Transfer.TransferAsync(Request(plan) with { PreserveSuites = true }, "tester", default);
+        result.Suites.First().Outcome.Should().Be(AdoCreateOutcome.Failed);
+        result.Suites.Single(x => x.Path == "Ende til ende / Rapportering").Outcome.Should().Be(AdoCreateOutcome.Failed, "a child of a failed suite is never created elsewhere");
+        result.Cases.Should().Contain(c => c.Outcome == AdoTransferOutcome.NotInSuite && c.TestCaseId > 0, "the test case exists; it is not in its suite yet");
+        result.Problems.Should().BeGreaterThan(0);
+    }
+
     // ── Test plans and suites ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

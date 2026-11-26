@@ -62,4 +62,17 @@ public sealed class ManualTestingDashboardSettingsCardTests : BunitContext
         cut.Find("[data-testid=mtds-reset-yes]").Click();
         _api.Verify(x => x.SaveDashboardSettingsAsync(It.Is<SaveManualTestingDashboardSettingsRequest>(r => r.ResetToDefaults), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public void The_test_plan_structure_for_new_plans_is_chosen_here_and_saved_without_touching_the_switches()
+    {
+        var cut = Render();
+        cut.FindAll("[data-testid=mtds-plan-structure-option]").Select(o => o.GetAttribute("data-structure")).Should().Equal(PlanStructureTemplates.All.Select(t => t.Key));
+        cut.Find("[data-testid=mtds-plan-structure-option][data-structure=level-area]").HasAttribute("checked").Should().BeTrue("the recommended default");
+        _api.Setup(x => x.SaveDashboardSettingsAsync(It.IsAny<SaveManualTestingDashboardSettingsRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new ManualTestingDashboardSettings { PlanStructure = PlanStructureTemplates.ModuleStory }, (string?)null));
+        cut.Find("[data-testid=mtds-plan-structure-option][data-structure=module-story]").Change(true);
+        cut.Find("[data-testid=mtds-save]").Click();
+        _api.Verify(x => x.SaveDashboardSettingsAsync(It.Is<SaveManualTestingDashboardSettingsRequest>(r => r.PlanStructure == PlanStructureTemplates.ModuleStory && r.Visible!.Count == 0), It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

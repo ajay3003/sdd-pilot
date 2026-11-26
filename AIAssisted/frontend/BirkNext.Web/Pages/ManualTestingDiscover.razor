@@ -49,7 +49,7 @@
         @if (_ws.Error is { } error) { <p class="mt-alert" role="alert" data-testid="mtd-error">@error</p> }
         var discovery = _ws.Discovery;
         var (shown, hidden) = S.Apply(_items, _filter);
-        if (_groupMode == G.Mode.ScenarioType) shown = [.. shown.OrderBy(i => TypeRank(i.TypeKey))];
+        if (_groupMode is G.Mode.ScenarioType or G.Mode.TestLevel) shown = [.. shown.OrderBy(i => GroupRank(i))];
         var pageItems = shown.Take(_limit).ToList();
         var active = pageItems.FirstOrDefault(i => i.Id == _active) ?? _items.FirstOrDefault(i => i.Id == _active);
         var preparedCases = _items.Sum(i => i.Prepared?.Cases ?? 0);
@@ -596,6 +596,10 @@
                                     <option value="">Alle typer</option>
                                     @foreach (var (key, label) in S.TypeFilters) { <option value="@key" selected="@(_filter.ScenarioType == key)">@label</option> }
                                 </select>
+                                <select class="msb-select" aria-label="Testnivå" @onchange="e => Set(_filter with { TestLevel = Opt(e) })" data-testid="mtd-filter-level">
+                                    <option value="">Alle testnivåer</option>
+                                    @foreach (var lv in TestLevelClassifier.Order) { <option value="@lv" selected="@(_filter.TestLevel == lv.ToString())">@TestLevelClassifier.Label(lv)</option> }
+                                </select>
                                 <select class="msb-select" aria-label="Implementeringsstatus" @onchange="e => Set(_filter with { ImplementationStatus = Opt(e) })" data-testid="mtd-filter-impl-status">
                                     <option value="">Alle implementeringsstatuser</option>
                                     @foreach (var st in UserStoryStatusText.FilterOrder) { <option value="@st" selected="@(_filter.ImplementationStatus == st.ToString())">@UserStoryStatusText.Label(st)</option> }
@@ -629,11 +633,11 @@
                                     @foreach (var i in pageItems)
                                     {
                                         var selected = _selected.Contains(i.Id);
-                                        @if (_groupMode == G.Mode.ScenarioType && i.TypeKey != lastGroup)
+                                        @if (_groupMode is G.Mode.ScenarioType or G.Mode.TestLevel && GroupKey(i) != lastGroup)
                                         {
-                                            lastGroup = i.TypeKey;
-                                            var groupKey = i.TypeKey;
-                                            <li class="mtw-type-group" role="presentation" data-testid="mtd-type-group" data-type="@groupKey">@S.TypeGroupLabel(groupKey).ToUpperInvariant() (@shown.Count(x => x.TypeKey == groupKey))</li>
+                                            lastGroup = GroupKey(i);
+                                            var groupKey = lastGroup;
+                                            <li class="mtw-type-group" role="presentation" data-testid="mtd-type-group" data-type="@groupKey">@GroupLabel(groupKey).ToUpperInvariant() (@shown.Count(x => GroupKey(x) == groupKey))</li>
                                         }
                                         <li id="@($"msb-row-{i.Id}")" role="option" aria-selected="@(selected ? "true" : "false")" class="msb-row mtw-ac-row @(i.Id == _active ? "is-active" : null) @(selected ? "is-selected" : null)"
                                             data-testid="mtd-scenario" data-id="@i.Id" data-relevance="@i.Relevance" @onclick="() => Open(i.Id)">
@@ -1365,7 +1369,7 @@
     /// <summary>Editing needs the same permission as saving a test plan, and a grouping document that could be read.</summary>
     private bool CanEditGrouping => _groupWritable && _ws?.Plans?.CanWrite == true;
 
-    private IEnumerable<G.Mode> AvailableModes => new[] { G.Mode.Stories, G.Mode.ScenarioType, G.Mode.Functional, G.Mode.Business, G.Mode.None }
+    private IEnumerable<G.Mode> AvailableModes => new[] { G.Mode.Stories, G.Mode.TestLevel, G.Mode.ScenarioType, G.Mode.Functional, G.Mode.Business, G.Mode.None }
         .Where(m => m switch { G.Mode.Business => _groupDoc is { Groups.Count: > 0 } || _groupMode == G.Mode.Business, G.Mode.Functional => _sections.Sections.Count > 0, _ => true });
 
     /// <summary>
@@ -1630,6 +1634,13 @@
     private IReadOnlyDictionary<string, string> RequirementTexts =>
         (_ws?.Requirements ?? []).GroupBy(r => r.RequirementId, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Title, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>The group a scenario is listed under when grouping by test level or by scenario type (each scenario in exactly one group).</summary>
+    private string GroupKey(S.Item i) => _groupMode == G.Mode.TestLevel ? i.Level.Level.ToString() : i.TypeKey;
+
+    private string GroupLabel(string key) => _groupMode == G.Mode.TestLevel && Enum.TryParse<ScenarioTestLevel>(key, out var lv) ? TestLevelClassifier.Label(lv) : S.TypeGroupLabel(key);
+
+    private int GroupRank(S.Item i) => _groupMode == G.Mode.TestLevel ? Array.IndexOf(TestLevelClassifier.Order, i.Level.Level) : TypeRank(i.TypeKey);
+
     private static int TypeRank(string key) => key switch
     {
         nameof(ScenarioRequirementType.Functional) => 0, nameof(ScenarioRequirementType.NonFunctional) => 1, nameof(ScenarioRequirementType.Mixed) => 2,
@@ -1852,6 +1863,7 @@
 
     private RenderFragment ScenarioTypeSection(S.Item item) => __builder =>
     {
+        <p class="msb-small mtw-level" data-testid="mtd-detail-level" data-level="@item.Level.Level"><span class="mtp-ctx-label">Testnivå</span> <b>@TestLevelClassifier.Label(item.Level.Level)</b>@(item.Level.Candidate ? " (kandidat)" : "") — <span class="mt-muted">@item.Level.Explanation</span></p>
         if (item.TypeResult is not { } type)
         {
             if (S.IsRequirementOnly(item.Candidate)) { <p class="mt-muted msb-small" data-testid="mtd-detail-type-requirement">Dette er et krav uten akseptansescenario i spesifikasjonen; det får ingen scenariotype.</p> }

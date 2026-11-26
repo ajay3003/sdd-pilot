@@ -14,6 +14,15 @@ public static class PlanRevisionDiff
     {
         var list = new List<Change>();
         if (!string.Equals(older.PlanName, newer.PlanName, StringComparison.Ordinal)) list.Add(new(null, $"Navnet er endret fra «{older.PlanName}» til «{newer.PlanName}»."));
+        // Suite structure (2026-11-26): added, removed, renamed and moved suites, by suite id.
+        var oldSuites = older.Suites.ToDictionary(x => x.Id, StringComparer.Ordinal);
+        foreach (var x in newer.Suites)
+        {
+            if (!oldSuites.TryGetValue(x.Id, out var was)) { list.Add(new(null, $"Testgruppen «{PlanStructure.PathOf(newer.Suites, x.Id)}» er lagt til.")); continue; }
+            if (was.Name != x.Name) list.Add(new(null, $"Testgruppen «{was.Name}» heter nå «{x.Name}»."));
+            if (was.ParentId != x.ParentId) list.Add(new(null, $"Testgruppen «{x.Name}» er flyttet fra «{(was.ParentId is null ? "øverst" : PlanStructure.PathOf(older.Suites, was.ParentId))}» til «{(x.ParentId is null ? "øverst" : PlanStructure.PathOf(newer.Suites, x.ParentId))}»."));
+        }
+        foreach (var x in older.Suites.Where(o => newer.Suites.All(n => n.Id != o.Id))) list.Add(new(null, $"Testgruppen «{PlanStructure.PathOf(older.Suites, x.Id)}» er fjernet."));
         var before = older.Cases.ToDictionary(c => c.Source.ScenarioId, StringComparer.Ordinal);
         var after = newer.Cases.ToDictionary(c => c.Source.ScenarioId, StringComparer.Ordinal);
         foreach (var c in newer.Cases.Where(c => !before.ContainsKey(c.Source.ScenarioId))) list.Add(new(c.EffectiveTitle, "Lagt til."));
@@ -33,6 +42,7 @@ public static class PlanRevisionDiff
             if ((o.EffectiveEnvironment ?? "") != (n.EffectiveEnvironment ?? "")) fields.Add("tilgang og miljø");
             if ((o.Edits.BlockedBy ?? "") != (n.Edits.BlockedBy ?? "")) fields.Add("hindring");
             if (o.Edits.TestKind != n.Edits.TestKind) fields.Add("testtype");
+            if (o.SuiteId != n.SuiteId) list.Add(new(n.EffectiveTitle, $"Flyttet fra testgruppen «{(older.Suites.Any(x => x.Id == o.SuiteId) ? PlanStructure.PathOf(older.Suites, o.SuiteId) : "ingen")}» til «{(newer.Suites.Any(x => x.Id == n.SuiteId) ? PlanStructure.PathOf(newer.Suites, n.SuiteId) : "ingen")}»."));
             if (!SameTranslation(o.Translation(ScenarioPlanning.Norwegian), n.Translation(ScenarioPlanning.Norwegian))) fields.Add("norsk tekst");
             if (fields.Count > 0) list.Add(new(n.EffectiveTitle, "Endret: " + string.Join(", ", fields) + "."));
             if (o.Review != n.Review) list.Add(new(n.EffectiveTitle, $"Status: {PlanPreparePresentation.ReviewLabel(o.Review)} → {PlanPreparePresentation.ReviewLabel(n.Review)}."));

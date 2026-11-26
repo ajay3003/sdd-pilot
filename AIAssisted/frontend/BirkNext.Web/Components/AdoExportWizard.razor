@@ -232,7 +232,16 @@
                 <button type="button" class="adx-btn" disabled="@(_working || _preview is not { CanDownload: true })" @onclick="() => DownloadAsync(AdoExportFormat.Xlsx)" data-testid="adx-download-xlsx">Last ned Excel (.xlsx)</button>
                 <button type="button" class="adx-btn adx-btn-quiet" disabled="@(_working || _preview is not { CanDownload: true })" @onclick="() => DownloadAsync(AdoExportFormat.Csv)" data-testid="adx-download-csv">Last ned CSV</button>
                 <button type="button" class="adx-btn adx-btn-quiet" disabled="@(_working || _preview is null)" @onclick="ReportAsync" data-testid="adx-download-report">Last ned koblingsrapport</button>
+                @if (Hierarchical)
+                {
+                    <button type="button" class="adx-btn" disabled="@(_working || _preview is not { CanDownload: true })" @onclick="PackageAsync" data-testid="adx-download-package">Last ned eksportpakke (.zip)</button>
+                }
             </div>
+            @if (Hierarchical)
+            {
+                <p class="adx-muted" data-testid="adx-package-note">Testplanen har testgrupper i flere nivåer. <strong>Eksportpakken</strong> har én importfil per testgruppe, en oversikt over testgruppe-strukturen og en importveiledning.
+                    Import fra fil oppretter ikke testgruppene: opprett dem som Static Test Suites i Azure DevOps først, og importer hver fil i sin testgruppe. Én enkelt Excel-fil legger alle testtilfellene i samme testgruppe.</p>
+            }
             @if (_downloaded is not null) { <p class="adx-ok" role="status" data-testid="adx-downloaded">@_downloaded</p> }
             <details class="adx-advanced" data-testid="adx-howto-details">
             <summary>Vis importveiledning</summary>
@@ -379,6 +388,22 @@
         if (file is null) { _error = error ?? "Filen kunne ikke lages."; return; }
         await JS.InvokeVoidAsync("downloadBase64File", file.FileName, file.Base64, file.ContentType);
         _downloaded = $"{file.FileName} er lastet ned: {file.Cases} testtilfelle{(file.Cases == 1 ? "" : "r")}, {file.Rows} rader. Importer den i Azure DevOps (se under). Ingenting er endret i Azure DevOps.";
+        await OnExported.InvokeAsync();
+    }
+
+    /// <summary>The plan has a suite tree (2026-11-26): offer the export package that keeps it.</summary>
+    private bool Hierarchical => Draft.Suites.Any(s => s.ParentId is not null);
+
+    private async Task PackageAsync()
+    {
+        _working = true; _error = null; _downloaded = null;
+        await SettledAsync();
+        if (_preview is not { CanDownload: true }) { _working = false; _error = "Eksporten må rettes før nedlasting — se Kontroll."; return; }
+        var (file, error) = await _api!.PackageAsync(Request(_profile.Format));
+        _working = false;
+        if (file is null) { _error = error ?? "Eksportpakken kunne ikke lages."; return; }
+        await JS.InvokeVoidAsync("downloadBase64File", file.FileName, file.Base64, file.ContentType);
+        _downloaded = $"{file.FileName} er lastet ned: {file.Cases} testtilfelle{(file.Cases == 1 ? "" : "r")} i én fil per testgruppe. Følg Importveiledning.txt i pakken. Ingenting er endret i Azure DevOps.";
         await OnExported.InvokeAsync();
     }
 

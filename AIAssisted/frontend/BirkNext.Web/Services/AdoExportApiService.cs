@@ -14,6 +14,8 @@ public interface IAdoExportApiService
     Task<(AdoExportPreview? Preview, string? Error)> PreviewAsync(AdoExportRequest request, CancellationToken ct = default);
     Task<(AdoExportFile? File, string? Error)> FileAsync(AdoExportRequest request, CancellationToken ct = default);
     Task<(AdoExportFile? File, string? Error)> ReportAsync(AdoExportRequest request, CancellationToken ct = default);
+    /// <summary>The export package of a hierarchical plan (ZIP: overview, suite manifest, one import file per suite, import guide). 2026-11-26.</summary>
+    Task<(AdoExportFile? File, string? Error)> PackageAsync(AdoExportRequest request, CancellationToken ct = default) => Task.FromResult<(AdoExportFile?, string?)>((null, "Not available."));
     Task<(List<AdoExportHistoryEntry>? History, string? Error)> HistoryAsync(string projectKey, CancellationToken ct = default);
 }
 
@@ -33,6 +35,8 @@ public sealed class AdoExportApiService(HttpClient http) : IAdoExportApiService
         Send<AdoExportFile>(() => http.PostAsJsonAsync($"{Base}/file", request, Json, ct), ct);
     public Task<(AdoExportFile?, string?)> ReportAsync(AdoExportRequest request, CancellationToken ct = default) =>
         Send<AdoExportFile>(() => http.PostAsJsonAsync($"{Base}/report", request, Json, ct), ct);
+    public Task<(AdoExportFile?, string?)> PackageAsync(AdoExportRequest request, CancellationToken ct = default) =>
+        Send<AdoExportFile>(() => http.PostAsJsonAsync($"{Base}/package", request, Json, ct), ct);
     public Task<(List<AdoExportHistoryEntry>?, string?)> HistoryAsync(string projectKey, CancellationToken ct = default) =>
         Send<List<AdoExportHistoryEntry>>(() => http.GetAsync($"{Base}/history?{P(projectKey)}", ct), ct);
 

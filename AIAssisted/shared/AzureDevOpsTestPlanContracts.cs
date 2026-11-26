@@ -167,6 +167,10 @@ public sealed record AdoTransferRequest
     public Dictionary<string, AdoTransferAction> Actions { get; init; } = [];
     /// <summary>Transfer only: the user confirmed the reviewed summary («Bekreft og send til Azure DevOps»).</summary>
     public bool Confirmed { get; init; }
+    /// <summary>Hierarchical plans (2026-11-26): place each case in a Static Test Suite under the destination suite that mirrors its BirkNext suite path
+    /// (existing suites with the same name under the same parent are reused; missing ones are created only in a confirmed transfer). False = every
+    /// case in the destination suite, as before.</summary>
+    public bool PreserveSuites { get; init; }
     /// <summary>Transfer only: «Jeg bekrefter at testleder har godkjent denne overføringen» — a DECLARATION by the person transferring, renewed for every
     /// transfer and recorded with that person. It is not a verified test lead approval and never marks the plan as approved.</summary>
     public bool LeadApprovalDeclared { get; init; }
@@ -214,7 +218,13 @@ public sealed record AdoTransferPreview
     /// <summary>Warnings and notes from the same checks the file export uses (case text, language, priority).</summary>
     public List<AdoExportIssue> Issues { get; init; } = [];
     public bool CanTransfer { get; init; }
+    /// <summary>With <see cref="AdoTransferRequest.PreserveSuites"/>: the suite tree as it will be under the destination suite — what exists (read
+    /// from Azure DevOps, nothing written) and what a confirmed transfer would create.</summary>
+    public List<AdoSuitePlanItem> SuitePlan { get; init; } = [];
 }
+
+/// <summary>One suite of the proposed remote tree: its BirkNext path and depth, the cases it receives, and whether it exists already.</summary>
+public sealed record AdoSuitePlanItem(string LocalSuiteId, string Path, int Depth, int Cases, bool Exists, int? RemoteSuiteId);
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum AdoTransferOutcome
@@ -243,6 +253,8 @@ public sealed record AdoTransferResult
     public AdoTestPlanDestination Destination { get; init; } = new();
     public string? SuiteUrl { get; init; }
     public List<AdoTransferCaseResult> Cases { get; init; } = [];
+    /// <summary>With suite placement: each suite's outcome (created, reused or failed); a failed suite leaves its cases «Ikke i testgruppen».</summary>
+    public List<AdoSuiteResult> Suites { get; init; } = [];
     public int Succeeded => Cases.Count(c => c.Outcome is AdoTransferOutcome.Created or AdoTransferOutcome.Updated);
     public int Problems => Cases.Count(c => c.Outcome is AdoTransferOutcome.Failed or AdoTransferOutcome.NeedsReview or AdoTransferOutcome.Uncertain or AdoTransferOutcome.NotInSuite);
 }
@@ -300,3 +312,6 @@ public static class AdoResultOutcome
         "Paused" => "Satt på pause", "InProgress" => "Pågår", _ => outcome,
     };
 }
+
+/// <summary>The outcome of one suite of a transfer with suite placement.</summary>
+public sealed record AdoSuiteResult(string LocalSuiteId, string Path, AdoCreateOutcome Outcome, int? RemoteSuiteId, string Message);
