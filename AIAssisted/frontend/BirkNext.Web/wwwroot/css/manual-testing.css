@@ -1303,3 +1303,18 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .mto-custom-group legend { font-size: 0.8rem; font-weight: 600; padding: 0 0.3rem; }
 .mto-custom-item { display: flex; gap: 0.45rem; align-items: flex-start; font-size: 0.88rem; }
 .mto-custom-item > span { display: grid; }
+/* ── Legg til scenarioer (Testplaner v4) ── */
+.asp.mtp-preview { max-width: 62rem; width: min(62rem, 100%); }
+.asp-body { display: grid; gap: 0.6rem; padding: 0.8rem 1.1rem; min-height: 0; overflow: auto; }
+.asp-filters { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.asp-filters .msb-search { flex: 1 1 16rem; }
+.asp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
+.asp-row { display: grid; gap: 0.1rem; padding: 0.35rem 0.5rem; border-radius: 6px; border: 1px solid transparent; }
+.asp-row:hover { background: var(--msb-subtle); }
+.asp-row.is-member { background: color-mix(in srgb, #1a9e9e 9%, transparent); }
+.asp-row label { display: flex; gap: 0.5rem; align-items: flex-start; }
+.asp-title { font-weight: 600; }
+.asp-foot { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; justify-content: flex-end; padding: 0.6rem 1.1rem; }
+.asp-suite { display: inline-flex; gap: 0.4rem; align-items: center; font-weight: 600; margin-right: auto; }
+.mtp-empty-plan { display: grid; gap: 0.5rem; }
+.mtp-empty-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }

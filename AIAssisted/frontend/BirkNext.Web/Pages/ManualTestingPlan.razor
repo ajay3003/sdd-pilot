@@ -330,7 +330,30 @@
                         }
                         else if (Selected is not { } current || _form is null)
                         {
-                            <p class="msb-empty" data-testid="mtp-detail-none">Velg et testtilfelle i listen.</p>
+                            @* Testplaner v4 (2026-11-26): an empty plan is not a dead end at «Velg et testtilfelle». Cases are optional. *@
+                            @if (_plan is { } emptyPlan && emptyPlan.Cases.Count == 0)
+                            {
+                                var plannedOnly = emptyPlan.PlannedScenarios?.Count ?? 0;
+                                <div class="msb-empty mtp-empty-plan" data-testid="mtp-plan-empty" data-planned="@plannedOnly">
+                                    @if (plannedOnly == 0)
+                                    {
+                                        <p><strong>Ingen scenarioer i testplanen ennå.</strong> Testgruppene finnes; legg til scenarioer i dem.</p>
+                                    }
+                                    else
+                                    {
+                                        <p><strong>Ingen testtilfeller i denne testplanen.</strong> Testtilfeller er valgfrie: de @plannedOnly planlagte scenarioene kan klargjøres og gjennomføres uten. Velg «Klargjør AC» eller «Forbered testtilfelle» ved et scenario.</p>
+                                    }
+                                    <span class="mtp-empty-actions">
+                                        @if (CanWrite && !ReadOnlyPlan) { <button type="button" class="btn btn-primary btn-sm" @onclick="() => _addScenarios = true" data-testid="mtp-add-scenarios">Legg til scenarioer</button> }
+                                        <a class="btn btn-secondary btn-sm" href="@M.DiscoverRoute" data-testid="mtp-find-scenarios">Finn scenarioer</a>
+                                        <a class="msb-link" href="@M.PlansRoute" data-testid="mtp-go-plans">Gå til Testplaner</a>
+                                    </span>
+                                </div>
+                            }
+                            else
+                            {
+                                <p class="msb-empty" data-testid="mtp-detail-none">Velg et testtilfelle eller et planlagt scenario i listen.</p>
+                            }
                         }
                         else
                         {
@@ -1050,6 +1073,11 @@
     }
 </div>
 
+@if (_addScenarios && _plan is { } addPlan && ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is ITestPlanSuggestionsApiService addApi && _ws?.ProjectKey is { } addKey)
+{
+    <BirkNext.Web.Components.ManualTesting.AddScenariosToPlan Api="addApi" ProjectKey="@addKey" PlanId="addPlan.Id" Discovery="_ws.Discovery"
+        OnClose="() => _addScenarios = false" OnAdded="ScenariosAddedAsync" />
+}
 @code {
     [SupplyParameterFromQuery(Name = "draft")] public Guid? DraftParameter { get; set; }
     [SupplyParameterFromQuery(Name = "panel")] public string? PanelParameter { get; set; }
@@ -1699,6 +1727,14 @@
     private bool _designOpen;
     /// <summary>The planned scenario (candidate id) whose preparation is open without a case.</summary>
     private string? _prepItem;
+    private bool _addScenarios;
+
+    /// <summary>A scenario added from the empty-plan state: the plan is read again so the new items show (nothing else on the page changes).</summary>
+    private async Task ScenariosAddedAsync(TestPlanDraft plan)
+    {
+        _plan = plan;
+        await InvokeAsync(StateHasChanged);
+    }
 
     /// <summary>Accepts a test-design proposal: the existing add-from-variant path (the server re-derives the proposal from the scenario's
     /// evidence and refuses it when it no longer applies or a case with its title exists — no duplicate cases).</summary>

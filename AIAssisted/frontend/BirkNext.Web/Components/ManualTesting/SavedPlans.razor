@@ -44,7 +44,16 @@
                         <span class="msb-status msb-tone-@(status.State switch { "Klar" => "ok", "Må gjennomgås" or "Kilde mangler" => "warn", "Ny kildeversjon" => "info", _ => "muted" })" title="@status.Message" data-testid="mt-plan-source" data-state="@status.State">@(status.State == "Klar" ? "Kilde uendret" : status.State)</span>
                     }
                     @if (_archivedView) { <span class="msb-status msb-tone-muted">Arkivert</span> }
-                    <a class="btn btn-secondary btn-sm" href="@($"{M.PlanRoute}?draft={p.Id}")" data-testid="mt-plan-open">@(_archivedView ? "Vis" : "Åpne")</a>
+                    @if (!_archivedView && p.Scenarios == 0 && p.Cases == 0)
+                    {
+                        <span class="mt-muted msb-small" data-testid="mt-plan-empty">Ingen scenarioer i testplanen ennå.</span>
+                    }
+                    <a class="btn btn-secondary btn-sm" href="@($"{M.PlanRoute}?draft={p.Id}")" data-testid="mt-plan-open">@(_archivedView ? "Vis" : "Åpne testplan")</a>
+                    @if (!_archivedView && CanWrite && Api is not null)
+                    {
+                        <button type="button" class="btn @(p.Scenarios == 0 && p.Cases == 0 ? "btn-primary" : "btn-outline-secondary") btn-sm" disabled="@_busy"
+                                @onclick="() => _adding = p.Id" data-testid="mt-plan-add-scenarios">Legg til scenarioer</button>
+                    }
                     @if (!_archivedView)
                     {
                         <button type="button" class="msb-link" aria-expanded="@(_executing == p.Id ? "true" : "false")" @onclick="() => _executing = _executing == p.Id ? null : p.Id" data-testid="mt-plan-execute">Testgjennomføring</button>
@@ -93,16 +102,31 @@
         </ul>
         @if (plans.Count > _limit) { <button type="button" class="msb-link" @onclick="() => _limit += 10" data-testid="mt-plans-more">Vis flere (@(plans.Count - _limit))</button> }
     }
+    @if (_adding is { } addId && Api is not null)
+    {
+        <AddScenariosToPlan Api="Api" ProjectKey="@Workspace.ProjectKey" PlanId="addId" Discovery="Discovery" OnClose="CloseAddAsync" OnAdded="_ => _added = true" />
+    }
 </section>
 
 @code {
     [Parameter, EditorRequired] public TestPlanWorkspace Workspace { get; set; } = new();
     [Parameter] public ITestPlanSuggestionsApiService? Api { get; set; }
+    /// <summary>The project's current discovery (the scenarios «Legg til scenarioer» offers).</summary>
+    [Parameter] public ScenarioDiscoveryResult? Discovery { get; set; }
     [Parameter] public bool ShowArchived { get; set; }
     /// <summary>A plan was archived, restored or deleted: the owner reloads the workspace.</summary>
     [Parameter] public EventCallback Changed { get; set; }
 
     private bool _archivedView, _busy;
+    /// <summary>The plan whose «Legg til scenarioer» dialog is open (Testplaner v4).</summary>
+    private Guid? _adding;
+    private bool _added;
+
+    private async Task CloseAddAsync()
+    {
+        _adding = null;
+        if (_added) { _added = false; await Changed.InvokeAsync(); }
+    }
     private Guid? _executing, _copying;
     private string _copyName = "", _copySprint = "", _copyRequest = "";
     private DuplicatePlanPreview? _copyPreview;

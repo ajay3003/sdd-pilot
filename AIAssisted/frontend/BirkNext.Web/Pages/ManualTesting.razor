@@ -388,7 +388,7 @@
             @* 2. Saved test plans *@
             @if (_ws.Plans is { } workspace)
             {
-                <BirkNext.Web.Components.ManualTesting.SavedPlans Workspace="workspace" Api="Api" ShowArchived="@(PlansQuery == "archived")" Changed="LoadAsync" />
+                <BirkNext.Web.Components.ManualTesting.SavedPlans Workspace="workspace" Api="Api" Discovery="_ws?.Discovery" ShowArchived="@(PlansQuery == "archived")" Changed="LoadAsync" />
             }
 
         }

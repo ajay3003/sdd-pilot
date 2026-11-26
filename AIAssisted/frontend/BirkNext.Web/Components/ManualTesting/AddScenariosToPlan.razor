@@ -1,0 +1,157 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@* «Legg til scenarioer» (Testplaner v4, 2026-11-26): plan existing source-backed scenarios — acceptance scenarios and standalone documented tests
+   of THIS project's discovery — into a chosen testgruppe of an existing plan. Scenario-first: no test case is created, no result is recorded,
+   a scenario the plan already holds is shown as such and never added twice. Each addition names the plan revision it started from. *@
+
+<div class="mtp-preview-backdrop asp-backdrop" @onclick="CloseAsync" data-testid="asp">
+    <div class="mtp-preview asp" role="dialog" aria-modal="true" aria-labelledby="asp-title" tabindex="-1" @onclick:stopPropagation="true" @onkeydown="KeyAsync" data-testid="asp-dialog">
+        <header class="mtp-preview-head">
+            <h2 id="asp-title" class="mtp-preview-title">Legg til scenarioer@(_plan is { } p ? $" i «{p.PlanName}»" : "")</h2>
+            <button type="button" class="btn btn-secondary btn-sm" @onclick="CloseAsync" data-testid="asp-close">Lukk</button>
+        </header>
+        @if (_error is { } err) { <p class="msb-error" role="alert" data-testid="asp-error">@err</p> }
+        @if (_plan is null)
+        {
+            <p class="mt-muted" role="status" data-testid="asp-loading">@(_error is null ? "Henter testplanen …" : "")</p>
+        }
+        else if (Discovery is null || _all.Count == 0)
+        {
+            <p class="msb-empty" data-testid="asp-no-scenarios">Ingen scenarioer er funnet for prosjektet ennå. Åpne <a href="@ManualTestingPresentation.DiscoverRoute">Finn og forstå</a> for å hente dem.</p>
+        }
+        else
+        {
+            var shown = Shown();
+            <div class="asp-body">
+                <div class="asp-filters" role="search" aria-label="Filtrer scenarioer">
+                    <input type="search" class="msb-search" placeholder="Søk i tittel, US/AC eller TEST-id" aria-label="Søk i scenarioer" value="@_query" @oninput="e => { _query = e.Value?.ToString() ?? string.Empty; _limit = Page; }" data-testid="asp-search" />
+                    <select class="msb-select" aria-label="Modul" @onchange="e => { _module = Blank(e.Value); _limit = Page; }" data-testid="asp-module">
+                        <option value="">Alle moduler</option>
+                        @foreach (var m in _modules) { <option value="@m" selected="@(_module == m)">@m</option> }
+                    </select>
+                    <select class="msb-select" aria-label="Testnivå" @onchange="e => { _level = Blank(e.Value); _limit = Page; }" data-testid="asp-level">
+                        <option value="">Alle testnivåer</option>
+                        @foreach (var l in TestLevelClassifier.Order) { <option value="@l" selected="@(_level == l.ToString())">@TestLevelClassifier.Label(l)</option> }
+                    </select>
+                    <select class="msb-select" aria-label="Prioritet" @onchange="e => { _priority = Blank(e.Value); _limit = Page; }" data-testid="asp-priority">
+                        <option value="">Alle prioriteter</option>
+                        @foreach (var pr in _priorities) { <option value="@pr" selected="@(_priority == pr)">@pr</option> }
+                        <option value="none" selected="@(_priority == "none")">Ikke prioritert</option>
+                    </select>
+                    <span class="mt-muted msb-small" data-testid="asp-count">@shown.Count av @_all.Count scenarioer · @_selected.Count valgt</span>
+                </div>
+                <ul class="asp-list" aria-label="Scenarioer" data-testid="asp-list">
+                    @foreach (var c in shown.Take(_limit))
+                    {
+                        var cand = c;
+                        var inPlan = InPlan(cand);
+                        <li class="asp-row @(inPlan ? "is-member" : null)" data-testid="asp-row" data-id="@cand.CandidateId" data-in-plan="@(inPlan ? "true" : "false")">
+                            <label>
+                                <input type="checkbox" disabled="@inPlan" checked="@(_selected.Contains(cand.CandidateId))" @onchange="e => Toggle(cand.CandidateId, e.Value is true)" />
+                                <span class="asp-title">@cand.Title</span>
+                            </label>
+                            <span class="mt-muted msb-small">@Identity(cand) · @TestLevelClassifier.Label(TestLevelClassifier.Of(cand.Type).Level)@(Module(cand) is { } m ? $" · {m}" : "")</span>
+                            @if (inPlan) { <span class="msb-tag" data-testid="asp-in-plan">Allerede i testplanen</span> }
+                        </li>
+                    }
+                </ul>
+                @if (shown.Count > _limit) { <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _limit += Page" data-testid="asp-more">Vis flere (@(shown.Count - _limit) igjen)</button> }
+            </div>
+            <footer class="mtp-preview-foot asp-foot">
+                <label class="asp-suite">Testgruppe
+                    <select class="msb-select" @onchange="e => _suite = Blank(e.Value)" data-testid="asp-suite">
+                        @if (_plan.Suites.Count == 0) { <option value="">Ny testgruppe «Planlagte scenarioer»</option> }
+                        @foreach (var (suite, depth) in PlanStructure.Flatten(_plan.Suites))
+                        {
+                            <option value="@suite.Id" selected="@(_suite == suite.Id)">@(new string(' ', depth * 2))@PlanStructure.PathOf(_plan.Suites, suite.Id)</option>
+                        }
+                    </select></label>
+                <span class="mt-muted msb-small">Scenarioene planlegges uten testtilfelle; testtilfeller er valgfrie og kan forberedes senere.</span>
+                @if (_notice is { } n) { <span class="msb-status msb-tone-ok" role="status" data-testid="asp-notice">@n</span> }
+                <button type="button" class="btn btn-primary" disabled="@(_busy || _selected.Count == 0)" @onclick="AddAsync" data-testid="asp-add">Legg til @_selected.Count scenario@(_selected.Count == 1 ? "" : "er")</button>
+            </footer>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ITestPlanSuggestionsApiService Api { get; set; } = default!;
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+    [Parameter, EditorRequired] public Guid PlanId { get; set; }
+    /// <summary>The project's current discovery (the same scenarios Finn og forstå shows); only its acceptance scenarios and documented tests are offered.</summary>
+    [Parameter] public ScenarioDiscoveryResult? Discovery { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>The plan after an addition (the dialog stays open so more scenarios can go to another testgruppe).</summary>
+    [Parameter] public EventCallback<TestPlanDraft> OnAdded { get; set; }
+
+    private const int Page = 100;
+    private TestPlanDraft? _plan;
+    private List<DiscoveredScenario> _all = [];
+    private List<string> _modules = [], _priorities = [];
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private string _query = "";
+    private string? _module, _level, _priority, _suite, _error, _notice;
+    private int _limit = Page;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _all = [.. (Discovery?.Candidates ?? []).Where(ScenarioTypeClassifier.IsClassifiable)
+            .OrderBy(c => c.Story?.SpecificationPath ?? "~").ThenBy(c => c.Story?.StoryId ?? "~").ThenBy(c => c.NumberInStory ?? 999).ThenBy(c => c.Title, StringComparer.CurrentCultureIgnoreCase)];
+        _modules = [.. _all.Select(Module).OfType<string>().Distinct().Order(StringComparer.CurrentCultureIgnoreCase)];
+        _priorities = [.. _all.Select(Priority).OfType<string>().Distinct().OrderBy(p => int.TryParse(p.AsSpan(1), out var n) ? n : 99)];
+        await LoadPlanAsync();
+    }
+
+    private async Task LoadPlanAsync()
+    {
+        var (plan, error) = await Api.DraftAsync(PlanId);
+        if (plan is null) { _error = $"Testplanen kunne ikke hentes. {error}"; return; }
+        _plan = plan;
+        _suite ??= plan.Suites.FirstOrDefault()?.Id;
+    }
+
+    private static string? Blank(object? v) => v?.ToString() is { Length: > 0 } s ? s : null;
+    private static string? Module(DiscoveredScenario c) => c.Story?.SpecificationPath is { Length: > 0 } spec ? PlanStructure.ModuleOf(spec) : c.Area;
+    private static string? Priority(DiscoveredScenario c) => c.Story?.Priority?.Trim().ToUpperInvariant() is { Length: 2 } p && p[0] == 'P' && char.IsDigit(p[1]) ? p : null;
+    private static string Identity(DiscoveredScenario c) => c.Story is { } st ? $"{st.StoryId}{(c.NumberInStory is { } n ? $" · AC {n}" : "")}" : "Uten brukerhistorie";
+
+    /// <summary>Already planned — by a scenario-only item or by a case of the scenario (the same rule the server applies).</summary>
+    private bool InPlan(DiscoveredScenario c) => _plan is { } p && (
+        p.Cases.Any(x => x.Source.ScenarioId == c.CandidateId || c.SourceIdentity.Length > 0 && x.Generated.SourceIdentity == c.SourceIdentity)
+        || (p.PlannedScenarios ?? []).Any(x => x.ScenarioId == c.CandidateId || c.SourceIdentity.Length > 0 && x.SourceIdentity == c.SourceIdentity));
+
+    private List<DiscoveredScenario> Shown() => [.. _all.Where(c =>
+        (_module is null || Module(c) == _module)
+        && (_level is null || TestLevelClassifier.Of(c.Type).Level.ToString() == _level)
+        && (_priority is null || (_priority == "none" ? Priority(c) is null : Priority(c) == _priority))
+        && (_query.Length == 0 || $"{c.Title} {Identity(c)} {c.CanonicalKey}".Contains(_query.Trim(), StringComparison.CurrentCultureIgnoreCase)))];
+
+    private void Toggle(string id, bool on) { if (on) _selected.Add(id); else _selected.Remove(id); _notice = null; }
+
+    private async Task AddAsync()
+    {
+        if (_plan is null || Discovery is null || _selected.Count == 0 || _busy) return;
+        _busy = true; _error = null; _notice = null;
+        try
+        {
+            var ids = _selected.ToList();
+            var (plan, error) = await Api.CreateProjectAsync(new CreateProjectTestPlanRequest
+            {
+                ProjectKey = ProjectKey, DiscoveryId = Discovery.DiscoveryId, CandidateIds = ids, DraftId = _plan.Id, BaseRevision = _plan.Revision,
+                ScenarioOnly = true, SuiteId = _suite,
+            });
+            if (plan is null) { _error = $"Scenarioene ble ikke lagt til. {error}"; await LoadPlanAsync(); return; }
+            var added = (plan.PlannedScenarios?.Count ?? 0) - (_plan.PlannedScenarios?.Count ?? 0);
+            var suiteName = _suite is { } sid && plan.Suites.Any(s => s.Id == sid) ? PlanStructure.PathOf(plan.Suites, sid) : plan.Suites.LastOrDefault()?.Name;
+            _plan = plan;
+            _selected.Clear();
+            _notice = added > 0 ? $"{added} scenario{(added == 1 ? "" : "er")} lagt til i «{suiteName}»." : "Ingen nye scenarioer — de valgte var allerede i testplanen.";
+            await OnAdded.InvokeAsync(plan);
+        }
+        finally { _busy = false; }
+    }
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+    private Task KeyAsync(KeyboardEventArgs e) => e.Key == "Escape" ? CloseAsync() : Task.CompletedTask;
+}
