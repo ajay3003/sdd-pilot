@@ -295,6 +295,12 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     public Task<ActionResult> ExcludeScenario(Guid id, [FromBody] ExcludeScenarioRequest request, CancellationToken ct) =>
         Run(async () => Ok(await service.ExcludeScenarioAsync(id, request, Actor, ct)));
 
+    /// <summary>Moves a planned scenario to another suite, or removes a scenario-only item (Testplaner, 2026-11-26). Revision-checked.</summary>
+    [HttpPost("drafts/{id:guid}/place-scenario")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> PlaceScenario(Guid id, [FromBody] PlaceScenarioRequest request, CancellationToken ct) =>
+        Run(async () => Ok(await service.PlaceScenarioAsync(id, request, Actor, ct)));
+
     /// <summary>Translate all: every scenario of the plan with its user story and linked requirement wording, saved as one revision.</summary>
     [HttpPost("drafts/{id:guid}/translate-all")]
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]

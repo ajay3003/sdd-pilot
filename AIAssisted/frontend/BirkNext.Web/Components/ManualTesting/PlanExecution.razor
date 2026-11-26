@@ -73,6 +73,27 @@
                                                 @if (_saveError is { } se) { <p class="mt-alert msb-small" role="alert" data-testid="mtx-error">@se</p> }
                                             </fieldset>
                                         }
+                                        @if (!v.Archived && CanWrite && occ.ScenarioId is { } placeId && v.Suites.Count > 0)
+                                        {
+                                            @* Structure (2026-11-26): move this scenario (item and cases) to another suite, or remove a scenario-only item. *@
+                                            <details class="mtw-why" data-testid="mtx-place"><summary>Testgruppe: @(occ.SuitePath ?? "Uten testgruppe")</summary>
+                                                <label class="mtp-field"><span>Flytt til testgruppe</span>
+                                                    <select class="msb-select" @onchange="e => _moveTo = e.Value?.ToString()" data-testid="mtx-move-to">
+                                                        <option value="">Velg testgruppe …</option>
+                                                        @foreach (var s in v.Suites.Where(s => s.Id != occ.SuiteId)) { <option value="@s.Id">@s.Path</option> }
+                                                    </select></label>
+                                                <button type="button" class="btn btn-secondary btn-sm" disabled="@(_busy || string.IsNullOrEmpty(_moveTo))" @onclick="() => PlaceAsync(placeId, remove: false)" data-testid="mtx-move">Flytt</button>
+                                                @if (occ.CaseIds.Count == 0 && occ.History.Count == 0)
+                                                {
+                                                    <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => PlaceAsync(placeId, remove: true)" data-testid="mtx-remove">Fjern fra testplanen</button>
+                                                }
+                                                else
+                                                {
+                                                    <p class="mt-muted msb-small" data-testid="mtx-remove-why">@(occ.History.Count > 0 ? "Har registrerte resultater: kan flyttes, ikke fjernes." : "Har testtilfeller: ekskluder dem i Planlegg og klargjør (med begrunnelse) i stedet for å fjerne.")</p>
+                                                }
+                                                @if (_placeError is { } pe) { <p class="mt-alert msb-small" role="alert" data-testid="mtx-place-error">@pe</p> }
+                                            </details>
+                                        }
                                         @if (occ.History.Count > 0)
                                         {
                                             <details class="mtw-why" data-testid="mtx-history"><summary>Historikk (@occ.History.Count)</summary>
@@ -96,7 +117,7 @@
     [Parameter] public bool CanWrite { get; set; }
 
     private PlanExecutionView? _view;
-    private string? _error, _saveError, _notice, _open;
+    private string? _error, _saveError, _notice, _open, _moveTo, _placeError;
     private ScenarioExecutionStatus? _statusFilter, _choice;
     private string _comment = "", _defect = "";
     private bool _busy;
@@ -115,7 +136,25 @@
     private void Toggle(ScenarioOccurrence o)
     {
         _open = _open == o.Key ? null : o.Key;
-        _choice = null; _saveError = null; _comment = ""; _defect = "";
+        _choice = null; _saveError = null; _comment = ""; _defect = ""; _moveTo = null; _placeError = null;
+    }
+
+    /// <summary>Moves the scenario to the chosen suite, or removes a scenario-only item; checked against the revision this view was built from.
+    /// A refusal (stale plan, cases, results) is shown and the view reloads.</summary>
+    private async Task PlaceAsync(string scenarioId, bool remove)
+    {
+        if (Api is null || _view is null) return;
+        _busy = true; _placeError = null;
+        try
+        {
+            var target = _view.Suites.FirstOrDefault(s => s.Id == _moveTo)?.Path;
+            var (plan, error) = await Api.PlaceScenarioAsync(PlanId, new PlaceScenarioRequest(_view.Revision, scenarioId, remove ? null : _moveTo, remove));
+            if (plan is null) _placeError = P.Friendly(error, remove ? "Scenarioet kunne ikke fjernes." : "Scenarioet kunne ikke flyttes.");
+            else { _notice = remove ? "Scenarioet er fjernet fra testplanen." : $"Flyttet til «{target}»."; _moveTo = null; }
+            var (fresh, _) = await Api.ExecutionAsync(PlanId);
+            if (fresh is not null) _view = fresh;
+        }
+        finally { _busy = false; }
     }
 
     /// <summary>Saves one result for this occurrence. A newer result recorded meanwhile is a conflict: the comment is kept and the view reloads.</summary>

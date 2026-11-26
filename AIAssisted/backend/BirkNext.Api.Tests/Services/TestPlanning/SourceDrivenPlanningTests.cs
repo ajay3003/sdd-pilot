@@ -728,6 +728,53 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task A_scenario_moves_between_suites_with_its_cases_and_results_and_only_a_scenario_only_item_without_results_is_removed()
+    {
+        // Testplaner (2026-11-26): move and remove a scenario between suites.
+        await using var db = Context();
+        var x = Services(db);
+        var ac1 = InSpec("p1", SkoleSpec, "US1", "f1") with { Title = "Barn registreres", Type = ScenarioCandidateType.BusinessE2E, Area = "Rapportering" };
+        var ac2 = InSpec("p2", SkoleSpec, "US1", "f2") with { Title = "Duplikat", Type = ScenarioCandidateType.Integration, Area = "Mottak" };
+        var ac3 = InSpec("p3", SkoleSpec, "US2", "f3") with { Title = "Periodelås", Type = ScenarioCandidateType.BusinessFunctional, Area = "Periode" };
+        _discoveries.Store(Selected("d-place", DateTimeOffset.UtcNow, SkoleSpec, ac1, ac2, ac3));
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-place", CandidateIds = ["p1"],
+            PlanName = "Sprint 14", CreationRequestId = "place-1" }, "anna", default);
+        plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-place", CandidateIds = ["p2", "p3"], DraftId = plan.Id,
+            BaseRevision = plan.Revision, ScenarioOnly = true }, "anna", default);
+        plan = await x.Plans.SaveAsync(plan.Id, Human(plan, (_, part) => part) with { Suites = [.. plan.Suites, new TestSuiteDraft("suite:r:regresjon", "Regresjon", "reviewer", null) { Order = 9 }] }, "anna", default);
+        await x.Plans.RecordResultAsync(plan.Id, new RecordScenarioResultRequest("scenario:p2", ScenarioExecutionStatus.Failed, "Feil", null, null), "tester", default);
+
+        // Move: the case and the item go to the target suite; recorded results stay (keyed by scenario).
+        var moved = await x.Plans.PlaceScenarioAsync(plan.Id, new PlaceScenarioRequest(plan.Revision, "p1", "suite:r:regresjon"), "anna", default);
+        moved.Cases.Where(c => c.ParentScenario == "p1").Should().OnlyContain(c => c.SuiteId == "suite:r:regresjon");
+        moved.Revision.Should().Be(plan.Revision + 1);
+        moved = await x.Plans.PlaceScenarioAsync(plan.Id, new PlaceScenarioRequest(moved.Revision, "p2", "suite:r:regresjon"), "anna", default);
+        var view = await x.Plans.ExecutionAsync(plan.Id, default);
+        view.Occurrences.Single(o => o.Key == "scenario:p2").Should().Match<ScenarioOccurrence>(o => o.SuiteId == "suite:r:regresjon" && o.Status == ScenarioExecutionStatus.Failed,
+            "a move keeps the recorded result");
+        view.Revision.Should().Be(moved.Revision);
+        view.Suites.Select(s => s.Path).Should().Contain("Regresjon");
+
+        // Refusals: stale revision, unknown suite, unknown scenario, a scenario with a case, a scenario with results.
+        await FluentActions.Awaiting(() => x.Plans.PlaceScenarioAsync(plan.Id, new PlaceScenarioRequest(plan.Revision, "p3", "suite:r:regresjon"), "anna", default))
+            .Should().ThrowAsync<TestPlanException>();
+        (await FluentActions.Awaiting(() => x.Plans.PlaceScenarioAsync(plan.Id, new PlaceScenarioRequest(moved.Revision, "p3", "nope"), "anna", default))
+            .Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("suite-unknown");
+        (await FluentActions.Awaiting(() => x.Plans.PlaceScenarioAsync(plan.Id, new PlaceScenarioRequest(moved.Revision, "zz", "suite:r:regresjon"), "anna", default))
+            .Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("scenario-unknown");
+        (await FluentActions.Awaiting(() => x.Plans.PlaceScenarioAsync(plan.Id, new PlaceScenarioRequest(moved.Revision, "p1", null, Remove: true), "anna", default))
+            .Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("scenario-has-cases");
+        (await FluentActions.Awaiting(() => x.Plans.PlaceScenarioAsync(plan.Id, new PlaceScenarioRequest(moved.Revision, "p2", null, Remove: true), "anna", default))
+            .Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("scenario-has-results");
+
+        // Remove: a scenario-only item without results leaves the plan; everything else stays.
+        var removed = await x.Plans.PlaceScenarioAsync(plan.Id, new PlaceScenarioRequest(moved.Revision, "p3", null, Remove: true), "anna", default);
+        removed.PlannedScenarios!.Select(p => p.ScenarioId).Should().BeEquivalentTo(["p2"]);
+        removed.Cases.Should().HaveCount(moved.Cases.Count);
+        (await x.Plans.ExecutionAsync(plan.Id, default)).Occurrences.Select(o => o.Key).Should().BeEquivalentTo(["scenario:p1", "scenario:p2"]);
+    }
+
+    [Fact]
     public async Task Sprint_12_results_stay_when_copied_to_Sprint_13_which_starts_not_run_and_each_sprint_keeps_its_own_history()
     {
         await using var db = Context();

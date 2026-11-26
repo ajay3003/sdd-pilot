@@ -118,6 +118,9 @@ public interface ITestPlanSuggestionsApiService
         Task.FromResult<(PlanExecutionView?, string?)>((null, NotAvailable));
     Task<(PlanExecutionView? View, string? Error)> RecordResultAsync(Guid id, RecordScenarioResultRequest request, CancellationToken ct = default) =>
         Task.FromResult<(PlanExecutionView?, string?)>((null, NotAvailable));
+    /// <summary>Moves a planned scenario to another suite, or removes a scenario-only item (POST drafts/{id}/place-scenario).</summary>
+    Task<(TestPlanDraft? Plan, string? Error)> PlaceScenarioAsync(Guid id, PlaceScenarioRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanDraft?, string?)>((null, NotAvailable));
     Task<(DuplicatePlanPreview? Preview, string? Error)> DuplicatePreviewAsync(Guid id, CancellationToken ct = default) =>
         Task.FromResult<(DuplicatePlanPreview?, string?)>((null, NotAvailable));
     Task<(TestPlanDraft? Plan, string? Error)> DuplicateAsync(Guid id, DuplicatePlanRequest request, CancellationToken ct = default) =>
@@ -227,6 +230,9 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
 
     public Task<(PlanExecutionView?, string?)> RecordResultAsync(Guid id, RecordScenarioResultRequest request, CancellationToken ct = default) =>
         Send<PlanExecutionView>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/execution", request, Json, ct), ct);
+
+    public Task<(TestPlanDraft?, string?)> PlaceScenarioAsync(Guid id, PlaceScenarioRequest request, CancellationToken ct = default) =>
+        Send<TestPlanDraft>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/place-scenario", request, Json, ct), ct);
 
     public Task<(DuplicatePlanPreview?, string?)> DuplicatePreviewAsync(Guid id, CancellationToken ct = default) =>
         Send<DuplicatePlanPreview>(() => http.GetAsync($"{Base}/drafts/{id}/duplicate-preview", ct), ct);

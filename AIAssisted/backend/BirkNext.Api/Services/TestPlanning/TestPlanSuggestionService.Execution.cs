@@ -27,6 +27,8 @@ public sealed partial class TestPlanSuggestionService
         return new PlanExecutionView
         {
             PlanId = plan.Id, PlanName = plan.PlanName, SprintLabel = plan.DeliveryLabel, Archived = row.Lifecycle != ActiveState,
+            Revision = row.Revision,
+            Suites = [.. PlanStructure.Flatten(plan.Suites).Select(x => new PlanSuiteChoice(x.Item1.Id, PlanStructure.PathOf(plan.Suites, x.Item1.Id)))],
             Occurrences = [.. Occurrences(plan).Select(o =>
             {
                 var history = events.GetValueOrDefault(o.Key) ?? [];

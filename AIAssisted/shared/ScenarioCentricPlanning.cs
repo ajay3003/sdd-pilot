@@ -68,6 +68,15 @@ public sealed record RequirementTextTranslation(string RequirementId, string Spe
 /// <summary>Exclude a whole scenario: every test case under it is excluded with the same reason (one saved revision; history kept).</summary>
 public sealed record ExcludeScenarioRequest(int BaseRevision, string ScenarioKey, string Rationale);
 
+/// <summary>Testplaner (2026-11-26): move one planned scenario — its scenario-only item and every case of it — to another suite of the same plan
+/// (<see cref="ToSuiteId"/>), or remove it from the plan (<see cref="Remove"/>). Removal is refused while the scenario has an active test case
+/// (exclude those with a reason instead: history is kept) or a recorded result. Recorded results are keyed by scenario, never by suite, so a
+/// move keeps them. Revision-checked; nothing else in the plan changes.</summary>
+public sealed record PlaceScenarioRequest(int BaseRevision, string ScenarioId, string? ToSuiteId, bool Remove = false);
+
+/// <summary>A suite of the plan as the execution view lists it (id and full path).</summary>
+public sealed record PlanSuiteChoice(string Id, string Path);
+
 /// <summary>Translate every scenario of the plan (and their user stories and linked requirement wording) into <see cref="Target"/>.
 /// <see cref="OnlyMissing"/> (automatic translation when Planlegg og klargjør opens, 2026-11-25): only text with NO translation in the target
 /// language is translated — an existing translation (machine, edited, person-written or made from an older original) is never replaced, and

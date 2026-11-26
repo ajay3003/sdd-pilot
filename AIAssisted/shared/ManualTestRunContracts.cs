@@ -294,6 +294,10 @@ public sealed record PlanExecutionView
     public string PlanName { get; init; } = "";
     public string? SprintLabel { get; init; }
     public bool Archived { get; init; }
+    /// <summary>The plan revision this view was built from (2026-11-26): a structure change (move/remove) is checked against it.</summary>
+    public int Revision { get; init; }
+    /// <summary>The plan's suites in tree order with their paths (target of «Flytt til testgruppe»).</summary>
+    public List<PlanSuiteChoice> Suites { get; init; } = [];
     public List<ScenarioOccurrence> Occurrences { get; init; } = [];
     public int Total => Occurrences.Count;
     public int NotRun => Occurrences.Count(o => o.Status == ScenarioExecutionStatus.NotRun);

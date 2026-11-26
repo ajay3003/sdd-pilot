@@ -259,6 +259,43 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         return await WriteAsync(row, plan, ct, $"Scenario excluded ({cases.Count} test case{(cases.Count == 1 ? "" : "s")})");
     }
 
+    /// <summary>Moves a planned scenario to another suite of the plan, or removes a scenario-only item (see <see cref="PlaceScenarioRequest"/>).</summary>
+    public async Task<TestPlanDraft> PlaceScenarioAsync(Guid id, PlaceScenarioRequest request, string actor, CancellationToken ct)
+    {
+        var row = await Mutable(id, ct);
+        if (row.Revision != request.BaseRevision) throw Stale(row);
+        var plan = Read(row);
+        var scenarioId = request.ScenarioId ?? "";
+        var item = plan.PlannedScenarios?.FirstOrDefault(p => string.Equals(p.ScenarioId, scenarioId, StringComparison.Ordinal));
+        var cases = plan.Cases.Where(c => string.Equals(c.ParentScenario, scenarioId, StringComparison.Ordinal)).ToList();
+        if (scenarioId.Length == 0 || (item is null && cases.Count == 0))
+            throw new TestPlanException(404, "scenario-unknown", "Scenarioet finnes ikke i denne testplanen.");
+        if (request.Remove)
+        {
+            if (cases.Any(c => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)))
+                throw new TestPlanException(409, "scenario-has-cases", "Scenarioet har testtilfeller i planen. Ekskluder dem med en begrunnelse i stedet – historikken beholdes.");
+            var events = await EventsAsync(id, ct);
+            if (events.TryGetValue("scenario:" + scenarioId, out var recorded) && recorded.Count > 0)
+                throw new TestPlanException(409, "scenario-has-results", "Scenarioet har registrerte resultater og fjernes ikke. Flytt det heller til en annen testgruppe.");
+            if (item is null) throw new TestPlanException(409, "scenario-has-cases", "Bare et planlagt scenario uten testtilfeller kan fjernes.");
+            plan = plan with
+            {
+                PlannedScenarios = [.. plan.PlannedScenarios!.Where(p => !ReferenceEquals(p, item))],
+                Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
+            };
+            return await WriteAsync(row, plan, ct, $"Scenario removed from the plan ({item.Title})");
+        }
+        var target = request.ToSuiteId is { Length: > 0 } t ? plan.Suites.FirstOrDefault(s => s.Id == t) : null;
+        if (target is null) throw new TestPlanException(400, "suite-unknown", "Velg en testgruppe i denne testplanen.");
+        plan = plan with
+        {
+            PlannedScenarios = plan.PlannedScenarios is null ? null : [.. plan.PlannedScenarios.Select(p => ReferenceEquals(p, item) ? p with { SuiteId = target.Id } : p)],
+            Cases = [.. plan.Cases.Select(c => string.Equals(c.ParentScenario, scenarioId, StringComparison.Ordinal) ? c with { SuiteId = target.Id } : c)],
+            Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
+        };
+        return await WriteAsync(row, plan, ct, $"Scenario moved to suite {PlanStructure.PathOf(plan.Suites, target.Id)}");
+    }
+
     /// <summary>Creates a new proposal revision against the guide's current revision and sources: generated content is rebuilt, human edits,
     /// links and review history are kept, and a case whose scenario changed goes back to review (flagged), never silently accepted.</summary>
     public async Task<TestPlanDraft> RefreshAsync(Guid id, int baseRevision, string actor, CancellationToken ct)
