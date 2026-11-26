@@ -184,6 +184,7 @@
     <Compile Include="../../shared/AdoTestPlanExportContracts.cs" Link="Models/AdoTestPlanExportContracts.cs" />
     <Compile Include="../../shared/AzureDevOpsTestPlanContracts.cs" Link="Models/AzureDevOpsTestPlanContracts.cs" />
     <Compile Include="../../shared/TestScenarioDiscoveryContracts.cs" Link="Models/TestScenarioDiscoveryContracts.cs" />
+    <Compile Include="../../shared/ScenarioDiscoveryWire.cs" Link="Models/ScenarioDiscoveryWire.cs" />
     <Compile Include="../../shared/ScenarioOwnershipContracts.cs" Link="Models/ScenarioOwnershipContracts.cs" />
     <Compile Include="../../shared/ContractTestDataContracts.cs" Link="Models/ContractTestDataContracts.cs" />
     <Compile Include="../../shared/PerformanceLocalExecutionContracts.cs" Link="Models/PerformanceLocalExecutionContracts.cs" />

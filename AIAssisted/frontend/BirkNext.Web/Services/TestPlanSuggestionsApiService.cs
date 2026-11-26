@@ -195,7 +195,8 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
         var key = LastDiscoveryCache.KeyOf(projectKey, snapshotId, scope);
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"{Base}/discover/last?projectKey={Uri.EscapeDataString(projectKey)}{(snapshotId is { } id ? $"&snapshotId={id}" : "")}{(scope is { } sc ? $"&scope={Uri.EscapeDataString(sc)}" : "")}");
+            // compact=true: stories and existing tests are sent once and expanded here (ScenarioDiscoveryWire; ~half the bytes on M2LB).
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{Base}/discover/last?projectKey={Uri.EscapeDataString(projectKey)}{(snapshotId is { } id ? $"&snapshotId={id}" : "")}{(scope is { } sc ? $"&scope={Uri.EscapeDataString(sc)}" : "")}&compact=true");
             // Revalidate the result already parsed in this session: 304 = byte-identical, reuse it (see LastDiscoveryCache).
             ScenarioDiscoveryResult? cached = null;
             if (lastDiscoveries is not null && lastDiscoveries.TryGet(key, out var etag, out var held))
@@ -208,7 +209,7 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
             if (response.StatusCode == System.Net.HttpStatusCode.NoContent) { lastDiscoveries?.Remove(key); return (null, null); }
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<ScenarioDiscoveryResult>(Json, ct);
+                var result = await response.Content.ReadFromJsonAsync<ScenarioDiscoveryResult>(Json, ct) is { } read ? ScenarioDiscoveryWire.Expand(read) : null;
                 if (lastDiscoveries is not null)
                 {
                     if (result is not null && response.Headers.ETag?.Tag is { Length: > 0 } tag) lastDiscoveries.Set(key, tag, result);

@@ -202,6 +202,9 @@ public sealed record DiscoveredScenario
     /// <summary>The user story the scenario is written under (specification acceptance scenarios only); null = no story identified. Kept out of
     /// <see cref="Fingerprint"/>: a story move is reported on its own, never as a changed scenario.</summary>
     public BirkNext.TestCoverage.CoverageUserStory? Story { get; init; }
+    /// <summary>Compact wire form only (<see cref="ScenarioDiscoveryWire"/>): the key of <see cref="Story"/> in the result's story table. Never
+    /// set on a stored or expanded result.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? StoryRef { get; init; }
     /// <summary>The specification's clarifications about this candidate's requirements or story (open, documented, resolved).</summary>
     public List<BirkNext.TestCoverage.CoverageClarification> Clarifications { get; init; } = [];
     /// <summary>The scenario's number within its story.</summary>
@@ -361,6 +364,10 @@ public sealed record ScenarioDiscoveryResult
     public DateTimeOffset DiscoveredAt { get; init; }
     public List<DiscoveryCapability> Capabilities { get; init; } = [];
     public List<DiscoveredScenario> Candidates { get; init; } = [];
+    /// <summary>Compact wire form only (<see cref="ScenarioDiscoveryWire"/>): each distinct user story once, by key.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Dictionary<string, BirkNext.TestCoverage.CoverageUserStory>? StoryTable { get; init; }
+    /// <summary>Compact wire form only: each distinct existing test once, by test id (the per-scenario link keeps basis, confirmation, origin).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Dictionary<string, CandidateTestAssociation>? TestTable { get; init; }
     public List<string> Limitations { get; init; } = [];
     /// <summary>The consistent source basis this result was discovered against (null for results stored before 2026-11-23).</summary>
     public DiscoverySourceBasis? Basis { get; init; }
