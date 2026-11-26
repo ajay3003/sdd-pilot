@@ -21,6 +21,8 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
 {
     /// <summary>Open with «Ingen gruppering» saved (the flat list); grouping tests set false to get the default grouping.</summary>
     private bool FlatList { get; set; } = true;
+    /// <summary>The explorer's modules (null = one module, no module chooser); S03 gives two so a module change can be made.</summary>
+    private IReadOnlyList<ArtifactModuleRoleState>? TestModules { get; set; }
 
     private const string Spec = "Frontend/specs/002-child-search-profile/spec.md";
     private readonly Mock<ITestPlanSuggestionsApiService> _api = new();
@@ -71,7 +73,7 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
             ExplorerArtifactCurrentness.Current, null, Module: "Frontend");
         var explorer = new Mock<IArtifactExplorerContext>();
         explorer.Setup(x => x.GetStateAsync(WorkspaceArtifactType.Specification, It.IsAny<CancellationToken>())).ReturnsAsync(new ArtifactExplorerState(WorkspaceArtifactType.Specification,
-            ExplorerArtifactStatus.Loaded, "m2lb", "M2LB", [spec], spec, ExplorerSelectionReason.Explicit, "# spec", Module: "Frontend"));
+            ExplorerArtifactStatus.Loaded, "m2lb", "M2LB", [spec], spec, ExplorerSelectionReason.Explicit, "# spec", Module: "Frontend", Modules: TestModules));
         Services.AddSingleton(explorer.Object);
         _api.Setup(x => x.ProjectAsync("m2lb", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new TestPlanWorkspace { ProjectKey = "m2lb", GuideKey = "project:m2lb", CanWrite = true }, (string?)null));
@@ -303,5 +305,58 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
         cut.Find("[data-testid=mtd-search]").Input("");
         cut.FindAll("[data-testid=mtd-sgroup-clear]").Single().Click();
         cut.Find("[data-testid=mtd-selection-summary]").TextContent.Should().Contain("0 valgt totalt");
+    }
+
+    // ── Dashboard subset from Testoversikt (2026-11-26 blocker) ─────────────────────────────────────────────────────────────────────────
+
+    private static ScenarioBrowserPresentation.Filter Subset(params DiscoveredScenario[] scenarios) =>
+        ScenarioBrowserPresentation.FromOverview([.. scenarios.Select(c => c.SourceIdentity)], "P1 uten testtilfeller");
+
+    private static string[] RailStories(IRenderedComponent<ManualTestingDiscover> cut) =>
+        [.. cut.FindAll("[data-testid=mtd-story]").Select(e => e.GetAttribute("data-story")!).Where(k => k.Length > 0)];
+
+    [Fact]
+    public void S01_the_story_list_and_the_scenario_list_show_the_same_dashboard_subset()
+    {
+        var cut = Open(View(), filter: Subset(Search, NoMatch));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal("us1-1", "us1-4"));
+        RailStories(cut).Should().Equal([Us1.Key], "only the subset's stories are listed (US2 is not part of the subset)");
+        cut.Find("[data-testid=mtd-overview-selection]").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void S02_the_drawer_grouping_and_checkboxes_keep_the_subset_and_Fjern_utvalget_ends_it()
+    {
+        var cut = Open(View(), filter: Subset(Search));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Should().ContainSingle());
+        cut.Find("[data-testid=mtd-scenario][data-id='us1-1'] [data-testid=mtd-show-details]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-scenario][data-id='us1-1'] [data-testid=mtd-select]").Change(true));
+        cut.Find("[data-testid=mtd-list-group]").Change("TestLevel");
+        cut.Find("[data-testid=mtd-list-group]").Change("None");
+        cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal(["us1-1"], "drawer, selection and grouping never end the subset");
+        RailStories(cut).Should().Equal([Us1.Key]);
+
+        cut.Find("[data-testid=mtd-overview-selection-clear]").Click();
+        cut.FindAll("[data-testid=mtd-scenario]").Should().HaveCount(4);
+        RailStories(cut).Should().Equal([Us1.Key, Us2.Key], "after «Fjern utvalget» the story list follows the full scope");
+        cut.Find("[data-testid=mtd-selection-summary]").TextContent.Should().Contain("1 valgt totalt", "the selection survives");
+    }
+
+    [Fact]
+    public void S03_an_explicit_module_change_ends_the_subset_and_the_story_filter_while_the_selection_stays()
+    {
+        TestModules = [new("Frontend", 1, "s1", ExplorerSelectionReason.Explicit), new("SkoleService", 1, null, null)];
+        var cut = Open(View(), filter: Subset(Search, NoMatch) with { Story = Us1.Key });
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-overview-selection]"));
+        cut.Find("[data-testid=mtd-scenario][data-id='us1-1'] [data-testid=mtd-select]").Change(true);
+
+        cut.Find("[data-testid=ssp-module]").Change("SkoleService");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-overview-selection]").Should().BeEmpty("an explicit scope change ends the dashboard subset"));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Should().HaveCount(4, "the new scope shows its scenarios with no hidden restriction"));
+        RailStories(cut).Should().Equal([Us1.Key, Us2.Key]);
+        JSInterop.Invocations.Where(i => i.Identifier == "sessionStorage.setItem" && i.Arguments[0]!.ToString() == TabDraftStore.DiscoverFilterKey("m2lb"))
+            .Last().Arguments[1]!.ToString().Should().NotContain("tss-us1-1", "the stored filter no longer holds the subset (no reactivation on reload or Back)");
+        cut.Find("[data-testid=mtd-selection-summary]").TextContent.Should().Contain("1 valgt totalt", "the checkbox selection survives a scope change");
     }
 }

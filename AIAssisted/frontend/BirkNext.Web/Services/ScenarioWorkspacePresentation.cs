@@ -60,6 +60,9 @@ public static class ScenarioWorkspacePresentation
     public static List<StoryEntry> Stories(IReadOnlyList<S.Item> items, S.Filter filter)
     {
         var visible = S.Apply(items, filter with { Story = null, Queue = null }).Shown.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+        // A dashboard subset («Åpne alle N» from Testoversikt, 2026-11-26): the story list shows the same subset as the scenario list — only the
+        // stories (specification-scoped keys) and story-less scenarios the subset holds; before, every story of the project was listed beside it.
+        if (filter.Identities is { } subset) items = [.. items.Where(i => subset.Contains(i.Candidate.SourceIdentity, StringComparer.Ordinal))];
         var stories = items.Where(i => i.Candidate.Story is not null).GroupBy(i => i.Candidate.Story!.Key, StringComparer.Ordinal).ToList();
         var paths = stories.Select(g => g.First().Candidate.Story!.SpecificationPath ?? "").Distinct(StringComparer.OrdinalIgnoreCase).Count();
         var result = stories

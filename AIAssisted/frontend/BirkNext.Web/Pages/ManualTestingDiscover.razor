@@ -1134,6 +1134,11 @@
     /// new one's), then the workspace is read again and the new selection's scenarios load by themselves.</summary>
     private Task OnScopeChangedAsync()
     {
+        // An explicit module/specification change (the picker reports only the tester's own choice, never the initial restore) ends the dashboard
+        // subset and every filter value tied to the previous specification (story, requirement): no hidden restriction carries over (2026-11-26).
+        // Search, type, priority and the other view filters stay; the checkbox selection stays and is reported when outside the new scope.
+        if (_filter.Identities is not null || _filter.Selection is not null || _filter.Story is not null || _filter.Requirement is not null)
+            Set(_filter with { Identities = null, Selection = null, Story = null, Requirement = null });
         _items = []; _stories = []; _requirementIds = []; _areas = []; _types = []; _priorities = []; _trace = null; _workView = null; _workError = null;
         _active = null; _activeTitle = null; _missingScenario = null; _discoverError = null; _drillGroup = null;
         // Another module or specification starts with the default display grouping («Brukerhistorier»), never an earlier choice.
