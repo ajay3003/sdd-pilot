@@ -86,6 +86,10 @@ public sealed record StoryGroupingDocument
     /// <summary>Reviewers' decisions about a source test and a scenario (2026-11-25), newest last: confirmed or rejected, and how much of the scenario
     /// the test checks. Never a test result; never changes the test, the scenario or any test case.</summary>
     public List<ScenarioTestLinkDecision> TestLinks { get; init; } = [];
+    /// <summary>Reviewers' scenario-type decisions (functional / non-functional / mixed / unclassified with quality attributes), newest last
+    /// (2026-11-26); a decision without a type returns the scenario to the source-derived proposal. Never changes the scenario, its test method or
+    /// its test cases.</summary>
+    public List<ScenarioTypeDecision> ScenarioTypes { get; init; } = [];
 }
 
 /// <summary>A reviewer's decision about a source test for a scenario. <see cref="Cleared"/> returns it to what the source says.</summary>
@@ -174,6 +178,10 @@ public enum StoryGroupingOperationKind
     /// <summary>A reviewer's decision about a source test for a scenario (<see cref="StoryGroupingOperation.ScenarioId"/>, <see cref="StoryGroupingOperation.TestId"/>,
     /// <see cref="StoryGroupingOperation.LinkReview"/>, <see cref="StoryGroupingOperation.Extent"/>). 2026-11-25.</summary>
     SetScenarioTestLink,
+    /// <summary>A reviewer confirms or changes a scenario's type (<see cref="StoryGroupingOperation.ScenarioId"/> = its source identity,
+    /// <see cref="StoryGroupingOperation.ScenarioType"/>, <see cref="StoryGroupingOperation.Qualities"/>, <see cref="StoryGroupingOperation.ScenarioFingerprint"/>;
+    /// no type = back to the proposal). 2026-11-26.</summary>
+    SetScenarioType,
 }
 
 /// <summary>One change to the grouping document. Unused fields are null. Applied together and atomically (all or nothing).</summary>
@@ -209,6 +217,9 @@ public sealed record StoryGroupingOperation
     public TechnicalCoverageExtent? Extent { get; init; }
     public string? TestFingerprint { get; init; }
     public string? ScenarioFingerprint { get; init; }
+    /// <summary>SetScenarioType: the reviewed type (null = back to the proposal) and its quality attributes.</summary>
+    public ScenarioRequirementType? ScenarioType { get; init; }
+    public List<QualityAttribute>? Qualities { get; init; }
 }
 
 public sealed record StoryGroupingChangeRequest
@@ -545,6 +556,7 @@ public static class StoryGroupingEngine
         var roles = doc.Roles.ToList();
         var kinds = (doc.TestKinds ?? []).ToList();
         var testLinks = (doc.TestLinks ?? []).ToList();
+        var scenarioTypes = (doc.ScenarioTypes ?? []).ToList();
         void Log(string action, string detail) => history.Add(new(now, actor, action, detail));
         StoryLinkDecision? Current(string story, string req) =>
             decisions.LastOrDefault(d => d.StoryKey == story && string.Equals(d.RequirementId, req, StringComparison.OrdinalIgnoreCase));
@@ -698,6 +710,17 @@ public static class StoryGroupingEngine
                     Log("Vurderte automatisk test", $"{op.DisplayId ?? scenario}: {TestLinkLabel(review, extent)} (testen, scenarioet og testtilfellene er uendret)");
                     break;
                 }
+                case StoryGroupingOperationKind.SetScenarioType:
+                {
+                    var scenario = string.IsNullOrWhiteSpace(op.ScenarioId) ? throw new GroupingRefusal("missing-scenario", "Mangler scenario.") : op.ScenarioId.Trim();
+                    // Quality attributes belong to non-functional and mixed scenarios only; a functional or unclassified decision carries none.
+                    var qualities = op.ScenarioType is ScenarioRequirementType.NonFunctional or ScenarioRequirementType.Mixed ? (op.Qualities ?? []).Distinct().ToList() : [];
+                    scenarioTypes.Add(new ScenarioTypeDecision(scenario, string.IsNullOrWhiteSpace(op.StoryKey) ? null : op.StoryKey, op.ScenarioType, qualities,
+                        string.IsNullOrWhiteSpace(op.Reason) ? null : op.Reason.Trim(), actor, now, string.IsNullOrWhiteSpace(op.ScenarioFingerprint) ? null : op.ScenarioFingerprint));
+                    Log("Vurderte scenariotype", $"{op.DisplayId ?? scenario}: {(op.ScenarioType is { } t ? ScenarioTypeClassifier.Label(t) : "tilbake til forslaget")}"
+                        + (qualities.Count > 0 ? $" ({string.Join(", ", qualities.Select(ScenarioTypeClassifier.Label))})" : "") + " (scenarioet, testtypen og testtilfellene er uendret)");
+                    break;
+                }
                 case StoryGroupingOperationKind.LeaveUngrouped:
                 {
                     var s = Story(op.StoryKey);
@@ -810,8 +833,13 @@ public static class StoryGroupingEngine
                 }
             }
         }
-        return doc with { Revision = doc.Revision + 1, Groups = groups, Placements = placements, Decisions = decisions, History = history, Roles = roles, TestKinds = kinds, TestLinks = testLinks };
+        return doc with { Revision = doc.Revision + 1, Groups = groups, Placements = placements, Decisions = decisions, History = history, Roles = roles, TestKinds = kinds, TestLinks = testLinks, ScenarioTypes = scenarioTypes };
     }
+
+    /// <summary>Every scenario's current type decision (source identity → decision); returned-to-proposal ones left out.</summary>
+    public static Dictionary<string, ScenarioTypeDecision> ScenarioTypeDecisions(StoryGroupingDocument? doc) =>
+        (doc?.ScenarioTypes ?? []).GroupBy(d => d.ScenarioId, StringComparer.Ordinal).Select(g => g.Last()).Where(d => d.Type is not null)
+            .ToDictionary(d => d.ScenarioId, StringComparer.Ordinal);
 
     /// <summary>The reviewer's current manual/technical decision for a scenario (null = none, or returned to the suggestion).</summary>
     public static ScenarioTestKindDecision? TestKindDecision(StoryGroupingDocument? doc, string scenarioId) =>

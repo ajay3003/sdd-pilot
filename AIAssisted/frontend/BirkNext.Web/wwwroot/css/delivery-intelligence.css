@@ -182,3 +182,16 @@
     .dql-row { grid-template-columns: minmax(0, 1fr) auto; }
     .dql-bar { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* Drill-down (2026-11-26): a selectable bar is one button carrying the same three columns; pressed = its records are shown. */
+.dd-bars li.dd-bar-selectable { display: block; }
+.dd-bar-button { display: grid; grid-template-columns: minmax(8rem, 12rem) 1fr 3.5rem; align-items: center; gap: .5rem; width: 100%; padding: .15rem .3rem; margin: -.15rem -.3rem;
+    border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dd-bar-button:hover { background: color-mix(in srgb, currentColor 7%, transparent); }
+.dd-bar-button:focus-visible { outline: 2px solid var(--bs-primary, #2563eb); outline-offset: 1px; }
+.dd-bars li.is-selected .dd-bar-button { background: color-mix(in srgb, var(--bs-primary, #2563eb) 12%, transparent); box-shadow: inset 3px 0 0 var(--bs-primary, #2563eb); }
+.dd-bar-button .dd-bar-label { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px; }
+@media (max-width: 640px) {
+    .dd-bar-button { grid-template-columns: 1fr 3rem; }
+    .dd-bar-button .dd-bar { grid-column: 1 / -1; grid-row: 2; }
+}

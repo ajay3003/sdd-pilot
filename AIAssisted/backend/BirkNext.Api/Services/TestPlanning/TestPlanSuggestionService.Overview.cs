@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using BirkNext.TestPlanning;
 using D = BirkNext.Api.Services.TestPlanning.TestScenarioDiscoveryEngine;
 
@@ -21,12 +22,31 @@ public sealed partial class TestPlanSuggestionService
         // Scenarios per specification, from the stored evidence of the project's newest specification catalog.
         var specifications = new List<OverviewSpecification>();
         var stored = specificationCatalogs is null ? null : await specificationCatalogs.EvidenceAsync(null, key, ct);
+        // Reviewers' scenario-type decisions of every specification of the project (one query; 2026-11-26).
+        var typeDecisions = new Dictionary<string, Dictionary<string, ScenarioTypeDecision>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in await db.StoryGroupings.AsNoTracking().Where(r => r.ProjectKey == key).ToListAsync(ct))
+        {
+            try
+            {
+                if (System.Text.Json.JsonSerializer.Deserialize<StoryGroupingDocument>(row.ContentJson, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)) is { } doc)
+                    typeDecisions[StoryGroupingService.NormalizePath(row.SpecificationPath)] = StoryGroupingEngine.ScenarioTypeDecisions(doc);
+            }
+            catch (System.Text.Json.JsonException) { }
+        }
         foreach (var spec in stored?.Evidence ?? [])
         {
+            var decisions = typeDecisions.GetValueOrDefault(StoryGroupingService.NormalizePath(spec.Path));
+            var requirementTexts = spec.Evidence.Requirements.GroupBy(r => r.Id, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Text, StringComparer.OrdinalIgnoreCase);
             var scenarios = D.FromSpecification(key, spec.Evidence).Candidates
                 .Where(c => c.CapabilityId == D.Specification && c.SourceIdentity.Length > 0)
                 .DistinctBy(c => c.SourceIdentity, StringComparer.Ordinal)
-                .Select(c => new OverviewScenario(c.SourceIdentity, c.Story?.Key, c.Story?.StoryId, c.Story?.Title, c.NumberInStory, NormalPriority(c.Story?.Priority), c.Title))
+                .Select(c =>
+                {
+                    var requirementOnly = c.CanonicalKey.StartsWith("requirement:", StringComparison.Ordinal);
+                    var type = requirementOnly ? null : ScenarioTypeClassifier.Classify(c, decisions?.GetValueOrDefault(c.SourceIdentity), requirementTexts);
+                    return new OverviewScenario(c.SourceIdentity, c.Story?.Key, c.Story?.StoryId, c.Story?.Title, c.NumberInStory, NormalPriority(c.Story?.Priority), c.Title,
+                        type?.Type ?? ScenarioRequirementType.Unclassified, type is null ? null : [.. type.Qualities], requirementOnly);
+                })
                 .ToList();
             var folder = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(spec.Path.Replace('\\', '/')) ?? "");
             specifications.Add(new OverviewSpecification(spec.Path, ModuleOf(spec.Path), folder.Length > 0 ? folder : spec.Path, scenarios));
@@ -46,7 +66,8 @@ public sealed partial class TestPlanSuggestionService
             foreach (var c in active)
             {
                 var own = c.Source.Kind == ScenarioSourceKind.Manual && c.ScenarioKey is { } parentKey && parents.TryGetValue(parentKey, out var parent) ? parent : c;
-                var path = SpecificationPathOf(own);
+                // A scenario with no specification file of its own (2026-11-26): the specification folder its cited files lie in, never its title.
+                var path = SpecificationPathOf(own) ?? SpecificationFolderEvidence.SpecificationOf(own.Generated.Evidence.Select(e => e.Reference));
                 cases.Add(new OverviewCase
                 {
                     PlanId = plan.Id, PlanName = plan.PlanName, CaseId = c.Source.ScenarioId, Title = c.EffectiveTitle,

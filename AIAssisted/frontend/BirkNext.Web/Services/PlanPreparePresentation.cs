@@ -170,7 +170,7 @@ public static partial class PlanPreparePresentation
     /// </summary>
     /// <summary>The specification files the plan's cases come from (each case's own source), in plan order.</summary>
     public static IReadOnlyList<string> PlanSpecifications(TestPlanDraft plan) =>
-        [.. plan.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).Select(c => c.Generated.Story?.SpecificationPath ?? SpecificationPathOfEvidence(c))
+        [.. plan.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).Select(c => c.Generated.Story?.SpecificationPath ?? SpecificationPathOfEvidence(c) ?? SpecificationFolderEvidence.SpecificationOf(c.Generated.Evidence.Select(e => e.Reference)))
             .OfType<string>().Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)];
 
     private static string? SpecificationPathOfEvidence(TestCaseDraft c) =>

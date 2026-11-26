@@ -798,7 +798,8 @@
 .mtp-before[open] > summary, .tdp-more[open] > summary { margin-bottom: 0.4rem; }
 
 /* Finn og forstå (2026-11-25): two columns; the scenario detail is an on-demand drawer over the page, never a reserved third column. */
-.mtw-drawer { position: fixed; top: 0; right: 0; z-index: 60; width: min(38rem, 100vw); height: 100vh; max-height: 100vh; overflow: auto; margin: 0;
+/* Starts below the layout's sticky Activity row (z-index 900, about 2.6rem): at top 0 the row covered the drawer's «Lukk» (isolated walkthrough 2026-11-26). */
+.mtw-drawer { position: fixed; top: var(--mtw-drawer-top, 2.6rem); right: 0; z-index: 60; width: min(38rem, 100vw); height: calc(100vh - var(--mtw-drawer-top, 2.6rem)); max-height: calc(100vh - var(--mtw-drawer-top, 2.6rem)); overflow: auto; margin: 0;
     background: var(--msb-surface, #fff); border-left: 1px solid var(--msb-border); box-shadow: -8px 0 24px rgba(15, 23, 42, 0.12); padding: 0.9rem 1.1rem 1.5rem; }
 .mtw-drawer[hidden] { display: none; }
 .mtw-drawer:focus { outline: none; }
@@ -850,3 +851,52 @@ a.mto-kpi:hover, a.mto-kpi:focus-visible { border-color: var(--msb-accent); }
 .atp-fold > summary .gsx-panel-title::before { content: "▸ "; }
 .atp-fold[open] > summary .gsx-panel-title::before { content: "▾ "; }
 .adx-tech { font-size: 0.78rem; color: var(--clr-text-muted, #57606a); cursor: help; }
+
+/* Testoversikt drill-down (2026-11-26): the records behind a bar, grouped per specification or test plan. */
+.mto-card .dd-bar-button { grid-template-columns: minmax(7rem, 14rem) 1fr 3.2rem; }
+.mto-attention-open { text-align: left; }
+.mto-attention li { margin: .15rem 0; }
+.mto-drill { margin: 1rem 0; border-color: color-mix(in srgb, var(--bs-primary, #2563eb) 45%, var(--msb-border)); }
+.mto-drill-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; }
+.mto-drill-h .mto-card-h { margin-right: auto; }
+.mto-drill-h .mto-card-h:focus { outline: none; }
+.mto-drill-group { border-top: 1px solid var(--msb-border); padding: .6rem 0 .2rem; }
+.mto-drill-group-h { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .4rem .8rem; }
+.mto-drill-list { margin: .35rem 0 0; padding-left: 1.1rem; }
+.mto-drill-list li { margin: .15rem 0; overflow-wrap: anywhere; }
+.mtd-overview-selection { display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: baseline; }
+@media (max-width: 640px) { .mto-card .dd-bar-button { grid-template-columns: 1fr 3rem; } }
+
+/* User story implementation status and scenario type (2026-11-26). Compact: one badge, a count, a thin bar; evidence on demand. */
+.msb-tone-progress { background: color-mix(in srgb, var(--msb-accent) 10%, var(--msb-surface)); color: var(--msb-accent); }
+.mtw-impl { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; margin: .55rem 0 .1rem; font-size: .86rem; }
+.mtw-impl-bar { display: inline-block; width: 7rem; height: .45rem; border-radius: 999px; background: var(--msb-subtle); border: 1px solid var(--msb-border); overflow: hidden; }
+.mtw-impl-bar > span { display: block; height: 100%; background: var(--msb-accent); }
+.mtw-impl-pct { font-variant-numeric: tabular-nums; }
+.mtw-impl-remaining { color: var(--clr-warning-text, #9a6700); }
+.mtw-impl-confirm { font-size: .8rem; color: var(--msb-muted, #57606a); }
+.mtw-impl-confirm.is-confirmedimplemented { color: var(--clr-success, #1a7f37); font-weight: 600; }
+.mtw-impl-confirm.is-reconfirmationrequired { color: var(--clr-warning-text, #9a6700); font-weight: 600; }
+.mtw-impl-types { flex-basis: 100%; font-size: .82rem; color: var(--msb-muted, #57606a); }
+.mtw-impl-compact { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; font-size: .76rem; margin-top: .15rem; }
+.mtw-impl-compact .msb-status { font-size: .72rem; }
+.mtw-impl-details { border-top: 1px solid var(--msb-border); margin-top: .5rem; padding-top: .4rem; }
+.mtw-impl-details .mtw-block { margin: .45rem 0; }
+.mtw-impl-details h3.mtp-ctx-label, .mtw-impl-details summary.mtp-ctx-label { margin: 0 0 .25rem; font-size: .8rem; }
+.mtw-impl-facts { margin: .2rem 0 0; padding-left: 1.1rem; }
+.mtw-task-list { list-style: none; margin: .2rem 0 0; padding: 0; display: grid; gap: .3rem; }
+.mtw-task { display: grid; grid-template-columns: auto auto 1fr; gap: .1rem .45rem; align-items: baseline; font-size: .84rem; }
+.mtw-task-id { font-weight: 600; font-variant-numeric: tabular-nums; }
+.mtw-task-text { overflow-wrap: anywhere; }
+.mtw-task-meta { grid-column: 3; font-size: .76rem; }
+.mtw-impl-confirm-form { display: grid; gap: .35rem; max-width: 34rem; }
+.mtw-type-tag { display: inline-block; margin-left: .4rem; padding: 0 .4rem; border-radius: 999px; font-size: .72rem; border: 1px solid var(--msb-border); color: var(--msb-muted, #57606a); }
+.mtw-type-tag.is-nonfunctional, .mtw-type-tag.is-mixed { border-color: color-mix(in srgb, var(--msb-accent) 45%, var(--msb-border)); color: var(--msb-accent); }
+.mtw-type-tag.is-unclassified { border-style: dashed; }
+.mtw-type-group { list-style: none; padding: .5rem .5rem .2rem; font-size: .74rem; font-weight: 700; letter-spacing: .04em; color: var(--msb-muted, #57606a); border-bottom: 1px solid var(--msb-border); }
+.mtw-type > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.mtw-type-review { display: grid; gap: .35rem; margin-top: .4rem; max-width: 34rem; }
+.mtw-quality-picks { display: flex; flex-wrap: wrap; gap: .2rem .8rem; border: 1px solid var(--msb-border); border-radius: 6px; padding: .3rem .5rem; }
+.mtw-quality-picks legend { font-size: .76rem; width: auto; float: none; margin: 0; padding: 0 .2rem; }
+@media (max-width: 640px) { .mtw-task { grid-template-columns: auto 1fr; } .mtw-task-meta, .mtw-task-text { grid-column: 1 / -1; } .mtw-impl-bar { width: 5rem; } }
+.msb-tone-neutral { background: var(--msb-subtle); color: var(--clr-text-muted, #57606a); }

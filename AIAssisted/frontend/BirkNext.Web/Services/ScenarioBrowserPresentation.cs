@@ -130,6 +130,13 @@ public static partial class ScenarioBrowserPresentation
         /// <summary>«Hva er allerede kontrollert?» for the list and its filter (set by the page; null = not computed).</summary>
         public TechnicalCoveragePresentation.State? Tech { get; init; }
         public bool KindDecided => AutomaticRelevance is not null;
+        /// <summary>The acceptance scenario's type (2026-11-26, the shared classifier with reviewers' decisions); null when the item is not an
+        /// acceptance scenario of the specification (a requirement without one, or a proposal from contracts or code).</summary>
+        public ScenarioTypeResult? TypeResult { get; init; }
+        /// <summary>The task status of the scenario's user story (from the shared status engine); null when not loaded or the scenario has no story.</summary>
+        public UserStoryTaskStatus? StoryStatus { get; init; }
+        /// <summary>The type group the scenario belongs to: its type, «Krav uten akseptansescenario» or «Andre forslag».</summary>
+        public string TypeKey => TypeResult?.Type.ToString() ?? (IsRequirementOnly(Candidate) ? RequirementGroup : OtherGroup);
         public Relevance Suggested => AutomaticRelevance ?? Relevance;
     }
 
@@ -220,7 +227,48 @@ public static partial class ScenarioBrowserPresentation
 
     /// <summary>All filters compose. <see cref="Queue"/> null = every scenario (Finn og forstå starts on <see cref="DefaultView"/>).</summary>
     public sealed record Filter(string Query = "", string? Area = null, string? Type = null, string? Status = null, string? Story = null, string? Requirement = null, bool Technical = false, bool All = false,
-        ScenarioWorkQueue? Queue = null, string? Priority = null, ExecutionApproach? Approach = null, bool OnlyTechnical = false, string? Tech = null);
+        ScenarioWorkQueue? Queue = null, string? Priority = null, ExecutionApproach? Approach = null, bool OnlyTechnical = false, string? Tech = null,
+        string[]? Identities = null, string? Selection = null, string? ScenarioType = null, string? ImplementationStatus = null);
+
+    /// <summary>Type-group keys besides <see cref="ScenarioRequirementType"/>: a requirement without an acceptance scenario, and proposals that are
+    /// not acceptance scenarios of the specification (contracts, code, flows). Neither is part of the scenario-type classification.</summary>
+    public const string RequirementGroup = "Requirement", OtherGroup = "Other";
+
+    public static bool IsRequirementOnly(DiscoveredScenario c) => c.CanonicalKey.StartsWith("requirement:", StringComparison.Ordinal);
+
+    /// <summary>An acceptance scenario of the specification (the population the type classification covers).</summary>
+    public static bool IsAcceptanceScenario(DiscoveredScenario c) => c.CapabilityId == "specification" && c.CanonicalKey.StartsWith("scenario:", StringComparison.Ordinal);
+
+    public static string TypeGroupLabel(string key) => key switch
+    {
+        RequirementGroup => "Krav uten akseptansescenario",
+        OtherGroup => "Andre forslag (ikke akseptansescenarioer)",
+        _ => Enum.TryParse<ScenarioRequirementType>(key, out var t) ? ScenarioTypeClassifier.GroupLabel(t) : key,
+    };
+
+    /// <summary>The scenario-type filter's options (exact type; a mixed scenario is only in «Blandede»).</summary>
+    public static readonly IReadOnlyList<(string Key, string Label)> TypeFilters =
+    [
+        (nameof(ScenarioRequirementType.Functional), "Funksjonelle"), (nameof(ScenarioRequirementType.NonFunctional), "Ikke-funksjonelle"),
+        (nameof(ScenarioRequirementType.Mixed), "Blandede"), (nameof(ScenarioRequirementType.Unclassified), "Uavklarte"), (RequirementGroup, "Krav uten akseptansescenario"),
+    ];
+
+    /// <summary>Every acceptance scenario's type: the shared classifier, with the reviewers' decision (by source identity) when there is one.</summary>
+    public static List<Item> WithScenarioTypes(IReadOnlyList<Item> items, IReadOnlyDictionary<string, ScenarioTypeDecision> decisions, IReadOnlyDictionary<string, string>? requirementTexts = null) =>
+        [.. items.Select(i => i with
+        {
+            TypeResult = IsAcceptanceScenario(i.Candidate) ? ScenarioTypeClassifier.Classify(i.Candidate, decisions.GetValueOrDefault(i.Candidate.SourceIdentity), requirementTexts) : null,
+        })];
+
+    /// <summary>Each scenario's story task status (by canonical story key); scenarios without a story or a computed status keep none.</summary>
+    public static List<Item> WithStoryStatus(IReadOnlyList<Item> items, IReadOnlyDictionary<string, UserStoryTaskStatus> status) =>
+        [.. items.Select(i => i with { StoryStatus = i.Candidate.Story is { } s && status.TryGetValue(s.Key, out var st) ? st : null })];
+
+    /// <summary>
+    /// A selection opened from a Testoversikt chart (2026-11-26): exactly these scenario identities (the ones saved cases carry), named by
+    /// <paramref name="label"/>. Every scenario of the selection is shown — no work queue, no relevance filter hides one of them.
+    /// </summary>
+    public static Filter FromOverview(IEnumerable<string> identities, string label) => new(All: true, Identities: [.. identities.Distinct(StringComparer.Ordinal)], Selection: label);
 
     /// <summary>The priority filter value for scenarios whose user story declares no priority (never guessed).</summary>
     public const string NoPriority = "(none)";
@@ -237,10 +285,10 @@ public static partial class ScenarioBrowserPresentation
 
     /// <summary>Filters behind «Flere filtre» that are set (status, type, user story, requirement, priority).</summary>
     public static int AdvancedFilterCount(Filter f) =>
-        new[] { f.Status, f.Type, f.Story, f.Requirement, f.Priority, f.Approach?.ToString(), f.Tech }.Count(v => v is not null);
+        new[] { f.Status, f.Type, f.Story, f.Requirement, f.Priority, f.Approach?.ToString(), f.Tech, f.ScenarioType, f.ImplementationStatus }.Count(v => v is not null);
 
     /// <summary>Whether search or any filter narrows the view (the queue and «Vis teknisk innhold» are views, not filters).</summary>
-    public static bool HasFilters(Filter f) => f.Query.Length > 0 || f.Area is not null || AdvancedFilterCount(f) > 0;
+    public static bool HasFilters(Filter f) => f.Query.Length > 0 || f.Area is not null || AdvancedFilterCount(f) > 0 || f.Identities is not null;
 
     /// <summary>«Nullstill filtre»: search and filters cleared; the work queue and the technical-content preference stay as chosen.</summary>
     public static Filter ResetFilters(Filter f) => new(Technical: f.Technical, All: f.All, Queue: f.Queue, OnlyTechnical: f.OnlyTechnical);
@@ -269,6 +317,10 @@ public static partial class ScenarioBrowserPresentation
             && (f.Type is null || i.TypeLabel == f.Type)
             && (f.Status is null || i.Status.Key == f.Status)
             && (f.Story is null || (f.Story == ScenarioWorkspacePresentation.NoStory ? i.Candidate.Story is null : i.Candidate.Story?.Key == f.Story))
+            && (f.Identities is null || f.Identities.Contains(i.Candidate.SourceIdentity, StringComparer.Ordinal))
+            && (f.ScenarioType is null || i.TypeKey == f.ScenarioType)
+            // «Ukjent» also covers a story whose status is not computed; a scenario without a story has no implementation status to filter on.
+            && (f.ImplementationStatus is null || i.Candidate.Story is not null && (i.StoryStatus ?? UserStoryTaskStatus.Unknown).ToString() == f.ImplementationStatus)
             && (f.Requirement is null || i.Candidate.RequirementIds.Contains(f.Requirement, StringComparer.OrdinalIgnoreCase))
             && (f.Priority is null || (f.Priority == NoPriority ? string.IsNullOrEmpty(i.Candidate.Story?.Priority)
                 : string.Equals(i.Candidate.Story?.Priority, f.Priority, StringComparison.OrdinalIgnoreCase)))

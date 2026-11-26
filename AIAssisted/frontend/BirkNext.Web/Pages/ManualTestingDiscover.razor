@@ -49,6 +49,7 @@
         @if (_ws.Error is { } error) { <p class="mt-alert" role="alert" data-testid="mtd-error">@error</p> }
         var discovery = _ws.Discovery;
         var (shown, hidden) = S.Apply(_items, _filter);
+        if (_groupMode == G.Mode.ScenarioType) shown = [.. shown.OrderBy(i => TypeRank(i.TypeKey))];
         var pageItems = shown.Take(_limit).ToList();
         var active = pageItems.FirstOrDefault(i => i.Id == _active) ?? _items.FirstOrDefault(i => i.Id == _active);
         var preparedCases = _items.Sum(i => i.Prepared?.Cases ?? 0);
@@ -237,6 +238,7 @@
                                     <button type="button" class="mtw-toggle" aria-expanded="@(_storyGrouping ? "true" : "false")" @onclick="() => _storyGrouping = !_storyGrouping" data-testid="mtd-grouping-toggle">Gruppering</button>
                                 }
                             </div>
+                            @StoryStatusBlock(us.Key)
                             @if (prof is not null && (_storyGrouping || prof.NeedsReviewFlag))
                             {
                                 <div class="mtw-grouping" data-testid="mtd-grouping" data-state="@prof.State" data-status="@G.StatusLabel(prof)">
@@ -330,7 +332,7 @@
                                                 <p>@foreach (var r in storyReqs) { var rid = r; <button type="button" class="msb-req" @onclick="() => OpenRequirementTab(rid)" data-testid="mtd-story-req">@rid</button> }</p></div>
                                         }
                                     }
-                                    <p class="mt-muted msb-small" title="@us.SpecificationPath">Kilde: linje @(us.LineStart?.ToString() ?? "?")</p>
+                                    <p class="mt-muted msb-small" title="@us.SpecificationPath">Kilde: @(us.LineStart is { } storyLine ? $"linje {storyLine}" : "linjenummer er ikke registrert")</p>
                                 </div>
                             }
                         </section>
@@ -396,6 +398,7 @@
                                             <span class="mtw-card-top"><span class="mtw-us">@e.Label</span>@if (e.Priority is { Length: > 0 } pr) { <span class="mtw-prio">@pr</span> }</span>
                                             <span class="mtw-card-title">@e.Title</span>
                                             <span class="mtw-card-stats"><b>@e.Shown</b> AC@(e.WithCases > 0 ? $" · {e.WithCases} med testtilfeller" : "")</span>
+                                            @CompactStatus(e.Key)
                                             @KindCounts(skc.Manual, skc.Technical, skc.Both)
                                             @if (reason is not null) { <span class="mtw-card-reason" data-testid="mtd-story-card-reason">@reason</span> }
                                         </button></li>
@@ -524,6 +527,16 @@
                                 Alle scenarioer vises; om de har testtilfeller er ukjent.</p>
                         }
 
+                        @* A selection opened from a Testoversikt chart: exactly those scenarios; a scenario this discovery does not hold is counted, never hidden. *@
+                        @if (_filter.Identities is { } wantedIds)
+                        {
+                            var found = _items.Count(i => wantedIds.Contains(i.Candidate.SourceIdentity, StringComparer.Ordinal));
+                            <p class="msb-spec-note mtd-overview-selection" role="status" data-testid="mtd-overview-selection">
+                                <b>Utvalg fra Testoversikt:</b> @(_filter.Selection ?? "valgte scenarioer") · @found av @wantedIds.Length scenario@(wantedIds.Length == 1 ? "" : "er")
+                                @if (found < wantedIds.Length) { <span data-testid="mtd-overview-selection-missing"> (@(wantedIds.Length - found) finnes ikke i forslagene for denne spesifikasjonen nå)</span> }
+                                <button type="button" class="msb-link" @onclick="() => Set(DefaultFilter)" data-testid="mtd-overview-selection-clear">Fjern utvalget</button>
+                            </p>
+                        }
                         @* Search reaches every story; the rest of the filters on demand. *@
                         <div class="msb-toolbar" role="search" data-testid="mtd-toolbar">
                             <input type="search" class="msb-search" placeholder="Søk i scenarioer, krav og områder" aria-label="Søk i scenarioer" value="@_filter.Query"
@@ -579,6 +592,14 @@
                                     <option value="">Alle testtilnærminger</option>
                                     @foreach (var ap in Enum.GetValues<ExecutionApproach>()) { <option value="@ap" selected="@(_filter.Approach == ap)">@TestDesignAdvisor.ApproachLabel(ap)</option> }
                                 </select>
+                                <select class="msb-select" aria-label="Scenariotype" @onchange="e => Set(_filter with { ScenarioType = Opt(e) })" data-testid="mtd-filter-scenario-type">
+                                    <option value="">Alle typer</option>
+                                    @foreach (var (key, label) in S.TypeFilters) { <option value="@key" selected="@(_filter.ScenarioType == key)">@label</option> }
+                                </select>
+                                <select class="msb-select" aria-label="Implementeringsstatus" @onchange="e => Set(_filter with { ImplementationStatus = Opt(e) })" data-testid="mtd-filter-impl-status">
+                                    <option value="">Alle implementeringsstatuser</option>
+                                    @foreach (var st in UserStoryStatusText.FilterOrder) { <option value="@st" selected="@(_filter.ImplementationStatus == st.ToString())">@UserStoryStatusText.Label(st)</option> }
+                                </select>
                                 <select class="msb-select" aria-label="Automatiske tester" @onchange="e => Set(_filter with { Tech = Opt(e) })" data-testid="mtd-filter-tech">
                                     <option value="">Alle (automatiske tester)</option>
                                     @foreach (var (key, label) in TC.Filters) { <option value="@key" selected="@(_filter.Tech == key)">@label</option> }
@@ -604,9 +625,16 @@
                                 </div>
                                 <ul class="msb-rows" role="listbox" aria-multiselectable="true" aria-label="Scenarioer" tabindex="0" @onkeydown="e => KeyAsync(e, pageItems)"
                                     aria-activedescendant="@(active is null ? null : $"msb-row-{active.Id}")" data-testid="mtd-rows">
+                                    @{ string? lastGroup = null; }
                                     @foreach (var i in pageItems)
                                     {
                                         var selected = _selected.Contains(i.Id);
+                                        @if (_groupMode == G.Mode.ScenarioType && i.TypeKey != lastGroup)
+                                        {
+                                            lastGroup = i.TypeKey;
+                                            var groupKey = i.TypeKey;
+                                            <li class="mtw-type-group" role="presentation" data-testid="mtd-type-group" data-type="@groupKey">@S.TypeGroupLabel(groupKey).ToUpperInvariant() (@shown.Count(x => x.TypeKey == groupKey))</li>
+                                        }
                                         <li id="@($"msb-row-{i.Id}")" role="option" aria-selected="@(selected ? "true" : "false")" class="msb-row mtw-ac-row @(i.Id == _active ? "is-active" : null) @(selected ? "is-selected" : null)"
                                             data-testid="mtd-scenario" data-id="@i.Id" data-relevance="@i.Relevance" @onclick="() => Open(i.Id)">
                                             <input type="checkbox" class="msb-check" checked="@selected" aria-label="@($"Velg {i.Title}")" @onclick:stopPropagation="true"
@@ -618,6 +646,10 @@
                                                 }
                                                 <span class="msb-row-title" data-testid="mtd-scenario-title">@W.RowTitle(i)</span>
                                                 <span class="msb-row-meta">@i.Area@(i.Candidate.Story?.Priority is { } pri ? $" · {pri}" : "")@(i.Relevance switch { S.Relevance.Technical => " · teknisk", S.Relevance.Both => " · manuell + teknisk", _ => i.KindDecided ? " · manuell" : "" })@(i.KindDecided ? " (valgt)" : "")@if (i.Tech is { } techState && TC.ListTag(techState) is { } techTag) { <span class="mtw-tech-tag is-@(techState.ToString().ToLowerInvariant())" data-testid="mtd-scenario-tech"> · @techTag</span> }<span class="msb-approach" title="@string.Join(" ", i.Suitability.Approaches.Select(a => a.Reason))" data-testid="mtd-scenario-approach"> · @string.Join(" · ", i.Suitability.Approaches.Take(2).Select(a => TestDesignAdvisor.ApproachLabel(a.Approach)))</span></span>
+                                                @if (i.TypeResult is { } rowType && ScenarioTypeClassifier.RowLabel(rowType) is { } typeLabel)
+                                                {
+                                                    <span class="mtw-type-tag is-@rowType.Type.ToString().ToLowerInvariant()" data-testid="mtd-scenario-type" data-type="@rowType.Type">@typeLabel</span>
+                                                }
                                                 @if (i.Candidate.RequirementIds.Count > 0)
                                                 {
                                                     <span class="mtw-row-reqs" data-testid="mtd-scenario-reqs">@foreach (var r in i.Candidate.RequirementIds.Take(4)) { <span class="mtw-fr">@r</span> }@if (i.Candidate.RequirementIds.Count > 4) { <span class="mtw-fr is-more">+@(i.Candidate.RequirementIds.Count - 4)</span> }</span>
@@ -678,6 +710,7 @@
                             <h2 class="msb-detail-title" data-testid="mtd-detail-title">@W.DetailTitle(active)</h2>
                             <span class="msb-status msb-tone-@active.Status.Tone">@active.Status.Text</span>
                         </div>
+                        @ScenarioTypeSection(active)
                         @if (!string.Equals(W.RowTitle(active), c.Title, StringComparison.Ordinal) && !string.Equals(active.Title, c.Title, StringComparison.Ordinal)) { <p class="msb-original" data-testid="mtd-detail-original">Opprinnelig tittel: @c.Title</p> }
                         <p class="msb-chips"><span>@active.TypeLabel</span><span>@active.Area</span>@if (active.Relevance != S.Relevance.Manual) { <span>@(active.Relevance == S.Relevance.Both ? "Manuell + teknisk" : "Teknisk")</span> }</p>
                         var kindDecision = StoryGroupingEngine.TestKindDecision(_groupDoc, active.Id); var canSetKind = CanSetKind(active);
@@ -1265,6 +1298,7 @@
             }
             await LoadGroupingAsync(api, generation);
             if (generation != _loadGeneration) return;
+            _ = InvokeAsync(LoadStoryStatusAsync);
             if (_ws.ProjectKey is { } key)
             {
                 // The selection this tab already holds (also the one Plan & prepare restores): kept only for scenarios that still exist.
@@ -1331,7 +1365,7 @@
     /// <summary>Editing needs the same permission as saving a test plan, and a grouping document that could be read.</summary>
     private bool CanEditGrouping => _groupWritable && _ws?.Plans?.CanWrite == true;
 
-    private IEnumerable<G.Mode> AvailableModes => new[] { G.Mode.Business, G.Mode.Functional, G.Mode.Stories, G.Mode.None }
+    private IEnumerable<G.Mode> AvailableModes => new[] { G.Mode.Stories, G.Mode.ScenarioType, G.Mode.Functional, G.Mode.Business, G.Mode.None }
         .Where(m => m switch { G.Mode.Business => _groupDoc is { Groups.Count: > 0 } || _groupMode == G.Mode.Business, G.Mode.Functional => _sections.Sections.Count > 0, _ => true });
 
     /// <summary>
@@ -1449,6 +1483,8 @@
     {
         // Reviewers' manual/technical decisions are part of the grouping document: applied (idempotently) whenever it changes.
         _items = S.WithTestKinds(_items, StoryGroupingEngine.TestKindDecisions(_groupDoc), _groupSpecPath);
+        _items = S.WithScenarioTypes(_items, StoryGroupingEngine.ScenarioTypeDecisions(_groupDoc), RequirementTexts);
+        _items = S.WithStoryStatus(_items, _storyStatus.ToDictionary(kv => kv.Key, kv => kv.Value.Status, StringComparer.Ordinal));
         var techDecisions = TechDecisions; var testsRead = _ws?.Discovery?.TestsReadForScenarios ?? false;
         _items = [.. _items.Select(i => i with { Tech = TC.Of(i.Candidate, techDecisions, testsRead).State })];
         (_queueCounts, _allCount) = S.QueueCounts(_items, _filter);
@@ -1577,6 +1613,315 @@
     }
 
     /// <summary>One story row of the rail (flat or inside a group).</summary>
+    // ── User story implementation status and scenario type (2026-11-26) ───────────────────────────────────────────────────────
+    // The status comes from the server's shared engine (tasks.md through the import's extracted task lines), read once per selected
+    // specification in the background (a newer selection makes an older answer irrelevant). The scenario type is the shared classifier with the
+    // reviewers' decisions from the grouping document. Neither changes a scenario, a test case, a plan or a source file.
+
+    private Dictionary<string, UserStoryImplementationStatus> _storyStatus = new(StringComparer.Ordinal);
+    private UserStoryStatusView? _storyStatusView;
+    private bool _storyStatusLoading;
+    private string? _storyStatusError, _storyStatusFor, _statusOpenFor;
+    private int _storyStatusGeneration;
+    private bool _confirmBusy;
+    private string? _confirmError;
+    private string _confirmNote = "";
+
+    private IReadOnlyDictionary<string, string> RequirementTexts =>
+        (_ws?.Requirements ?? []).GroupBy(r => r.RequirementId, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Title, StringComparer.OrdinalIgnoreCase);
+
+    private static int TypeRank(string key) => key switch
+    {
+        nameof(ScenarioRequirementType.Functional) => 0, nameof(ScenarioRequirementType.NonFunctional) => 1, nameof(ScenarioRequirementType.Mixed) => 2,
+        nameof(ScenarioRequirementType.Unclassified) => 3, S.RequirementGroup => 4, _ => 5,
+    };
+
+    private UserStoryImplementationStatus? StatusOf(string? storyKey) => storyKey is not null && _storyStatus.TryGetValue(storyKey, out var s) ? s : null;
+
+    private async Task LoadStoryStatusAsync()
+    {
+        if (_ws?.ProjectKey is not { } key || ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) return;
+        var spec = _groupSpecPath ?? SelectedSpecificationPath;
+        var scope = $"{key}|{spec}";
+        if (_storyStatusFor == scope && (_storyStatusLoading || _storyStatusView is not null)) return;
+        var generation = ++_storyStatusGeneration;
+        (_storyStatusFor, _storyStatusLoading, _storyStatusError) = (scope, true, null);
+        StateHasChanged();
+        try
+        {
+            var (view, error) = await api.StoryStatusAsync(key, spec);
+            if (generation != _storyStatusGeneration) return;
+            _storyStatusView = view;
+            _storyStatusError = view is null ? error ?? "Ukjent feil." : null;
+            _storyStatus = view?.Stories.ToDictionary(s => s.StoryKey, StringComparer.Ordinal) ?? new(StringComparer.Ordinal);
+            Recompute();
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { if (generation == _storyStatusGeneration) _storyStatusError = e.Message; }
+        finally { if (generation == _storyStatusGeneration) _storyStatusLoading = false; }
+        StateHasChanged();
+    }
+
+    private Task RetryStoryStatusAsync() { _storyStatusFor = null; _storyStatusView = null; return LoadStoryStatusAsync(); }
+
+    /// <summary>The story's acceptance scenarios by type, counted once each (a mixed scenario only as mixed).</summary>
+    private string TypeDistribution(string storyKey)
+    {
+        var typed = _items.Where(i => i.Candidate.Story?.Key == storyKey && i.TypeResult is not null).GroupBy(i => i.TypeResult!.Type).ToDictionary(g => g.Key, g => g.Count());
+        if (typed.Count == 0) return "";
+        string Part(ScenarioRequirementType t, string one, string many) => typed.TryGetValue(t, out var n) && n > 0 ? $"{n} {(n == 1 ? one : many)}" : "";
+        return string.Join(" · ", new[]
+        {
+            Part(ScenarioRequirementType.Functional, "funksjonelt", "funksjonelle"), Part(ScenarioRequirementType.NonFunctional, "ikke-funksjonelt", "ikke-funksjonelle"),
+            Part(ScenarioRequirementType.Mixed, "blandet", "blandede"), Part(ScenarioRequirementType.Unclassified, "uavklart", "uavklarte"),
+        }.Where(x => x.Length > 0));
+    }
+
+    /// <summary>The compact status on a story card or rail entry: one badge and the task count (nothing when not loaded).</summary>
+    private RenderFragment CompactStatus(string storyKey) => __builder =>
+    {
+        if (StatusOf(storyKey) is not { } s) return;
+        <span class="mtw-impl-compact" data-testid="mtd-story-impl" data-status="@s.Status">
+            <span class="msb-status msb-tone-@UserStoryStatusText.Tone(s.Status)">@UserStoryStatusText.Label(s.Status)</span>
+            @if (s.ProgressPercent is not null) { <span class="mt-muted">@s.Completed/@s.Eligible oppgaver</span> }
+        </span>
+    };
+
+    /// <summary>The story card's implementation summary (always shown, whatever the dashboard settings) and, on demand, its evidence.</summary>
+    private RenderFragment StoryStatusBlock(string storyKey) => __builder =>
+    {
+        var s = StatusOf(storyKey);
+        if (s is null)
+        {
+            if (_storyStatusLoading) { <InlineLoading Text="Henter implementeringsstatus …" Class="mt-muted msb-small" TestId="mtd-us-status-loading" /> }
+            else if (_storyStatusError is { } err) { <p class="msb-small mt-muted" role="status" data-testid="mtd-us-status-error">Implementeringsstatus kunne ikke hentes (@err). <button type="button" class="msb-link" @onclick="RetryStoryStatusAsync" data-testid="mtd-us-status-retry">Prøv igjen</button></p> }
+            return;
+        }
+        var remaining = s.Open + s.Partial + s.UnknownState;
+        var types = TypeDistribution(storyKey);
+        var open = _statusOpenFor == s.StoryKey;
+        <div class="mtw-impl" data-testid="mtd-us-status" data-status="@s.Status">
+            <span class="msb-status msb-tone-@UserStoryStatusText.Tone(s.Status)" data-testid="mtd-us-status-badge">@UserStoryStatusText.Label(s.Status)</span>
+            @if (s.ProgressPercent is { } pct)
+            {
+                <span class="mtw-impl-count" data-testid="mtd-us-status-count">@s.Completed av @s.Eligible oppgaver fullført</span>
+                <span class="mtw-impl-bar" role="progressbar" aria-valuenow="@pct" aria-valuemin="0" aria-valuemax="100" aria-label="Oppgaver fullført"><span style="width:@(pct)%"></span></span>
+                <span class="mtw-impl-pct" data-testid="mtd-us-status-pct">@pct %</span>
+                @if (remaining > 0) { <span class="mtw-impl-remaining" data-testid="mtd-us-status-remaining">@remaining oppgave@(remaining == 1 ? "" : "r") gjenstår</span> }
+            }
+            else if (s.Eligible == 0)
+            {
+                <span class="mt-muted" data-testid="mtd-us-status-unavailable">Oppgavestatus er ikke tilgjengelig.</span>
+            }
+            else
+            {
+                <span class="mt-muted" data-testid="mtd-us-status-unavailable">@s.Completed av @s.Eligible oppgaver fullført · framdrift kan ikke beregnes sikkert.</span>
+            }
+            <span class="mtw-impl-confirm is-@s.Confirmation.ToString().ToLowerInvariant()" data-testid="mtd-us-confirmation">@UserStoryStatusText.Label(s.Confirmation)</span>
+            @if (types.Length > 0) { <span class="mtw-impl-types" data-testid="mtd-us-ac-types">Akseptansescenarioer: @types</span> }
+            <button type="button" class="mtw-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="mtd-us-status-details"
+                    @onclick="() => { _statusOpenFor = open ? null : s.StoryKey; _confirmError = null; }" data-testid="mtd-us-status-toggle">@(open ? "Skjul statusgrunnlag" : "Se statusgrunnlag")</button>
+        </div>
+        @if (open) { @StatusDetails(s) }
+    };
+
+    private RenderFragment StatusDetails(UserStoryImplementationStatus s) => __builder =>
+    {
+        var remaining = s.Tasks.Where(t => t.State is not (UserStoryTaskState.Complete or UserStoryTaskState.CancelledOrDeferred)).ToList();
+        var done = s.Tasks.Where(t => t.State == UserStoryTaskState.Complete).ToList();
+        var cancelled = s.Tasks.Where(t => t.State == UserStoryTaskState.CancelledOrDeferred).ToList();
+        var typed = _items.Where(i => i.Candidate.Story?.Key == s.StoryKey && i.TypeResult is not null).ToList();
+        <div class="mtw-impl-details" id="mtd-us-status-details" data-testid="mtd-us-status-details">
+            <section class="mtw-block" data-testid="mtd-us-status-summary">
+                <h3 class="mtp-ctx-label">Implementeringsstatus</h3>
+                <p class="msb-small">@s.Explanation</p>
+                <ul class="msb-small mtw-impl-facts">
+                    <li>Oppgaver: @s.Completed av @s.Eligible fullført@(s.Partial > 0 ? $" · {s.Partial} delvis" : "")@(s.UnknownState > 0 ? $" · {s.UnknownState} med ukjent markering" : "")@(s.Cancelled > 0 ? $" · {s.Cancelled} utgått (ikke telt)" : "")</li>
+                    <li data-testid="mtd-us-status-evidence">Grunnlag: @UserStoryStatusText.Label(s.Evidence) — @s.EvidenceText</li>
+                    <li>Kildeversjon: @(_storyStatusView?.SnapshotId is { } snap ? $"kildeøyeblikksbilde {snap.ToString()[..8]}" : "ukjent")@(_storyStatusView?.SourceReadAt is { } read ? $", lest {read.ToLocalTime():dd.MM.yyyy HH:mm}" : "")@(_storyStatusView?.SourcesDiffer == true ? " · oppgavene og spesifikasjonen er fra ulike importer" : "")</li>
+                    <li data-testid="mtd-us-status-confirmation">Bekreftelse: @UserStoryStatusText.Label(s.Confirmation)@(s.ConfirmedBy is { } by ? $" ({by}, {s.ConfirmedAt?.ToLocalTime():dd.MM.yyyy})" : "")</li>
+                </ul>
+            </section>
+            @if (remaining.Count > 0)
+            {
+                <section class="mtw-block" data-testid="mtd-us-status-remaining-list">
+                    <h3 class="mtp-ctx-label">Gjenstående oppgaver (@remaining.Count)</h3>
+                    <ul class="mtw-task-list">@foreach (var t in remaining) { @TaskLine(t) }</ul>
+                </section>
+            }
+            @if (done.Count > 0)
+            {
+                <details class="mtw-block" data-testid="mtd-us-status-done"><summary class="mtp-ctx-label">Fullførte oppgaver (@done.Count)</summary>
+                    <ul class="mtw-task-list">@foreach (var t in done) { @TaskLine(t) }</ul></details>
+            }
+            @if (cancelled.Count > 0)
+            {
+                <details class="mtw-block" data-testid="mtd-us-status-cancelled"><summary class="mtp-ctx-label">Utgåtte oppgaver, ikke telt (@cancelled.Count)</summary>
+                    <ul class="mtw-task-list">@foreach (var t in cancelled) { @TaskLine(t) }</ul></details>
+            }
+            @if (s.Dependencies.Count > 0 || s.SharedOpen.Count > 0)
+            {
+                <section class="mtw-block" data-testid="mtd-us-status-dependencies">
+                    <h3 class="mtp-ctx-label">Avhengigheter</h3>
+                    <p class="mt-muted msb-small">«Bekreftet avhengighet» står uttrykkelig i oppgaven («depends on», «requires», «after»). «Relatert oppgave» er bare nevnt og endrer ikke statusen. Fellesoppgaver hører til hele spesifikasjonen og telles ikke for brukerhistorien.</p>
+                    <ul class="msb-small">
+                        @foreach (var d in s.Dependencies.OrderBy(d => d.Kind))
+                        {
+                            <li data-testid="mtd-us-dependency" data-kind="@d.Kind"><span class="msb-status msb-tone-@(d.Kind == UserStoryDependencyKind.Blocking ? (d.TargetOpen ? "warn" : "ok") : "muted")">@UserStoryStatusText.Label(d.Kind)</span>
+                                @d.FromTaskId → @d.ToTaskId@(d.TargetStory is { } ts ? $" ({ts})" : "")@(d.Kind != UserStoryDependencyKind.Unresolved ? (d.TargetOpen ? " · ikke fullført" : " · fullført") : "") <span class="mt-muted">@d.Evidence</span></li>
+                        }
+                    </ul>
+                    @if (s.SharedOpen.Count > 0)
+                    {
+                        <details data-testid="mtd-us-shared"><summary class="msb-small">Fellesoppgaver i spesifikasjonen som gjenstår (@s.SharedOpen.Count) — mulig avhengighet, ikke bekreftet</summary>
+                            <ul class="mtw-task-list">@foreach (var t in s.SharedOpen) { @TaskLine(t) }</ul></details>
+                    }
+                </section>
+            }
+            @if (s.Diagnostics.Count > 0)
+            {
+                <section class="mtw-block" data-testid="mtd-us-status-diagnostics"><h3 class="mtp-ctx-label">Merknader</h3>
+                    <ul class="msb-small">@foreach (var d in s.Diagnostics) { <li>@d</li> }</ul></section>
+            }
+            <section class="mtw-block" data-testid="mtd-us-status-types">
+                <h3 class="mtp-ctx-label">Scenarioklassifisering</h3>
+                @if (typed.Count == 0) { <p class="mt-muted msb-small">Ingen akseptansescenarioer i utvalget.</p> }
+                else
+                {
+                    <p class="msb-small">@TypeDistribution(s.StoryKey)</p>
+                    @if (typed.SelectMany(i => i.TypeResult!.Qualities).Distinct().ToList() is { Count: > 0 } qualities)
+                    {
+                        <p class="msb-small mt-muted">Kvalitetsegenskaper: @string.Join(", ", qualities.Select(ScenarioTypeClassifier.Label))</p>
+                    }
+                    <p class="msb-small mt-muted">Typen er vurdert per akseptansescenario fra det scenarioet selv sier; åpne et scenario for begrunnelsen.</p>
+                }
+            </section>
+            <details class="mtw-block" data-testid="mtd-us-status-source"><summary class="mtp-ctx-label">Kildegrunnlag</summary>
+                <p class="msb-small">@(s.TasksPath ?? "tasks.md finnes ikke for spesifikasjonen") · regelsett @(_storyStatusView?.RuleVersion)</p>
+                <p class="msb-small mt-muted">Spesifikasjon: @s.SpecificationPath</p></details>
+            @if (_ws?.Plans?.CanWrite == true && s.Eligible > 0)
+            {
+                <section class="mtw-block mtw-impl-confirm-form" data-testid="mtd-us-confirm">
+                    <h3 class="mtp-ctx-label">Bekreft implementering</h3>
+                    <p class="mt-muted msb-small">En bekreftelse er din vurdering av at funksjonaliteten er implementert, og gjelder oppgavegrunnlaget som vises nå. Endres oppgavene, må den gis på nytt. Avkryssede oppgaver bekrefter ikke dette alene.</p>
+                    <input class="form-control form-control-sm" placeholder="Begrunnelse (valgfritt)" value="@_confirmNote" @oninput="e => _confirmNote = e.Value?.ToString() ?? string.Empty" data-testid="mtd-us-confirm-note" />
+                    @if (s.Confirmation == UserStoryConfirmation.ConfirmedImplemented)
+                    {
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_confirmBusy" @onclick="() => ConfirmAsync(s, false)" data-testid="mtd-us-unconfirm">Trekk tilbake bekreftelsen</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-outline-primary btn-sm" disabled="@_confirmBusy" @onclick="() => ConfirmAsync(s, true)" data-testid="mtd-us-confirm-button">Bekreft implementert</button>
+                    }
+                    @if (_confirmError is { } ce) { <p class="mt-alert msb-small" role="alert" data-testid="mtd-us-confirm-error">@ce</p> }
+                </section>
+            }
+        </div>
+    };
+
+    private static RenderFragment TaskLine(UserStoryTaskRef t) => __builder =>
+    {
+        <li class="mtw-task" data-testid="mtd-us-task" data-task="@t.TaskId" data-state="@t.State">
+            <span class="mtw-task-id">@t.TaskId</span>
+            <span class="msb-status msb-tone-@(t.State switch { UserStoryTaskState.Complete => "ok", UserStoryTaskState.Partial => "progress", UserStoryTaskState.Unknown => "warn", _ => "muted" })">@UserStoryStatusText.Label(t.State)</span>
+            <span class="mtw-task-text" title="@t.Text">@(t.Text.Length > 220 ? t.Text[..220] + "…" : t.Text)</span>
+            <span class="mtw-task-meta mt-muted">@(t.Link switch { UserStoryTaskLink.ExplicitTag => "Merket i oppgaven", UserStoryTaskLink.StoryPhase => "Via fasen", _ => "Motstridende kobling" })@(t.Phase is { } ph ? $" · {ph}" : "") · linje @t.Line@(t.StateNote is { } sn ? $" · {sn}" : "")@(t.LinkNote is { } ln ? $" · {ln}" : "")</span>
+        </li>
+    };
+
+    private async Task ConfirmAsync(UserStoryImplementationStatus s, bool confirmed)
+    {
+        if (_confirmBusy || _ws?.ProjectKey is not { } key || ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) return;
+        _confirmBusy = true; _confirmError = null;
+        try
+        {
+            var (story, error) = await api.ConfirmStoryAsync(new ConfirmUserStoryRequest(key, s.StoryKey, confirmed, string.IsNullOrWhiteSpace(_confirmNote) ? null : _confirmNote.Trim()));
+            if (story is null) { _confirmError = error ?? "Bekreftelsen kunne ikke lagres."; return; }
+            _storyStatus[story.StoryKey] = story;
+            _confirmNote = "";
+        }
+        finally { _confirmBusy = false; }
+    }
+
+    // ── Scenario type in the drawer ──
+    private string? _typeDraftFor;
+    private ScenarioRequirementType? _typeDraft;
+    private HashSet<QualityAttribute> _qualityDraft = [];
+    private string _typeReason = "";
+    private string? _typeError;
+    private bool _typeBusy;
+
+    private RenderFragment ScenarioTypeSection(S.Item item) => __builder =>
+    {
+        if (item.TypeResult is not { } type)
+        {
+            if (S.IsRequirementOnly(item.Candidate)) { <p class="mt-muted msb-small" data-testid="mtd-detail-type-requirement">Dette er et krav uten akseptansescenario i spesifikasjonen; det får ingen scenariotype.</p> }
+            return;
+        }
+        <details class="mtw-block mtw-type" data-testid="mtd-detail-type" data-type="@type.Type" open="@(type.Basis == ScenarioTypeBasis.Unresolved)">
+            <summary><span class="mtp-ctx-label">Scenariotype</span> <b data-testid="mtd-detail-type-label">@ScenarioTypeClassifier.Label(type.Type)</b>@(type.Qualities.Count > 0 ? " · " + string.Join(", ", type.Qualities.Select(ScenarioTypeClassifier.Label)) : "")
+                <span class="msb-status msb-tone-@(type.Reviewed ? "ok" : type.Basis == ScenarioTypeBasis.Unresolved ? "warn" : "muted")" data-testid="mtd-detail-type-basis">@ScenarioTypeClassifier.BasisLabel(type.Basis)</span></summary>
+            <p class="msb-small" data-testid="mtd-detail-type-why">@type.Explanation</p>
+            @if (type.Evidence.Count > 0) { <ul class="msb-small" data-testid="mtd-detail-type-evidence">@foreach (var ev in type.Evidence) { <li>@ev</li> }</ul> }
+            <p class="mt-muted msb-small">Scenariotypen er uavhengig av testtype (manuell/teknisk), testnivå og om brukerhistorien er ferdig. Regelsett @type.RuleVersion.</p>
+            @if (CanEditGrouping && item.Candidate.Story is not null)
+            {
+                var draft = _typeDraftFor == item.Id ? _typeDraft : type.Type;
+                <div class="mtw-type-review" data-testid="mtd-type-review">
+                    <label class="msb-small">Vurdering
+                        <select class="msb-select" @onchange="e => { _typeDraftFor = item.Id; _typeDraft = Enum.TryParse<ScenarioRequirementType>(e.Value?.ToString(), out var t) ? t : null; _qualityDraft = [.. type.Qualities]; }" data-testid="mtd-type-select">
+                            @foreach (var t in ScenarioTypeClassifier.Order) { <option value="@t" selected="@(draft == t)">@ScenarioTypeClassifier.Label(t)</option> }
+                        </select></label>
+                    @if (draft is ScenarioRequirementType.NonFunctional or ScenarioRequirementType.Mixed)
+                    {
+                        <fieldset class="mtw-quality-picks msb-small"><legend>Kvalitetsegenskaper</legend>
+                            @foreach (var q in Enum.GetValues<QualityAttribute>())
+                            {
+                                var quality = q;
+                                var on = (_typeDraftFor == item.Id ? _qualityDraft : type.Qualities.ToHashSet()).Contains(quality);
+                                <label><input type="checkbox" checked="@on" @onchange="e => ToggleQuality(item, type, quality, e.Value is true)" data-testid="mtd-type-quality" data-quality="@quality" /> @ScenarioTypeClassifier.Label(quality)</label>
+                            }
+                        </fieldset>
+                    }
+                    <input class="form-control form-control-sm" placeholder="Begrunnelse" value="@(_typeDraftFor == item.Id ? _typeReason : "")" @oninput="e => { _typeDraftFor = item.Id; _typeDraft ??= type.Type; _typeReason = e.Value?.ToString() ?? string.Empty; }" data-testid="mtd-type-reason" />
+                    <button type="button" class="btn btn-outline-primary btn-sm" disabled="@_typeBusy" @onclick="() => SaveTypeAsync(item, type, confirm: _typeDraftFor != item.Id)" data-testid="mtd-type-save">@(_typeDraftFor == item.Id ? "Lagre vurdering" : "Bekreft forslaget")</button>
+                    @if (type.Reviewed) { <button type="button" class="msb-link" disabled="@_typeBusy" @onclick="() => ClearTypeAsync(item)" data-testid="mtd-type-clear">Tilbake til forslaget</button> }
+                    @if (_typeError is { } te && _typeDraftFor == item.Id) { <p class="mt-alert msb-small" role="alert" data-testid="mtd-type-error">@te</p> }
+                </div>
+            }
+        </details>
+    };
+
+    private void ToggleQuality(S.Item item, ScenarioTypeResult type, QualityAttribute quality, bool on)
+    {
+        if (_typeDraftFor != item.Id) { _typeDraftFor = item.Id; _typeDraft = type.Type; _qualityDraft = [.. type.Qualities]; }
+        if (on) _qualityDraft.Add(quality); else _qualityDraft.Remove(quality);
+    }
+
+    private async Task SaveTypeAsync(S.Item item, ScenarioTypeResult type, bool confirm)
+    {
+        var chosen = confirm ? type.Type : _typeDraft ?? type.Type;
+        var qualities = confirm ? [.. type.Qualities] : _qualityDraft.ToList();
+        await ApplyTypeAsync(item, chosen, qualities, confirm ? "Forslaget bekreftet" : _typeReason);
+    }
+
+    private Task ClearTypeAsync(S.Item item) => ApplyTypeAsync(item, null, [], "Tilbake til forslaget");
+
+    private async Task ApplyTypeAsync(S.Item item, ScenarioRequirementType? chosen, List<QualityAttribute> qualities, string? reason)
+    {
+        if (_typeBusy) return;
+        _typeBusy = true; _typeError = null; _typeDraftFor = item.Id;
+        try
+        {
+            _typeError = await ApplyGroupingAsync([new StoryGroupingOperation
+            {
+                Kind = StoryGroupingOperationKind.SetScenarioType, ScenarioId = item.Candidate.SourceIdentity, StoryKey = item.Candidate.Story?.Key, DisplayId = W.ScenarioLabel(item),
+                ScenarioType = chosen, Qualities = qualities, Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(), ScenarioFingerprint = item.Candidate.Fingerprint,
+            }]);
+            if (_typeError is null) { _typeDraftFor = null; _typeDraft = null; _typeReason = ""; _qualityDraft = []; }
+        }
+        finally { _typeBusy = false; }
+    }
+
     private RenderFragment StoryButton((W.StoryEntry Entry, bool ShowTechnical) args) => __builder =>
     {
         var entry = args.Entry; var showTechnical = args.ShowTechnical;
@@ -1584,6 +1929,7 @@
                 aria-pressed="@(_filter.Story == entry.Key ? "true" : "false")" @onclick="() => SelectStory(entry.Key)" data-testid="mtd-story" data-story="@entry.Key">
             <span class="mtw-story-head"><span class="mtw-us">@entry.Label</span>@if (entry.Priority is { Length: > 0 } pr) { <span class="mtw-prio">@pr</span> }@if (entry.Feature is { } feature) { <span class="mtw-feature">@feature</span> }</span>
             <span class="mtw-story-title">@entry.Title</span>
+            @CompactStatus(entry.Key)
             <span class="mtw-story-meta" data-testid="mtd-story-counts">@(entry.Declared is { } declared ? $"{declared} scenarioer" : showTechnical ? $"{entry.Discovered} scenarioer" : $"{entry.Shown} for manuell testing")@(entry.WithCases > 0 ? $" · {entry.WithCases} med testtilfeller" : "")@(entry.Declared is not null && entry.Shown != entry.Discovered ? $" · {entry.Shown} i utvalget" : "")</span>
         </button>
     };

@@ -20,7 +20,10 @@ public static class ManualReviewModules
     /// <summary>Test Coverage journey association (subject = source-derived journey id; applies to = Integration Journey "packId:journeyId";
     /// scope = the project key). Acceptable = association confirmed, IssueFound = rejected.</summary>
     public const string JourneyAssociation = "journey-association";
-    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { ApiQuality, SecurityClassification, ImplementationGaps, IntegrationSuites, DocumentQuality, JourneyAssociation };
+    /// <summary>User story implementation confirmation (subject = canonical story key; scope = the project key; applies to = the task-evidence
+    /// fingerprint the person confirmed). Acceptable = «Bekreftet implementert»; NeedsEvidence = withdrawn.</summary>
+    public const string UserStoryImplementation = "user-story-implementation";
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { ApiQuality, SecurityClassification, ImplementationGaps, IntegrationSuites, DocumentQuality, JourneyAssociation, UserStoryImplementation };
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

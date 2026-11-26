@@ -11,10 +11,17 @@ else
     <ul class="dd-bars" aria-label="@Label">
         @foreach (var b in Bars)
         {
-            <li data-testid="@TestId" data-key="@b.Key" title="@b.Info">
-                <span class="dd-bar-label">@b.Label</span>
-                <span class="dd-bar" aria-hidden="true"><span class="dd-bar-fill dd-tone-@DeliveryDashboard.ToneClass(b.Tone)" style="width:@(100 * Math.Min(Math.Abs(b.Value), max) / max)%"></span></span>
-                <span class="dd-bar-value">@(Signed && b.Value > 0 ? "+" : "")@b.Value@(Percent ? "%" : "")</span>
+            var bar = b;
+            <li data-testid="@TestId" data-key="@b.Key" title="@b.Info" class="@(Selectable ? "dd-bar-selectable" : null) @(SelectedKey == b.Key ? "is-selected" : null)">
+                @if (Selectable)
+                {
+                    @* Drill-down: the whole row is one button that opens the records behind the bar; the value and meaning are its accessible name. *@
+                    <button type="button" class="dd-bar-button" aria-pressed="@(SelectedKey == b.Key ? "true" : "false")" aria-label="@($"{b.Label}: {b.Value}{(Percent ? "%" : "")}. {b.Info}. Vis hvilke.")"
+                            @onclick="() => OnSelect.InvokeAsync(bar.Key)" data-testid="@($"{TestId}-open")">
+                        @BarContent(b, max)
+                    </button>
+                }
+                else { @BarContent(b, max) }
             </li>
         }
     </ul>
@@ -29,4 +36,16 @@ else
     /// <summary>Positive values get a "+" (net changes).</summary>
     [Parameter] public bool Signed { get; set; }
     [Parameter] public string Empty { get; set; } = "Nothing to show.";
+    /// <summary>Drill-down: when set, each bar is a button that reports its key (the page shows the records behind it).</summary>
+    [Parameter] public EventCallback<string> OnSelect { get; set; }
+    /// <summary>The bar whose records are shown (marked as pressed).</summary>
+    [Parameter] public string? SelectedKey { get; set; }
+
+    private bool Selectable => OnSelect.HasDelegate;
+
+    private RenderFragment BarContent(DeliveryBar b, int max) => @<text>
+        <span class="dd-bar-label">@b.Label</span>
+        <span class="dd-bar" aria-hidden="true"><span class="dd-bar-fill dd-tone-@DeliveryDashboard.ToneClass(b.Tone)" style="width:@(100 * Math.Min(Math.Abs(b.Value), max) / max)%"></span></span>
+        <span class="dd-bar-value">@(Signed && b.Value > 0 ? "+" : "")@b.Value@(Percent ? "%" : "")</span>
+    </text>;
 }

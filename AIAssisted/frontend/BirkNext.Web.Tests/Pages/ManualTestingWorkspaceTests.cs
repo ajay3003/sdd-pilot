@@ -262,4 +262,179 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         O.Rows(spec, O.Level.Specification).Should().ContainSingle(r => r.Label == "US1 Search" && r.Covered == 1);
     }
 
+    // ── Drill-down and loading (2026-11-26) ───────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows()
+    {
+        var o = Overview();
+        foreach (var (scope, level) in new[] { (O.Scope.Project, O.Level.Project), (new O.Scope(O.Level.Module, "SkoleService", null), O.Level.Module), (new O.Scope(O.Level.Specification, "SkoleService", Skole), O.Level.Specification) })
+        {
+            var s = O.Of(o, scope);
+            foreach (var (chart, bars) in new[] { ("chart.preparation", O.Preparation(s)), ("chart.priority", O.Priority(s)), ("chart.coverageGaps", O.Gaps(s)), ("chart.blockers", O.Blockers(s)),
+                ("chart.sourceChanges", O.SourceChanges(s)), ("chart.manualTechnical", O.ManualTechnical(s)), ("chart.moduleApproval", O.ModuleApproval(s)), ("panel.translationReview", O.Translations(s)) })
+                foreach (var bar in bars) O.DrillDown(s, level, chart, bar.Key)!.Count.Should().Be(bar.Value, $"{chart}/{bar.Key} at {level}");
+            // A coverage bar (a percentage) opens the scenarios of its group that still have no test case.
+            foreach (var bar in O.Coverage(s, level))
+                O.DrillDown(s, level, "chart.moduleCoverage", bar.Key)!.Scenarios.Should().OnlyContain(x => !x.Covered);
+        }
+        var project = O.Of(o, O.Scope.Project);
+        var p1 = O.DrillDown(project, O.Level.Project, "chart.coverageGaps", "P1")!;
+        p1.Title.Should().Be("P1 uten testtilfeller");
+        p1.Scenarios.Select(x => (x.Specification.Path, x.Scenario.Identity)).Should().Equal((Skole, "tss-2"));
+        O.DrillDown(project, O.Level.Project, "panel.p1Attention", "p1-uncovered")!.Scenarios.Should().ContainSingle(x => x.Scenario.Identity == "tss-2");
+        O.DrillDown(project, O.Level.Project, "chart.moduleCoverage", "SkoleService")!.Narrow.Should().Be(new O.Scope(O.Level.Module, "SkoleService", null));
+        O.DrillDown(project, O.Level.Project, "chart.unknown", "x").Should().BeNull();
+    }
+
+    [Fact]
+    public void Testoversikt_does_not_read_the_scenario_discovery_but_Testplaner_does()
+    {
+        Setup([Summary()], Discovery(3));
+        SetupOverview();
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
+        _plans.Verify(x => x.LastDiscoveryAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never,
+            "2,000 scenarios on M2LB took seconds of the browser's time and Testoversikt does not use them");
+
+        Services.GetRequiredService<NavigationManager>().NavigateTo("manual-testing/plans");
+        cut.Render();
+        cut.WaitForAssertion(() => _plans.Verify(x => x.LastDiscoveryAsync("library", It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once));
+    }
+
+    [Fact]
+    public void A_bar_shows_its_records_and_opens_Finn_og_forsta_on_their_module_specification_and_scenarios()
+    {
+        Setup([Summary()], Discovery(3));
+        SetupOverview();
+        var spec = new BirkNext.Web.Services.Explorers.ExplorerArtifact("a-skole", WorkspaceArtifactType.Specification, "001-skoleservice", "spec.md", Skole,
+            BirkNext.Web.Services.Explorers.ExplorerArtifactSource.Workspace, "ProjectImport", 1, 1, "Draft", BirkNext.Web.Services.Explorers.ExplorerArtifactCurrentness.Current, null, Module: "SkoleService");
+        var other = spec with { Id = "a-other", SourcePath = "SkoleService/specs/002-other/spec.md" };
+        string? selectedModule = null;
+        BirkNext.Web.Services.Explorers.ExplorerArtifact? selected = null;
+        var explorer = new Mock<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>();
+        explorer.Setup(e => e.GetStateAsync(WorkspaceArtifactType.Specification, It.IsAny<CancellationToken>())).ReturnsAsync(() =>
+            new BirkNext.Web.Services.Explorers.ArtifactExplorerState(WorkspaceArtifactType.Specification,
+                selected is null ? BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired : BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.Loaded,
+                "library", "Library", selectedModule == "SkoleService" ? [other, spec] : [], selected, Module: selectedModule));
+        explorer.Setup(e => e.SelectModuleAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>())).Callback((string? m, CancellationToken _) => selectedModule = m).Returns(Task.CompletedTask);
+        explorer.Setup(e => e.Select(WorkspaceArtifactType.Specification, It.IsAny<string>(), It.IsAny<string?>()))
+            .Callback((WorkspaceArtifactType _, string id, string? _) => selected = id == spec.Id ? spec : other);
+        Services.AddSingleton(explorer.Object);
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
+
+        cut.Find("[data-widget='chart.coverageGaps'] [data-testid=mto-bar][data-key=P1] [data-testid=mto-bar-open]").Click();
+        var drill = cut.Find("[data-testid=mto-drill]");
+        drill.QuerySelector("[data-testid=mto-drill-count]")!.TextContent.Should().Be("(1)");
+        drill.QuerySelectorAll("[data-testid=mto-drill-scenario]").Select(e => e.TextContent.Trim()).Should().Equal("US1 · B");
+
+        cut.Find("[data-testid=mto-drill-open]").Click();
+        cut.WaitForAssertion(() => Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("manual-testing/discover"));
+        selectedModule.Should().Be("SkoleService");
+        selected.Should().Be(spec, "the exact specification of the scenarios, never another one in the module");
+        var written = JSInterop.Invocations.Where(i => i.Identifier == "sessionStorage.setItem" && (string)i.Arguments[0]! == TabDraftStore.DiscoverFilterKey("library")).Last();
+        var filter = System.Text.Json.JsonSerializer.Deserialize<ScenarioBrowserPresentation.Filter>((string)written.Arguments[1]!)!;
+        filter.Identities.Should().Equal("tss-2");
+        filter.Selection.Should().Be("P1 uten testtilfeller");
+        filter.Queue.Should().BeNull("no work queue hides a scenario of the selection");
+    }
+
+    [Fact]
+    public void When_the_specification_cannot_be_chosen_nothing_opens_and_the_reason_is_shown()
+    {
+        Setup([Summary()], Discovery(3));
+        SetupOverview();
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
+        cut.Find("[data-widget='chart.coverageGaps'] [data-testid=mto-bar][data-key=P1] [data-testid=mto-bar-open]").Click();
+        cut.Find("[data-testid=mto-drill-open]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-drill-error]"));
+        Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("manual-testing", "never a general page without the selection");
+    }
+
+    [Fact]
+    public void A_case_bar_lists_its_cases_with_links_to_each_case_in_its_test_plan()
+    {
+        Setup([Summary()], Discovery(3));
+        SetupOverview();
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
+        cut.Find("[data-widget='chart.blockers'] [data-testid=mto-bar][data-key=hindrance] [data-testid=mto-bar-open]").Click();
+        cut.FindAll("[data-testid=mto-drill-case]").Select(a => a.GetAttribute("href")).Should().Equal($"{M.PlanRoute}?draft={PlanId}&case=s1-2");
+        cut.Find("[data-widget='chart.blockers'] [data-key=hindrance] [data-testid=mto-bar-open]").GetAttribute("aria-pressed").Should().Be("true");
+        cut.Find("[data-testid=mto-drill-close]").Click();
+        cut.FindAll("[data-testid=mto-drill]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void An_overview_selection_in_Finn_og_forsta_shows_exactly_its_scenarios()
+    {
+        var items = ScenarioBrowserPresentation.Items(
+            [.. new[] { "tss-1", "tss-2", "tss-3" }.Select(id => new DiscoveredScenario { CandidateId = "c-" + id, ProjectKey = "library", Title = id, SourceIdentity = id })],
+            new Dictionary<string, ScenarioBrowserPresentation.Prepared>());
+        var f = ScenarioBrowserPresentation.FromOverview(["tss-2", "tss-3", "tss-3"], "P1 uten testtilfeller");
+        ScenarioBrowserPresentation.Apply(items, f).Shown.Select(i => i.Candidate.SourceIdentity).Should().Equal("tss-2", "tss-3");
+        ScenarioBrowserPresentation.HasFilters(f).Should().BeTrue();
+        ScenarioBrowserPresentation.ResetFilters(f).Identities.Should().BeNull();
+    }
+
+    // ── US status and scenario type on Testoversikt (2026-11-26) ───────────────────────────────────────────────────────────
+
+    private static ManualTestingOverview TypedOverview() => Overview() with
+    {
+        Specifications =
+        [
+            new(Skole, "SkoleService", "001-skoleservice", [new("tss-1", "k1", "US1", "Report", 1, "P1", "A", ScenarioRequirementType.Functional),
+                new("tss-2", "k1", "US1", "Report", 2, "P1", "B", ScenarioRequirementType.NonFunctional, [QualityAttribute.Performance, QualityAttribute.Reliability]),
+                new("tss-3", "k2", "US2", "Lock", 1, "P2", "C", ScenarioRequirementType.Mixed, [QualityAttribute.Performance]),
+                new("tss-r", null, null, null, null, null, "FR-099", RequirementOnly: true)]),
+            new(Front, "Frontend", "002-child-search-profile", [new("tss-f1", "f1", "US1", "Search", 1, null, "F", ScenarioRequirementType.Functional)]),
+        ],
+        StoryStatusAvailable = true,
+        Stories =
+        [
+            new(Skole + "#US1", "US1", "Report", Skole, "SkoleService", UserStoryTaskStatus.InProgress, 8, 9, 1),
+            new(Skole + "#US2", "US2", "Lock", Skole, "SkoleService", UserStoryTaskStatus.TasksCompleted, 4, 4, 0),
+            new(Front + "#US1", "US1", "Search", Front, "Frontend", UserStoryTaskStatus.NeedsClarification, 1, 2, 1),
+        ],
+    };
+
+    [Fact]
+    public void Story_and_type_figures_count_unique_stories_and_acceptance_scenarios_once_and_follow_the_scope()
+    {
+        var o = TypedOverview();
+        var project = O.Of(o, O.Scope.Project);
+        (O.StoriesInProgress(project), O.StoriesWithOpenTasks(project), O.StoriesTasksCompleted(project), O.StoriesNeedingClarification(project)).Should().Be((1, 2, 1, 1));
+        O.StoryImplementation(project).Select(b => (b.Key, b.Value)).Should().Equal(("InProgress", 1), ("TasksCompleted", 1), ("NeedsClarification", 1));
+        O.StoryImplementation(project).Sum(b => b.Value).Should().Be(3, "mutually exclusive: every story once");
+        O.ScenarioTypes(project).Select(b => (b.Key, b.Value)).Should().Equal(("Functional", 2), ("NonFunctional", 1), ("Mixed", 1));
+        (O.ScenariosOfType(project, ScenarioRequirementType.Functional), O.ScenariosOfType(project, ScenarioRequirementType.NonFunctional)).Should().Be((2, 1),
+            "a mixed scenario is never counted as non-functional; the requirement without a scenario is not a scenario");
+        O.NonFunctionalCategories(project).Single(b => b.Key == "Performance").Value.Should().Be(2, "categories overlap: the non-functional and the mixed scenario");
+        O.GapsByType(project).Select(b => (b.Key, b.Value)).Should().Equal([("NonFunctional", 1), ("Mixed", 1)], "tss-1 and tss-f1 have saved cases");
+        var front = O.Of(o, new O.Scope(O.Level.Module, "Frontend", null));
+        O.StoryImplementation(front).Select(b => b.Key).Should().Equal("NeedsClarification");
+        O.DrillDown(project, O.Level.Project, "chart.usImplementation", "InProgress")!.Stories.Select(x => x.StoryId).Should().Equal("US1");
+        O.DrillDown(project, O.Level.Project, "chart.nfrCategories", "Performance")!.Count.Should().Be(2);
+        O.StoriesInProgress(O.Of(o with { StoryStatusAvailable = false }, O.Scope.Project)).Should().BeNull("unavailable is «—», never 0");
+    }
+
+    [Fact]
+    public void A_story_status_bar_opens_its_stories_and_Finn_og_forsta_with_that_status_filter()
+    {
+        Setup([Summary()], Discovery(3));
+        _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((TypedOverview(), (string?)null));
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ManualTestingDashboardSettings
+            { Visible = new() { ["chart.usImplementation"] = true, ["metric.usInProgress"] = true } }, (string?)null));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
+        cut.Find("[data-testid=mto-kpi][data-widget='metric.usInProgress'] .mto-kpi-v").TextContent.Should().Be("1");
+        cut.FindAll("[data-testid=mto-kpi][data-widget='metric.functionalScenarios']").Should().BeEmpty("optional figures are off by default");
+        cut.Find("[data-widget='chart.usImplementation'] [data-testid=mto-bar][data-key=InProgress] [data-testid=mto-bar-open]").Click();
+        cut.FindAll("[data-testid=mto-drill-story]").Select(b => b.TextContent.Trim()).Should().Equal("US1 Report");
+        cut.Find("[data-testid=mto-drill-open]").Click();
+        // Without the shared selection nothing opens (the explorer is not registered in this test).
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-drill-error]"));
+    }
 }

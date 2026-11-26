@@ -13,11 +13,12 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public static class StoryGroupingPresentation
 {
-    public enum Mode { Business, Functional, Stories, None }
+    /// <summary>ScenarioType (2026-11-26): the scenario list grouped by acceptance scenario type; the rail is the stories, as for <see cref="Stories"/>.</summary>
+    public enum Mode { Business, Functional, Stories, None, ScenarioType }
 
     public static string ModeLabel(Mode m) => m switch
     {
-        Mode.Business => "Forretningsområder", Mode.Functional => "Funksjonelle områder", Mode.Stories => "Brukerhistorier", _ => "Ingen gruppering",
+        Mode.Business => "Forretningsområder", Mode.Functional => "Funksjonelle områder", Mode.Stories => "Brukerhistorier", Mode.ScenarioType => "Scenariotype", _ => "Ingen gruppering",
     };
 
     /// <summary>The default display grouping (2026-11-25): always «Brukerhistorier». Functional areas and business groups stay available in «Grupper

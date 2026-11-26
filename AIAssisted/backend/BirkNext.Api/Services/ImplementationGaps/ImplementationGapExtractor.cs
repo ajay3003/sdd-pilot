@@ -31,6 +31,8 @@ public static partial class ImplementationGapExtractor
         var titles = new Dictionary<string, string>(StringComparer.Ordinal);
         var contracts = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         var specified = new SortedSet<string>(StringComparer.Ordinal);
+        var conventions = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+        var duplicates = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var d in docs)
         {
             var role = Role(d);
@@ -41,6 +43,8 @@ public static partial class ImplementationGapExtractor
                 case "Tasks":
                     var parsed = Tasks(d);
                     tasks.AddRange(parsed);
+                    if (MarkerConventions(d.Text) is { Count: > 0 } legend) conventions[d.Path] = legend;
+                    if (DuplicateIds(d.Text) is { Count: > 0 } repeated) duplicates[d.Path] = repeated;
                     gates.AddRange(GateTable(d));
                     foreach (var t in parsed)
                         foreach (Match m in DraftDecisionRe().Matches(t.Text))
@@ -66,6 +70,7 @@ public static partial class ImplementationGapExtractor
         return new GapDocumentSet
         {
             Documents = refs, Tasks = tasks, Gates = gates, Decisions = decisions, DecisionRegisters = registers, DecisionTitles = titles,
+            MarkerConventions = conventions, DuplicateTaskIds = duplicates,
             ContractRequirements = contracts, SpecifiedRequirementIds = [.. specified],
         };
     }
@@ -112,6 +117,7 @@ public static partial class ImplementationGapExtractor
             }
             var mark = m.Groups["mark"].Value;
             var state = mark is "x" or "X" ? GapTaskState.Completed : mark == " " ? GapTaskState.NotStarted : mark is "~" or "-" or "/" ? GapTaskState.InProgress : GapTaskState.Unknown;
+            // 2026-11-26: a two- or three-character marker ("[X/]") was not read as a task at all; it is now a task of Unknown state with its marker.
             nodes.TryGetValue(id, out var node);
             var main = lines[i].Trim();
             var all = main + "\n" + string.Join("\n", continuation);
@@ -140,12 +146,35 @@ public static partial class ImplementationGapExtractor
                 MentionedIdentifiers = [.. CorrelationRules.NamedSymbols(all).Where(n => !declared.Contains(n) && !packages.Contains(n)).Take(40)],
                 RequirementIds = Requirements(all), DecisionIds = [.. DecisionReferences.InText(all)], GateMarkers = gateMarkers,
                 ReferencedTaskIds = [.. TaskIds(all).Where(t => t != id)], ContractPaths = contractPaths, IsTestTask = isTest,
+                Marker = mark,
                 NotApplicableReason = NotApplicableMarkerRe().Match(main) is { Success: true } marker ? $"Marked \"{marker.Value.Trim()}\" in the task"
                     : heading is not null && NotApplicableHeadingRe().IsMatch(heading) ? $"Under the heading \"{heading}\"" : null,
             });
         }
         return result;
     }
+
+    /// <summary>What the document itself says its non-standard checkbox markers mean (never the standard [ ], [x], [X]).</summary>
+    public static Dictionary<string, string> MarkerConventions(string text)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var line in text.Replace("\r\n", "\n").Split('\n'))
+        {
+            if (TaskLineRe().IsMatch(line)) continue; // a task's own text is evidence for that task only, never a document convention
+            foreach (Match m in MarkerLegendRe().Matches(line))
+            {
+                var mark = m.Groups["mark"].Value;
+                if (mark is " " or "x" or "X" || result.ContainsKey(mark)) continue;
+                result[mark] = m.Value.Trim().Trim('>', ' ');
+            }
+        }
+        return result;
+    }
+
+    /// <summary>Task ids that appear on more than one task line (the extraction keeps the first).</summary>
+    public static List<string> DuplicateIds(string text) =>
+        [.. text.Replace("\r\n", "\n").Split('\n').Select(l => TaskLineRe().Match(l)).Where(m => m.Success).Select(m => NormalizeTaskId(m.Groups["id"].Value))
+            .GroupBy(id => id, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key).Order(StringComparer.Ordinal)];
 
     /// <summary>Types to implement and packages to add, from the task's own line. A type counts only inside an "Implement/Create/Add/Introduce/Define"
     /// clause (up to the location " in `…`"/" to `…`" or the sentence end); `Type.Method()` names its type; `Name(args)` alone is a method, not a type.
@@ -321,7 +350,10 @@ public static partial class ImplementationGapExtractor
 
     private static string Sha256(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
-    [GeneratedRegex(@"^\s*[-*+]\s+\[(?<mark>[ xX~/-])\]\s+\**(?<id>T\d{2,4}[a-zA-Z]?)\b")] private static partial Regex TaskLineRe();
+    [GeneratedRegex(@"^\s*[-*+]\s+\[(?<mark>[ xX~/-]|[xX~/\-?!*]{2,3})\]\s+\**(?<id>T\d{2,4}[a-zA-Z]?)\b")] private static partial Regex TaskLineRe();
+    /// <summary>A document's own definition of a checkbox marker: «A task marked `[~]` was superseded», «`[~]` = deferred», «[-] means cancelled».</summary>
+    [GeneratedRegex(@"(?:marked|markert|merket)\s+`?\[(?<mark>[^\]\s]{1,3})\]`?\s+(?:was|is|are|were|er|betyr|means)\s+(?<meaning>[^.;:\n]{3,80})|`\[(?<mark>[^\]\s]{1,3})\]`\s*(?:=|:|means|betyr)\s*(?<meaning>[^.;\n]{3,80})", RegexOptions.IgnoreCase)]
+    private static partial Regex MarkerLegendRe();
     [GeneratedRegex(@"^T(\d{2,4})([a-zA-Z]?)$")] private static partial Regex TaskIdPartsRe();
     [GeneratedRegex(@"\bT\d{2,4}[a-z]?\b")] private static partial Regex TaskIdRe();
     [GeneratedRegex(@"\bT(\d{2,4})\s*(?:[–—-]|\bto\b)\s*T(\d{2,4})\b")] private static partial Regex TaskRangeRe();

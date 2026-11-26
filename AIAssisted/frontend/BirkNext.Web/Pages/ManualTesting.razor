@@ -48,7 +48,7 @@
             @* Testoversikt (2026-11-25): the shared selection (module → specification, the same one Finn og forstå reads), the scope the figures use,
                and the parts System Settings → Manuell testing → Testoversikt switches on. Preparation, coverage, readiness, approval and source status
                only — never execution results. *@
-            <BirkNext.Web.Components.SpecificationScopePicker Changed="OnScopeChangedAsync" ShowDiscoverLink="false" />
+            <BirkNext.Web.Components.SpecificationScopePicker @key="_pickerKey" Changed="OnScopeChangedAsync" ShowDiscoverLink="false" />
             <div class="mto-head">
                 <div class="mtp-seg" role="radiogroup" aria-label="Tallene gjelder" data-testid="mto-level">
                     @foreach (var (level, text, enabled) in new[] { (O.Level.Project, "Hele prosjektet", true), (O.Level.Module, "Valgt modul", _module is not null), (O.Level.Specification, "Valgt spesifikasjon", _specPath is not null) })
@@ -101,6 +101,13 @@
                         <a class="mto-kpi" href="@M.PlansRoute" data-testid="mto-kpi" data-widget="metric.testPlans"><span class="mto-kpi-k">Testplaner</span><span class="mto-kpi-v">@fig.Plans</span>
                             @if (explain) { <span class="mto-kpi-e">Med testtilfeller i utvalget</span> }</a>
                     }
+                    @* 2026-11-26: optional user story status and scenario type figures (unique stories / unique acceptance scenarios; «—» when unavailable). *@
+                    @Kpi("metric.usInProgress", "US under utvikling", O.StoriesInProgress(slice), "Noen, men ikke alle, oppgaver i tasks.md er fullført", explain)
+                    @Kpi("metric.usOpenTasks", "US med uferdige oppgaver", O.StoriesWithOpenTasks(slice), "Minst én direkte oppgave er ikke fullført", explain)
+                    @Kpi("metric.usTasksCompleted", "US-oppgaver fullført", O.StoriesTasksCompleted(slice), "Alle oppgaver avkrysset — ikke det samme som implementert", explain)
+                    @Kpi("metric.usNeedsClarification", "US-status må avklares", O.StoriesNeedingClarification(slice), "Motstridende eller uforklarte oppgavemarkeringer", explain)
+                    @Kpi("metric.functionalScenarios", "Funksjonelle scenarioer", O.ScenariosOfType(slice, ScenarioRequirementType.Functional), "Akseptansescenarioer om oppførsel eller resultat", explain)
+                    @Kpi("metric.nonFunctionalScenarios", "Ikke-funksjonelle scenarioer", O.ScenariosOfType(slice, ScenarioRequirementType.NonFunctional), "Blandede scenarioer telles ikke her", explain)
                 </section>
                 <div class="mto-grid">
                     @Chart("chart.preparation", "Testforberedelse", O.Preparation(slice), "Trinnene overlapper og summeres ikke.", false)
@@ -112,6 +119,11 @@
                     @Chart("chart.sourceChanges", "Kildeendringer", O.SourceChanges(slice), "Sammenlignet med testtilfellets egen spesifikasjon.", false)
                     @Chart("chart.manualTechnical", "Manuelle og tekniske testtilfeller", O.ManualTechnical(slice), "Testtypen som er valgt for testtilfellet.", false)
                     @Chart("chart.moduleApproval", "Godkjenning per modul", O.ModuleApproval(slice), "Godkjente av lagrede testtilfeller.", false)
+                    @Chart("chart.usImplementation", "Implementeringsframdrift for brukerhistorier", O.StoryImplementation(slice),
+                        slice.StoriesAvailable ? "Fra oppgavene i tasks.md; hver brukerhistorie telles én gang. «US-oppgaver fullført» er ikke det samme som implementert." : "Ikke tilgjengelig: oppgavene i tasks.md er ikke lest for denne importen.", false)
+                    @Chart("chart.scenarioTypes", "Scenarioer etter type", O.ScenarioTypes(slice), "Akseptansescenarioer; et blandet scenario telles bare som blandet.", false)
+                    @Chart("chart.nfrCategories", "Ikke-funksjonelle scenarioer per kategori", O.NonFunctionalCategories(slice), "Ikke-funksjonelle og blandede scenarioer; et scenario med flere kvalitetsegenskaper står i flere søyler.", false)
+                    @Chart("chart.gapsByType", "Manglende dekning etter type", O.GapsByType(slice), "Akseptansescenarioer uten lagret testtilfelle.", false)
                     @if (On("chart.history"))
                     {
                         <section class="mto-card" data-testid="mto-widget" data-widget="chart.history"><h3 class="mto-card-h">Utvikling i testforberedelse</h3>
@@ -120,7 +132,9 @@
                     @if (On("panel.p1Attention") && O.P1Attention(slice) is { Count: > 0 } attention)
                     {
                         <section class="mto-card mto-attention" data-testid="mto-widget" data-widget="panel.p1Attention"><h3 class="mto-card-h">Viktig å følge opp</h3>
-                            <ul>@foreach (var (k, text) in attention) { <li data-key="@k">@text</li> }</ul>
+                            <ul>@foreach (var (k, text) in attention)
+                                { var key = k; <li data-key="@k"><button type="button" class="msb-link mto-attention-open" aria-pressed="@(IsDrill("panel.p1Attention", k) ? "true" : "false")"
+                                    @onclick="@(() => ToggleDrill("panel.p1Attention", key))" data-testid="mto-attention-open">@text</button></li> }</ul>
                             <p class="msb-small"><a href="@M.DiscoverRoute">Se scenarioer</a> · <a href="@M.PlanRoute">Se testtilfeller</a></p></section>
                     }
                     @if (On("panel.testPlans") && ov.Plans.Count > 0)
@@ -136,6 +150,10 @@
                     }
                     @Chart("panel.translationReview", "Oversettelser til gjennomgang", O.Translations(slice), "Fra lagret oversettelsesstatus; ingenting oversettes for å vise dette.", false)
                 </div>
+                @if (_drill is { } dk && O.DrillDown(slice, _level, dk.Chart, dk.Key) is { } drill)
+                {
+                    @DrillPanel(drill)
+                }
                 @if (On("display.moduleOverview") && O.Rows(slice, _level) is { Count: > 0 } rows)
                 {
                     <section class="mto-card mto-table-card" data-testid="mto-widget" data-widget="display.moduleOverview">
@@ -253,7 +271,151 @@
         _ => O.Scope.Project,
     };
 
-    private void SetLevel(O.Level level) => _level = level;
+    private void SetLevel(O.Level level) { _level = level; _drill = null; _drillError = null; }
+
+    // ── Drill-down (2026-11-26): a bar or follow-up line shows the exact records behind it; from there Finn og forstå or Planlegg og klargjør opens
+    //    with that selection (module, specification and the scenarios), never a general page. ──
+    private (string Chart, string Key)? _drill;
+    private string? _drillError;
+    private bool _drillBusy, _drillFocus;
+    private int _pickerKey;
+    private ElementReference _drillHeading;
+
+    private bool IsDrill(string chart, string key) => _drill is { } d && d.Chart == chart && d.Key == key;
+
+    private void ToggleDrill(string chart, string key)
+    {
+        _drillError = null;
+        if (IsDrill(chart, key)) { _drill = null; return; }
+        _drill = (chart, key);
+        _drillFocus = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_drillFocus || _drill is null) return;
+        _drillFocus = false;
+        try { await _drillHeading.FocusAsync(); } catch (Exception e) when (e is JSException or InvalidOperationException or ArgumentException) { }
+    }
+
+    private const int DrillItemsPerGroup = 5;
+
+    private RenderFragment DrillPanel(O.Drill d) => @<section class="mto-card mto-drill" aria-labelledby="mto-drill-title" data-testid="mto-drill" data-chart="@d.Chart" data-key="@d.Key">
+        <div class="mto-drill-h">
+            <h3 class="mto-card-h" id="mto-drill-title" tabindex="-1" @ref="_drillHeading">@d.Title <span class="mt-muted msb-small" data-testid="mto-drill-count">(@d.Count)</span></h3>
+            @if (d.Narrow is { } narrow && _level != narrow.Level)
+            {
+                <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_drillBusy" @onclick="() => NarrowAsync(narrow)" data-testid="mto-drill-narrow">
+                    Vis oversikten for @(narrow.Level == O.Level.Module ? narrow.Module : O.SpecName(narrow.SpecificationPath))</button>
+            }
+            <button type="button" class="msb-link" @onclick="CloseDrill" data-testid="mto-drill-close">Lukk</button>
+        </div>
+        @if (_drillError is { } de) { <p class="mt-alert" role="alert" data-testid="mto-drill-error">@de</p> }
+        @if (d.Count == 0) { <p class="mt-muted" data-testid="mto-drill-empty">Ingen i utvalget.</p> }
+        @foreach (var g in d.Scenarios.GroupBy(x => x.Specification.Path))
+        {
+            var spec = g.First().Specification; var ids = g.Select(x => x.Scenario.Identity).ToList(); var count = ids.Count;
+            <div class="mto-drill-group" data-testid="mto-drill-group" data-spec="@spec.Path">
+                <div class="mto-drill-group-h"><span><b>@spec.Module</b> / @spec.Title · @count scenario@(count == 1 ? "" : "er")</span>
+                    <button type="button" class="btn btn-sm btn-outline-primary" disabled="@_drillBusy" @onclick="() => OpenScenariosAsync(spec, ids, d.Title)" data-testid="mto-drill-open">
+                        Åpne @(count == 1 ? "det" : $"alle {count}") i Finn og forstå</button></div>
+                <ul class="mto-drill-list">
+                    @foreach (var x in g.Take(DrillItemsPerGroup))
+                    {
+                        var one = x;
+                        <li><button type="button" class="msb-link" disabled="@_drillBusy" @onclick="() => OpenScenariosAsync(spec, new[] { one.Scenario.Identity }, one.Scenario.Title)" data-testid="mto-drill-scenario">
+                            @(one.Scenario.StoryId is { } sid ? $"{sid} · " : "")@one.Scenario.Title</button>
+                            <span class="mt-muted msb-small">@(one.Scenario.Priority ?? "Prioritet ikke oppgitt")@(one.Covered ? " · har testtilfeller" : "")</span></li>
+                    }
+                    @if (count > DrillItemsPerGroup) { <li class="mt-muted msb-small">… og @(count - DrillItemsPerGroup) til — alle vises når du åpner dem i Finn og forstå.</li> }
+                </ul>
+            </div>
+        }
+        @foreach (var g in d.Stories.GroupBy(x => x.SpecificationPath))
+        {
+            var first = g.First(); var count = g.Count();
+            <div class="mto-drill-group" data-testid="mto-drill-group" data-spec="@first.SpecificationPath">
+                <div class="mto-drill-group-h"><span><b>@first.Module</b> / @O.SpecName(first.SpecificationPath) · @count brukerhistorie@(count == 1 ? "" : "r")</span>
+                    <button type="button" class="btn btn-sm btn-outline-primary" disabled="@_drillBusy" @onclick="() => OpenStoriesAsync(first.Module, first.SpecificationPath, null, d.StoryStatus)" data-testid="mto-drill-open">
+                        Åpne i Finn og forstå</button></div>
+                <ul class="mto-drill-list">
+                    @foreach (var st in g.Take(DrillItemsPerGroup * 3))
+                    {
+                        var story = st;
+                        <li><button type="button" class="msb-link" disabled="@_drillBusy" @onclick="() => OpenStoriesAsync(story.Module, story.SpecificationPath, story.StoryKey, null)" data-testid="mto-drill-story">
+                            @story.StoryId @story.Title</button>
+                            <span class="mt-muted msb-small">@(story.Eligible > 0 ? $"{story.Completed} av {story.Eligible} oppgaver fullført" : "ingen oppgaver i tasks.md")</span></li>
+                    }
+                    @if (count > DrillItemsPerGroup * 3) { <li class="mt-muted msb-small">… og @(count - DrillItemsPerGroup * 3) til.</li> }
+                </ul>
+            </div>
+        }
+        @foreach (var g in d.Cases.GroupBy(x => x.PlanId))
+        {
+            var first = g.First(); var count = g.Count();
+            <div class="mto-drill-group" data-testid="mto-drill-group" data-plan="@first.PlanId">
+                <div class="mto-drill-group-h"><span><b>@first.PlanName</b> · @count testtilfelle@(count == 1 ? "" : "r")</span>
+                    <a class="btn btn-sm btn-outline-primary" href="@($"{M.PlanRoute}?draft={first.PlanId}")" data-testid="mto-drill-plan">Åpne testplanen</a></div>
+                <ul class="mto-drill-list">
+                    @foreach (var c in g.Take(DrillItemsPerGroup * 3))
+                    {
+                        <li><a href="@($"{M.PlanRoute}?draft={c.PlanId}&case={Uri.EscapeDataString(c.CaseId)}")" data-testid="mto-drill-case">@c.Title</a>
+                            <span class="mt-muted msb-small">@c.Module · @P.ReviewLabel(c.Review)@(c.Priority is { } pr ? $" · {pr}" : "")</span></li>
+                    }
+                    @if (count > DrillItemsPerGroup * 3) { <li class="mt-muted msb-small">… og @(count - DrillItemsPerGroup * 3) til i testplanen.</li> }
+                </ul>
+            </div>
+        }
+    </section>;
+
+    private void CloseDrill() { _drill = null; _drillError = null; }
+
+    private async Task OpenStoriesAsync(string module, string specificationPath, string? storyKey, UserStoryTaskStatus? status)
+    {
+        if (_ws?.ProjectKey is not { } key || _drillBusy) return;
+        _drillBusy = true; _drillError = null;
+        try { _drillError = await ManualTestingDrillNavigation.OpenStoriesAsync(ServiceProvider, JS, Nav, key, module, specificationPath, storyKey, status); }
+        finally { _drillBusy = false; }
+    }
+
+    /// <summary>An optional figure from the registry: «—» with a reason when it is unavailable, never 0.</summary>
+    private RenderFragment Kpi(string id, string title, int? value, string explanation, bool explain) => __builder =>
+    {
+        if (!On(id)) return;
+        <div class="mto-kpi" data-testid="mto-kpi" data-widget="@id"><span class="mto-kpi-k">@title</span><span class="mto-kpi-v">@(value?.ToString() ?? "—")</span>
+            @if (explain) { <span class="mto-kpi-e">@(value is null ? "Ikke tilgjengelig for denne importen" : explanation)</span> }</div>
+    };
+
+    private async Task OpenScenariosAsync(OverviewSpecification spec, IReadOnlyCollection<string> identities, string label)
+    {
+        if (_ws?.ProjectKey is not { } key || _drillBusy) return;
+        _drillBusy = true; _drillError = null;
+        try { _drillError = await ManualTestingDrillNavigation.OpenScenariosAsync(ServiceProvider, JS, Nav, key, spec.Module, spec.Path, identities, label); }
+        finally { _drillBusy = false; }
+    }
+
+    /// <summary>A coverage bar's module or specification: chosen in the shared selection, and the figures follow it.</summary>
+    private async Task NarrowAsync(O.Scope narrow)
+    {
+        if (_drillBusy) return;
+        _drillBusy = true; _drillError = null;
+        try
+        {
+            string? refused = null;
+            if (narrow.Level == O.Level.Specification && narrow.Module is { } m && narrow.SpecificationPath is { } path)
+                refused = await ManualTestingDrillNavigation.SelectSpecificationAsync(ServiceProvider, m, path);
+            else if (narrow.Module is { } module && ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) is BirkNext.Web.Services.Explorers.IArtifactExplorerContext explorer)
+                try { await explorer.SelectModuleAsync(module == ManualTestingDrillNavigation.ProjectLevelModule ? BirkNext.Web.Services.Explorers.ArtifactModules.ProjectLevel : module); }
+                catch (Exception e) when (e is not OperationCanceledException) { refused = "Modulen kunne ikke velges: " + e.Message; }
+            if (refused is not null) { _drillError = refused; return; }
+            await ReadScopeAsync();
+            _level = narrow.Level;
+            if (_level == O.Level.Specification && _specPath is null || _level == O.Level.Module && _module is null) { _drillError = "Utvalget kunne ikke brukes."; return; }
+            _drill = null;
+            _pickerKey++;
+        }
+        finally { _drillBusy = false; }
+    }
 
     /// <summary>One chart card from the registry: not rendered when switched off, or empty while «Skjul tomme grafer» is on.</summary>
     private RenderFragment Chart(string id, string title, IReadOnlyList<DeliveryBar> bars, string note, bool percent) => builder =>
@@ -264,6 +426,8 @@
         builder.OpenComponent<BirkNext.Web.Components.DeliveryBarChart>(7);
         builder.AddAttribute(8, "Bars", bars); builder.AddAttribute(9, "TestId", "mto-bar"); builder.AddAttribute(10, "Label", title); builder.AddAttribute(11, "Percent", percent);
         builder.AddAttribute(12, "Empty", "Ingen data i utvalget.");
+        builder.AddAttribute(16, "OnSelect", EventCallback.Factory.Create<string>(this, key => ToggleDrill(id, key)));
+        builder.AddAttribute(17, "SelectedKey", _drill is { } d && d.Chart == id ? d.Key : null);
         builder.CloseComponent();
         builder.OpenElement(13, "p"); builder.AddAttribute(14, "class", "mt-muted msb-small"); builder.AddContent(15, note); builder.CloseElement();
         builder.CloseElement();
@@ -278,14 +442,16 @@
         try
         {
             var settingsTask = api.DashboardSettingsAsync();
-            var (overview, error) = await api.OverviewAsync(key);
+            var overviewTask = api.OverviewAsync(key);
+            var scopeTask = ReadScopeAsync();
+            var (overview, error) = await overviewTask;
             var (settings, _) = await settingsTask;
+            await scopeTask;
             if (generation != _overviewGeneration) return;
             _overview = overview; _overviewError = overview is null ? error ?? "Ukjent feil." : null;
             _dashboard = settings ?? new();
         }
         finally { if (generation == _overviewGeneration) _overviewLoading = false; }
-        await ReadScopeAsync();
     }
 
     /// <summary>The shared module and specification (the same choice Finn og forstå uses).</summary>
@@ -306,6 +472,7 @@
 
     private async Task OnScopeChangedAsync()
     {
+        _drill = null; _drillError = null;
         await ReadScopeAsync();
         StateHasChanged();
     }
@@ -357,7 +524,10 @@
     /// <summary>Back on Testoversikt from Testplaner (the same page component): read the figures when they are not there yet.</summary>
     protected override async Task OnParametersSetAsync()
     {
-        if (IsHome && !_loading && _ws is not null && _overview is null && !_overviewLoading && _overviewError is null) await LoadOverviewAsync();
+        if (_loading || _ws is null) return;
+        // Testoversikt read the light workspace (no discovery): «3. Testplaner» needs the discovery (create with the scenarios chosen in Finn og forstå).
+        if (!IsHome && !_wsFull) { await LoadAsync(); return; }
+        if (IsHome && _overview is null && !_overviewLoading && _overviewError is null) await LoadOverviewAsync();
     }
 
     protected override async Task OnInitializedAsync()
@@ -375,19 +545,37 @@
         if (Guid.TryParse(TransferQuery, out var transferId)) await LoadTransferAsync(transferId);
     }
 
+    /// <summary>Whether <see cref="_ws"/> holds the discovery and requirements (read for «3. Testplaner»; Testoversikt does not use them).</summary>
+    private bool _wsFull;
+
+    /// <summary>
+    /// Performance (2026-11-26): Testoversikt reads the light workspace — the project and its plans, without the selected specification's
+    /// discovery (2,000 scenarios on M2LB took about 2.5 s of the browser's time to read and was not used here) — and then the overview, the
+    /// dashboard settings and the execution setting at the same time instead of one after another. «3. Testplaner» reads the full workspace.
+    /// </summary>
     private async Task LoadAsync()
     {
         _loading = true;
         try
         {
-            _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(requirements: true);
-            if (_ws.ProjectKey is { } key) _selection = await TabDraftStore.ReadAsync<List<string>>(JS, TabDraftStore.SelectionKey(key)) ?? [];
-            // v1.0 acceptance (2026-11-25): with execution in BirkNext switched on, results are not only in Azure DevOps — say where they are.
-            if (ServiceProvider.GetService(typeof(IManualTestRunsApiService)) is IManualTestRunsApiService runs)
-                try { _executionEnabled = await runs.AvailabilityAsync(); } catch (Exception e) when (e is not OperationCanceledException) { _executionEnabled = false; }
-            if (IsHome) await LoadOverviewAsync();
+            var home = IsHome;
+            _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(discovery: !home, requirements: !home);
+            _wsFull = !home;
+            var selection = _ws.ProjectKey is { } key ? TabDraftStore.ReadAsync<List<string>>(JS, TabDraftStore.SelectionKey(key)) : Task.FromResult<List<string>?>(null);
+            var execution = ExecutionEnabledAsync();
+            var overview = home ? LoadOverviewAsync() : Task.CompletedTask;
+            _selection = await selection ?? [];
+            _executionEnabled = await execution;
+            await overview;
         }
         finally { _loading = false; }
+    }
+
+    /// <summary>v1.0 acceptance (2026-11-25): with execution in BirkNext switched on, results are not only in Azure DevOps — say where they are.</summary>
+    private async Task<bool> ExecutionEnabledAsync()
+    {
+        if (ServiceProvider.GetService(typeof(IManualTestRunsApiService)) is not IManualTestRunsApiService runs) return false;
+        try { return await runs.AvailabilityAsync(); } catch (Exception e) when (e is not OperationCanceledException) { return false; }
     }
 
     private void StartNew()

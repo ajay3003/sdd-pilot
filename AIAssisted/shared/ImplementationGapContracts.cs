@@ -110,6 +110,8 @@ public sealed record GapTaskInput
     public bool IsTestTask { get; init; }
     /// <summary>Deferred/optional/future/out-of-scope (by its phase heading or an explicit marker): excluded from readiness and findings.</summary>
     public string? NotApplicableReason { get; init; }
+    /// <summary>The checkbox marker exactly as written ("x", "X", " ", "~", "X/"); null in inputs extracted before 2026-11-26.</summary>
+    public string? Marker { get; init; }
 }
 
 public sealed record GapGateInput
@@ -140,6 +142,11 @@ public sealed record GapDocumentSet
     public Dictionary<string, List<string>> ContractRequirements { get; init; } = [];
     /// <summary>Requirement ids defined or mentioned in specification documents.</summary>
     public List<string> SpecifiedRequirementIds { get; init; } = [];
+    /// <summary>What a tasks document itself says a non-standard checkbox means (tasks path → marker → the sentence that defines it), e.g. «A task
+    /// marked `[~]` was superseded». Only a document's own words; nothing is assumed (2026-11-26).</summary>
+    public Dictionary<string, Dictionary<string, string>> MarkerConventions { get; init; } = [];
+    /// <summary>Task ids that appear on more than one task line of a tasks document (tasks path → ids); only the first line is used.</summary>
+    public Dictionary<string, List<string>> DuplicateTaskIds { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
 }
 

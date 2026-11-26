@@ -164,7 +164,34 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
 
     /// <summary>Testoversikt (2026-11-25): the project's saved test work and its specifications' scenarios, read-only (no discovery, no write).</summary>
     [HttpGet("project/overview")]
-    public Task<ActionResult> Overview([FromQuery] string projectKey, CancellationToken ct) => Run(async () => Ok(await service.OverviewAsync(projectKey, ct)));
+    public Task<ActionResult> Overview([FromQuery] string projectKey, [FromServices] BirkNext.Api.Services.TestPlanning.UserStoryStatusService stories, CancellationToken ct) => Run(async () =>
+    {
+        var overview = await service.OverviewAsync(projectKey, ct);
+        // User story task status from the shared engine (2026-11-26): the same results Finn og forstå shows on its story cards.
+        var status = await stories.StatusAsync(projectKey, null, ct);
+        return Ok(overview with
+        {
+            StoryStatusAvailable = status.TasksAvailable,
+            Stories = [.. status.Stories.Select(s => new OverviewStoryStatus(s.StoryKey, s.StoryId, s.Title, s.SpecificationPath, s.Module, s.Status, s.Completed, s.Eligible,
+                s.Open + s.Partial + s.UnknownState))],
+        });
+    });
+
+    /// <summary>User story implementation status (2026-11-26): every story of the project, or of one specification, from tasks.md (read-only).</summary>
+    [HttpGet("project/story-status")]
+    public Task<ActionResult> StoryStatus([FromQuery] string projectKey, [FromQuery] string? specificationPath, [FromServices] BirkNext.Api.Services.TestPlanning.UserStoryStatusService stories,
+        CancellationToken ct) => Run(async () => Ok(await stories.StatusAsync(projectKey, specificationPath, ct)));
+
+    /// <summary>The confirmation history of one story (audit, newest first).</summary>
+    [HttpGet("project/story-status/history")]
+    public Task<ActionResult> StoryStatusHistory([FromQuery] string projectKey, [FromQuery] string storyKey, [FromServices] BirkNext.Api.Services.TestPlanning.UserStoryStatusService stories,
+        CancellationToken ct) => Run(async () => Ok(await stories.HistoryAsync(projectKey, storyKey ?? "", ct)));
+
+    /// <summary>A person confirms (or withdraws) a story's implementation for the task evidence shown now (write permission; recorded, never automatic).</summary>
+    [HttpPost("project/story-status/confirm")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> ConfirmStory([FromBody] ConfirmUserStoryRequest request, [FromServices] BirkNext.Api.Services.TestPlanning.UserStoryStatusService stories,
+        CancellationToken ct) => Run(async () => Ok(await stories.ConfirmAsync(request, Actor, ct)));
 
     /// <summary>System Settings → Manuell testing → Testoversikt: which dashboard parts are shown (readable by everyone who sees the dashboard).</summary>
     [HttpGet("dashboard-settings")]

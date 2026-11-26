@@ -40,4 +40,20 @@ public sealed class PlanRevisionDiffTests
         var noStory = a with { Generated = a.Generated with { Evidence = [new("requirement", "r-ukjent-barn"), new("specification", "SkoleService/specs/001-skoleservice/spec.md#ukjent-barn")] } };
         PlanPreparePresentation.PlanSourceLine(new TestPlanDraft { Cases = [noStory] }).Should().Be("Inneholder testtilfeller fra SkoleService (001-skoleservice).");
     }
+
+    [Fact]
+    public void A_guide_scenario_without_a_specification_file_comes_from_the_specification_folder_of_the_contract_it_cites()
+    {
+        // The real «Barnet finnes ikke» (2026-11-26): no story, no «spec.md#…» reference — but it cites SkoleService's own contract.
+        var guide = Case("a", "Barnet finnes ikke");
+        guide = guide with { Generated = guide.Generated with { Evidence =
+        [
+            new("guide-scenario", "skolenaervaer/manglende-barn"),
+            new("source-evidence", "M2LB.zip (AIAssisted/testdata; archived 2026-10-28):SkoleService/specs/001-skoleservice/contracts/rapportinntak.md:lines 46, 51, 54"),
+            new("source-evidence", "M2LB.zip (AIAssisted/testdata; archived 2026-10-28):SkoleService/src/M2LB.SkoleService.Api/Rest/ReportIntake/ReportIntakeHandler.cs:lines 52"),
+        ] } };
+        PlanPreparePresentation.PlanSourceLine(new TestPlanDraft { Cases = [guide] }).Should().Be("Inneholder testtilfeller fra SkoleService (001-skoleservice).");
+        var codeOnly = guide with { Generated = guide.Generated with { Evidence = [guide.Generated.Evidence[0], guide.Generated.Evidence[2]] } };
+        PlanPreparePresentation.PlanSourceLine(new TestPlanDraft { Cases = [codeOnly] }).Should().BeNull("source code never names a specification, and the title is never used");
+    }
 }

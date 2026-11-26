@@ -842,6 +842,7 @@ builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestPlanning.Trans
     canManageLibreTranslate: !BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions.From(sp.GetRequiredService<IConfiguration>()).UsesNativeRunner));
 builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.TestCaseTranslatorResolver>();
 // System Settings → Manuell testing → Testoversikt: which dashboard parts are shown (installation-wide, App_Data; never touches test data).
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.UserStoryStatusService>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestPlanning.ManualTestingDashboardSettingsStore(
     BirkNext.Api.Services.TestPlanning.ManualTestingDashboardSettingsStore.DefaultDirectory(sp.GetRequiredService<IHostEnvironment>())));
 builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.LibreTranslateServiceManager>();

@@ -20,6 +20,13 @@ public static class ManualTestingDashboard
         new("metric.approved", Metrics, "Godkjente", "Testtilfeller med status Godkjent.", true),
         new("metric.ready", Metrics, "Klar til testing", "Testtilfeller som er klare til kjøring etter testbarhetskontrollen.", true),
         new("metric.testPlans", Metrics, "Testplaner", "Aktive testplaner med testtilfeller i utvalget.", false),
+        // 2026-11-26: user story implementation status (tasks.md) and acceptance scenario type — optional, off by default.
+        new("metric.usInProgress", Metrics, "US under utvikling", "Brukerhistorier der noen, men ikke alle, oppgavene i tasks.md er fullført.", false),
+        new("metric.usOpenTasks", Metrics, "US med uferdige oppgaver", "Brukerhistorier med minst én oppgave som ikke er fullført.", false),
+        new("metric.usTasksCompleted", Metrics, "US-oppgaver fullført", "Brukerhistorier der alle direkte oppgaver er avkrysset (ikke det samme som implementert).", false),
+        new("metric.usNeedsClarification", Metrics, "US-status må avklares", "Brukerhistorier med motstridende eller uforklarte oppgavemarkeringer.", false),
+        new("metric.functionalScenarios", Metrics, "Funksjonelle scenarioer", "Akseptansescenarioer som beskriver oppførsel eller resultat.", false),
+        new("metric.nonFunctionalScenarios", Metrics, "Ikke-funksjonelle scenarioer", "Akseptansescenarioer som beskriver en kvalitetsegenskap (blandede telles ikke her).", false),
 
         new("chart.preparation", Charts, "Testforberedelse", "Opprettet, godkjent og klar til testing — trinn som overlapper, ikke summeres.", true),
         new("chart.moduleCoverage", Charts, "Testdekning per modul", "Hvor mange scenarioer som har minst ett lagret testtilfelle.", true),
@@ -30,6 +37,10 @@ public static class ManualTestingDashboard
         new("chart.manualTechnical", Charts, "Manuelle og tekniske testtilfeller", "Testtilfeller etter valgt testtype.", false),
         new("chart.history", Charts, "Utvikling i testforberedelse", "Utvikling over tid — bare når historikken finnes.", false),
         new("chart.moduleApproval", Charts, "Godkjenning per modul", "Lagrede og godkjente testtilfeller per modul.", false),
+        new("chart.usImplementation", Charts, "Implementeringsframdrift for brukerhistorier", "Brukerhistorier etter oppgavestatus i tasks.md (hver historie telles én gang).", false),
+        new("chart.scenarioTypes", Charts, "Scenarioer etter type", "Funksjonelle, ikke-funksjonelle, blandede og uavklarte akseptansescenarioer.", false),
+        new("chart.nfrCategories", Charts, "Ikke-funksjonelle scenarioer per kategori", "Kvalitetsegenskaper (ytelse, universell utforming …); et scenario kan ha flere.", false),
+        new("chart.gapsByType", Charts, "Manglende dekning etter type", "Akseptansescenarioer uten lagret testtilfelle, etter scenariotype.", false),
 
         new("panel.p1Attention", FollowUp, "Viktig å følge opp", "P1-scenarioer uten testtilfeller og P1-testtilfeller som venter.", true),
         new("panel.testPlans", FollowUp, "Testplaner", "Kort status for prosjektets testplaner.", true),
@@ -68,13 +79,26 @@ public sealed record ManualTestingOverview
     public List<OverviewCase> Cases { get; init; } = [];
     public List<OverviewPlan> Plans { get; init; } = [];
     public List<OverviewRevision> RecentRevisions { get; init; } = [];
+    /// <summary>User story implementation status of the project's specifications (2026-11-26, the shared status engine); empty when not computed.</summary>
+    public List<OverviewStoryStatus> Stories { get; init; } = [];
+    /// <summary>False when the project's import holds no task lines at all (story status is then unknown, never zero).</summary>
+    public bool StoryStatusAvailable { get; init; }
 }
+
+/// <summary>One user story's task status, compact (the details are read on demand from the story-status endpoint).</summary>
+public sealed record OverviewStoryStatus(string StoryKey, string StoryId, string Title, string SpecificationPath, string Module, UserStoryTaskStatus Status, int Completed, int Eligible,
+    int Remaining);
 
 /// <summary>One specification file and its scenarios (unique by source identity).</summary>
 public sealed record OverviewSpecification(string Path, string Module, string Title, List<OverviewScenario> Scenarios);
 
 /// <summary>One scenario of a specification: its identity (the one saved cases carry), story, number and the priority the source states.</summary>
-public sealed record OverviewScenario(string Identity, string? StoryKey, string? StoryId, string? StoryTitle, int? Number, string? Priority, string Title);
+public sealed record OverviewScenario(string Identity, string? StoryKey, string? StoryId, string? StoryTitle, int? Number, string? Priority, string Title,
+    ScenarioRequirementType Type = ScenarioRequirementType.Unclassified, List<QualityAttribute>? Qualities = null, bool RequirementOnly = false)
+{
+    /// <summary>An acceptance scenario (not a requirement without one): only these are classified by type.</summary>
+    public bool IsAcceptanceScenario => !RequirementOnly;
+}
 
 /// <summary>One saved test case (active plans; excluded and superseded are left out), attributed by its OWN source: the specification it was prepared
 /// from (or its parent scenario's), never the current selection. <see cref="Module"/> is «Uten modultilknytning» when that is not recorded.</summary>

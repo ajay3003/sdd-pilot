@@ -163,6 +163,14 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
                 StopLocked("timeout");
                 throw new TestCaseTranslationException($"The offline translator did not answer within {timeout.TotalSeconds:0} seconds and was stopped. Nothing was changed. Try fewer test cases at a time.");
             }
+            catch (OperationCanceledException)
+            {
+                // The caller gave up (the tester left or reloaded the page) after the request was sent: the helper still writes its answer, and the
+                // next request would read that stale line as its own ("returned a different number of texts" for every later translation until
+                // the helper stopped, 2026-11-26). The helper is stopped so its answer is never read; the next request starts it again.
+                StopLocked("cancelled");
+                throw;
+            }
             catch (IOException)
             {
                 StopLocked("pipe closed");

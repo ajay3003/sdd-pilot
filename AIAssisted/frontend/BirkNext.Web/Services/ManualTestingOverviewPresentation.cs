@@ -26,7 +26,13 @@ public static class ManualTestingOverviewPresentation
 
     public sealed record Row(string Key, string Label, int? Scenarios, int? Covered, int Cases, int Approved, int FollowUp, string? Module, string? SpecificationPath);
 
-    public sealed record Slice(IReadOnlyList<OverviewSpecification> Specifications, IReadOnlyList<OverviewCase> Cases, bool ScenariosAvailable);
+    public sealed record Slice(IReadOnlyList<OverviewSpecification> Specifications, IReadOnlyList<OverviewCase> Cases, bool ScenariosAvailable)
+    {
+        /// <summary>The user stories of the scope with their task status (2026-11-26); empty when the status was not computed.</summary>
+        public IReadOnlyList<OverviewStoryStatus> Stories { get; init; } = [];
+        /// <summary>False when the project's import holds no task lines (story figures are then unavailable, never zero).</summary>
+        public bool StoriesAvailable { get; init; }
+    }
 
     public static string ScopeLabel(Scope s) => s.Level switch
     {
@@ -47,9 +53,11 @@ public static class ManualTestingOverviewPresentation
     /// <summary>The specifications and cases of a scope. A case outside every stored specification still counts in the project and its module.</summary>
     public static Slice Of(ManualTestingOverview o, Scope s) => s.Level switch
     {
-        Level.Module => new([.. o.Specifications.Where(x => x.Module == s.Module)], [.. o.Cases.Where(c => c.Module == s.Module)], o.ScenariosAvailable),
-        Level.Specification => new([.. o.Specifications.Where(x => SamePath(x.Path, s.SpecificationPath))], [.. o.Cases.Where(c => SamePath(c.SpecificationPath, s.SpecificationPath))], o.ScenariosAvailable),
-        _ => new(o.Specifications, o.Cases, o.ScenariosAvailable),
+        Level.Module => new([.. o.Specifications.Where(x => x.Module == s.Module)], [.. o.Cases.Where(c => c.Module == s.Module)], o.ScenariosAvailable)
+            { Stories = [.. o.Stories.Where(x => x.Module == s.Module)], StoriesAvailable = o.StoryStatusAvailable },
+        Level.Specification => new([.. o.Specifications.Where(x => SamePath(x.Path, s.SpecificationPath))], [.. o.Cases.Where(c => SamePath(c.SpecificationPath, s.SpecificationPath))], o.ScenariosAvailable)
+            { Stories = [.. o.Stories.Where(x => SamePath(x.SpecificationPath, s.SpecificationPath))], StoriesAvailable = o.StoryStatusAvailable },
+        _ => new(o.Specifications, o.Cases, o.ScenariosAvailable) { Stories = o.Stories, StoriesAvailable = o.StoryStatusAvailable },
     };
 
     /// <summary>Scenario identities with at least one saved case in the same specification.</summary>
@@ -216,6 +224,132 @@ public static class ManualTestingOverviewPresentation
         var source = p1.Count(c => c.SourceState is CaseSourceState.Changed or CaseSourceState.Removed);
         if (source > 0) list.Add(("p1-source", $"{source} P1-testtilfelle{(source == 1 ? "" : "r")} må gjennomgås etter kildeendring"));
         return list;
+    }
+
+    // ── Drill-down (2026-11-26) ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>One scenario of a drill-down, with the specification it belongs to.</summary>
+    public sealed record DrillScenario(OverviewSpecification Specification, OverviewScenario Scenario, bool Covered);
+
+    /// <summary>
+    /// The exact records behind one bar or follow-up line: the scenarios (by identity, per specification) or the saved cases it counts. Built from the
+    /// same definitions as the bar, so the list always has as many records as the bar says. <see cref="Narrow"/>: the module or specification a
+    /// coverage bar stands for, so the overview can be narrowed to it.
+    /// </summary>
+    public sealed record Drill(string Chart, string Key, string Title, IReadOnlyList<DrillScenario> Scenarios, IReadOnlyList<OverviewCase> Cases, Scope? Narrow = null)
+    {
+        /// <summary>The user stories behind a story-status bar (2026-11-26).</summary>
+        public IReadOnlyList<OverviewStoryStatus> Stories { get; init; } = [];
+        /// <summary>For a story-status bar: the status every listed story has (Finn og forstå filters on it).</summary>
+        public UserStoryTaskStatus? StoryStatus { get; init; }
+        public int Count => Scenarios.Count + Cases.Count + Stories.Count;
+    }
+
+    private static string PriorityTitle(string key) => key == "Ikke prioritert" ? "uten oppgitt prioritet" : key;
+
+    private static bool HasPriority(OverviewScenario sc, string key) => key == "Ikke prioritert" ? sc.Priority is null : sc.Priority == key;
+
+    private static IEnumerable<DrillScenario> AllScenarios(Slice s, HashSet<string> covered) =>
+        s.Specifications.SelectMany(x => x.Scenarios.Select(sc => new DrillScenario(x, sc, IsCovered(x, sc, covered))));
+
+    /// <summary>The records behind <paramref name="key"/> of <paramref name="chart"/> in the scope; null when the chart or bar is unknown.</summary>
+    public static Drill? DrillDown(Slice s, Level level, string chart, string key)
+    {
+        var covered = CoveredKeys(s.Cases);
+        var c = s.Cases;
+        Drill Cases(string title, Func<OverviewCase, bool> match) => new(chart, key, title, [], [.. c.Where(match)]);
+        Drill Scenarios(string title, Func<DrillScenario, bool> match, Scope? narrow = null) =>
+            new(chart, key, title, s.ScenariosAvailable ? [.. AllScenarios(s, covered).Where(match)] : [], [], narrow);
+        return (chart, key) switch
+        {
+            ("chart.preparation", "created") => Cases("Lagrede testtilfeller", _ => true),
+            ("chart.preparation", "steps") => Cases("Testtilfeller med teststeg", x => !x.MissingSteps),
+            ("chart.preparation", "approved") => Cases("Godkjente testtilfeller", x => x.Review == TestCaseReviewState.Accepted),
+            ("chart.preparation", "ready") => Cases("Testtilfeller klare til testing", x => x.Ready),
+            ("chart.moduleCoverage", _) => level switch
+            {
+                Level.Project => Scenarios($"{key}: scenarioer uten testtilfeller", d => d.Specification.Module == key && !d.Covered, new Scope(Level.Module, key, null)),
+                Level.Module => s.Specifications.FirstOrDefault(x => x.Path == key) is { } spec
+                    ? Scenarios($"{spec.Title}: scenarioer uten testtilfeller", d => d.Specification.Path == key && !d.Covered, new Scope(Level.Specification, spec.Module, spec.Path)) : null,
+                _ => Scenarios($"{key}: scenarioer uten testtilfeller", d => (d.Scenario.StoryId ?? "Uten brukerhistorie") == key && !d.Covered),
+            },
+            ("chart.priority", _) => Scenarios($"Scenarioer {PriorityTitle(key)}", d => HasPriority(d.Scenario, key)),
+            ("chart.coverageGaps", _) => Scenarios(key == "Ikke prioritert" ? "Scenarioer uten oppgitt prioritet og uten testtilfeller" : $"{key} uten testtilfeller", d => HasPriority(d.Scenario, key) && !d.Covered),
+            ("chart.blockers", "hindrance") => Cases("Testtilfeller med registrert hindring", x => x.Hindrance),
+            ("chart.blockers", "clarify") => Cases("Testtilfeller som trenger avklaring", x => x.Review == TestCaseReviewState.NeedsClarification),
+            ("chart.blockers", "expected") => Cases("Testtilfeller der forventet resultat må avklares", x => x.MissingExpected),
+            ("chart.blockers", "steps") => Cases("Testtilfeller uten teststeg", x => x.MissingSteps),
+            ("chart.blockers", "data") => Cases("Testtilfeller uten koblet testdata", x => x.NoTestData),
+            ("chart.sourceChanges", "changed") => Cases("Testtilfeller der kilden er endret", x => x.SourceState == CaseSourceState.Changed),
+            ("chart.sourceChanges", "removed") => Cases("Testtilfeller der kilden er fjernet", x => x.SourceState == CaseSourceState.Removed),
+            ("chart.sourceChanges", "unavailable") => Cases("Testtilfeller som ikke kunne sammenlignes", x => x.SourceState == CaseSourceState.SourceUnavailable),
+            ("chart.manualTechnical", "manual") => Cases("Manuelle testtilfeller", x => x.TestKind == ScenarioTestKind.Manual),
+            ("chart.manualTechnical", "technical") => Cases("Tekniske testtilfeller", x => x.TestKind == ScenarioTestKind.Technical),
+            ("chart.manualTechnical", "unset") => Cases("Testtilfeller uten valgt testtype", x => x.TestKind is null or ScenarioTestKind.Both),
+            ("chart.moduleApproval", _) => Cases($"{key}: godkjente testtilfeller", x => x.Module == key && x.Review == TestCaseReviewState.Accepted),
+            ("panel.translationReview", "missing") => Cases("Testtilfeller som mangler norsk tekst", x => x.Translation == TranslationState.None),
+            ("panel.translationReview", "machine") => Cases("Maskinoversatte testtilfeller som ikke er gjennomgått", x => x.Translation == TranslationState.Current && x.TranslationOrigin == TranslationOrigin.Machine),
+            ("panel.translationReview", "stale") => Cases("Oversettelser som må gjennomgås", x => x.Translation == TranslationState.SourceChanged),
+            ("panel.translationReview", "reviewed") => Cases("Oversettelser redigert eller skrevet av en person", x => x.Translation == TranslationState.Current && x.TranslationOrigin is TranslationOrigin.MachineEdited or TranslationOrigin.Manual),
+            ("chart.scenarioTypes", _) => Scenarios($"{TypeTitle(key)} akseptansescenarioer", d => d.Scenario.IsAcceptanceScenario && d.Scenario.Type.ToString() == key),
+            ("chart.nfrCategories", _) => Enum.TryParse<QualityAttribute>(key, out var quality)
+                ? Scenarios($"Scenarioer som gjelder {ScenarioTypeClassifier.Label(quality).ToLowerInvariant()}", d => d.Scenario.IsAcceptanceScenario && (d.Scenario.Qualities ?? []).Contains(quality)) : null,
+            ("chart.gapsByType", _) => Scenarios($"{TypeTitle(key)} akseptansescenarioer uten testtilfeller", d => d.Scenario.IsAcceptanceScenario && d.Scenario.Type.ToString() == key && !d.Covered),
+            ("chart.usImplementation", _) => Enum.TryParse<UserStoryTaskStatus>(key, out var status)
+                ? new(chart, key, $"Brukerhistorier: {UserStoryStatusText.Label(status)}", [], []) { Stories = [.. s.Stories.Where(x => x.Status == status)], StoryStatus = status } : null,
+            ("panel.p1Attention", "p1-uncovered") => Scenarios("P1-scenarioer uten testtilfeller", d => d.Scenario.Priority == "P1" && !d.Covered),
+            ("panel.p1Attention", "p1-approval") => Cases("P1-testtilfeller som venter på godkjenning", x => x.Priority == "P1" && x.Review != TestCaseReviewState.Accepted),
+            ("panel.p1Attention", "p1-ready") => Cases("P1-testtilfeller som ikke er klare til testing", x => x.Priority == "P1" && !x.Ready),
+            ("panel.p1Attention", "p1-source") => Cases("P1-testtilfeller som må gjennomgås etter kildeendring", x => x.Priority == "P1" && x.SourceState is CaseSourceState.Changed or CaseSourceState.Removed),
+            _ => null,
+        };
+    }
+
+    // ── User story status and scenario type (2026-11-26) ────────────────────────────────────────────────────────────────────
+
+    private static string TypeTitle(string key) => Enum.TryParse<ScenarioRequirementType>(key, out var t) ? ScenarioTypeClassifier.GroupLabel(t) : key;
+
+    private static IEnumerable<OverviewScenario> Acceptance(Slice s) => s.Specifications.SelectMany(x => x.Scenarios).Where(sc => sc.IsAcceptanceScenario);
+
+    /// <summary>Unique user stories per figure (a story counts once; each has exactly one task status). Null when the status is unavailable.</summary>
+    public static int? StoryCount(Slice s, Func<OverviewStoryStatus, bool> match) => s.StoriesAvailable ? s.Stories.DistinctBy(x => x.StoryKey).Count(match) : null;
+
+    public static int? StoriesInProgress(Slice s) => StoryCount(s, x => x.Status == UserStoryTaskStatus.InProgress);
+    public static int? StoriesWithOpenTasks(Slice s) => StoryCount(s, x => x.Eligible > 0 && x.Remaining > 0);
+    public static int? StoriesTasksCompleted(Slice s) => StoryCount(s, x => x.Status == UserStoryTaskStatus.TasksCompleted);
+    public static int? StoriesNeedingClarification(Slice s) => StoryCount(s, x => x.Status == UserStoryTaskStatus.NeedsClarification);
+
+    /// <summary>Acceptance scenarios of exactly one type (a mixed scenario is only «Blandet»). Null when no specification is stored.</summary>
+    public static int? ScenariosOfType(Slice s, ScenarioRequirementType type) => s.ScenariosAvailable ? Acceptance(s).Count(sc => sc.Type == type) : null;
+
+    /// <summary>Implementeringsframdrift: user stories per task status — mutually exclusive, so the bars add up to the stories in scope.</summary>
+    public static IReadOnlyList<DeliveryBar> StoryImplementation(Slice s) => !s.StoriesAvailable ? [] :
+        [.. UserStoryStatusText.FilterOrder.Select(st => (st, s.Stories.DistinctBy(x => x.StoryKey).Count(x => x.Status == st))).Where(x => x.Item2 > 0)
+            .Select(x => Bar(x.st.ToString(), UserStoryStatusText.Label(x.st), x.Item2, x.st switch
+            {
+                UserStoryTaskStatus.TasksCompleted => DeliveryDashboardTone.Ready, UserStoryTaskStatus.InProgress => DeliveryDashboardTone.Progress,
+                UserStoryTaskStatus.DependencyPending or UserStoryTaskStatus.NeedsClarification => DeliveryDashboardTone.Review, _ => DeliveryDashboardTone.Neutral,
+            }, $"{x.Item2} brukerhistorier"))];
+
+    /// <summary>Scenarioer etter type: acceptance scenarios, each in exactly one type.</summary>
+    public static IReadOnlyList<DeliveryBar> ScenarioTypes(Slice s) => !s.ScenariosAvailable ? [] :
+        [.. ScenarioTypeClassifier.Order.Select(t => (t, Acceptance(s).Count(sc => sc.Type == t))).Where(x => x.Item2 > 0)
+            .Select(x => Bar(x.t.ToString(), ScenarioTypeClassifier.GroupLabel(x.t), x.Item2, x.t == ScenarioRequirementType.Unclassified ? DeliveryDashboardTone.Review : DeliveryDashboardTone.Neutral,
+                $"{x.Item2} akseptansescenarioer"))];
+
+    /// <summary>Ikke-funksjonelle scenarioer per kategori: a scenario with two qualities is in both bars (the note says so).</summary>
+    public static IReadOnlyList<DeliveryBar> NonFunctionalCategories(Slice s) => !s.ScenariosAvailable ? [] :
+        [.. Enum.GetValues<QualityAttribute>().Select(q => (q, Acceptance(s).Count(sc => sc.Type is ScenarioRequirementType.NonFunctional or ScenarioRequirementType.Mixed && (sc.Qualities ?? []).Contains(q))))
+            .Where(x => x.Item2 > 0).Select(x => Bar(x.q.ToString(), ScenarioTypeClassifier.Label(x.q), x.Item2, DeliveryDashboardTone.Neutral, $"{x.Item2} scenarioer"))];
+
+    /// <summary>Manglende dekning etter type: acceptance scenarios without a saved case, by type.</summary>
+    public static IReadOnlyList<DeliveryBar> GapsByType(Slice s)
+    {
+        if (!s.ScenariosAvailable) return [];
+        var covered = CoveredKeys(s.Cases);
+        var open = s.Specifications.SelectMany(x => x.Scenarios.Where(sc => sc.IsAcceptanceScenario && !IsCovered(x, sc, covered))).ToList();
+        return [.. ScenarioTypeClassifier.Order.Select(t => (t, open.Count(sc => sc.Type == t))).Where(x => x.Item2 > 0)
+            .Select(x => Bar(x.t.ToString(), $"{ScenarioTypeClassifier.GroupLabel(x.t)} uten testtilfeller", x.Item2, DeliveryDashboardTone.Review, $"{x.Item2} akseptansescenarioer uten lagret testtilfelle"))];
     }
 
     /// <summary>Oversettelser til gjennomgang: from the stored translation state only (nothing is translated to compute it).</summary>

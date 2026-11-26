@@ -228,6 +228,28 @@ public sealed class RealModelTests(Xunit.Abstractions.ITestOutputHelper output)
 
     private static string? Dir => Environment.GetEnvironmentVariable("BIRKNEXT_OFFLINE_TRANSLATION_DIR") is { Length: > 0 } d && Directory.Exists(d) ? d : null;
 
+    /// <summary>
+    /// 2026-11-26 (isolated M2LB walkthrough): a translation the caller gave up on after it was sent (the tester left the page during «Oversetter …»)
+    /// left the helper's late answer in the pipe, and every later translation read the previous answer: «returned a different number of texts»
+    /// until the helper stopped. A cancelled request now stops the helper, so the next translation gets its own answer.
+    /// </summary>
+    [Fact]
+    public async Task A_cancelled_translation_never_hands_its_late_answer_to_the_next_one()
+    {
+        if (Dir is not { } dir) return;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { [OfflineTranslationBundle.DirectoryKey] = dir }).Build();
+        await using var engine = new OfflineTranslationEngine(config, NullLogger<OfflineTranslationEngine>.Instance);
+        (await engine.StatusAsync(probe: true, default)).State.Should().Be("Ready");
+        var longTexts = Enumerable.Range(1, 120).Select(i => $"Open the report page number {i}, fill in every required field and check that the period lock prevents new reports.").ToList();
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(400));
+        var abandoned = () => engine.TranslateAsync(longTexts, cancel.Token);
+        await abandoned.Should().ThrowAsync<OperationCanceledException>();
+
+        var next = await engine.TranslateAsync(["Select Save.", "The child lives in a foster home."], default);
+        next.Should().HaveCount(2, "the next request reads its own answer, not the abandoned one");
+        next[1].Should().ContainEquivalentOf("fosterhjem");
+    }
+
     [Fact]
     public async Task The_packaged_model_translates_test_text_keeping_identifiers_and_terms()
     {

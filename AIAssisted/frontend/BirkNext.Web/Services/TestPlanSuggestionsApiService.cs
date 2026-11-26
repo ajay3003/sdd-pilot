@@ -70,6 +70,12 @@ public interface ITestPlanSuggestionsApiService
     /// <summary>Testoversikt: the project's saved test work and its specifications' scenarios (read-only).</summary>
     Task<(ManualTestingOverview? Overview, string? Error)> OverviewAsync(string projectKey, CancellationToken ct = default) =>
         Task.FromResult<(ManualTestingOverview?, string?)>((null, NotAvailable));
+    /// <summary>User story implementation status from tasks.md (2026-11-26): every story of the project, or of one specification. Read-only.</summary>
+    Task<(UserStoryStatusView? View, string? Error)> StoryStatusAsync(string projectKey, string? specificationPath, CancellationToken ct = default) =>
+        Task.FromResult<(UserStoryStatusView?, string?)>((null, NotAvailable));
+    /// <summary>A person confirms (or withdraws) a story's implementation for the task evidence shown now.</summary>
+    Task<(UserStoryImplementationStatus? Story, string? Error)> ConfirmStoryAsync(ConfirmUserStoryRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(UserStoryImplementationStatus?, string?)>((null, NotAvailable));
     /// <summary>System Settings → Manuell testing → Testoversikt: which dashboard parts are shown.</summary>
     Task<(ManualTestingDashboardSettings? Settings, string? Error)> DashboardSettingsAsync(CancellationToken ct = default) =>
         Task.FromResult<(ManualTestingDashboardSettings?, string?)>((null, NotAvailable));
@@ -246,6 +252,13 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
 
     public Task<(ManualTestingOverview?, string?)> OverviewAsync(string projectKey, CancellationToken ct = default) =>
         Send<ManualTestingOverview>(() => http.GetAsync($"{Base}/project/overview?projectKey={Uri.EscapeDataString(projectKey)}", ct), ct);
+
+    public Task<(UserStoryStatusView?, string?)> StoryStatusAsync(string projectKey, string? specificationPath, CancellationToken ct = default) =>
+        Send<UserStoryStatusView>(() => http.GetAsync($"{Base}/project/story-status?projectKey={Uri.EscapeDataString(projectKey)}"
+            + (string.IsNullOrWhiteSpace(specificationPath) ? "" : $"&specificationPath={Uri.EscapeDataString(specificationPath)}"), ct), ct);
+
+    public Task<(UserStoryImplementationStatus?, string?)> ConfirmStoryAsync(ConfirmUserStoryRequest request, CancellationToken ct = default) =>
+        Send<UserStoryImplementationStatus>(() => http.PostAsJsonAsync($"{Base}/project/story-status/confirm", request, Json, ct), ct);
 
     public Task<(ManualTestingDashboardSettings?, string?)> DashboardSettingsAsync(CancellationToken ct = default) =>
         Send<ManualTestingDashboardSettings>(() => http.GetAsync($"{Base}/dashboard-settings", ct), ct);
