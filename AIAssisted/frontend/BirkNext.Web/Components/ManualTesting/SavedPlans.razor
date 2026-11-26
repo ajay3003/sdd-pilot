@@ -110,7 +110,7 @@
     }
     @if (_adding is { } addId && Api is not null)
     {
-        <AddScenariosToPlan Api="Api" ProjectKey="@Workspace.ProjectKey" PlanId="addId" Discovery="Discovery" OnClose="CloseAddAsync" OnAdded="_ => _added = true" />
+        <AddScenariosToPlan Api="Api" ProjectKey="@Workspace.ProjectKey" PlanId="addId" Discovery="Discovery" LoadDiscovery="LoadDiscovery" OnClose="CloseAddAsync" OnAdded="_ => _added = true" />
     }
 </section>
 
@@ -119,6 +119,8 @@
     [Parameter] public ITestPlanSuggestionsApiService? Api { get; set; }
     /// <summary>The project's current discovery (the scenarios «Legg til scenarioer» offers).</summary>
     [Parameter] public ScenarioDiscoveryResult? Discovery { get; set; }
+    /// <summary>Reads the discovery on demand when it was not loaded with the page (the plan list itself never needs it).</summary>
+    [Parameter] public Func<Task<ScenarioDiscoveryResult?>>? LoadDiscovery { get; set; }
     [Parameter] public bool ShowArchived { get; set; }
     /// <summary>A plan was archived, restored or deleted: the owner reloads the workspace.</summary>
     [Parameter] public EventCallback Changed { get; set; }

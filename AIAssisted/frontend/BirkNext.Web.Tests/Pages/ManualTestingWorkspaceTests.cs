@@ -288,7 +288,7 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
     }
 
     [Fact]
-    public void Testoversikt_does_not_read_the_scenario_discovery_but_Testplaner_does()
+    public void Neither_Testoversikt_nor_the_plan_list_reads_the_scenario_discovery()
     {
         Setup([Summary()], Discovery(3));
         SetupOverview();
@@ -299,7 +299,10 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
 
         Services.GetRequiredService<NavigationManager>().NavigateTo("manual-testing/plans");
         cut.Render();
-        cut.WaitForAssertion(() => _plans.Verify(x => x.LastDiscoveryAsync("library", It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mt-plans]"));
+        // App-wide performance pass (2026-11-26, measured 9.2 MB / ~3 s on M2LB): the plan list does not read the discovery either; it is read on
+        // demand by «Legg til scenarioer» or when a Finn og forstå selection waits to become a plan.
+        _plans.Verify(x => x.LastDiscoveryAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

@@ -39,7 +39,8 @@
 
     protected override async Task OnInitializedAsync()
     {
-        try { _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(); }
+        // Only the project and its plans are needed here (not the 9 MB discovery).
+        try { _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(discovery: false, requirements: false); }
         catch (Exception e) when (e is not OperationCanceledException) { _ws = null; }
         finally { _loading = false; }
     }

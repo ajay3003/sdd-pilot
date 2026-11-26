@@ -15,7 +15,7 @@
         {
             <p class="mt-muted" role="status" data-testid="asp-loading">@(_error is null ? "Henter testplanen …" : "")</p>
         }
-        else if (Discovery is null || _all.Count == 0)
+        else if (_discovery is null || _all.Count == 0)
         {
             <p class="msb-empty" data-testid="asp-no-scenarios">Ingen scenarioer er funnet for prosjektet ennå. Åpne <a href="@ManualTestingPresentation.DiscoverRoute">Finn og forstå</a> for å hente dem.</p>
         }
@@ -80,6 +80,9 @@
     [Parameter, EditorRequired] public Guid PlanId { get; set; }
     /// <summary>The project's current discovery (the same scenarios Finn og forstå shows); only its acceptance scenarios and documented tests are offered.</summary>
     [Parameter] public ScenarioDiscoveryResult? Discovery { get; set; }
+    /// <summary>Reads the discovery when the page did not load it (Testplaner reads it only when this dialog opens).</summary>
+    [Parameter] public Func<Task<ScenarioDiscoveryResult?>>? LoadDiscovery { get; set; }
+    private ScenarioDiscoveryResult? _discovery;
     [Parameter] public EventCallback OnClose { get; set; }
     /// <summary>The plan after an addition (the dialog stays open so more scenarios can go to another testgruppe).</summary>
     [Parameter] public EventCallback<TestPlanDraft> OnAdded { get; set; }
@@ -96,7 +99,8 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _all = [.. (Discovery?.Candidates ?? []).Where(ScenarioTypeClassifier.IsClassifiable)
+        _discovery = Discovery ?? (LoadDiscovery is null ? null : await LoadDiscovery());
+        _all = [.. (_discovery?.Candidates ?? []).Where(ScenarioTypeClassifier.IsClassifiable)
             .OrderBy(c => c.Story?.SpecificationPath ?? "~").ThenBy(c => c.Story?.StoryId ?? "~").ThenBy(c => c.NumberInStory ?? 999).ThenBy(c => c.Title, StringComparer.CurrentCultureIgnoreCase)];
         _modules = [.. _all.Select(Module).OfType<string>().Distinct().Order(StringComparer.CurrentCultureIgnoreCase)];
         _priorities = [.. _all.Select(Priority).OfType<string>().Distinct().OrderBy(p => int.TryParse(p.AsSpan(1), out var n) ? n : 99)];
@@ -131,14 +135,14 @@
 
     private async Task AddAsync()
     {
-        if (_plan is null || Discovery is null || _selected.Count == 0 || _busy) return;
+        if (_plan is null || _discovery is null || _selected.Count == 0 || _busy) return;
         _busy = true; _error = null; _notice = null;
         try
         {
             var ids = _selected.ToList();
             var (plan, error) = await Api.CreateProjectAsync(new CreateProjectTestPlanRequest
             {
-                ProjectKey = ProjectKey, DiscoveryId = Discovery.DiscoveryId, CandidateIds = ids, DraftId = _plan.Id, BaseRevision = _plan.Revision,
+                ProjectKey = ProjectKey, DiscoveryId = _discovery.DiscoveryId, CandidateIds = ids, DraftId = _plan.Id, BaseRevision = _plan.Revision,
                 ScenarioOnly = true, SuiteId = _suite,
             });
             if (plan is null) { _error = $"Scenarioene ble ikke lagt til. {error}"; await LoadPlanAsync(); return; }

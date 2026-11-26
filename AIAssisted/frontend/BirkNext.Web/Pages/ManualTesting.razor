@@ -389,7 +389,7 @@
             @* 2. Saved test plans *@
             @if (_ws.Plans is { } workspace)
             {
-                <BirkNext.Web.Components.ManualTesting.SavedPlans Workspace="workspace" Api="Api" Discovery="_ws?.Discovery" ShowArchived="@(PlansQuery == "archived")" Changed="LoadAsync" />
+                <BirkNext.Web.Components.ManualTesting.SavedPlans Workspace="workspace" Api="Api" Discovery="_ws?.Discovery" LoadDiscovery="EnsureDiscoveryAsync" ShowArchived="@(PlansQuery == "archived")" Changed="LoadAsync" />
             }
 
         }
@@ -1059,7 +1059,7 @@
     {
         if (_loading || _ws is null) return;
         // Testoversikt read the light workspace (no discovery): «3. Testplaner» needs the discovery (create with the scenarios chosen in Finn og forstå).
-        if (!IsHome && !_wsFull) { await LoadAsync(); return; }
+        if (!IsHome && !_wsFull && _ws is null) { await LoadAsync(); return; }
         if (IsHome && _overview is null && !_overviewLoading && _overviewError is null) await LoadOverviewAsync();
     }
 
@@ -1092,12 +1092,20 @@
         try
         {
             var home = IsHome;
-            _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(discovery: !home, requirements: !home);
-            _wsFull = !home;
+            // Performance (app-wide pass, 2026-11-26, measured): the discovery is 9.2 MB on M2LB and cost Testplaner ~3 s of browser time on every
+            // load although the plan list never uses it. Every page reads the light workspace first; Testplaner reads the full one only when a
+            // Finn og forstå selection is waiting to become a plan, and «Legg til scenarioer» asks for it when it opens (EnsureDiscoveryAsync).
+            _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(discovery: false, requirements: false);
+            _wsFull = false;
             var selection = _ws.ProjectKey is { } key ? TabDraftStore.ReadAsync<List<string>>(JS, TabDraftStore.SelectionKey(key)) : Task.FromResult<List<string>?>(null);
             var execution = ExecutionEnabledAsync();
             var overview = home ? LoadOverviewAsync() : Task.CompletedTask;
             _selection = await selection ?? [];
+            if (!home && _selection.Count > 0)
+            {
+                _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync();
+                _wsFull = true;
+            }
             _executionEnabled = await execution;
             await overview;
         }
@@ -1105,6 +1113,15 @@
     }
 
     /// <summary>v1.0 acceptance (2026-11-25): with execution in BirkNext switched on, results are not only in Azure DevOps — say where they are.</summary>
+    /// <summary>The project's discovery, read on demand (the first «Legg til scenarioer» or a plan from a selection) and kept for the page.</summary>
+    private async Task<ScenarioDiscoveryResult?> EnsureDiscoveryAsync()
+    {
+        if (_ws?.Discovery is { } d) return d;
+        _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync();
+        _wsFull = true;
+        return _ws.Discovery;
+    }
+
     private async Task<bool> ExecutionEnabledAsync()
     {
         if (ServiceProvider.GetService(typeof(IManualTestRunsApiService)) is not IManualTestRunsApiService runs) return false;
