@@ -19,7 +19,7 @@
    «Manuell testing» tab led to «Testplaner» and was never marked as the current page. *@
 <PageTitle>@(IsHome ? "Testoversikt — Manuell testing" : "Testplaner — Manuell testing")</PageTitle>
 
-<div class="mt msb-page" data-testid="mt" aria-busy="@(_loading ? "true" : "false")">
+<div class="mt msb-page @(IsHome ? "mto-page" : null)" data-testid="mt" aria-busy="@(_loading ? "true" : "false")">
     <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="@(IsHome ? null : "plans")" Title="@(IsHome ? "Testoversikt" : "Testplaner")"
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
         Lead="@(IsHome ? "Hvor står testforberedelsen? Velg modul og spesifikasjon her; Finn og forstå viser det samme utvalget." : "Opprett, åpne og overfør testplanene for applikasjonen. Testtilfellene forberedes i Planlegg og klargjør.")">
@@ -49,17 +49,21 @@
                and the parts System Settings → Manuell testing → Testoversikt switches on. Preparation, coverage, readiness, approval and source status
                only — never execution results. *@
             <BirkNext.Web.Components.SpecificationScopePicker @key="_pickerKey" Changed="OnScopeChangedAsync" ShowDiscoverLink="false" />
-            <div class="mto-head">
-                <div class="mtp-seg" role="radiogroup" aria-label="Tallene gjelder" data-testid="mto-level">
-                    @foreach (var (level, text, enabled) in new[] { (O.Level.Project, "Hele prosjektet", true), (O.Level.Module, "Valgt modul", _module is not null), (O.Level.Specification, "Valgt spesifikasjon", _specPath is not null) })
-                    {
-                        var l = level;
-                        <button type="button" role="radio" class="mtp-seg-btn @(_level == l ? "is-on" : null)" aria-checked="@(_level == l ? "true" : "false")" disabled="@(!enabled)"
-                                @onclick="() => SetLevel(l)" data-level="@l" data-testid="mto-level-option">@text</button>
-                    }
+            @* Testoversikt redesign (2026-11-26): one toolbar for the scope, the four core figures first, then what needs follow-up, test readiness,
+               modules and the rest. Widget ids, settings and figures are unchanged; only the presentation and order changed. *@
+            <div class="mto-toolbar" data-testid="mto-toolbar">
+                <div class="mto-head">
+                    <div class="mtp-seg" role="radiogroup" aria-label="Tallene gjelder" data-testid="mto-level">
+                        @foreach (var (level, text, enabled) in new[] { (O.Level.Project, "Hele prosjektet", true), (O.Level.Module, "Valgt modul", _module is not null), (O.Level.Specification, "Valgt spesifikasjon", _specPath is not null) })
+                        {
+                            var l = level;
+                            <button type="button" role="radio" class="mtp-seg-btn @(_level == l ? "is-on" : null)" aria-checked="@(_level == l ? "true" : "false")" disabled="@(!enabled)"
+                                    @onclick="() => SetLevel(l)" data-level="@l" data-testid="mto-level-option">@text</button>
+                        }
+                    </div>
+                    <span class="mto-scope-chip" title="@O.ScopeLabel(CurrentScope)" data-testid="mto-scope">@O.ScopeLabel(CurrentScope)</span>
+                    @if (CanWrite) { <a class="msb-link msb-small mto-customize" href="admin/system-settings?section=manual-testing" data-testid="mto-customize">Tilpass oversikten</a> }
                 </div>
-                <span class="mt-muted msb-small" data-testid="mto-scope">@O.ScopeLabel(CurrentScope)</span>
-                @if (CanWrite) { <a class="msb-link msb-small mto-customize" href="admin/system-settings?section=manual-testing" data-testid="mto-customize">Tilpass oversikten</a> }
             </div>
             @if (_overviewLoading)
             {
@@ -74,28 +78,36 @@
                 var slice = O.Of(ov, CurrentScope);
                 var fig = O.Compute(slice, ov.Plans);
                 var explain = On("display.explanations");
-                <section class="mto-kpis" aria-label="Nøkkeltall" data-testid="mto-kpis">
+                var attention = O.P1Attention(slice);
+                var blockers = O.Blockers(slice);
+                var changes = O.SourceChanges(slice);
+                <section class="mto-kpis mto-kpis-core" aria-label="Nøkkeltall" data-testid="mto-kpis">
                     @if (On("metric.scenarios"))
                     {
-                        <a class="mto-kpi" href="@M.DiscoverRoute" data-testid="mto-kpi" data-widget="metric.scenarios"><span class="mto-kpi-k">Scenarioforslag</span>
-                            <span class="mto-kpi-v">@(fig.Scenarios?.ToString() ?? "—")</span>
+                        <a class="mto-kpi is-core" href="@M.DiscoverRoute" data-testid="mto-kpi" data-widget="metric.scenarios"><span class="mto-kpi-k">Scenarioforslag</span>
+                            <span class="mto-kpi-v">@(fig.Scenarios?.ToString("N0", Nb) ?? "—")</span>
+                            @if (fig.Scenarios is { } sc && sc > 0 && fig.Covered is { } cv) { @Meter(cv, sc, "med testtilfeller") }
                             @if (explain) { <span class="mto-kpi-e">@(fig.Scenarios is null ? "Ikke tilgjengelig: spesifikasjonen er ikke lagret for prosjektet" : fig.Covered is { } cov ? $"{cov} har testtilfeller" : "")</span> }</a>
                     }
                     @if (On("metric.testCases"))
                     {
-                        <a class="mto-kpi" href="@M.PlanRoute" data-testid="mto-kpi" data-widget="metric.testCases"><span class="mto-kpi-k">Testtilfeller</span><span class="mto-kpi-v">@fig.Cases</span>
+                        <a class="mto-kpi is-core" href="@M.PlanRoute" data-testid="mto-kpi" data-widget="metric.testCases"><span class="mto-kpi-k">Testtilfeller</span><span class="mto-kpi-v">@fig.Cases.ToString("N0", Nb)</span>
                             @if (explain) { <span class="mto-kpi-e">Lagret i aktive testplaner</span> }</a>
                     }
                     @if (On("metric.approved"))
                     {
-                        <div class="mto-kpi" data-testid="mto-kpi" data-widget="metric.approved"><span class="mto-kpi-k">Godkjente</span><span class="mto-kpi-v">@fig.Approved</span>
+                        <div class="mto-kpi is-core" data-testid="mto-kpi" data-widget="metric.approved"><span class="mto-kpi-k">Godkjente</span><span class="mto-kpi-v">@fig.Approved.ToString("N0", Nb)</span>
+                            @if (fig.Cases > 0) { @Meter(fig.Approved, fig.Cases, "godkjent") }
                             @if (explain) { <span class="mto-kpi-e">@fig.Approved av @fig.Cases testtilfeller</span> }</div>
                     }
                     @if (On("metric.ready"))
                     {
-                        <div class="mto-kpi" data-testid="mto-kpi" data-widget="metric.ready"><span class="mto-kpi-k">Klar til testing</span><span class="mto-kpi-v">@fig.Ready</span>
+                        <div class="mto-kpi is-core" data-testid="mto-kpi" data-widget="metric.ready"><span class="mto-kpi-k">Klar til testing</span><span class="mto-kpi-v">@fig.Ready.ToString("N0", Nb)</span>
+                            @if (fig.Cases > 0) { @Meter(fig.Ready, fig.Cases, "klar") }
                             @if (explain) { <span class="mto-kpi-e">@fig.Ready av @fig.Cases · godkjent er ikke det samme som klar</span> }</div>
                     }
+                </section>
+                <section class="mto-kpis mto-kpis-secondary" aria-label="Flere nøkkeltall" data-testid="mto-kpis-secondary">
                     @if (On("metric.testPlans"))
                     {
                         <a class="mto-kpi" href="@M.PlansRoute" data-testid="mto-kpi" data-widget="metric.testPlans"><span class="mto-kpi-k">Testplaner</span><span class="mto-kpi-v">@fig.Plans</span>
@@ -109,70 +121,114 @@
                     @Kpi("metric.functionalScenarios", "Funksjonelle scenarioer", O.ScenariosOfType(slice, ScenarioRequirementType.Functional), "Akseptansescenarioer om oppførsel eller resultat", explain)
                     @Kpi("metric.nonFunctionalScenarios", "Ikke-funksjonelle scenarioer", O.ScenariosOfType(slice, ScenarioRequirementType.NonFunctional), "Blandede scenarioer telles ikke her", explain)
                 </section>
-                <div class="mto-grid">
-                    @Chart("chart.preparation", "Testforberedelse", O.Preparation(slice), "Trinnene overlapper og summeres ikke.", false)
-                    @Chart("chart.moduleCoverage", _level switch { O.Level.Project => "Testdekning per modul", O.Level.Module => "Testdekning per spesifikasjon", _ => "Testdekning per brukerhistorie" },
-                        O.Coverage(slice, _level), slice.ScenariosAvailable ? "Andel scenarioer med minst ett lagret testtilfelle." : "Ikke tilgjengelig: spesifikasjonen er ikke lagret for prosjektet.", true)
-                    @Chart("chart.priority", "Scenarioer etter prioritet", O.Priority(slice), "Prioritet slik spesifikasjonen oppgir den.", false)
-                    @Chart("chart.coverageGaps", "Manglende testdekning", O.Gaps(slice), "Scenarioer uten lagret testtilfelle.", false)
-                    @Chart("chart.blockers", "Testbarhet og blokkeringer", O.Blockers(slice), $"{O.NotReady(slice)} av {fig.Cases} testtilfeller er ikke klare. Ett testtilfelle kan ha flere årsaker.", false)
-                    @Chart("chart.sourceChanges", "Kildeendringer", O.SourceChanges(slice), "Sammenlignet med testtilfellets egen spesifikasjon.", false)
-                    @Chart("chart.manualTechnical", "Manuelle og tekniske testtilfeller", O.ManualTechnical(slice), "Testtypen som er valgt for testtilfellet.", false)
-                    @Chart("chart.moduleApproval", "Godkjenning per modul", O.ModuleApproval(slice), "Godkjente av lagrede testtilfeller.", false)
-                    @Chart("chart.usImplementation", "Implementeringsframdrift for brukerhistorier", O.StoryImplementation(slice),
-                        slice.StoriesAvailable ? "Fra oppgavene i tasks.md; hver brukerhistorie telles én gang. «US-oppgaver fullført» er ikke det samme som implementert." : "Ikke tilgjengelig: oppgavene i tasks.md er ikke lest for denne importen.", false)
-                    @Chart("chart.scenarioTypes", "Scenarioer etter type", O.ScenarioTypes(slice), "Akseptansescenarioer; et blandet scenario telles bare som blandet.", false)
-                    @Chart("chart.nfrCategories", "Ikke-funksjonelle scenarioer per kategori", O.NonFunctionalCategories(slice), "Ikke-funksjonelle og blandede scenarioer; et scenario med flere kvalitetsegenskaper står i flere søyler.", false)
-                    @Chart("chart.gapsByType", "Manglende dekning etter type", O.GapsByType(slice), "Akseptansescenarioer uten lagret testtilfelle.", false)
-                    @if (On("chart.history"))
+
+                @* «Dette bør følges opp»: only follow-up computed from stored data; a short empty state when nothing in the scope needs it. *@
+                var actionWidgets = new[] { "panel.p1Attention", "chart.blockers", "chart.sourceChanges" }.Where(On).ToList();
+                @if (actionWidgets.Count > 0)
+                {
+                    var anyAction = (On("panel.p1Attention") && attention.Count > 0) || (On("chart.blockers") && blockers.Any(b => b.Value > 0)) || (On("chart.sourceChanges") && changes.Any(b => b.Value > 0));
+                    <section class="mto-band mto-band-action" aria-labelledby="mto-band-action-h" data-testid="mto-band" data-band="action">
+                        <h2 class="mto-band-h" id="mto-band-action-h">Dette bør følges opp</h2>
+                        @if (!anyAction)
+                        {
+                            <p class="mto-band-empty" data-testid="mto-action-empty">Ingenting i utvalget krever oppfølging nå: ingen P1-scenarioer mangler testtilfeller, og ingen testtilfeller er blokkert eller har endret kilde.</p>
+                        }
+                        <div class="mto-grid mto-grid-3">
+                            @if (On("panel.p1Attention") && attention.Count > 0)
+                            {
+                                <section class="mto-card mto-attention" data-testid="mto-widget" data-widget="panel.p1Attention"><h3 class="mto-card-h">Viktig å følge opp</h3>
+                                    <ul class="mto-action-list">@foreach (var (k, text) in attention)
+                                        { var key = k; <li data-key="@k"><button type="button" class="mto-action-item mto-attention-open" aria-pressed="@(IsDrill("panel.p1Attention", k) ? "true" : "false")"
+                                            @onclick="@(() => ToggleDrill("panel.p1Attention", key))" data-testid="mto-attention-open"><span>@text</span><span class="mto-action-go" aria-hidden="true">›</span></button></li> }</ul>
+                                    <p class="msb-small mto-card-links"><a href="@M.DiscoverRoute">Se scenarioer</a> · <a href="@M.PlanRoute">Se testtilfeller</a></p></section>
+                            }
+                            @Chart("chart.blockers", "Testbarhet og blokkeringer", blockers, $"{O.NotReady(slice)} av {fig.Cases} testtilfeller er ikke klare. Ett testtilfelle kan ha flere årsaker.", false)
+                            @Chart("chart.sourceChanges", "Kildeendringer", changes, "Sammenlignet med testtilfellets egen spesifikasjon. «Kunne ikke sammenlignes» betyr ikke at noe er fjernet.", false)
+                        </div>
+                    </section>
+                }
+
+                <section class="mto-band" aria-labelledby="mto-band-ready-h" data-testid="mto-band" data-band="readiness">
+                    <h2 class="mto-band-h" id="mto-band-ready-h">Testberedskap</h2>
+                    <div class="mto-grid mto-grid-3">
+                        @Chart("chart.preparation", "Testforberedelse", O.Preparation(slice), "Trinnene overlapper og summeres ikke.", false)
+                        @Chart("chart.priority", "Scenarioer etter prioritet", O.Priority(slice), "Prioritet slik spesifikasjonen oppgir den.", false)
+                        @Chart("chart.coverageGaps", "Manglende testdekning", O.Gaps(slice), "Scenarioer uten tilknyttede manuelle testtilfeller (ikke utviklertester).", false)
+                    </div>
+                </section>
+
+                <section class="mto-band" aria-labelledby="mto-band-modules-h" data-testid="mto-band" data-band="modules">
+                    <h2 class="mto-band-h" id="mto-band-modules-h">@(_level switch { O.Level.Project => "Moduler", O.Level.Module => "Spesifikasjoner", _ => "Brukerhistorier" })</h2>
+                    <div class="mto-grid mto-grid-wide">
+                        @Chart("chart.moduleCoverage", _level switch { O.Level.Project => "Testdekning per modul", O.Level.Module => "Testdekning per spesifikasjon", _ => "Testdekning per brukerhistorie" },
+                            O.Coverage(slice, _level), slice.ScenariosAvailable ? "Andel scenarioer med minst ett lagret manuelt testtilfelle — ikke utviklertestdekning." : "Ikke tilgjengelig: spesifikasjonen er ikke lagret for prosjektet.", true, wide: true, limit: 8)
+                        @Chart("chart.moduleApproval", "Godkjenning per modul", O.ModuleApproval(slice), "Godkjente av lagrede testtilfeller.", false, limit: 8)
+                    </div>
+                    @if (On("display.moduleOverview") && O.Rows(slice, _level) is { Count: > 0 } rows)
                     {
-                        <section class="mto-card" data-testid="mto-widget" data-widget="chart.history"><h3 class="mto-card-h">Utvikling i testforberedelse</h3>
-                            <p class="mt-muted msb-small" data-testid="mto-history-unavailable">Historiske tall er ikke tilgjengelige: tilstanden på tidligere tidspunkter lagres ikke, og tall beregnes aldri bakover.</p></section>
+                        <section class="mto-card mto-table-card" data-testid="mto-widget" data-widget="display.moduleOverview">
+                            <h3 class="mto-card-h">@(_level switch { O.Level.Project => "Oversikt per modul", O.Level.Module => "Oversikt per spesifikasjon", _ => "Oversikt per brukerhistorie" })</h3>
+                            <div class="mto-table-scroll" tabindex="0" role="region" aria-label="Tabell med tall per rad">
+                            <table class="mto-table">
+                                <thead><tr><th scope="col">@(_level switch { O.Level.Project => "Modul", O.Level.Module => "Spesifikasjon", _ => "Brukerhistorie" })</th><th scope="col">Scenarioer</th><th scope="col">Med testtilfeller</th><th scope="col">Testtilfeller</th><th scope="col">Godkjent</th><th scope="col">Trenger oppfølging</th></tr></thead>
+                                <tbody>
+                                    @foreach (var row in rows)
+                                    {
+                                        var r = row;
+                                        <tr data-testid="mto-row" data-key="@row.Key">
+                                            <td>@if (_level == O.Level.Project && row.Module is { } mod && mod != "Uten modultilknytning" && _modules.Contains(mod))
+                                                { <button type="button" class="msb-link" @onclick="() => OpenModuleAsync(mod)" data-testid="mto-row-open">@row.Label</button> }
+                                                else { @row.Label }</td>
+                                            <td>@(row.Scenarios?.ToString() ?? "—")</td><td>@(row.Covered?.ToString() ?? "—")</td><td>@row.Cases</td><td>@row.Approved</td><td class="@(row.FollowUp > 0 ? "mto-num-attention" : null)">@row.FollowUp</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            </div>
+                        </section>
                     }
-                    @if (On("panel.p1Attention") && O.P1Attention(slice) is { Count: > 0 } attention)
-                    {
-                        <section class="mto-card mto-attention" data-testid="mto-widget" data-widget="panel.p1Attention"><h3 class="mto-card-h">Viktig å følge opp</h3>
-                            <ul>@foreach (var (k, text) in attention)
-                                { var key = k; <li data-key="@k"><button type="button" class="msb-link mto-attention-open" aria-pressed="@(IsDrill("panel.p1Attention", k) ? "true" : "false")"
-                                    @onclick="@(() => ToggleDrill("panel.p1Attention", key))" data-testid="mto-attention-open">@text</button></li> }</ul>
-                            <p class="msb-small"><a href="@M.DiscoverRoute">Se scenarioer</a> · <a href="@M.PlanRoute">Se testtilfeller</a></p></section>
-                    }
-                    @if (On("panel.testPlans") && ov.Plans.Count > 0)
-                    {
-                        <section class="mto-card" data-testid="mto-widget" data-widget="panel.testPlans"><h3 class="mto-card-h">Testplaner <span class="mt-muted msb-small">(hele prosjektet)</span></h3>
-                            <ul class="mto-plans">@foreach (var pl in ov.Plans.Take(6)) { <li><a href="@($"{M.PlanRoute}?draft={pl.Id}")">@pl.Name</a> <span class="mt-muted msb-small">@pl.Cases testtilfeller · @pl.Approved godkjent@(pl.SourceAttention > 0 ? $" · {pl.SourceAttention} med kildeendring" : "")</span></li> }</ul>
-                            <p class="msb-small"><a href="@M.PlansRoute">Alle testplaner</a></p></section>
-                    }
-                    @if (On("panel.recentChanges") && ov.RecentRevisions.Count > 0)
-                    {
-                        <section class="mto-card" data-testid="mto-widget" data-widget="panel.recentChanges"><h3 class="mto-card-h">Siste endringer</h3>
-                            <ul class="mto-plans">@foreach (var r in ov.RecentRevisions.Take(8)) { <li>@r.SavedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · <a href="@($"{M.PlanRoute}?draft={r.PlanId}")">@r.PlanName</a> <span class="mt-muted msb-small">versjon @r.Revision · @r.Reason · @r.SavedBy</span></li> }</ul></section>
-                    }
-                    @Chart("panel.translationReview", "Oversettelser til gjennomgang", O.Translations(slice), "Fra lagret oversettelsesstatus; ingenting oversettes for å vise dette.", false)
-                </div>
+                </section>
+
                 @if (_drill is { } dk && O.DrillDown(slice, _level, dk.Chart, dk.Key) is { } drill)
                 {
                     @DrillPanel(drill)
                 }
-                @if (On("display.moduleOverview") && O.Rows(slice, _level) is { Count: > 0 } rows)
+
+                var moreWidgets = new[] { "chart.manualTechnical", "chart.usImplementation", "chart.scenarioTypes", "chart.nfrCategories", "chart.gapsByType", "chart.history", "panel.testPlans", "panel.recentChanges", "panel.translationReview" };
+                @if (moreWidgets.Any(On))
                 {
-                    <section class="mto-card mto-table-card" data-testid="mto-widget" data-widget="display.moduleOverview">
-                        <h3 class="mto-card-h">@(_level switch { O.Level.Project => "Oversikt per modul", O.Level.Module => "Oversikt per spesifikasjon", _ => "Oversikt per brukerhistorie" })</h3>
-                        <table class="mto-table">
-                            <thead><tr><th scope="col">@(_level switch { O.Level.Project => "Modul", O.Level.Module => "Spesifikasjon", _ => "Brukerhistorie" })</th><th scope="col">Scenarioer</th><th scope="col">Med testtilfeller</th><th scope="col">Testtilfeller</th><th scope="col">Godkjent</th><th scope="col">Trenger oppfølging</th></tr></thead>
-                            <tbody>
-                                @foreach (var row in rows)
-                                {
-                                    var r = row;
-                                    <tr data-testid="mto-row" data-key="@row.Key">
-                                        <td>@if (_level == O.Level.Project && row.Module is { } mod && mod != "Uten modultilknytning" && _modules.Contains(mod))
-                                            { <button type="button" class="msb-link" @onclick="() => OpenModuleAsync(mod)" data-testid="mto-row-open">@row.Label</button> }
-                                            else { @row.Label }</td>
-                                        <td>@(row.Scenarios?.ToString() ?? "—")</td><td>@(row.Covered?.ToString() ?? "—")</td><td>@row.Cases</td><td>@row.Approved</td><td>@row.FollowUp</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
+                    <section class="mto-band" aria-labelledby="mto-band-more-h" data-testid="mto-band" data-band="more">
+                        <h2 class="mto-band-h" id="mto-band-more-h">Testplaner og mer innsikt</h2>
+                        <div class="mto-grid mto-grid-3">
+                            @if (On("panel.testPlans") && ov.Plans.Count > 0)
+                            {
+                                <section class="mto-card" data-testid="mto-widget" data-widget="panel.testPlans"><h3 class="mto-card-h">Testplaner <span class="mt-muted msb-small">(hele prosjektet)</span></h3>
+                                    <ul class="mto-plan-list">@foreach (var pl in ov.Plans.Take(6))
+                                        {
+                                            <li><a class="mto-plan-name" href="@($"{M.PlanRoute}?draft={pl.Id}")">@pl.Name</a>
+                                                <span class="mto-plan-facts mt-muted msb-small">@pl.Cases testtilfeller · @pl.Approved godkjent@(pl.SourceAttention > 0 ? $" · {pl.SourceAttention} med kildeendring" : "")</span>
+                                                @if (pl.Cases > 0) { @Meter(pl.Approved, pl.Cases, "godkjent") }</li>
+                                        }</ul>
+                                    <p class="msb-small mto-card-links"><a href="@M.PlansRoute">Se alle testplaner</a></p></section>
+                            }
+                            @Chart("chart.manualTechnical", "Manuelle og tekniske testtilfeller", O.ManualTechnical(slice), "Testtypen som er valgt for testtilfellet.", false)
+                            @Chart("chart.usImplementation", "Implementeringsframdrift for brukerhistorier", O.StoryImplementation(slice),
+                                slice.StoriesAvailable ? "Fra oppgavene i tasks.md; hver brukerhistorie telles én gang. «US-oppgaver fullført» er ikke det samme som implementert." : "Ikke tilgjengelig: oppgavene i tasks.md er ikke lest for denne importen.", false)
+                            @Chart("chart.scenarioTypes", "Scenarioer etter type", O.ScenarioTypes(slice), "Akseptansescenarioer; et blandet scenario telles bare som blandet.", false)
+                            @Chart("chart.nfrCategories", "Ikke-funksjonelle scenarioer per kategori", O.NonFunctionalCategories(slice), "Ikke-funksjonelle og blandede scenarioer; et scenario med flere kvalitetsegenskaper står i flere søyler.", false)
+                            @Chart("chart.gapsByType", "Manglende dekning etter type", O.GapsByType(slice), "Akseptansescenarioer uten lagret testtilfelle.", false)
+                            @if (On("chart.history"))
+                            {
+                                <section class="mto-card" data-testid="mto-widget" data-widget="chart.history"><h3 class="mto-card-h">Utvikling i testforberedelse</h3>
+                                    <p class="mt-muted msb-small" data-testid="mto-history-unavailable">Historiske tall er ikke tilgjengelige: tilstanden på tidligere tidspunkter lagres ikke, og tall beregnes aldri bakover.</p></section>
+                            }
+                            @if (On("panel.recentChanges") && ov.RecentRevisions.Count > 0)
+                            {
+                                <section class="mto-card" data-testid="mto-widget" data-widget="panel.recentChanges"><h3 class="mto-card-h">Siste endringer</h3>
+                                    <ul class="mto-plans">@foreach (var r in ov.RecentRevisions.Take(8)) { <li>@r.SavedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · <a href="@($"{M.PlanRoute}?draft={r.PlanId}")">@r.PlanName</a> <span class="mt-muted msb-small">versjon @r.Revision · @r.Reason · @r.SavedBy</span></li> }</ul></section>
+                            }
+                            @Chart("panel.translationReview", "Oversettelser til gjennomgang", O.Translations(slice), "Fra lagret oversettelsesstatus; ingenting oversettes for å vise dette.", false)
+                        </div>
                     </section>
                 }
             }
@@ -468,19 +524,39 @@
     }
 
     /// <summary>One chart card from the registry: not rendered when switched off, or empty while «Skjul tomme grafer» is on.</summary>
-    private RenderFragment Chart(string id, string title, IReadOnlyList<DeliveryBar> bars, string note, bool percent) => builder =>
+    /// <summary>A chart card from the registry. <paramref name="limit"/> shows the first bars with «Vis alle» for the rest (nothing becomes unreachable);
+    /// <paramref name="wide"/> lets the card span two columns on wide screens. The note is the metric's definition, shown under the title.</summary>
+    private RenderFragment Chart(string id, string title, IReadOnlyList<DeliveryBar> bars, string note, bool percent, bool wide = false, int limit = 0) => __builder =>
     {
         if (!On(id) || (bars.Count == 0 && On("display.hideEmpty"))) return;
-        builder.OpenElement(0, "section"); builder.AddAttribute(1, "class", "mto-card"); builder.AddAttribute(2, "data-testid", "mto-widget"); builder.AddAttribute(3, "data-widget", id);
-        builder.OpenElement(4, "h3"); builder.AddAttribute(5, "class", "mto-card-h"); builder.AddContent(6, title); builder.CloseElement();
-        builder.OpenComponent<BirkNext.Web.Components.DeliveryBarChart>(7);
-        builder.AddAttribute(8, "Bars", bars); builder.AddAttribute(9, "TestId", "mto-bar"); builder.AddAttribute(10, "Label", title); builder.AddAttribute(11, "Percent", percent);
-        builder.AddAttribute(12, "Empty", "Ingen data i utvalget.");
-        builder.AddAttribute(16, "OnSelect", EventCallback.Factory.Create<string>(this, key => ToggleDrill(id, key)));
-        builder.AddAttribute(17, "SelectedKey", _drill is { } d && d.Chart == id ? d.Key : null);
-        builder.CloseComponent();
-        builder.OpenElement(13, "p"); builder.AddAttribute(14, "class", "mt-muted msb-small"); builder.AddContent(15, note); builder.CloseElement();
-        builder.CloseElement();
+        var all = _expandedCharts.Contains(id);
+        var shown = limit > 0 && !all && bars.Count > limit ? bars.Take(limit).ToList() : bars;
+        <section class="mto-card @(wide ? "is-wide" : null)" data-testid="mto-widget" data-widget="@id">
+            <h3 class="mto-card-h">@title</h3>
+            <p class="mt-muted msb-small mto-card-note">@note</p>
+            <BirkNext.Web.Components.DeliveryBarChart Bars="shown" TestId="mto-bar" Label="@title" Percent="percent" Empty="Ingen data i utvalget."
+                OnSelect="key => ToggleDrill(id, key)" SelectedKey="@(_drill is { } d && d.Chart == id ? d.Key : null)" />
+            @if (limit > 0 && bars.Count > limit)
+            {
+                <button type="button" class="msb-link mto-show-all" aria-expanded="@(all ? "true" : "false")" @onclick="() => ToggleAll(id)" data-testid="mto-show-all">
+                    @(all ? $"Vis de {limit} første" : $"Vis alle ({bars.Count})")</button>
+            }
+        </section>
+    };
+
+    private readonly HashSet<string> _expandedCharts = new(StringComparer.Ordinal);
+    private void ToggleAll(string id) { if (!_expandedCharts.Remove(id)) _expandedCharts.Add(id); }
+
+    private static readonly System.Globalization.CultureInfo Nb = System.Globalization.CultureInfo.GetCultureInfo("nb-NO");
+
+    /// <summary>A share of a real count as a thin meter with its text (never colour or length alone).</summary>
+    private static RenderFragment Meter(int part, int whole, string what) => __builder =>
+    {
+        var pct = whole <= 0 ? 0 : (int)Math.Round(100.0 * part / whole);
+        <span class="mto-meter" role="img" aria-label="@($"{part} av {whole} {what} ({pct} %)")" data-testid="mto-meter">
+            <span class="mto-meter-bar" aria-hidden="true"><span class="mto-meter-fill" style="width:@(pct)%"></span></span>
+            <span class="mto-meter-t" aria-hidden="true">@pct % @what</span>
+        </span>
     };
 
     /// <summary>The figures for the project, read once (one request); a newer request makes an older answer irrelevant.</summary>

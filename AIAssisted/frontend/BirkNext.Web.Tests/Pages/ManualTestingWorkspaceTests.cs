@@ -468,4 +468,97 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.Find("[data-testid=mt-new-plan-create]").Click();
         _plans.Verify(x => x.CreateProjectAsync(It.Is<CreateProjectTestPlanRequest>(r => r.Structure == PlanStructureTemplates.LevelArea && r.CandidateIds.SequenceEqual(new[] { "c1", "c2" })), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    // ── Testoversikt redesign (2026-11-26) ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void R01_the_overview_is_ordered_by_hierarchy_core_figures_first_and_keeps_every_widget_id()
+    {
+        Setup([Summary()], Discovery(3));
+        SetupOverview();
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
+
+        cut.Find("[data-testid=mt]").ClassList.Should().Contain("mto-page", "Testoversikt uses the full content width");
+        cut.FindAll("[data-testid=mto-kpis] [data-testid=mto-kpi]").Select(k => k.GetAttribute("data-widget")).Should().Equal(
+            "metric.scenarios", "metric.testCases", "metric.approved", "metric.ready");
+        cut.FindAll("[data-testid=mto-band]").Select(b => b.GetAttribute("data-band")).Should().Equal("action", "readiness", "modules", "more");
+        cut.Find("[data-testid=mto-band][data-band=action] h2").TextContent.Should().Be("Dette bør følges opp");
+        cut.FindAll("[data-testid=mto-band][data-band=readiness] [data-testid=mto-widget]").Select(w => w.GetAttribute("data-widget")).Should().Equal("chart.preparation", "chart.priority", "chart.coverageGaps");
+        cut.Find("[data-testid=mto-band][data-band=modules] [data-testid=mto-widget][data-widget='display.moduleOverview']").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void R02_meters_show_real_shares_as_text_and_never_for_an_empty_base()
+    {
+        Setup([Summary()], Discovery(3));
+        SetupOverview();
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
+
+        cut.Find("[data-testid=mto-kpi][data-widget='metric.approved'] [data-testid=mto-meter]").GetAttribute("aria-label").Should().Be("2 av 7 godkjent (29 %)");
+        cut.Find("[data-testid=mto-kpi][data-widget='metric.ready'] [data-testid=mto-meter]").GetAttribute("aria-label").Should().Be("1 av 7 klar (14 %)");
+        cut.Find("[data-testid=mto-kpi][data-widget='metric.scenarios'] [data-testid=mto-meter]").GetAttribute("aria-label").Should().StartWith("2 av 4 med testtilfeller");
+        cut.Markup.Should().NotContain("denne uken", "no invented trend");
+    }
+
+    [Fact]
+    public void R03_the_follow_up_section_lists_real_follow_up_with_working_drill_down()
+    {
+        Setup([Summary()], Discovery(3));
+        SetupOverview();
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-band][data-band=action]"));
+
+        cut.FindAll("[data-testid=mto-action-empty]").Should().BeEmpty("the fixture has a changed source and a hindrance");
+        var band = cut.Find("[data-testid=mto-band][data-band=action]");
+        band.QuerySelectorAll("[data-testid=mto-widget]").Select(w => w.GetAttribute("data-widget")).Should().Contain(["chart.blockers", "chart.sourceChanges"]);
+        cut.Find("[data-testid=mto-band][data-band=action] [data-testid=mto-widget][data-widget='chart.sourceChanges'] [data-testid=mto-bar-open]").Click();
+        cut.Find("[data-testid=mto-drill]").GetAttribute("data-chart").Should().Be("chart.sourceChanges");
+    }
+
+    [Fact]
+    public void R04_without_follow_up_the_section_says_so_instead_of_inventing_warnings()
+    {
+        Setup([Summary()], Discovery(3));
+        var empty = Overview() with { Cases = [] };
+        _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((empty with { Specifications = [.. empty.Specifications.Select(s => s with { Scenarios = [.. s.Scenarios.Select(sc => sc with { Priority = "P3" })] })] }, (string?)null));
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ManualTestingDashboardSettings(), (string?)null));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-band][data-band=action]"));
+
+        cut.Find("[data-testid=mto-action-empty]").TextContent.Should().StartWith("Ingenting i utvalget krever oppfølging nå");
+    }
+
+    [Fact]
+    public void R05_a_long_module_comparison_shows_the_first_eight_and_Vis_alle_reaches_every_module()
+    {
+        Setup([Summary()], Discovery(3));
+        var many = Overview() with
+        {
+            Specifications = [.. Enumerable.Range(1, 11).Select(i => new OverviewSpecification($"M{i:00}/specs/001-x/spec.md", $"M{i:00}", "001-x", [new($"tss-m{i}", $"m{i}", "US1", "S", 1, "P2", "A")]))],
+        };
+        _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((many, (string?)null));
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ManualTestingDashboardSettings(), (string?)null));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-widget][data-widget='chart.moduleCoverage']"));
+
+        string Sel(string w) => $"[data-testid=mto-widget][data-widget='{w}']";
+        var total = O.Coverage(O.Of(many, new O.Scope(O.Level.Project, null, null)), O.Level.Project).Count;
+        cut.FindAll($"{Sel("chart.moduleCoverage")} [data-testid=mto-bar]").Should().HaveCount(8);
+        cut.Find($"{Sel("chart.moduleCoverage")} [data-testid=mto-show-all]").TextContent.Should().Be($"Vis alle ({total})");
+        cut.Find($"{Sel("chart.moduleCoverage")} [data-testid=mto-show-all]").Click();
+        cut.FindAll($"{Sel("chart.moduleCoverage")} [data-testid=mto-bar]").Should().HaveCount(total, "no module becomes unreachable");
+        cut.FindAll("[data-testid=mto-row]").Count.Should().BeGreaterThanOrEqualTo(11, "the table always lists every module");
+    }
+
+    [Fact]
+    public void R06_the_stylesheet_lifts_the_width_cap_for_Testoversikt_only_and_uses_container_aware_columns()
+    {
+        var css = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "BirkNext.Web", "wwwroot", "css", "manual-testing.css"));
+        css.Should().Contain(".mt.mto-page { max-width: none; container: mto / inline-size; }");
+        css.Should().Contain(".mt { max-width: 72rem; }", "other Manual Testing pages keep their reading width");
+        css.Should().Contain(".mto-grid.mto-grid-3 > .mto-card { flex: 1 1 22rem; }", "cards fill each row: two cards never leave an empty column").And.Contain("@container mto (max-width: 30rem)");
+        css.Should().Contain(".mto-kpis-core { grid-template-columns: repeat(4, minmax(0, 1fr));");
+    }
 }
