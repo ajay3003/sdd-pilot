@@ -29,7 +29,7 @@
                     </li>
                 }
             </ul>
-            @if (_impact.Cases.Count > _limit) { <button type="button" class="msb-link" @onclick="() => _limit += 20">Vis flere (@(_impact.Cases.Count - _limit))</button> }
+            <ShowMore Shown="@Math.Min(_limit, _impact.Cases.Count)" Total="@_impact.Cases.Count" Step="20" Noun="testtilfeller" OnMore="() => _limit += 20" TestId="psc-more" />
         }
         @if (_impact.NewScenarios.Count > 0)
         {

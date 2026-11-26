@@ -55,7 +55,7 @@
                         </li>
                     }
                 </ul>
-                @if (shown.Count > _limit) { <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _limit += Page" data-testid="asp-more">Vis flere (@(shown.Count - _limit) igjen)</button> }
+                <ShowMore Shown="@Math.Min(_limit, shown.Count)" Total="@shown.Count" Step="Page" Noun="scenarioer" OnMore="() => _limit += Page" TestId="asp-more" />
             </div>
             <footer class="mtp-preview-foot asp-foot">
                 <label class="asp-suite">Testgruppe

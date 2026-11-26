@@ -1,0 +1,67 @@
+@using BirkNext.Web.Shared.Components.Loading
+@* Progressive results (application-wide, 2026-11-26): ONE «Vis flere» control for long lists. The list filters, searches and groups its
+   COMPLETE eligible population first and shows the first Shown of Total; this control reveals the next batch. A batch already in memory is
+   appended at once (no spinner, no delay); a batch that has to be fetched shows the shared spinner «Laster flere …» while the callback runs,
+   keeps the rows already shown, blocks a second click, and on failure says so with «Prøv igjen». The new rows are announced (aria-live).
+   Not shown when everything is visible. *@
+@if (Total is { } total && Shown >= total && Error is null)
+{
+    @if (ShowAllShown && total > Step) { <p class="sm-count mt-muted msb-small" data-testid="@($"{TestId}-all")">Alle @total vises</p> }
+}
+else
+{
+    <div class="sm-more" data-testid="@($"{TestId}-row")">
+        <span class="sm-count mt-muted msb-small" data-testid="@($"{TestId}-count")">@CountText</span>
+        <button type="button" class="btn btn-secondary btn-sm sm-button" disabled="@_busy" aria-busy="@(_busy ? "true" : "false")" @onclick="MoreAsync" data-testid="@TestId">
+            @if (_busy) { <span class="loading-spinner" aria-hidden="true"></span><span>Laster flere …</span> }
+            else { <span>@ButtonText</span> }
+        </button>
+        @if (Error is { } error)
+        {
+            <span class="sm-error" role="alert" data-testid="@($"{TestId}-error")">@error <button type="button" class="msb-link" disabled="@_busy" @onclick="MoreAsync" data-testid="@($"{TestId}-retry")">Prøv igjen</button></span>
+        }
+        <span class="visually-hidden" role="status" aria-live="polite" data-testid="@($"{TestId}-announce")">@_announce</span>
+    </div>
+}
+
+@code {
+    /// <summary>Rows shown now.</summary>
+    [Parameter, EditorRequired] public int Shown { get; set; }
+    /// <summary>Rows in the complete filtered population; null when the total is not known (then no invented total is shown).</summary>
+    [Parameter] public int? Total { get; set; }
+    /// <summary>Rows the next batch adds (the button says «Vis N flere», never more than remain).</summary>
+    [Parameter] public int Step { get; set; } = 20;
+    /// <summary>Reveals or fetches the next batch. Synchronous work completes at once and shows no spinner.</summary>
+    [Parameter] public EventCallback OnMore { get; set; }
+    /// <summary>The failure of the last fetch (the rows already shown stay); «Prøv igjen» calls <see cref="OnMore"/> again.</summary>
+    [Parameter] public string? Error { get; set; }
+    /// <summary>What the rows are, in the count text («scenarioer», «krav» …).</summary>
+    [Parameter] public string Noun { get; set; } = "";
+    [Parameter] public string TestId { get; set; } = "show-more";
+    /// <summary>Say «Alle N vises» once every row is shown.</summary>
+    [Parameter] public bool ShowAllShown { get; set; }
+
+    private bool _busy;
+    private string _announce = "";
+
+    private int Remaining => Total is { } t ? Math.Max(0, t - Shown) : Step;
+    private int Next => Math.Min(Step, Remaining);
+    private string ButtonText => Total is null ? "Vis flere" : $"Vis {Next} flere";
+    private string CountText => Total is { } t ? $"Viser {Math.Min(Shown, t)} av {t}{(Noun.Length > 0 ? " " + Noun : "")}" : $"Viser {Shown}{(Noun.Length > 0 ? " " + Noun : "")}";
+
+    private async Task MoreAsync()
+    {
+        if (_busy) return;
+        var before = Shown;
+        var task = OnMore.InvokeAsync();
+        if (!task.IsCompleted)
+        {
+            _busy = true;
+            StateHasChanged();
+            try { await task; }
+            finally { _busy = false; }
+        }
+        else await task;
+        _announce = Error is null ? $"{Math.Max(0, Shown - before)} flere vises." : "";
+    }
+}

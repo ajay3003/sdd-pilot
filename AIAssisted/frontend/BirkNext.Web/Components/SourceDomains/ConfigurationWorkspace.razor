@@ -111,7 +111,7 @@
                         </tbody>
                     </table>
                 </div>
-                @if (rows.Count > _limit) { <button type="button" class="btn-secondary" data-testid="sd-config-more" @onclick="() => _limit += 300">Show more (@(rows.Count - _limit) remaining)</button> }
+                <ShowMore Shown="@Math.Min(_limit, rows.Count)" Total="@rows.Count" Step="300" OnMore="() => _limit += 300" TestId="sd-config-more" />
             </section>
         }
         else if (Tab == "Files")

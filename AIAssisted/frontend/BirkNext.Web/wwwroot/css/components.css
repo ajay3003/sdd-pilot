@@ -1511,3 +1511,8 @@ button.is-busy { cursor: progress; }
 @media (prefers-reduced-motion: reduce) {
     .loading-spinner, .loading-skeleton-line { animation-duration: 0s; animation-iteration-count: 1; }
 }
+
+/* Progressive results (ShowMore, 2026-11-26): count and button on one line; the spinner sits inside the button (no width jump). */
+.sm-more { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; margin: 0.6rem 0 0.2rem; }
+.sm-button { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 8.5rem; justify-content: center; }
+.sm-error { color: var(--clr-danger, #b42318); font-size: 0.85rem; }

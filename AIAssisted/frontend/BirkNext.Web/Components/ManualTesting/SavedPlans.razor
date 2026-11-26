@@ -106,7 +106,7 @@
                 </li>
             }
         </ul>
-        @if (plans.Count > _limit) { <button type="button" class="msb-link" @onclick="() => _limit += 10" data-testid="mt-plans-more">Vis flere (@(plans.Count - _limit))</button> }
+        <ShowMore Shown="@Math.Min(_limit, plans.Count)" Total="@plans.Count" Step="10" Noun="testplaner" OnMore="() => _limit += 10" TestId="mt-plans-more" />
     }
     @if (_adding is { } addId && Api is not null)
     {

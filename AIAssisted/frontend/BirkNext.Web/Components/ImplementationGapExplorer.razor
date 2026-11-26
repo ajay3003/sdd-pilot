@@ -242,10 +242,7 @@
                     </li>
                 }
             </ul>
-            @if (Findings(e).Count > _findingLimit)
-            {
-                <button type="button" class="btn-secondary" @onclick="() => _findingLimit += 25" data-testid="ig-findings-more">Show more findings</button>
-            }
+            <ShowMore Shown="@Math.Min(_findingLimit, Findings(e).Count)" Total="@Findings(e).Count" Step="25" OnMore="() => _findingLimit += 25" TestId="ig-findings-more" />
             <div class="ig-actions">
                 <button type="button" class="btn-secondary" disabled="@_busy" @onclick="ReevaluateAsync" data-testid="ig-reevaluate">
                     Re-evaluate with recorded test executions (@ExecutionCount)

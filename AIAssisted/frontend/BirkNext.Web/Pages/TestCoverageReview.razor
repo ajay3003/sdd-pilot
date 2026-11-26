@@ -298,7 +298,7 @@
                                 </details>
                             </article>
                         }
-                        @if (journeys.Count > _journeyLimit) { <button type="button" class="btn-secondary" @onclick="() => _journeyLimit += 10">Show more journeys</button> }
+                        <ShowMore Shown="@Math.Min(_journeyLimit, journeys.Count)" Total="@journeys.Count" Step="10" OnMore="() => _journeyLimit += 10" TestId="tcr-journeys-more" />
                         break;
                     case "components":
                         var dims = r.Components.SelectMany(c => c.Dimensions).Where(d => d.Status != DimensionStatus.NotAssessed || _showNotAssessed).Select(d => d.Dimension).Distinct().ToList();
@@ -390,7 +390,7 @@
                                 </details>
                             </article>
                         }
-                        @if (behaviors.Count > _behaviorLimit) { <button type="button" class="btn-secondary" @onclick="() => _behaviorLimit += 25">Show more</button> }
+                        <ShowMore Shown="@Math.Min(_behaviorLimit, behaviors.Count)" Total="@behaviors.Count" Step="25" OnMore="() => _behaviorLimit += 25" TestId="tcr-behaviors-more" />
                         break;
                     case "duplicates":
                         <p class="tco-muted">QA tests that developer automation may already cover. BirkNext never removes a test; the test lead decides.</p>
