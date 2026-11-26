@@ -326,7 +326,9 @@ public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources,
         }
         var snapshotKey = primary?.Id.ToString() ?? "";
         var final = D.Finalize(projectKey, snapshotKey, candidates, links, scenarioLinks);
-        if (candidates.Count > D.MaxCandidates) limitations.Add($"Only the first {D.MaxCandidates} candidates are kept.");
+        if (candidates.Count > D.MaxCandidates && D.DroppedByCap(projectKey, candidates) is { Count: > 0 } dropped)
+            limitations.Add($"Only {D.MaxCandidates} candidates are kept (specification and documented tests first); not kept: "
+                + string.Join(", ", dropped.OrderBy(d => D.CapPriority(d.Key)).Select(d => $"{d.Value} {d.Key}")) + ".");
         var fingerprint = E.Sha(string.Join("\n", final.Select(c => c.CandidateId + ":" + c.Fingerprint)));
         // The selection it was computed for is part of its identity: two modules with the same scenarios are still two results.
         var selectionScope = DiscoveryScope.Of(request.Workspace);

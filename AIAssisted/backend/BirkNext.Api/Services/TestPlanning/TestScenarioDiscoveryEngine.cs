@@ -658,6 +658,25 @@ public static class TestScenarioDiscoveryEngine
         });
     }
 
+    /// <summary>
+    /// Which candidates the cap (<see cref="MaxCandidates"/>) keeps first (2026-11-26): before, it kept the first ones in provider order, so what
+    /// was dropped depended on the order providers ran. Now the source's own scenarios (specification ACs, documented TEST-E tests) come first,
+    /// then guide and journey flows, then the derived technical ones. Stable within a rank (OrderBy is stable), so the order inside a
+    /// capability is unchanged.
+    /// </summary>
+    public static int CapPriority(string capabilityId) => capabilityId switch
+    {
+        Specification => 0, TestSpecification => 1, SystemGuide => 2, IntegrationJourneys => 3, UiSource => 4, ApiContract => 5, ExistingTests => 6, DeveloperTests => 7,
+        _ => 8,
+    };
+
+    /// <summary>What the cap dropped, per capability (for the limitation text): the merged candidates beyond <see cref="MaxCandidates"/>.</summary>
+    public static IReadOnlyDictionary<string, int> DroppedByCap(string projectKey, IEnumerable<DiscoveredScenario> candidates)
+    {
+        var all = candidates.Where(c => c.ProjectKey == projectKey).DistinctBy(c => c.CandidateId).OrderBy(c => CapPriority(c.CapabilityId)).ToList();
+        return all.Skip(MaxCandidates).GroupBy(c => c.CapabilityId).ToDictionary(g => g.Key, g => g.Count());
+    }
+
     public static List<DiscoveredScenario> Finalize(string projectKey, string snapshotKey, IEnumerable<DiscoveredScenario> candidates, IEnumerable<RequirementTestLink> links,
         IEnumerable<ScenarioTestLink>? scenarioLinks = null)
     {
@@ -666,7 +685,7 @@ public static class TestScenarioDiscoveryEngine
             Evidence = [.. a.Evidence.Concat(b.Evidence).DistinctBy(e => (e.Kind, e.Reference))],
             RequirementIds = [.. a.RequirementIds.Concat(b.RequirementIds).Distinct(StringComparer.OrdinalIgnoreCase)],
             ScopeKeys = [.. a.ScopeKeys.Concat(b.ScopeKeys).Distinct(StringComparer.Ordinal)],
-        })).Take(MaxCandidates).Select(c => c with { SnapshotKey = c.SnapshotKey.Length > 0 ? c.SnapshotKey : snapshotKey }).ToList();
+        })).OrderBy(c => CapPriority(c.CapabilityId)).Take(MaxCandidates).Select(c => c with { SnapshotKey = c.SnapshotKey.Length > 0 ? c.SnapshotKey : snapshotKey }).ToList();
         // Two scenarios of one file with the same situation (different outcomes) keep distinct identities, in their order.
         // They are told apart by their expected result (never by position, which shifts when one is removed); only identical twins get an ordinal.
         merged = [.. merged.GroupBy(c => c.SourceIdentity, StringComparer.Ordinal).SelectMany(g => g.Count() == 1 || g.Key.Length == 0 ? g
