@@ -1071,3 +1071,10 @@ a.mto-kpi:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 
 .mtw-plan-pop-row { display: flex; flex-wrap: wrap; gap: .2rem .6rem; align-items: baseline; font-size: .84rem; }
 .mtw-plan-pop-row.is-archived { opacity: .8; }
 .mtg-plan-summary { white-space: nowrap; }
+
+/* «Uavhengig test» as test preparation (2026-11-26): numbered actions, each with its expected results; no green «dekket». */
+.mtp-prep-steps { margin: .4rem 0 .3rem; padding-left: 1.3rem; display: grid; gap: .45rem; }
+.mtp-prep-step { display: grid; gap: .2rem; }
+.mtp-prep-action { font-weight: 600; }
+.mtp-prep-expected { display: flex; flex-wrap: wrap; gap: .2rem .45rem; align-items: baseline; padding-left: .2rem; font-size: .9rem; }
+.mtp-obj-cov.is-mentioned, .mtp-obj-cov.is-not-mentioned { font-size: .76rem; color: var(--clr-text-muted, #57606a); border: 1px solid var(--msb-border); border-radius: 999px; padding: 0 .45rem; }

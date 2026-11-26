@@ -375,7 +375,8 @@
                                         @if (storyCompare && ogStory.Title != nbStory.Title) { <span class="mtp-us-original-title" data-testid="mtp-story-title-original"><span class="mtp-lang-tag">Original</span>@ogStory.Title</span> }
                                         @if (objectives.Count > 0)
                                         {
-                                            <span class="mtw-chip msb-tone-@(objectives.All(o => o.Covered) ? "ok" : "warn")" title="Testmål fra «Uavhengig test» som ser ut til å finnes i planens testtilfeller (et hint)." data-testid="mtp-story-coverage">@objectives.Count(o => o.Covered)/@objectives.Count testmål</span>
+                                            var expectations = objectives.Where(o => o.Objective.Kind == StoryObjectiveKind.Verification).ToList();
+                                            <span class="mtw-chip msb-tone-muted" title="Forventede resultater fra «Uavhengig test» som er nevnt i planens testtilfeller (ordtreff — et hint, ikke utviklertestdekning)." data-testid="mtp-story-coverage">@expectations.Count(o => o.Covered)/@expectations.Count forventede resultater nevnt i testtilfeller</span>
                                         }
                                     </div>
                                     @if (storyCompare)
@@ -425,19 +426,27 @@
                                                         </div>
                                                     }
                                                     else { <p class="mtp-quote">@independent</p> }
-                                                    <ul class="mtp-objectives">
-                                                        @foreach (var oc in objectives)
+                                                    @* 2026-11-26: test preparation, not coverage — actions with their expected results in source order. «Nevnt i et testtilfelle» is a
+                                                       word match against this plan's manual cases (a hint); developer-test coverage is per acceptance scenario, never here. *@
+                                                    <ol class="mtp-prep-steps" data-testid="mtp-prep-steps">
+                                                        @foreach (var step in P.PreparationSteps(objectives))
                                                         {
-                                                            <li class="mtp-objective" data-covered="@(oc.Covered ? "true" : "false")" data-testid="mtp-objective"
-                                                                title="@(oc.Covered ? "Ser ut til å dekkes av: " + string.Join(", ", oc.CaseTitles.Take(3)) : "Ikke funnet i planens testtilfeller")">
-                                                                <span class="tdp-mark" aria-hidden="true">@(oc.Covered ? "✓" : "○")</span>
-                                                                <span class="mtp-obj-text">@oc.Objective.Text</span>
-                                                                @if (oc.Objective.NeedsReview) { <span class="msb-tag" title="Delt opp av BirkNext — sjekk mot originalteksten.">tolket</span> }
-                                                                @if (oc.Covered) { <span class="mtp-obj-cov is-ok" data-testid="mtp-objective-covered">dekket</span> }
-                                                                else { <span class="mtp-obj-cov is-gap" data-testid="mtp-objective-gap">mangler</span> }
+                                                            <li class="mtp-prep-step" data-testid="mtp-prep-step">
+                                                                <span class="mtp-prep-action" data-testid="mtp-prep-action">@(step.Action ?? "Ingen handling oppgitt i kilden")</span>@if (step.ActionInterpreted) { <span class="msb-tag" title="Tolket av BirkNext fra originalsetningen: «@step.ActionSource»">tolket av BirkNext</span> }
+                                                                @foreach (var oc in step.Expected)
+                                                                {
+                                                                    <span class="mtp-prep-expected" data-testid="mtp-objective" data-covered="@(oc.Covered ? "true" : "false")"
+                                                                          title="@(oc.Covered ? "Nevnt i: " + string.Join(", ", oc.CaseTitles.Take(3)) : "Ikke nevnt i planens testtilfeller")">
+                                                                        <span class="mtp-ctx-label">Forventet</span> <span class="mtp-obj-text">@oc.Objective.Text</span>
+                                                                        @if (oc.Objective.NeedsReview) { <span class="msb-tag" title="Tolket av BirkNext fra originalsetningen: «@oc.Objective.Source»">tolket av BirkNext</span> }
+                                                                        @if (oc.Covered) { <span class="mtp-obj-cov is-mentioned" data-testid="mtp-objective-covered">Nevnt i et testtilfelle</span> }
+                                                                        else { <span class="mtp-obj-cov is-not-mentioned" data-testid="mtp-objective-gap">Ikke nevnt i planens testtilfeller</span> }
+                                                                    </span>
+                                                                }
                                                             </li>
                                                         }
-                                                    </ul>
+                                                    </ol>
+                                                    <p class="mt-muted msb-small" data-testid="mtp-prep-note">Dette er testforberedelse, ikke utviklertestdekning. Utviklertester vurderes per akseptansescenario («Hva er allerede kontrollert?»).</p>
                                                 </div>
                                             }
                                         </div>

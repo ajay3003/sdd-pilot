@@ -388,7 +388,7 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         cut.Find($"[data-testid=mtd-story][data-story='{Us1.Key}']").Click();
         cut.Find("[data-testid=mtd-story-toggle]").Click();
 
-        cut.FindAll("[data-testid=mtd-objective-state]").Select(e => e.TextContent).Should().OnlyContain(t => t == "Dekket" || t == "Ikke dekket ennå");
+        cut.FindAll("[data-testid=mtd-objective-state]").Select(e => e.TextContent).Should().OnlyContain(t => t == "Nevnt i et scenario" || t == "Ikke nevnt i scenarioene", "a word match is a mention, never «dekket» (2026-11-26)");
         cut.FindAll("[data-testid=mtd-story-objective]").Should().OnlyContain(li => !li.TextContent.TrimStart().StartsWith("?"));
         W.Mark(Tri.Unknown).Should().NotBe("?");
         W.StateText(Tri.Unknown).Should().Be("Ikke vurdert");

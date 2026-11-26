@@ -288,13 +288,14 @@ public sealed partial class ManualTestingPlanTests
         cut.Find("[data-testid=mtp-story-toggle]").Click();
 
         var rows = cut.FindAll("[data-testid=mtp-objective]");
-        rows.Should().HaveCount(7, "three conditions and four verifications");
+        rows.Should().HaveCount(4, "four expected results; the three conditions are actions to perform, never coverage rows (2026-11-26)");
+        cut.FindAll("[data-testid=mtp-prep-action]").Count.Should().BeGreaterThanOrEqualTo(3);
         var covered = rows.Where(r => r.GetAttribute("data-covered") == "true").Select(r => r.QuerySelector(".mtp-obj-text")!.TextContent).ToList();
         covered.Should().Contain("the stored outcome").And.Contain("the rejection reasons");
         covered.Should().NotContain("the flags", "an excluded case covers nothing");
         rows.Single(r => r.TextContent.Contains("the rejection reasons")).GetAttribute("title").Should().Contain("Reject an invalid report", "the covering cases are named on demand (tooltip)");
-        cut.Find("[data-testid=mtp-story-coverage]").TextContent.Should().MatchRegex(@"^\d/7 testmål$");
-        rows.Where(r => r.TextContent.Contains("tolket")).Should().NotBeEmpty("split conditions are marked as interpretation");
+        cut.Find("[data-testid=mtp-story-coverage]").TextContent.Should().MatchRegex(@"^\d/4 forventede resultater nevnt i testtilfeller$");
+        cut.FindAll("[data-testid=mtp-prep-step]").Where(r => r.TextContent.Contains("tolket")).Should().NotBeEmpty("split conditions are marked as interpretation");
     }
 
     // ── Quality guidance ──────────────────────────────────────────────────────────────────────────────────────

@@ -524,6 +524,9 @@ public static partial class StoryInterpretation
     [System.Text.RegularExpressions.GeneratedRegex(@"^(?:\w+\s+)?(?<verb>submit|send|create|post|publish|run|use|enter|search|open|request|deliver|upload)\s+(?<mods>(?:[\w-]+,\s+)*[\w-]+\s+(?:and|or)\s+[\w-]+)\s+(?<noun>[\w-]+)(?<rest>.*?)(?:\s+and\s*)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
     private static partial System.Text.RegularExpressions.Regex ConditionList();
 
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(?:then\s+|first\s+|next\s+|finally\s+|and\s+)?(?:submit|send|create|post|publish|run|use|enter|search|open|request|deliver|upload|register|add|update|delete|remove|wait|allow|trigger|start|stop|restart|resubmit|import|log\s+in|sign\s+in|navigate|click|select|fill|save|choose|change)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex ActionSentence();
+
     /// <summary>Story ids the description links to ("[US-B1, US-B2]"). Never the story's own id: US1 is not an alias of US-B1.</summary>
     public static IReadOnlyList<string> ReferencedStories(string? description) =>
         description is null ? [] : [.. ReferenceBlock().Matches(description).SelectMany(m => m.Groups[1].Value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)).Distinct(StringComparer.Ordinal)];
@@ -556,16 +559,21 @@ public static partial class StoryInterpretation
                 foreach (var item in items)
                     result.Add(new StoryTestObjective(item, StoryObjectiveKind.Verification, raw.Trim(), NeedsReview: items.Count == 1 && item.Contains(" and ", StringComparison.Ordinal)));
             }
+            // 2026-11-26: a sentence without «confirm/verify …» that starts with an action verb is a step to perform (Condition), not an expectation:
+            // before, «Then submit the parent Person» was counted as an uncovered expected result.
             else if (!conditions.Success)
-                result.Add(new StoryTestObjective(sentence, StoryObjectiveKind.Verification, raw.Trim(), NeedsReview: true));
+                result.Add(ActionSentence().IsMatch(sentence)
+                    ? new StoryTestObjective(sentence, StoryObjectiveKind.Condition, raw.Trim(), NeedsReview: false)
+                    : new StoryTestObjective(sentence, StoryObjectiveKind.Verification, raw.Trim(), NeedsReview: true));
         }
         return result;
     }
 
-    /// <summary>A comma list ("the stored outcome, the rejection reasons, the flags, and that no … exists") — split at commas only, so an
-    /// "and" inside one item is never split; a leading "that" is dropped.</summary>
+    /// <summary>A comma list ("the stored outcome, the rejection reasons, the flags, and that no … exists") — split at a comma only where a new
+    /// item starts (the/a/an/no/its/their/that/whether/all/each/every, or «and» followed by one), so «a distinct, retryable failure» and
+    /// «…retry cycle, with no manual action taken» stay whole (2026-11-26: they were split into meaningless fragments); a leading "that" is dropped.</summary>
     private static List<string> SplitList(string list) =>
-        [.. System.Text.RegularExpressions.Regex.Split(list.Trim().TrimEnd('.'), @",\s+(?:and\s+)?")
+        [.. System.Text.RegularExpressions.Regex.Split(list.Trim().TrimEnd('.'), @",\s+(?:and\s+)?(?=(?:the|a|an|no|its|their|that|whether|all|each|every)\b)", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
             .Select(x => System.Text.RegularExpressions.Regex.Replace(x.Trim(), @"^(?:and\s+)?(?:that\s+)?", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
             .Where(x => x.Length > 0)];
 }

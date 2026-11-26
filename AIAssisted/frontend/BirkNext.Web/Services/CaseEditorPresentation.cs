@@ -114,6 +114,28 @@ public static partial class PlanPreparePresentation
         return hints;
     }
 
+    /// <summary>
+    /// «Uavhengig test» as test preparation (2026-11-26): the actions to perform, each with the expected results the source states after it, in
+    /// source order. Expected results before the first action (or without any action) form a step with no action. Only an expected result can be
+    /// «nevnt i et testtilfelle» (the literal word match against manual cases) — an action is never a gap, and nothing here is developer-test coverage.
+    /// </summary>
+    public sealed record PreparationStep(string? Action, IReadOnlyList<ObjectiveCoverage> Expected, bool ActionInterpreted = false, string? ActionSource = null);
+
+    public static IReadOnlyList<PreparationStep> PreparationSteps(IReadOnlyList<ObjectiveCoverage> objectives)
+    {
+        var steps = new List<PreparationStep>();
+        string? action = null; StoryTestObjective? actionObjective = null;
+        var expected = new List<ObjectiveCoverage>();
+        void Flush() { if (action is not null || expected.Count > 0) steps.Add(new(action, [.. expected], actionObjective?.NeedsReview == true, actionObjective?.Source)); action = null; actionObjective = null; expected = []; }
+        foreach (var o in objectives)
+        {
+            if (o.Objective.Kind == StoryObjectiveKind.Condition) { Flush(); action = o.Objective.Text; actionObjective = o.Objective; }
+            else expected.Add(o);
+        }
+        Flush();
+        return steps;
+    }
+
     /// <summary>One objective of the user story's Independent Test and the plan's cases that appear to address it.</summary>
     public sealed record ObjectiveCoverage(StoryTestObjective Objective, IReadOnlyList<string> CaseTitles)
     {

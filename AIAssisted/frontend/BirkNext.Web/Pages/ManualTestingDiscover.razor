@@ -315,14 +315,21 @@
                                             <span class="mtp-ctx-label">Slik testes brukerhistorien alene</span>
                                             @if (objectives.Count > 0)
                                             {
-                                                <ul class="mtw-objectives" title="Treff på ord i scenarioene — et hint, ikke en vurdering.">
-                                                    @foreach (var o in objectives)
+                                                <ol class="mtp-prep-steps" data-testid="mtd-prep-steps" title="Treff på ord i scenarioene — et hint, ikke en vurdering og ikke utviklertestdekning.">
+                                                    @foreach (var step in BirkNext.Web.Services.PlanPreparePresentation.PreparationSteps(objectives))
                                                     {
-                                                        <li data-covered="@(o.Covered ? "true" : "false")" data-testid="mtd-story-objective"
-                                                            title="@(o.Covered ? "Ser ut til å dekkes av " + string.Join(", ", o.CaseTitles.Take(3)) : "Ingen scenario ser ut til å dekke dette")">
-                                                            <span>@o.Objective.Text</span> <span class="msb-status msb-tone-@(o.Covered ? "ok" : "muted")" data-testid="mtd-objective-state">@(o.Covered ? "Dekket" : "Ikke dekket ennå")</span></li>
+                                                        <li class="mtp-prep-step">
+                                                            <span class="mtp-prep-action">@(step.Action ?? "Ingen handling oppgitt i kilden")</span>
+                                                            @foreach (var o in step.Expected)
+                                                            {
+                                                                <span class="mtp-prep-expected" data-covered="@(o.Covered ? "true" : "false")" data-testid="mtd-story-objective"
+                                                                      title="@(o.Covered ? "Nevnt i " + string.Join(", ", o.CaseTitles.Take(3)) : "Ikke nevnt i noe scenario")">
+                                                                    <span class="mtp-ctx-label">Forventet</span> <span>@o.Objective.Text</span>
+                                                                    <span class="msb-status msb-tone-muted" data-testid="mtd-objective-state">@(o.Covered ? "Nevnt i et scenario" : "Ikke nevnt i scenarioene")</span></span>
+                                                            }
+                                                        </li>
                                                     }
-                                                </ul>
+                                                </ol>
                                             }
                                             else { <p class="mt-muted msb-small">@independent</p> }
                                         </div>
