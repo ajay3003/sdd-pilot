@@ -254,3 +254,55 @@ public static class ManualRunRules
         r.Steps.Count(s => s.Outcome == ManualStepOutcome.Blocked), r.Steps.Count(s => s.Outcome == ManualStepOutcome.NotRun), r.Steps.Count(s => s.Outcome is null),
         r.Defects.Count, r.Defects.Count(d => d.Status != ManualDefectStatus.Closed), r.Evidence.Count, r.RetestOf);
 }
+
+// ── Sprint-based scenario execution (2026-11-26) ──────────────────────────────────────────────────────────────────────────────────────────
+// Execution happens in Testplaner, per scenario OCCURRENCE in one plan (plan id + the scenario's key in that plan); never per case or step, and
+// never one global result on a scenario. Test cases are optional instructions. Each recorded result is a stored event (history kept); the current
+// status is the latest event; viewing writes nothing. Duplicating a plan copies its suites and scenarios with new ids and NO results.
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ScenarioExecutionStatus { NotRun, Passed, Failed, Blocked }
+
+public sealed record ScenarioExecutionEvent(Guid Id, ScenarioExecutionStatus Status, string? Comment, string? DefectReference, string By, DateTimeOffset At);
+
+/// <summary>One scenario of a plan to execute: its key in the plan (scenario:{id} or case:{id} for a hand-written case without a scenario), what to
+/// test, the optional cases, and its own execution status and history in THIS plan.</summary>
+public sealed record ScenarioOccurrence
+{
+    public string Key { get; init; } = "";
+    public string? ScenarioId { get; init; }
+    public string Title { get; init; } = "";
+    public string? StoryId { get; init; }
+    public int? NumberInStory { get; init; }
+    public string? ExpectedBehaviour { get; init; }
+    public string? SuiteId { get; init; }
+    public string? SuitePath { get; init; }
+    public List<string> CaseIds { get; init; } = [];
+    /// <summary>Planned without a prepared case (the scenario's source text is the instruction).</summary>
+    public bool ScenarioOnly { get; init; }
+    public ScenarioExecutionStatus Status { get; init; }
+    public ScenarioExecutionEvent? Latest { get; init; }
+    public List<ScenarioExecutionEvent> History { get; init; } = [];
+}
+
+public sealed record PlanExecutionView
+{
+    public Guid PlanId { get; init; }
+    public string PlanName { get; init; } = "";
+    public string? SprintLabel { get; init; }
+    public bool Archived { get; init; }
+    public List<ScenarioOccurrence> Occurrences { get; init; } = [];
+    public int Total => Occurrences.Count;
+    public int NotRun => Occurrences.Count(o => o.Status == ScenarioExecutionStatus.NotRun);
+    public int Passed => Occurrences.Count(o => o.Status == ScenarioExecutionStatus.Passed);
+    public int Failed => Occurrences.Count(o => o.Status == ScenarioExecutionStatus.Failed);
+    public int Blocked => Occurrences.Count(o => o.Status == ScenarioExecutionStatus.Blocked);
+}
+
+/// <summary>Record one scenario result in a plan. <see cref="ExpectedLatestEventId"/> is the latest event the tester saw (null = none): a newer
+/// result recorded meanwhile is a conflict (409), never overwritten silently.</summary>
+public sealed record RecordScenarioResultRequest(string OccurrenceKey, ScenarioExecutionStatus Status, string? Comment, string? DefectReference, Guid? ExpectedLatestEventId);
+
+public sealed record DuplicatePlanRequest(string PlanName, string? SprintLabel = null, string? CreationRequestId = null);
+
+public sealed record DuplicatePlanPreview(Guid SourcePlanId, string SourcePlanName, int Suites, int Scenarios, int Cases, int ScenarioOnly, int ApprovedCases);

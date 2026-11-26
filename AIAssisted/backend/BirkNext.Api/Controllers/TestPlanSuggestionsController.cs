@@ -53,6 +53,28 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     public Task<ActionResult> Restore(Guid id, [FromBody] RestoreTestPlanRevisionRequest request, CancellationToken ct) =>
         Run(async () => Ok(await service.RestoreRevisionAsync(id, request, Actor, ct)));
 
+    // ── Sprint-based scenario execution and plan duplication (2026-11-26) ──
+
+    /// <summary>The plan's scenarios with their execution status and history in THIS plan (read-only).</summary>
+    [HttpGet("drafts/{id:guid}/execution")]
+    public Task<ActionResult> Execution(Guid id, CancellationToken ct) => Run(async () => Ok(await service.ExecutionAsync(id, ct)));
+
+    /// <summary>Records one scenario result in the plan (a new event; 409 when a newer result was recorded meanwhile).</summary>
+    [HttpPost("drafts/{id:guid}/execution")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> RecordResult(Guid id, [FromBody] RecordScenarioResultRequest request, CancellationToken ct) =>
+        Run(async () => Ok(await service.RecordResultAsync(id, request, Actor, ct)));
+
+    /// <summary>What «Kopier testplan» would copy (read-only).</summary>
+    [HttpGet("drafts/{id:guid}/duplicate-preview")]
+    public Task<ActionResult> DuplicatePreview(Guid id, CancellationToken ct) => Run(async () => Ok(await service.DuplicatePreviewAsync(id, ct)));
+
+    /// <summary>Creates a NEW plan from this one (suites and scenarios copied with new ids; no results, approvals or remote mappings).</summary>
+    [HttpPost("drafts/{id:guid}/duplicate")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> Duplicate(Guid id, [FromBody] DuplicatePlanRequest request, CancellationToken ct) =>
+        Run(async () => Ok(await service.DuplicateAsync(id, request, Actor, ct)));
+
     /// <summary>Archives a plan (read-only, listed apart; content, revisions and snapshots kept).</summary>
     [HttpPost("drafts/{id:guid}/archive")]
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]

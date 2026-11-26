@@ -728,6 +728,69 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task Sprint_12_results_stay_when_copied_to_Sprint_13_which_starts_not_run_and_each_sprint_keeps_its_own_history()
+    {
+        await using var db = Context();
+        var x = Services(db);
+        var ac1 = InSpec("a1", SkoleSpec, "US1", "f1") with { Title = "Barn registreres senere", Type = ScenarioCandidateType.BusinessE2E, Area = "Rapportering" };
+        var ac2 = InSpec("a2", SkoleSpec, "US1", "f2") with { Title = "Duplikat håndteres", Type = ScenarioCandidateType.Integration, Area = "Mottak" };
+        var ac3 = InSpec("a3", SkoleSpec, "US2", "f3") with { Title = "Periodelås", Type = ScenarioCandidateType.BusinessFunctional, Area = "Periode" };
+        _discoveries.Store(Selected("d-sprint", DateTimeOffset.UtcNow, SkoleSpec, ac1, ac2, ac3));
+
+        // Sprint 12: AC1 and AC2 as prepared cases (AC1 approved), AC3 planned without a case; an empty suite.
+        var s12 = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-sprint", CandidateIds = ["a1", "a2"],
+            PlanName = "Skolenærvær – Sprint 12", Structure = PlanStructureTemplates.LevelArea, CreationRequestId = "s12" }, "anna", default);
+        s12 = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-sprint", CandidateIds = ["a3"], DraftId = s12.Id,
+            BaseRevision = s12.Revision, ScenarioOnly = true }, "anna", default);
+        s12 = await x.Plans.SaveAsync(s12.Id, Human(s12, (_, part) => part) with { Suites = [.. s12.Suites, new TestSuiteDraft("suite:r:ytelse", "Ytelse", "reviewer", null) { Order = 9 }] }, "anna", default);
+        var a1Case = s12.Cases.Single(c => c.ParentScenario == "a1").Source.ScenarioId;
+        s12 = await x.Plans.ReviewAsync(s12.Id, new ReviewTestCaseRequest(s12.Revision, a1Case, TestCaseReviewState.Accepted, null), "lead", default);
+
+        var view = await x.Plans.ExecutionAsync(s12.Id, default);
+        view.Occurrences.Select(o => (o.Key, o.Status, o.ScenarioOnly)).Should().BeEquivalentTo([
+            ("scenario:a1", ScenarioExecutionStatus.NotRun, false), ("scenario:a2", ScenarioExecutionStatus.NotRun, false), ("scenario:a3", ScenarioExecutionStatus.NotRun, true)]);
+        var revisionBefore = s12.Revision;
+
+        // Results are per scenario, with or without a case; a stale write is a conflict, never an overwrite.
+        await x.Plans.RecordResultAsync(s12.Id, new RecordScenarioResultRequest("scenario:a1", ScenarioExecutionStatus.Failed, "Feil kvittering", "BUG-12", null), "tester", default);
+        var latest = (await x.Plans.ExecutionAsync(s12.Id, default)).Occurrences.Single(o => o.Key == "scenario:a1").Latest!.Id;
+        await x.Plans.RecordResultAsync(s12.Id, new RecordScenarioResultRequest("scenario:a1", ScenarioExecutionStatus.Passed, null, null, latest), "tester", default);
+        await x.Plans.RecordResultAsync(s12.Id, new RecordScenarioResultRequest("scenario:a2", ScenarioExecutionStatus.Passed, null, null, null), "tester", default);
+        await x.Plans.RecordResultAsync(s12.Id, new RecordScenarioResultRequest("scenario:a3", ScenarioExecutionStatus.Blocked, "Mangler testdata", null, null), "tester", default);
+        var stale = () => x.Plans.RecordResultAsync(s12.Id, new RecordScenarioResultRequest("scenario:a1", ScenarioExecutionStatus.Blocked, null, null, latest), "other", default);
+        (await stale.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("stale-result");
+        view = await x.Plans.ExecutionAsync(s12.Id, default);
+        (view.Passed, view.Failed, view.Blocked, view.NotRun, view.Total).Should().Be((2, 0, 1, 0, 3));
+        view.Occurrences.Single(o => o.Key == "scenario:a1").History.Select(h => h.Status).Should().Equal(ScenarioExecutionStatus.Passed, ScenarioExecutionStatus.Failed);
+        (await x.Plans.DraftAsync(s12.Id, default)).Revision.Should().Be(revisionBefore, "recording a result never writes a plan revision");
+
+        // «Kopier testplan»: new plan, same structure and scenarios, new ids, every scenario «Ikke kjørt», no approval carried over.
+        var preview = await x.Plans.DuplicatePreviewAsync(s12.Id, default);
+        (preview.Scenarios, preview.ScenarioOnly, preview.Cases, preview.ApprovedCases).Should().Be((3, 1, 2, 1));
+        var s13 = await x.Plans.DuplicateAsync(s12.Id, new DuplicatePlanRequest("Skolenærvær – Sprint 13", "Sprint 13", "s13"), "anna", default);
+        s13.Id.Should().NotBe(s12.Id);
+        s13.Revision.Should().Be(1);
+        s13.Suites.Select(su => su.Id).Should().NotIntersectWith(s12.Suites.Select(su => su.Id), "new suite ids");
+        PlanStructure.Flatten(s13.Suites).Select(t => (t.Suite.Name, t.Depth)).Should().Equal(PlanStructure.Flatten(s12.Suites).Select(t => (t.Suite.Name, t.Depth)), "the same tree, empty «Ytelse» included");
+        s13.Cases.Should().OnlyContain(c => c.Review != TestCaseReviewState.Accepted && c.ReviewHistory.Count == 0, "an approval is never copied as a new approval");
+        s13.PlannedScenarios!.Select(p => p.ScenarioId).Should().Equal("a3");
+        var v13 = await x.Plans.ExecutionAsync(s13.Id, default);
+        v13.Occurrences.Should().HaveCount(3).And.OnlyContain(o => o.Status == ScenarioExecutionStatus.NotRun && o.History.Count == 0, "results are never copied");
+
+        // Independent sprints: AC1 fails in Sprint 13 while it stays passed in Sprint 12.
+        await x.Plans.RecordResultAsync(s13.Id, new RecordScenarioResultRequest("scenario:a1", ScenarioExecutionStatus.Failed, null, null, null), "tester", default);
+        (await x.Plans.ExecutionAsync(s12.Id, default)).Occurrences.Single(o => o.Key == "scenario:a1").Status.Should().Be(ScenarioExecutionStatus.Passed);
+        (await x.Plans.ExecutionAsync(s13.Id, default)).Occurrences.Single(o => o.Key == "scenario:a1").Status.Should().Be(ScenarioExecutionStatus.Failed);
+        (await x.Plans.DraftAsync(s12.Id, default)).Cases.Single(c => c.ParentScenario == "a1").Review.Should().Be(TestCaseReviewState.Accepted, "the source plan is unchanged");
+
+        // An archived plan is read-only for results.
+        var s13Now = await x.Plans.DraftAsync(s13.Id, default);
+        await x.Plans.ArchiveAsync(s13.Id, new TestPlanLifecycleRequest(s13Now.Revision), "lead", default);
+        var archived = () => x.Plans.RecordResultAsync(s13.Id, new RecordScenarioResultRequest("scenario:a2", ScenarioExecutionStatus.Passed, null, null, null), "tester", default);
+        (await archived.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("plan-archived");
+    }
+
+    [Fact]
     public async Task A_historical_inspection_can_never_extend_a_plan_or_move_its_basis()
     {
         await using var db = Context();

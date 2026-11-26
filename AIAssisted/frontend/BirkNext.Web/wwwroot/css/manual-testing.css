@@ -1078,3 +1078,17 @@ a.mto-kpi:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 
 .mtp-prep-action { font-weight: 600; }
 .mtp-prep-expected { display: flex; flex-wrap: wrap; gap: .2rem .45rem; align-items: baseline; padding-left: .2rem; font-size: .9rem; }
 .mtp-obj-cov.is-mentioned, .mtp-obj-cov.is-not-mentioned { font-size: .76rem; color: var(--clr-text-muted, #57606a); border: 1px solid var(--msb-border); border-radius: 999px; padding: 0 .45rem; }
+
+/* Testgjennomføring (2026-11-26): scenario-level results inside a plan. */
+.mtx { margin: .5rem 0 .3rem; padding: .7rem .8rem; border: 1px solid var(--msb-border); border-radius: 10px; background: var(--msb-surface); flex-basis: 100%; }
+.mtx-summary { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .8rem; margin-bottom: .5rem; }
+.mtx-bar { display: inline-flex; width: min(16rem, 100%); height: .55rem; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--msb-border) 70%, transparent); }
+.mtx-bar .is-passed { background: #15803d; } .mtx-bar .is-failed { background: #b91c1c; } .mtx-bar .is-blocked { background: #b45309; }
+.mtx-list, .mtx-list ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.mtx-suite { margin-top: .4rem; }
+.mtx-row { border: 1px solid var(--msb-border); border-radius: 8px; }
+.mtx-row-head { display: flex; flex-wrap: wrap; width: 100%; gap: .3rem .6rem; align-items: center; padding: .4rem .55rem; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mtx-row-head:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 1px; }
+.mtx-title { flex: 1 1 18rem; }
+.mtx-detail { padding: .2rem .7rem .7rem; display: grid; gap: .4rem; }
+.mtx-result { border: 0; padding: 0; margin: 0; display: grid; gap: .3rem; }

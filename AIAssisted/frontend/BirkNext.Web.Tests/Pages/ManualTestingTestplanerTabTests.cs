@@ -262,4 +262,30 @@ public sealed class ManualTestingTestplanerTabTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=mt-new-plan-template]").TextContent.Should().Contain("Regresjon (egen mal)"));
         cut.Find("[data-testid=mt-new-plan-template]").TextContent.Should().NotContain("Gammel");
     }
+
+    // ── «Kopier testplan» (2026-11-26) ─────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Copying_a_plan_previews_what_is_copied_says_results_reset_and_creates_only_on_confirmation()
+    {
+        DuplicatePlanRequest? sent = null;
+        _plans.Setup(x => x.DuplicatePreviewAsync(PlanId, It.IsAny<CancellationToken>())).ReturnsAsync((new DuplicatePlanPreview(PlanId, "Library – test plan", 4, 3, 2, 1, 1), (string?)null));
+        _plans.Setup(x => x.DuplicateAsync(PlanId, It.IsAny<DuplicatePlanRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((Guid _, DuplicatePlanRequest r, CancellationToken _) => sent = r)
+            .ReturnsAsync((new TestPlanDraft { Id = NewId, PlanName = "Sprint 13" }, (string?)null));
+        Setup();
+        var cut = Open();
+
+        cut.Find("[data-testid=mt-plan-copy]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mt-plan-copy-preview]").TextContent.Should().Contain("4 testgrupper · 3 scenarioer (1 uten testtilfelle) · 2 testtilfeller"));
+        cut.Find("[data-testid=mt-plan-copy-reset]").TextContent.Should().Contain("Testresultater kopieres ikke. Alle scenarioer starter som Ikke kjørt.").And.Contain("må godkjennes på nytt");
+        _plans.Verify(x => x.DuplicateAsync(It.IsAny<Guid>(), It.IsAny<DuplicatePlanRequest>(), It.IsAny<CancellationToken>()), Times.Never, "nothing is copied before confirmation");
+
+        cut.Find("[data-testid=mt-plan-copy-name]").Input("Sprint 13");
+        cut.Find("[data-testid=mt-plan-copy-sprint]").Input("Sprint 13");
+        cut.Find("[data-testid=mt-plan-copy-confirm]").Click();
+        cut.WaitForAssertion(() => sent.Should().NotBeNull());
+        (sent!.PlanName, sent.SprintLabel).Should().Be(("Sprint 13", "Sprint 13"));
+        sent.CreationRequestId.Should().NotBeNullOrWhiteSpace("a retry reuses the request id");
+    }
 }

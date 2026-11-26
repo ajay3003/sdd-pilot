@@ -1,0 +1,160 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using M = BirkNext.Web.Services.ManualTestingPresentation
+@using P = BirkNext.Web.Services.PlanPreparePresentation
+
+@* Testgjennomføring (2026-11-26): scenario-level execution INSIDE one test plan. One result per scenario occurrence in this plan (Ikke kjørt,
+   Bestått, Feilet, Blokkert) with an optional comment and defect reference; every saved result is a new event (history kept). Test cases are
+   optional instructions shown read-only — they have no execution of their own, and no step is executed. Viewing writes nothing. *@
+<section class="mtx" aria-label="Testgjennomføring" data-testid="mtx">
+    @if (_view is null)
+    {
+        <p class="mt-muted" role="status" data-testid="mtx-loading">@(_error ?? "Henter testgjennomføringen …")</p>
+        @if (_error is not null) { <button type="button" class="msb-link" @onclick="LoadAsync" data-testid="mtx-retry">Prøv igjen</button> }
+    }
+    else
+    {
+        var v = _view;
+        <div class="mtx-summary" data-testid="mtx-summary">
+            <strong>@v.PlanName</strong>@(v.SprintLabel is { } sl ? $" · {sl}" : "")
+            <span class="mt-muted msb-small" data-testid="mtx-counts">@v.Total scenarioer · @v.Passed bestått · @v.Failed feilet · @v.Blocked blokkert · @v.NotRun ikke kjørt</span>
+            @if (v.Total > 0)
+            {
+                <span class="mtx-bar" role="img" aria-label="@($"{v.Passed} bestått, {v.Failed} feilet, {v.Blocked} blokkert, {v.NotRun} ikke kjørt av {v.Total}")">
+                    <span class="is-passed" style="width:@Pct(v.Passed, v.Total)%"></span><span class="is-failed" style="width:@Pct(v.Failed, v.Total)%"></span><span class="is-blocked" style="width:@Pct(v.Blocked, v.Total)%"></span>
+                </span>
+                <span class="mt-muted msb-small" data-testid="mtx-executed">Gjennomført: @Pct(v.Passed + v.Failed + v.Blocked, v.Total) %</span>
+            }
+            @if (v.Archived) { <span class="msb-status msb-tone-muted" data-testid="mtx-archived">Arkivert – kun visning</span> }
+        </div>
+        <label class="mtx-filter msb-small">Vis
+            <select class="msb-select" @onchange="e => _statusFilter = Enum.TryParse<ScenarioExecutionStatus>(e.Value?.ToString(), out var st) ? st : null" data-testid="mtx-filter">
+                <option value="">Alle</option>
+                @foreach (var st in new[] { ScenarioExecutionStatus.NotRun, ScenarioExecutionStatus.Failed, ScenarioExecutionStatus.Blocked, ScenarioExecutionStatus.Passed }) { <option value="@st" selected="@(_statusFilter == st)">@Label(st)</option> }
+            </select></label>
+        @if (_notice is { } n) { <p class="mtp-notice" role="status" data-testid="mtx-notice">@n</p> }
+        <ul class="mtx-list">
+            @foreach (var group in v.Occurrences.Where(o => _statusFilter is null || o.Status == _statusFilter).GroupBy(o => o.SuitePath ?? "Uten testgruppe"))
+            {
+                <li class="mtx-suite"><span class="mtp-ctx-label" data-testid="mtx-suite">@group.Key</span>
+                    <ul>
+                        @foreach (var o in group)
+                        {
+                            var occ = o;
+                            var open = _open == occ.Key;
+                            <li class="mtx-row is-@occ.Status.ToString().ToLowerInvariant()" data-testid="mtx-row" data-key="@occ.Key" data-status="@occ.Status">
+                                <button type="button" class="mtx-row-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => Toggle(occ)" data-testid="mtx-row-open">
+                                    <span class="mtx-title">@(occ.StoryId is { } sid && occ.NumberInStory is { } n2 ? $"{sid} · AC {n2} — " : "")@occ.Title</span>
+                                    <span class="msb-status msb-tone-@Tone(occ.Status)" data-testid="mtx-status">@Label(occ.Status)</span>
+                                    @if (occ.Latest is { } last) { <span class="mt-muted msb-small">@last.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · @last.By</span> }
+                                </button>
+                                @if (open)
+                                {
+                                    <div class="mtx-detail" data-testid="mtx-detail">
+                                        <p><strong>Forventet resultat:</strong> @(occ.ExpectedBehaviour ?? "Ikke oppgitt i kilden – avklar før du registrerer et resultat.")</p>
+                                        @if (occ.CaseIds.Count == 0) { <p class="mt-muted msb-small" data-testid="mtx-no-case">Ingen testtilfelle er forberedt. Scenarioet kan likevel gjennomføres ut fra kilden.</p> }
+                                        else
+                                        {
+                                            <p class="msb-small" data-testid="mtx-cases">Tilhørende testtilfeller (instruksjoner, ingen egen gjennomføring):
+                                                @foreach (var cid in occ.CaseIds) { <a href="@($"{M.PlanRoute}?draft={v.PlanId}&case={Uri.EscapeDataString(cid)}")" data-testid="mtx-case">Åpne</a> }</p>
+                                        }
+                                        @if (!v.Archived && CanWrite)
+                                        {
+                                            <fieldset class="mtx-result" data-testid="mtx-result">
+                                                <legend class="mtp-ctx-label">Resultat</legend>
+                                                @foreach (var st in new[] { ScenarioExecutionStatus.Passed, ScenarioExecutionStatus.Failed, ScenarioExecutionStatus.Blocked, ScenarioExecutionStatus.NotRun })
+                                                {
+                                                    var choice = st;
+                                                    <label class="adx-check"><input type="radio" name="@($"mtx-{occ.Key}")" checked="@(_choice == choice)" @onchange="() => _choice = choice" data-testid="mtx-choice" data-status="@choice" /> @Label(choice)</label>
+                                                }
+                                                <label class="mtp-field"><span>Kommentar</span><textarea rows="2" @bind="_comment" @bind:event="oninput" data-testid="mtx-comment"></textarea></label>
+                                                <label class="mtp-field"><span>Feilreferanse</span><input type="text" @bind="_defect" @bind:event="oninput" data-testid="mtx-defect" /></label>
+                                                <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || _choice is null)" @onclick="() => SaveAsync(occ)" data-testid="mtx-save">Lagre resultat</button>
+                                                @if (_saveError is { } se) { <p class="mt-alert msb-small" role="alert" data-testid="mtx-error">@se</p> }
+                                            </fieldset>
+                                        }
+                                        @if (occ.History.Count > 0)
+                                        {
+                                            <details class="mtw-why" data-testid="mtx-history"><summary>Historikk (@occ.History.Count)</summary>
+                                                <ul>@foreach (var h in occ.History) { <li data-testid="mtx-history-item">@h.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · @Label(h.Status) · @h.By@(h.Comment is { } c ? $" · {c}" : "")@(h.DefectReference is { } d ? $" · {d}" : "")</li> }</ul>
+                                            </details>
+                                        }
+                                    </div>
+                                }
+                            </li>
+                        }
+                    </ul>
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Guid PlanId { get; set; }
+    [Parameter] public ITestPlanSuggestionsApiService? Api { get; set; }
+    [Parameter] public bool CanWrite { get; set; }
+
+    private PlanExecutionView? _view;
+    private string? _error, _saveError, _notice, _open;
+    private ScenarioExecutionStatus? _statusFilter, _choice;
+    private string _comment = "", _defect = "";
+    private bool _busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        if (Api is null) { _error = "Tjenesten er ikke tilgjengelig."; return; }
+        var (view, error) = await Api.ExecutionAsync(PlanId);
+        if (view is null) { _error = P.Friendly(error, "Testgjennomføringen kunne ikke hentes."); return; }
+        _view = view;
+    }
+
+    private void Toggle(ScenarioOccurrence o)
+    {
+        _open = _open == o.Key ? null : o.Key;
+        _choice = null; _saveError = null; _comment = ""; _defect = "";
+    }
+
+    /// <summary>Saves one result for this occurrence. A newer result recorded meanwhile is a conflict: the comment is kept and the view reloads.</summary>
+    private async Task SaveAsync(ScenarioOccurrence o)
+    {
+        if (Api is null || _choice is not { } status) return;
+        _busy = true; _saveError = null;
+        try
+        {
+            var (view, error) = await Api.RecordResultAsync(PlanId, new RecordScenarioResultRequest(o.Key, status, _comment, _defect, o.Latest?.Id));
+            if (view is null)
+            {
+                _saveError = P.Friendly(error, "Resultatet kunne ikke lagres.");
+                var (fresh, _) = await Api.ExecutionAsync(PlanId);
+                if (fresh is not null) _view = fresh;
+                return;
+            }
+            _view = view;
+            _notice = $"Lagret: {Label(status)}.";
+            _choice = null; _comment = ""; _defect = "";
+        }
+        finally { _busy = false; }
+    }
+
+    private static int Pct(int part, int total) => total <= 0 ? 0 : (int)Math.Round(100.0 * part / total);
+
+    public static string Label(ScenarioExecutionStatus s) => s switch
+    {
+        ScenarioExecutionStatus.Passed => "Bestått",
+        ScenarioExecutionStatus.Failed => "Feilet",
+        ScenarioExecutionStatus.Blocked => "Blokkert",
+        _ => "Ikke kjørt",
+    };
+
+    private static string Tone(ScenarioExecutionStatus s) => s switch
+    {
+        ScenarioExecutionStatus.Passed => "ok",
+        ScenarioExecutionStatus.Failed => "bad",
+        ScenarioExecutionStatus.Blocked => "warn",
+        _ => "muted",
+    };
+}

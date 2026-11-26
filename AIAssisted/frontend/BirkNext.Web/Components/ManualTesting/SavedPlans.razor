@@ -47,6 +47,8 @@
                     <a class="btn btn-secondary btn-sm" href="@($"{M.PlanRoute}?draft={p.Id}")" data-testid="mt-plan-open">@(_archivedView ? "Vis" : "Åpne")</a>
                     @if (!_archivedView)
                     {
+                        <button type="button" class="msb-link" aria-expanded="@(_executing == p.Id ? "true" : "false")" @onclick="() => _executing = _executing == p.Id ? null : p.Id" data-testid="mt-plan-execute">Testgjennomføring</button>
+                        @if (CanWrite) { <button type="button" class="msb-link" disabled="@_busy" @onclick="() => StartCopyAsync(p)" data-testid="mt-plan-copy">Kopier testplan</button> }
                         <a class="msb-link" href="@M.TransferRoute(p.Id)" data-testid="mt-plan-export">Overfør</a>
                         @if (CanWrite) { <button type="button" class="msb-link" disabled="@_busy" @onclick="() => ArchiveAsync(p)" data-testid="mt-plan-archive">Arkiver</button> }
                     }
@@ -54,6 +56,27 @@
                     {
                         <button type="button" class="msb-link" disabled="@_busy" @onclick="() => UnarchiveAsync(p)" data-testid="mt-plan-unarchive">Gjenopprett</button>
                         <button type="button" class="msb-link msb-danger" disabled="@_busy" @onclick="() => { _deleting = p.Id; _confirmName = string.Empty; }" data-testid="mt-plan-delete">Slett</button>
+                    }
+                    @if (_executing == p.Id && !_archivedView)
+                    {
+                        <PlanExecution PlanId="p.Id" Api="Api" CanWrite="CanWrite" />
+                    }
+                    @if (_copying == p.Id)
+                    {
+                        @* «Kopier testplan» (2026-11-26): a NEW plan with the same suites and scenarios; results, approvals and remote mappings are not copied. *@
+                        <div class="mtp-confirm" role="group" aria-label="Kopier testplan" data-testid="mt-plan-copy-dialog">
+                            <label class="mtp-field"><span>Navn på ny testplan</span>
+                                <input type="text" value="@_copyName" @oninput="e => _copyName = e.Value?.ToString() ?? string.Empty" data-testid="mt-plan-copy-name" /></label>
+                            <label class="mtp-field"><span>Sprint (valgfritt)</span>
+                                <input type="text" value="@_copySprint" @oninput="e => _copySprint = e.Value?.ToString() ?? string.Empty" data-testid="mt-plan-copy-sprint" /></label>
+                            @if (_copyPreview is { } cp)
+                            {
+                                <p class="msb-small" data-testid="mt-plan-copy-preview">Fra «@cp.SourcePlanName»: @cp.Suites testgrupper · @cp.Scenarios scenarioer (@cp.ScenarioOnly uten testtilfelle) · @cp.Cases testtilfeller.</p>
+                                <p class="msb-small msb-tone-warn" data-testid="mt-plan-copy-reset"><strong>Testresultater kopieres ikke. Alle scenarioer starter som Ikke kjørt.</strong>@(cp.ApprovedCases > 0 ? $" {cp.ApprovedCases} godkjente testtilfeller må godkjennes på nytt i den nye planen." : "")</p>
+                            }
+                            <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || _copyName.Trim().Length == 0)" @onclick="() => CopyAsync(p)" data-testid="mt-plan-copy-confirm">Opprett kopi</button>
+                            <button type="button" class="msb-link" @onclick="() => _copying = null" data-testid="mt-plan-copy-cancel">Avbryt</button>
+                        </div>
                     }
                     @if (_deleting == p.Id)
                     {
@@ -80,6 +103,31 @@
     [Parameter] public EventCallback Changed { get; set; }
 
     private bool _archivedView, _busy;
+    private Guid? _executing, _copying;
+    private string _copyName = "", _copySprint = "", _copyRequest = "";
+    private DuplicatePlanPreview? _copyPreview;
+
+    private async Task StartCopyAsync(TestPlanDraftSummary p)
+    {
+        _copying = p.Id; _copyName = p.PlanName + " (kopi)"; _copySprint = ""; _copyPreview = null; _copyRequest = Guid.NewGuid().ToString("N");
+        if (Api is not null) { var (preview, _) = await Api.DuplicatePreviewAsync(p.Id); _copyPreview = preview; }
+    }
+
+    /// <summary>Creates the copy only on explicit confirmation; a retry reuses the request id (never a second copy).</summary>
+    private async Task CopyAsync(TestPlanDraftSummary p)
+    {
+        if (Api is null || _copyName.Trim().Length == 0) return;
+        _busy = true; _error = null;
+        try
+        {
+            var (plan, error) = await Api.DuplicateAsync(p.Id, new DuplicatePlanRequest(_copyName.Trim(), string.IsNullOrWhiteSpace(_copySprint) ? null : _copySprint.Trim(), _copyRequest));
+            if (plan is null) { _error = P.Friendly(error, "Testplanen kunne ikke kopieres."); return; }
+            _copying = null;
+            _message = $"«{plan.PlanName}» er opprettet. Alle scenarioer er Ikke kjørt.";
+            await Changed.InvokeAsync();
+        }
+        finally { _busy = false; }
+    }
     private int _limit = 8;
     private Guid? _deleting;
     private string _confirmName = string.Empty;

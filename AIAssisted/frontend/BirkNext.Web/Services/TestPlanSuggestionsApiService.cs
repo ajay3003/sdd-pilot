@@ -113,6 +113,15 @@ public interface ITestPlanSuggestionsApiService
         Task.FromResult<(PreparedCaseTraceView?, string?)>((null, NotAvailable));
 
     /// <summary>Archives a plan at the revision the tester saw (read-only, listed apart).</summary>
+    // Sprint-based scenario execution and plan duplication (2026-11-26).
+    Task<(PlanExecutionView? View, string? Error)> ExecutionAsync(Guid id, CancellationToken ct = default) =>
+        Task.FromResult<(PlanExecutionView?, string?)>((null, NotAvailable));
+    Task<(PlanExecutionView? View, string? Error)> RecordResultAsync(Guid id, RecordScenarioResultRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(PlanExecutionView?, string?)>((null, NotAvailable));
+    Task<(DuplicatePlanPreview? Preview, string? Error)> DuplicatePreviewAsync(Guid id, CancellationToken ct = default) =>
+        Task.FromResult<(DuplicatePlanPreview?, string?)>((null, NotAvailable));
+    Task<(TestPlanDraft? Plan, string? Error)> DuplicateAsync(Guid id, DuplicatePlanRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanDraft?, string?)>((null, NotAvailable));
     Task<(TestPlanDraftSummary? Plan, string? Error)> ArchiveAsync(Guid id, TestPlanLifecycleRequest request, CancellationToken ct = default) =>
         Task.FromResult<(TestPlanDraftSummary?, string?)>((null, NotAvailable));
     /// <summary>Restores an archived plan to active work.</summary>
@@ -212,6 +221,18 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
             return (null, "Test Plan Suggestions is not reachable.");
         }
     }
+
+    public Task<(PlanExecutionView?, string?)> ExecutionAsync(Guid id, CancellationToken ct = default) =>
+        Send<PlanExecutionView>(() => http.GetAsync($"{Base}/drafts/{id}/execution", ct), ct);
+
+    public Task<(PlanExecutionView?, string?)> RecordResultAsync(Guid id, RecordScenarioResultRequest request, CancellationToken ct = default) =>
+        Send<PlanExecutionView>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/execution", request, Json, ct), ct);
+
+    public Task<(DuplicatePlanPreview?, string?)> DuplicatePreviewAsync(Guid id, CancellationToken ct = default) =>
+        Send<DuplicatePlanPreview>(() => http.GetAsync($"{Base}/drafts/{id}/duplicate-preview", ct), ct);
+
+    public Task<(TestPlanDraft?, string?)> DuplicateAsync(Guid id, DuplicatePlanRequest request, CancellationToken ct = default) =>
+        Send<TestPlanDraft>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/duplicate", request, Json, ct), ct);
 
     public Task<(TestPlanDraftSummary?, string?)> ArchiveAsync(Guid id, TestPlanLifecycleRequest request, CancellationToken ct = default) =>
         Send<TestPlanDraftSummary>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/archive", request, Json, ct), ct);
