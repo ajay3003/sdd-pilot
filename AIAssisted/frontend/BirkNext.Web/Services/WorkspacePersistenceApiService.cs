@@ -433,7 +433,19 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
         }
     }
 
-    public async Task<CurrentWorkspaceStateDto?> GetCurrentStateAsync()
+    private Task<CurrentWorkspaceStateDto?>? _currentStateInFlight;
+
+    /// <summary>
+    /// The persisted current state. Callers that ask while a read is in flight share it (the layout and the workspace projection both read it at
+    /// start-up: two identical requests before, 2026-11-26). A completed read is never reused: the next call asks the backend again.
+    /// </summary>
+    public Task<CurrentWorkspaceStateDto?> GetCurrentStateAsync()
+    {
+        if (_currentStateInFlight is { IsCompleted: false } inFlight) return inFlight;
+        return _currentStateInFlight = ReadCurrentStateAsync();
+    }
+
+    private async Task<CurrentWorkspaceStateDto?> ReadCurrentStateAsync()
     {
         try
         {
