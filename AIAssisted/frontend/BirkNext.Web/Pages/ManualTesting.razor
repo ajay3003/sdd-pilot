@@ -318,7 +318,8 @@
                         @if (template is not null)
                         {
                             <div class="mt-new-plan-preview" data-testid="mt-new-plan-template-preview">
-                                <span class="mt-muted msb-small">@(template.Description ?? "Testgruppene i malen") · testplanen starter med 0 testtilfeller.</span>
+                                <span class="mt-muted msb-small">@(template.Description ?? "Testgruppene i malen")</span>
+                                <span class="mt-muted msb-small" data-testid="mt-new-plan-template-note">Oppretter testgrupper uten scenarioer. Legg til scenarioer etter opprettelse med «Legg til scenarioer» (testtilfeller er valgfrie).</span>
                                 <ul class="mt-structure-tree">
                                     @foreach (var (suite, depth) in PlanStructure.Flatten(TestPlanTemplateRules.Instantiate(template)))
                                     {

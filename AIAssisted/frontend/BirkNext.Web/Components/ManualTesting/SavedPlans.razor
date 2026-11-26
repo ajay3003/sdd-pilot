@@ -42,6 +42,11 @@
                     @if (!_archivedView && status is not null)
                     {
                         <span class="msb-status msb-tone-@(status.State switch { "Klar" => "ok", "Må gjennomgås" or "Kilde mangler" => "warn", "Ny kildeversjon" => "info", _ => "muted" })" title="@status.Message" data-testid="mt-plan-source" data-state="@status.State">@(status.State == "Klar" ? "Kilde uendret" : status.State)</span>
+                        @if (status.State != "Klar" && !string.IsNullOrWhiteSpace(status.Message))
+                        {
+                            <details class="mt-plan-source-why" data-testid="mt-plan-source-why"><summary class="msb-link msb-small">Hva betyr det?</summary>
+                                <span class="msb-small">@status.Message Åpne testplanen for å se hvilke scenarioer og testtilfeller som er berørt; ingenting er endret automatisk.</span></details>
+                        }
                     }
                     @if (_archivedView) { <span class="msb-status msb-tone-muted">Arkivert</span> }
                     @if (!_archivedView && p.Scenarios == 0 && p.Cases == 0)
@@ -56,19 +61,20 @@
                     }
                     @if (!_archivedView)
                     {
-                        <button type="button" class="msb-link" aria-expanded="@(_executing == p.Id ? "true" : "false")" @onclick="() => _executing = _executing == p.Id ? null : p.Id" data-testid="mt-plan-execute">Testgjennomføring</button>
-                        @if (CanWrite) { <button type="button" class="msb-link" disabled="@_busy" @onclick="() => StartCopyAsync(p)" data-testid="mt-plan-copy">Kopier testplan</button> }
-                        <a class="msb-link" href="@M.TransferRoute(p.Id)" data-testid="mt-plan-export">Overfør</a>
-                        @if (CanWrite) { <button type="button" class="msb-link" disabled="@_busy" @onclick="() => ArchiveAsync(p)" data-testid="mt-plan-archive">Arkiver</button> }
+                        @* Testplaner v4: execution has its own workspace; secondary actions sit in one menu instead of a row of links. *@
+                        <a class="msb-link" href="@($"manual-testing/plan-execution?plan={p.Id}")" data-testid="mt-plan-execute">Testgjennomføring</a>
+                        <details class="mt-plan-more" data-testid="mt-plan-more"><summary class="msb-link">Flere handlinger</summary>
+                            <span class="mt-plan-more-list">
+                                @if (CanWrite) { <button type="button" class="msb-link" disabled="@_busy" @onclick="() => StartCopyAsync(p)" data-testid="mt-plan-copy">Kopier testplan</button> }
+                                <a class="msb-link" href="@M.TransferRoute(p.Id)" data-testid="mt-plan-export">Overfør</a>
+                                @if (CanWrite) { <button type="button" class="msb-link" disabled="@_busy" @onclick="() => ArchiveAsync(p)" data-testid="mt-plan-archive">Arkiver</button> }
+                            </span>
+                        </details>
                     }
                     else if (CanWrite)
                     {
                         <button type="button" class="msb-link" disabled="@_busy" @onclick="() => UnarchiveAsync(p)" data-testid="mt-plan-unarchive">Gjenopprett</button>
                         <button type="button" class="msb-link msb-danger" disabled="@_busy" @onclick="() => { _deleting = p.Id; _confirmName = string.Empty; }" data-testid="mt-plan-delete">Slett</button>
-                    }
-                    @if (_executing == p.Id && !_archivedView)
-                    {
-                        <PlanExecution PlanId="p.Id" Api="Api" CanWrite="CanWrite" />
                     }
                     @if (_copying == p.Id)
                     {

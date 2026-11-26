@@ -224,7 +224,7 @@ public sealed class ManualTestingTestplanerTabTests : BunitContext
         cut.Find("[data-testid=mt-new-plan]").Click();
         cut.Find("[data-testid=mt-new-plan-from-template]").HasAttribute("checked").Should().BeTrue("«Fra mal» is the default");
         cut.FindAll("[data-testid=mt-new-plan-template-suite]").Select(s => s.TextContent).Should().Equal("Ende til ende", "Integrasjon", "Komponent", "Uklassifisert");
-        cut.Find("[data-testid=mt-new-plan-template-preview]").TextContent.Should().Contain("0 testtilfeller");
+        cut.Find("[data-testid=mt-new-plan-template-note]").TextContent.Should().StartWith("Oppretter testgrupper uten scenarioer. Legg til scenarioer etter opprettelse");
         cut.Find("[data-testid=mt-new-plan-template]").Change(TestPlanTemplateRules.IntegrationId);
         cut.FindAll("[data-testid=mt-new-plan-template-suite]").Select(s => (s.TextContent, s.GetAttribute("data-depth"))).Should().Equal(
             ("Integrasjoner", "0"), ("Tjenesteintegrasjoner", "1"), ("Meldingsflyt", "1"));

@@ -1,0 +1,46 @@
+@page "/manual-testing/plan-execution"
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using M = BirkNext.Web.Services.ManualTestingPresentation
+@inject IServiceProvider ServiceProvider
+
+@* Testgjennomføring as its own workspace (Testplaner v4, 2026-11-26): one plan's scenario occurrences, their current result and history, without
+   expanding inside the plan list. The same component and the same persisted events as before — results belong to the scenario occurrence in THIS
+   plan, never to a test case or a step. Opening the page writes nothing. *@
+
+<PageTitle>Testgjennomføring</PageTitle>
+<div class="mt msb-page mtx-page" data-testid="mtx-page">
+    <nav class="mtx-crumbs msb-small" aria-label="Brødsmuler"><a href="@M.PlansRoute" data-testid="mtx-back">← Testplaner</a>
+        @if (PlanId is { } id) { <span aria-hidden="true"> · </span><a href="@($"{M.PlanRoute}?draft={id}")" data-testid="mtx-open-plan">Åpne testplanen i Planlegg og klargjør</a> }</nav>
+    <h1 class="mtx-h">Testgjennomføring</h1>
+    @if (PlanId is not { } planId)
+    {
+        <p class="msb-empty" data-testid="mtx-no-plan">Ingen testplan er valgt. Velg en plan under <a href="@M.PlansRoute">Testplaner</a>.</p>
+    }
+    else if (_loading)
+    {
+        <p class="mt-muted" role="status" data-testid="mtx-page-loading">Henter testplanen …</p>
+    }
+    else
+    {
+        <p class="mt-muted msb-small mtx-note">Resultater registreres per scenario i denne testplanen (Ikke kjørt, Bestått, Feilet, Blokkert). Testtilfeller er valgfrie instruksjoner; klargjøring er veiledende og stopper ikke gjennomføring.</p>
+        <BirkNext.Web.Components.ManualTesting.PlanExecution PlanId="planId" Api="Api" CanWrite="CanWrite" />
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "plan")] public string? PlanQuery { get; set; }
+
+    private Guid? PlanId => Guid.TryParse(PlanQuery, out var id) ? id : null;
+    private ITestPlanSuggestionsApiService? Api => ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
+    private ManualTestingWorkspace.Snapshot? _ws;
+    private bool _loading = true;
+    private bool CanWrite => _ws?.Plans?.CanWrite == true && Api is not null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(); }
+        catch (Exception e) when (e is not OperationCanceledException) { _ws = null; }
+        finally { _loading = false; }
+    }
+}

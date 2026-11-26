@@ -1318,3 +1318,10 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .asp-suite { display: inline-flex; gap: 0.4rem; align-items: center; font-weight: 600; margin-right: auto; }
 .mtp-empty-plan { display: grid; gap: 0.5rem; }
 .mtp-empty-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.mt-plan-more { position: relative; display: inline-block; }
+.mt-plan-more > summary { list-style: none; cursor: pointer; }
+.mt-plan-more > summary::-webkit-details-marker { display: none; }
+.mt-plan-more-list { position: absolute; right: 0; z-index: 20; display: grid; gap: 0.2rem; min-width: 11rem; padding: 0.4rem 0.6rem; border: 1px solid var(--msb-border); border-radius: 8px; background: var(--msb-surface); box-shadow: 0 8px 20px rgba(0,0,0,.15); }
+.mtx-page { max-width: min(100%, 100rem); }
+.mtx-crumbs { margin-bottom: 0.3rem; }
+.mtx-h { font-size: 1.4rem; margin: 0 0 0.3rem; }
