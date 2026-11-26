@@ -289,6 +289,11 @@
                     {
                             <label class="mtp-field" for="mt-new-plan-structure"><span>Testplanstruktur</span></label>
                             <select id="mt-new-plan-structure" class="form-select form-select-sm mt-new-plan-structure" disabled="@_creating" @onchange="e => draft.Structure = e.Value?.ToString() ?? PlanStructureTemplates.Default" data-testid="mt-new-plan-structure">
+                                @if (_groupingStructure is { } gk)
+                                {
+                                    @* «Bruk gruppering som testplanstruktur» (2026-11-26): the grouping the tester chose in Finn og forstå, as real suites of the NEW plan. *@
+                                    <option value="@gk" selected="@(draft.Structure == gk)" data-testid="mt-new-plan-structure-grouping">Bruk grupperingen fra Finn og forstå: @PlanStructureTemplates.Label(gk)</option>
+                                }
                                 @foreach (var (key, label, _) in PlanStructureTemplates.All) { <option value="@key" selected="@(draft.Structure == key)">@label</option> }
                             </select>
                             var proposed = ProposedStructure(draft.Structure);
@@ -721,8 +726,22 @@
     private PlanStructureResult ProposedStructure(string template) =>
         PlanStructure.Build(template, [.. SelectedScenarios().Select(c => PlanStructure.FactsOf(c.CandidateId, c))]);
 
+    /// <summary>The grouping chosen in Finn og forstå as a plan structure key (null when none is saved or it cannot be suites, e.g. test method).</summary>
+    private string? _groupingStructure;
+
+    private async Task ReadGroupingStructureAsync()
+    {
+        try
+        {
+            var saved = ScenarioGrouping.Parse(await JS.InvokeAsync<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping"));
+            _groupingStructure = saved is { } g ? ScenarioGroupAxes.StructureKey(g.Primary, g.Secondary) : null;
+        }
+        catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { _groupingStructure = null; }
+    }
+
     private void StartNew()
     {
+        _ = InvokeAsync(async () => { await ReadGroupingStructureAsync(); StateHasChanged(); });
         // Every start is a new draft: a new suggested name (local time now) and a new request id; the previous draft is never reused.
         _new = new NewPlanDraft(M.SuggestedPlanName(DateTime.Now)) { Structure = _dashboard.EffectivePlanStructure };
         if (Api is { } api) _ = InvokeAsync(async () =>

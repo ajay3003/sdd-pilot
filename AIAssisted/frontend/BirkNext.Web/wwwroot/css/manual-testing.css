@@ -1031,3 +1031,25 @@ a.mto-kpi:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 
     .mto-card .dd-bars li .dd-bar, .mto-card .dd-bar-button .dd-bar { grid-column: 1 / -1; grid-row: 2; }
     .mto-toolbar .mtp-seg { flex-wrap: wrap; }
 }
+
+/* Scenario grouping in Finn og forstå (2026-11-26): compact collapsible groups; subtle surfaces, chevrons, counts; minimal nesting. */
+.mtg-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .9rem; margin: 0 0 .6rem; padding: .45rem .6rem; border-radius: 10px; background: var(--msb-subtle); }
+.mtg-field { display: inline-flex; align-items: center; gap: .35rem; font-size: .84rem; font-weight: 600; }
+.mtg-summary { margin-left: auto; }
+.mtg-tree { display: grid; gap: .45rem; }
+.mtg-group { border: 1px solid var(--msb-border); border-radius: 10px; background: var(--msb-surface); }
+.mtg-group.is-depth-1 { border: 0; border-top: 1px solid color-mix(in srgb, var(--msb-border) 70%, transparent); border-radius: 0; margin: 0 .6rem; }
+.mtg-head { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; padding: .35rem .5rem; }
+.mtg-toggle { display: inline-flex; flex: 1 1 16rem; align-items: center; gap: .45rem; min-height: 2rem; padding: .2rem .35rem; border: 0; border-radius: 8px; background: transparent;
+    color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mtg-toggle:hover { background: color-mix(in srgb, var(--msb-accent) 6%, transparent); }
+.mtg-toggle:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 1px; }
+.mtg-chevron { width: 1rem; color: var(--clr-text-muted, #57606a); }
+.mtg-label { font-weight: 650; }
+.is-depth-1 .mtg-label { font-weight: 600; font-size: .92rem; }
+.mtg-count { min-width: 1.6rem; padding: 0 .45rem; border-radius: 999px; background: var(--msb-subtle); font-size: .8rem; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+.mtg-selected { padding: 0 .45rem; border-radius: 999px; background: color-mix(in srgb, var(--msb-accent) 14%, transparent); color: var(--msb-accent); font-size: .78rem; font-weight: 600; }
+.mtg-actions { display: inline-flex; gap: .6rem; }
+.mtg-children { padding-bottom: .3rem; }
+.mtg-rows { margin: 0 .5rem .5rem; }
+.mtg-group .msb-more { margin: 0 .6rem .6rem; }

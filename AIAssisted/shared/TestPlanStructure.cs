@@ -67,8 +67,9 @@ public static class PlanStructureTemplates
         (None, "Ingen automatisk gruppering", "Testtilfellene legges i områdegrupper slik testplaner ble laget før."),
     ];
 
-    public static bool Known(string? key) => key is not null && All.Any(t => t.Key == key);
-    public static string Label(string key) => All.FirstOrDefault(t => t.Key == key).Label ?? key;
+    public static bool Known(string? key) => key is not null && (All.Any(t => t.Key == key) || ScenarioGroupAxes.TryParse(key, out _, out _));
+    public static string Label(string key) =>
+        ScenarioGroupAxes.TryParse(key, out var p, out var sec) ? ScenarioGroupAxes.Describe(p, sec) : All.FirstOrDefault(t => t.Key == key).Label ?? key;
 }
 
 /// <summary>
@@ -84,6 +85,7 @@ public static class PlanStructure
         var suites = new List<TestSuiteDraft>();
         var assignment = new Dictionary<string, string>(StringComparer.Ordinal);
         if (facts.Count == 0) return new(suites, assignment);
+        if (ScenarioGroupAxes.TryParse(template, out var primaryAxis, out var secondaryAxis)) return BuildByAxes(primaryAxis, secondaryAxis, facts);
         var oneLevel = facts.Select(f => f.Level).Distinct().Count() == 1;
         (string? Outer, ScenarioTestLevel? OuterLevel, string Inner, ScenarioTestLevel? InnerLevel) Path(PlanStructureFacts f) => template switch
         {
@@ -106,6 +108,36 @@ public static class PlanStructure
             var leaf = SuiteId(path.Outer is null ? path.Inner : $"{path.Outer}/{path.Inner}");
             if (suites.All(s => s.Id != leaf))
                 suites.Add(new TestSuiteDraft(leaf, path.Inner, "structure", null) { ParentId = parent, Order = suites.Count(s => s.ParentId == parent), TestLevel = path.InnerLevel });
+            assignment[f.CaseId] = leaf;
+        }
+        return new(suites, assignment);
+    }
+
+    /// <summary>
+    /// «Bruk gruppering som testplanstruktur» (2026-11-26): the suites follow the grouping chosen in Finn og forstå (primary, optional secondary),
+    /// with the same labels and order as the list. Only groups that hold a case; stable ids from the group path; a test-level group keeps its level.
+    /// </summary>
+    private static PlanStructureResult BuildByAxes(ScenarioGroupAxis primary, ScenarioGroupAxis secondary, IReadOnlyList<PlanStructureFacts> facts)
+    {
+        var suites = new List<TestSuiteDraft>();
+        var assignment = new Dictionary<string, string>(StringComparer.Ordinal);
+        var two = secondary != ScenarioGroupAxis.None;
+        var ordered = facts.Select(f => (Facts: f, Outer: ScenarioGroupAxes.ValueOf(f, primary), Inner: two ? ScenarioGroupAxes.ValueOf(f, secondary) : default))
+            .OrderBy(x => x.Outer.Rank).ThenBy(x => x.Outer.Label, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(x => two ? x.Inner.Rank : 0).ThenBy(x => two ? x.Inner.Label : "", StringComparer.CurrentCultureIgnoreCase).ToList();
+        foreach (var (f, outer, inner) in ordered)
+        {
+            var outerPath = $"{primary}:{outer.Label}";
+            var parent = SuiteId(outerPath);
+            if (suites.All(s => s.Id != parent))
+                suites.Add(new TestSuiteDraft(parent, outer.Label, "structure", null) { Order = suites.Count(s => s.ParentId is null), TestLevel = outer.Level });
+            var leaf = parent;
+            if (two)
+            {
+                leaf = SuiteId($"{outerPath}/{secondary}:{inner.Label}");
+                if (suites.All(s => s.Id != leaf))
+                    suites.Add(new TestSuiteDraft(leaf, inner.Label, "structure", null) { ParentId = parent, Order = suites.Count(s => s.ParentId == parent), TestLevel = inner.Level ?? outer.Level });
+            }
             assignment[f.CaseId] = leaf;
         }
         return new(suites, assignment);
@@ -176,4 +208,80 @@ public static class PlanStructure
         }
         return null;
     }
+}
+
+// ── Scenario grouping axes (2026-11-26) ──────────────────────────────────────────────────────────────────────────────────────────────────────
+// Independent ways to organise scenarios in Finn og forstå (presentation) and, when the tester asks for it, the suites of a NEW plan. Test level,
+// scenario type and test method are separate dimensions and never merged. An unknown value has its own honest group; nothing is reclassified.
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ScenarioGroupAxis { None, Story, TestLevel, ScenarioType, Area, Module, Method }
+
+public static class ScenarioGroupAxes
+{
+    public const string Prefix = "axes:";
+    public const string NoStory = "Scenarioer uten brukerhistorie", NoArea = "Uavklart område", NoModule = "Uten modultilknytning", NoType = "Ikke akseptansescenarioer";
+
+    public static readonly ScenarioGroupAxis[] Choices =
+        [ScenarioGroupAxis.Story, ScenarioGroupAxis.TestLevel, ScenarioGroupAxis.ScenarioType, ScenarioGroupAxis.Area, ScenarioGroupAxis.Module, ScenarioGroupAxis.Method, ScenarioGroupAxis.None];
+
+    public static string Label(ScenarioGroupAxis a) => a switch
+    {
+        ScenarioGroupAxis.Story => "Brukerhistorie",
+        ScenarioGroupAxis.TestLevel => "Testnivå",
+        ScenarioGroupAxis.ScenarioType => "Scenariotype",
+        ScenarioGroupAxis.Area => "Funksjonsområde",
+        ScenarioGroupAxis.Module => "Modul",
+        ScenarioGroupAxis.Method => "Testmetode",
+        _ => "Ingen gruppering",
+    };
+
+    public static string LevelLabel(ScenarioTestLevel l) => l switch
+    {
+        ScenarioTestLevel.EndToEnd => "Ende-til-ende-tester",
+        ScenarioTestLevel.Integration => "Integrasjonstester",
+        ScenarioTestLevel.Component => "Komponenttester",
+        _ => "Uavklart testnivå",
+    };
+
+    public static string TypeLabel(ScenarioRequirementType t) => t switch
+    {
+        ScenarioRequirementType.Functional => "Funksjonelle",
+        ScenarioRequirementType.NonFunctional => "Ikke-funksjonelle",
+        ScenarioRequirementType.Mixed => "Blandede",
+        _ => "Uavklart type",
+    };
+
+    public static int TypeRank(ScenarioRequirementType? t) => t is { } x ? Array.IndexOf(ScenarioTypeClassifier.Order, x) : 50;
+
+    /// <summary>Whether a plan can use this grouping as its suites: test method is a decision about a scenario, not a fact a case carries.</summary>
+    public static bool UsableForPlan(ScenarioGroupAxis primary, ScenarioGroupAxis secondary) =>
+        primary is not (ScenarioGroupAxis.None or ScenarioGroupAxis.Method) && secondary != ScenarioGroupAxis.Method && secondary != primary;
+
+    public static string? StructureKey(ScenarioGroupAxis primary, ScenarioGroupAxis secondary) =>
+        UsableForPlan(primary, secondary) ? Prefix + primary + (secondary == ScenarioGroupAxis.None ? "" : ">" + secondary) : null;
+
+    public static bool TryParse(string? key, out ScenarioGroupAxis primary, out ScenarioGroupAxis secondary)
+    {
+        primary = secondary = ScenarioGroupAxis.None;
+        if (key is null || !key.StartsWith(Prefix, StringComparison.Ordinal)) return false;
+        var parts = key[Prefix.Length..].Split('>');
+        if (parts.Length > 2 || !Enum.TryParse(parts[0], out primary) || !Enum.IsDefined(primary)) return false;
+        if (parts.Length == 2 && (!Enum.TryParse(parts[1], out secondary) || !Enum.IsDefined(secondary))) return false;
+        return UsableForPlan(primary, secondary);
+    }
+
+    public static string Describe(ScenarioGroupAxis primary, ScenarioGroupAxis secondary) =>
+        secondary == ScenarioGroupAxis.None ? Label(primary) : $"{Label(primary)} → {Label(secondary)}";
+
+    /// <summary>A case's group on one axis, from the structure facts (the same values the list shows for its scenario).</summary>
+    public static (string Label, int Rank, ScenarioTestLevel? Level) ValueOf(PlanStructureFacts f, ScenarioGroupAxis axis) => axis switch
+    {
+        ScenarioGroupAxis.TestLevel => (LevelLabel(f.Level), Array.IndexOf(TestLevelClassifier.Order, f.Level), f.Level),
+        ScenarioGroupAxis.ScenarioType => (f.Type is { } t ? TypeLabel(t) : NoType, TypeRank(f.Type), null),
+        ScenarioGroupAxis.Story => (f.Story ?? NoStory, f.Story is null ? 99 : 0, null),
+        ScenarioGroupAxis.Area => (f.Area ?? NoArea, f.Area is null ? 99 : 0, null),
+        ScenarioGroupAxis.Module => (f.Module ?? NoModule, f.Module is null ? 99 : 0, null),
+        _ => ("Alle", 0, null),
+    };
 }

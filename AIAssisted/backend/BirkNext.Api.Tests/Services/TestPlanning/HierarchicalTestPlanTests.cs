@@ -75,6 +75,43 @@ public sealed class HierarchicalTestPlanTests
         PlanStructure.Flatten([S("child", "gone"), S("root", null)]).Select(x => x.Suite.Id).Should().Contain(["child", "root"], "a suite whose parent is missing is still shown");
     }
 
+    // ── Grouping axes as a new plan's suites (2026-11-26) ──
+
+    [Fact]
+    public void A_grouping_becomes_two_level_suites_with_the_list_labels_stable_ids_and_one_suite_per_case()
+    {
+        var key = ScenarioGroupAxes.StructureKey(ScenarioGroupAxis.TestLevel, ScenarioGroupAxis.ScenarioType)!;
+        key.Should().Be("axes:TestLevel>ScenarioType");
+        PlanStructureTemplates.Known(key).Should().BeTrue("the server accepts the grouping key");
+        var facts = new[]
+        {
+            F("a", ScenarioTestLevel.EndToEnd, "Rapportering", type: ScenarioRequirementType.Functional), F("b", ScenarioTestLevel.EndToEnd, "CDC", type: ScenarioRequirementType.NonFunctional),
+            F("c", ScenarioTestLevel.Integration, "Mottak", type: ScenarioRequirementType.Functional), F("d", ScenarioTestLevel.Unclassified, null),
+        };
+        var r = PlanStructure.Build(key, facts);
+        PlanStructure.Flatten(r.Suites).Select(x => new string(' ', x.Depth * 2) + x.Suite.Name).Should().Equal(
+            "Ende-til-ende-tester", "  Funksjonelle", "  Ikke-funksjonelle", "Integrasjonstester", "  Funksjonelle", "Uavklart testnivå", "  Ikke akseptansescenarioer");
+        r.Assignment.Should().HaveCount(4, "each case in exactly one suite");
+        r.Suites.Where(s => s.Name == "Funksjonelle").Select(s => s.Id).Should().OnlyHaveUniqueItems("the same name under two parents is two suites");
+        r.Suites.Single(s => s.Name == "Ende-til-ende-tester").TestLevel.Should().Be(ScenarioTestLevel.EndToEnd);
+        PlanStructure.Build(key, facts).Suites.Select(s => s.Id).Should().Equal(r.Suites.Select(s => s.Id), "stable ids");
+        PlanStructure.Validate(r.Suites).Should().BeNull();
+        PlanStructure.Build("axes:Story", [F("x", ScenarioTestLevel.Integration, null, story: "US1 Rapport"), F("y", ScenarioTestLevel.Integration, null)])
+            .Suites.Select(s => s.Name).Should().Equal("US1 Rapport", "Scenarioer uten brukerhistorie");
+    }
+
+    [Fact]
+    public void Test_method_and_unknown_or_duplicate_axes_are_never_a_plan_structure()
+    {
+        ScenarioGroupAxes.StructureKey(ScenarioGroupAxis.Method, ScenarioGroupAxis.None).Should().BeNull("a method is a decision about a scenario, not a fact of a case");
+        ScenarioGroupAxes.StructureKey(ScenarioGroupAxis.TestLevel, ScenarioGroupAxis.Method).Should().BeNull();
+        ScenarioGroupAxes.StructureKey(ScenarioGroupAxis.None, ScenarioGroupAxis.None).Should().BeNull();
+        PlanStructureTemplates.Known("axes:TestLevel>TestLevel").Should().BeFalse();
+        PlanStructureTemplates.Known("axes:Nonsense").Should().BeFalse();
+        PlanStructureTemplates.Known("axes:Method").Should().BeFalse();
+        PlanStructureTemplates.Known(PlanStructureTemplates.LevelArea).Should().BeTrue("existing templates are unchanged");
+    }
+
     private static TestPlanDraft Plan()
     {
         var r = PlanStructure.Build(PlanStructureTemplates.Default, [F("c1", ScenarioTestLevel.EndToEnd, "Rapportering"), F("c2", ScenarioTestLevel.Integration, "Rapportering"), F("c3", ScenarioTestLevel.Integration, "Mottak")]);

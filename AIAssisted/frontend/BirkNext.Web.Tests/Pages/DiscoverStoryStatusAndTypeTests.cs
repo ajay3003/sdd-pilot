@@ -156,15 +156,18 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
     public void Rows_carry_one_short_type_label_and_grouping_by_type_shows_each_scenario_once_under_its_type()
     {
         var cut = Open(View());
-        cut.FindAll("[data-testid=mtd-group-mode] option").Select(o => o.TextContent).Should().StartWith(["Brukerhistorier", "Testnivå", "Scenariotype"]);
-        cut.FindAll("[data-testid=mtd-group-mode] option").First(o => o.HasAttribute("selected")).TextContent.Should().Be("Brukerhistorier", "the default grouping is unchanged");
+        // 2026-11-26: test level and type moved from the story sidebar's control to the list's own grouping («Grupper etter» above the results).
+        cut.FindAll("[data-testid=mtd-group-mode] option").Select(o => o.TextContent).Should().StartWith(["Brukerhistorier"]).And.NotContain(["Testnivå", "Scenariotype"]);
+        cut.FindAll("[data-testid=mtd-list-group] option").Select(o => o.TextContent).Should().Equal("Brukerhistorie", "Testnivå", "Scenariotype", "Funksjonsområde", "Modul", "Testmetode", "Ingen gruppering");
         string? Label(DiscoveredScenario c) => cut.Find($"[data-testid=mtd-scenario][data-id='{c.CandidateId}']").QuerySelector("[data-testid=mtd-scenario-type]")?.TextContent;
         Label(Search).Should().BeNull("a functional scenario needs no label");
         Label(ErrorPanel).Should().Be("Blandet · Brukervennlighet");
         Label(Focus).Should().Be("Ikke-funksjonell · Universell utforming");
 
-        cut.Find("[data-testid=mtd-group-mode]").Change("ScenarioType");
-        cut.FindAll("[data-testid=mtd-type-group]").Select(g => g.TextContent).Should().Equal("FUNKSJONELLE (2)", "IKKE-FUNKSJONELLE (1)", "BLANDEDE (1)");
+        cut.Find("[data-testid=mtd-list-group]").Change("ScenarioType");
+        cut.Find("[data-testid=mtd-list-group2]").Change("None");
+        cut.FindAll("[data-testid=mtd-sgroup]").Select(g => (g.QuerySelector("[data-testid=mtd-sgroup-label]")!.TextContent, g.QuerySelector("[data-testid=mtd-sgroup-count]")!.TextContent))
+            .Should().Equal(("Funksjonelle", "2"), ("Ikke-funksjonelle", "1"), ("Blandede", "1"));
         cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal("us1-1", "us1-4", "us2-6", "us2-5");
         cut.FindAll("[data-testid=mtd-scenario][data-id='us2-5']").Should().ContainSingle("a mixed scenario is listed once, under «Blandede»");
     }
@@ -194,5 +197,66 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
         type.QuerySelector("[data-testid=mtd-detail-type-basis]")!.TextContent.Should().Be("Foreslått fra kildegrunnlag");
         type.QuerySelector("[data-testid=mtd-detail-type-why]")!.TextContent.Should().Contain("Universell utforming");
         type.TextContent.Should().Contain("uavhengig av testtype");
+    }
+
+    // ── Scenario grouping (2026-11-26) ───────────────────────────────────────────────────────────────────────────────────────────────
+
+    private static List<(string Label, string Count, string Depth)> Groups(IRenderedComponent<ManualTestingDiscover> cut) =>
+        [.. cut.FindAll("[data-testid=mtd-sgroup]").Select(g => (g.QuerySelector("[data-testid=mtd-sgroup-label]")!.TextContent, g.QuerySelector("[data-testid=mtd-sgroup-count]")!.TextContent, g.GetAttribute("data-depth")!))];
+
+    [Fact]
+    public void G01_a_selected_specification_is_grouped_by_user_story_by_default_with_collapsible_groups_and_each_scenario_once()
+    {
+        var cut = Open(View());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]"));
+        cut.Find("[data-testid=mtd-list-group] option[selected]").GetAttribute("value").Should().Be("Story");
+        Groups(cut).Should().Equal(("US1 — Search for a Child", "2", "0"), ("US2 — View Child Profile Overview", "2", "0"));
+        cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().OnlyHaveUniqueItems().And.HaveCount(4);
+
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]")[0].GetAttribute("aria-expanded").Should().Be("true");
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]")[0].Click();
+        cut.FindAll("[data-testid=mtd-sgroup]")[0].QuerySelectorAll("[data-testid=mtd-scenario]").Should().BeEmpty("collapsed");
+        cut.FindAll("[data-testid=mtd-scenario]").Should().HaveCount(2, "the other group stays open");
+        cut.Find("[data-testid=mtd-groups-collapse]").Click();
+        cut.FindAll("[data-testid=mtd-scenario]").Should().BeEmpty();
+        cut.Find("[data-testid=mtd-groups-expand]").Click();
+        cut.FindAll("[data-testid=mtd-scenario]").Should().HaveCount(4);
+    }
+
+    [Fact]
+    public void G02_a_saved_preference_overrides_the_default_and_two_level_grouping_keeps_the_axes_independent()
+    {
+        JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("TestLevel>ScenarioType");
+        var cut = Open(View());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("TestLevel"));
+        Groups(cut).Should().Equal(("Uavklart testnivå", "4", "0"), ("Funksjonelle", "2", "1"), ("Ikke-funksjonelle", "1", "1"), ("Blandede", "1", "1"));
+        cut.FindAll("[data-testid=mtd-list-group2] option").Select(o => o.GetAttribute("value")).Should().NotContain("TestLevel", "the secondary axis cannot repeat the primary");
+        cut.FindAll("[data-testid=mtd-list-group2] option")[0].TextContent.Should().Be("Én gruppering");
+
+        cut.Find("[data-testid=mtd-list-group]").Change("Method");
+        cut.FindAll("[data-testid=mtd-sgroup][data-depth='0']").Select(g => g.GetAttribute("data-axis")).Should().OnlyContain(a => a == "Method");
+        JSInterop.VerifyInvoke("localStorage.setItem").Arguments.Should().Equal("birknext.manualTesting.scenarioGrouping", "Method>ScenarioType");
+
+        cut.Find("[data-testid=mtd-list-group]").Change("None");
+        cut.FindAll("[data-testid=mtd-sgroup]").Should().BeEmpty();
+        cut.FindAll("[data-testid=mtd-scenario]").Should().HaveCount(4, "«Ingen gruppering» is the flat list");
+    }
+
+    [Fact]
+    public void G03_group_selection_counts_and_selection_outside_the_current_filter_are_explicit()
+    {
+        var cut = Open(View());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]"));
+        cut.FindAll("[data-testid=mtd-sgroup-select]")[1].Click();
+        cut.FindAll("[data-testid=mtd-sgroup]")[1].QuerySelector("[data-testid=mtd-sgroup-selected]")!.TextContent.Should().Be("2 valgt");
+        cut.Find("[data-testid=mtd-selection-summary]").TextContent.Should().Contain("2 valgt totalt · 2 i gjeldende visning");
+
+        cut.Find("[data-testid=mtd-search]").Input("search field");
+        Groups(cut).Should().Equal(("US1 — Search for a Child", "1", "0"));
+        cut.Find("[data-testid=mtd-selection-summary]").TextContent.Should().Contain("2 valgt totalt · 0 i gjeldende visning · 2 utenfor gjeldende filter", "a filter never drops a selection");
+
+        cut.Find("[data-testid=mtd-search]").Input("");
+        cut.FindAll("[data-testid=mtd-sgroup-clear]").Single().Click();
+        cut.Find("[data-testid=mtd-selection-summary]").TextContent.Should().Contain("0 valgt totalt");
     }
 }

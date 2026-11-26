@@ -50,7 +50,6 @@
         @if (_ws.Error is { } error) { <p class="mt-alert" role="alert" data-testid="mtd-error">@error</p> }
         var discovery = _ws.Discovery;
         var (shown, hidden) = S.Apply(_items, _filter);
-        if (_groupMode is G.Mode.ScenarioType or G.Mode.TestLevel) shown = [.. shown.OrderBy(i => GroupRank(i))];
         var pageItems = shown.Take(_limit).ToList();
         var active = pageItems.FirstOrDefault(i => i.Id == _active) ?? _items.FirstOrDefault(i => i.Id == _active);
         var preparedCases = _items.Sum(i => i.Prepared?.Cases ?? 0);
@@ -129,7 +128,7 @@
                     }
                     @if (_groupInputs.Count > 0)
                     {
-                        <label class="mtw-mode msb-small">Grupper etter
+                        <label class="mtw-mode msb-small">Brukerhistorier etter
                             <select class="msb-select" @onchange="e => SetMode(e.Value?.ToString())" data-testid="mtd-group-mode">
                                 @foreach (var m in AvailableModes) { <option value="@m" selected="@(_groupMode == m)">@G.ModeLabel(m)</option> }
                             </select></label>
@@ -150,7 +149,7 @@
                                 var n = node;
                                 var open = IsOpen(n);
                                 <li class="mtw-group @(n.Kind == "system" ? "is-system" : null)" data-testid="mtd-group" data-group="@n.Key" data-kind="@n.Kind">
-                                    <button type="button" class="mtw-group-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleGroup(n.Key, open)" data-testid="mtd-group-toggle">
+                                    <button type="button" class="mtw-group-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleGroup(n.Key, open)" data-testid="mtd-sgroup-toggle">
                                         <span class="mtw-caret" aria-hidden="true">@(open ? "▾" : "▸")</span><span class="mtw-group-title">@n.Title</span><span class="mtw-group-count">@n.Stories.Count</span></button>
                                     <span class="mtw-group-meta" data-testid="mtd-group-stats">@(n.Kind == "system" ? $"{n.Stories.Count} brukerhistorie{(n.Stories.Count == 1 ? "" : "r")}" + (n.Stories.Count > 0 ? " · " + GroupStats(n) : " · alle er gruppert") : GroupStats(n))</span>
                                     @if (open)
@@ -632,52 +631,28 @@
                             }
                             else
                             {
+                                @GroupingTools(shown)
+                                @if (_gPrimary != ScenarioGroupAxis.None)
+                                {
+                                    var tree = ScenarioGrouping.Build(shown, _gPrimary, _gSecondary);
+                                    <div class="mtg-tree" data-testid="mtd-group-tree" data-primary="@_gPrimary" data-secondary="@_gSecondary">
+                                        @foreach (var g in tree) { @GroupNode(g, shown.Count) }
+                                    </div>
+                                }
+                                else
+                                {
                                 <div class="msb-list-head">
                                     <button type="button" class="msb-link" @onclick="() => SelectAll(pageItems)" data-testid="mtd-select-visible">Velg synlige (@pageItems.Count)</button>
                                     @if (_selected.Count > 0) { <button type="button" class="msb-link" @onclick="ClearSelection" data-testid="mtd-clear-selection">Fjern valg</button> }
                                 </div>
                                 <ul class="msb-rows" role="listbox" aria-multiselectable="true" aria-label="Scenarioer" tabindex="0" @onkeydown="e => KeyAsync(e, pageItems)"
                                     aria-activedescendant="@(active is null ? null : $"msb-row-{active.Id}")" data-testid="mtd-rows">
-                                    @{ string? lastGroup = null; }
-                                    @foreach (var i in pageItems)
-                                    {
-                                        var selected = _selected.Contains(i.Id);
-                                        @if (_groupMode is G.Mode.ScenarioType or G.Mode.TestLevel && GroupKey(i) != lastGroup)
-                                        {
-                                            lastGroup = GroupKey(i);
-                                            var groupKey = lastGroup;
-                                            <li class="mtw-type-group" role="presentation" data-testid="mtd-type-group" data-type="@groupKey">@GroupLabel(groupKey).ToUpperInvariant() (@shown.Count(x => GroupKey(x) == groupKey))</li>
-                                        }
-                                        <li id="@($"msb-row-{i.Id}")" role="option" aria-selected="@(selected ? "true" : "false")" class="msb-row mtw-ac-row @(i.Id == _active ? "is-active" : null) @(selected ? "is-selected" : null)"
-                                            data-testid="mtd-scenario" data-id="@i.Id" data-relevance="@i.Relevance" @onclick="() => Open(i.Id)">
-                                            <input type="checkbox" class="msb-check" checked="@selected" aria-label="@($"Velg {i.Title}")" @onclick:stopPropagation="true"
-                                                   @onchange="() => ToggleAsync(i.Id)" data-testid="mtd-select" />
-                                            <span class="msb-row-main">
-                                                @if (i.Candidate.Story is { } rs && i.Candidate.NumberInStory is not null)
-                                                {
-                                                    <span class="mtw-row-label" data-testid="mtd-scenario-label">@W.ScenarioLabel(i)@(_filter.Story is null ? $" · {W.StoryLabel(rs)}" : "")</span>
-                                                }
-                                                <span class="msb-row-title" data-testid="mtd-scenario-title">@W.RowTitle(i)</span>
-                                                <span class="msb-row-meta">@i.Area@(i.Candidate.Story?.Priority is { } pri ? $" · {pri}" : "")@(i.Relevance switch { S.Relevance.Technical => " · teknisk", S.Relevance.Both => " · manuell + teknisk", _ => i.KindDecided ? " · manuell" : "" })@(i.KindDecided ? " (valgt)" : "")@if (i.Tech is { } techState && TC.ListTag(techState) is { } techTag) { <span class="mtw-tech-tag is-@(techState.ToString().ToLowerInvariant())" data-testid="mtd-scenario-tech"> · @techTag</span> }<span class="msb-approach" title="@string.Join(" ", i.Suitability.Approaches.Select(a => a.Reason))" data-testid="mtd-scenario-approach"> · @string.Join(" · ", i.Suitability.Approaches.Take(2).Select(a => TestDesignAdvisor.ApproachLabel(a.Approach)))</span></span>
-                                                @if (i.TypeResult is { } rowType && ScenarioTypeClassifier.RowLabel(rowType) is { } typeLabel)
-                                                {
-                                                    <span class="mtw-type-tag is-@rowType.Type.ToString().ToLowerInvariant()" data-testid="mtd-scenario-type" data-type="@rowType.Type">@typeLabel</span>
-                                                }
-                                                @if (i.Candidate.RequirementIds.Count > 0)
-                                                {
-                                                    <span class="mtw-row-reqs" data-testid="mtd-scenario-reqs">@foreach (var r in i.Candidate.RequirementIds.Take(4)) { <span class="mtw-fr">@r</span> }@if (i.Candidate.RequirementIds.Count > 4) { <span class="mtw-fr is-more">+@(i.Candidate.RequirementIds.Count - 4)</span> }</span>
-                                                }
-                                            </span>
-                                            @if (i.Prepared is { Cases: > 0 } prep) { <span class="msb-count" title="Testtilfeller i lagrede planer">@prep.Cases</span> }
-                                            <span class="msb-status msb-tone-@i.Status.Tone" data-testid="mtd-scenario-status">@i.Status.Text</span>
-                                            <button type="button" class="btn btn-outline-secondary btn-sm mtw-details-btn" @onclick:stopPropagation="true" @onclick="() => OpenDetails(i.Id)"
-                                                    aria-controls="mtd-drawer" aria-expanded="@(_drawerOpen && i.Id == _active ? "true" : "false")" data-testid="mtd-show-details">Vis detaljer</button>
-                                        </li>
-                                    }
+                                    @foreach (var i in pageItems) { @Row(i) }
                                 </ul>
                                 @if (shown.Count > _limit)
                                 {
                                     <button type="button" class="btn btn-secondary btn-sm msb-more" @onclick="() => _limit += S.PageSize" data-testid="mtd-more">Vis flere (@(shown.Count - _limit) igjen)</button>
+                                }
                                 }
                             }
                         </section>
@@ -1394,7 +1369,7 @@
     /// <summary>Editing needs the same permission as saving a test plan, and a grouping document that could be read.</summary>
     private bool CanEditGrouping => _groupWritable && _ws?.Plans?.CanWrite == true;
 
-    private IEnumerable<G.Mode> AvailableModes => new[] { G.Mode.Stories, G.Mode.TestLevel, G.Mode.ScenarioType, G.Mode.Functional, G.Mode.Business, G.Mode.None }
+    private IEnumerable<G.Mode> AvailableModes => new[] { G.Mode.Stories, G.Mode.Functional, G.Mode.Business, G.Mode.None }
         .Where(m => m switch { G.Mode.Business => _groupDoc is { Groups.Count: > 0 } || _groupMode == G.Mode.Business, G.Mode.Functional => _sections.Sections.Count > 0, _ => true });
 
     /// <summary>
@@ -2083,6 +2058,155 @@
         if (_ws?.ProjectKey is not { } key) return;
         await TabDraftStore.WriteAsync(JS, TabDraftStore.DiscoverContextKey(key), new W.WorkContext(_filter.Story, _active, _tab, _activeTitle));
     }
+
+    // ── Scenario grouping (2026-11-26) ─────────────────────────────────────────────────────────────────────────────────────────────────────
+    // Filtering decides WHICH scenarios are shown; grouping decides HOW the shown ones are organised (one or two independent axes). A group is a
+    // view only: nothing is copied, classified or saved on a scenario. The choice is a personal preference kept in this browser (localStorage).
+    private const string GroupingPreferenceKey = "birknext.manualTesting.scenarioGrouping";
+    private const int GroupRows = 50;
+    private ScenarioGroupAxis _gPrimary = ScenarioGroupAxis.None, _gSecondary = ScenarioGroupAxis.None;
+    private bool _gChosen, _gLoaded;
+    private readonly Dictionary<string, bool> _gOpen = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _gLimit = new(StringComparer.Ordinal);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_gLoaded) return;
+        _gLoaded = true;
+        try
+        {
+            if (ScenarioGrouping.Parse(await JS.InvokeAsync<string?>("localStorage.getItem", GroupingPreferenceKey)) is { } saved)
+            {
+                (_gPrimary, _gSecondary, _gChosen) = (saved.Primary, saved.Secondary, true);
+                StateHasChanged();
+                return;
+            }
+        }
+        catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
+        ApplyDefaultGrouping();
+        StateHasChanged();
+    }
+
+    /// <summary>The default when the tester has not chosen: a selected specification by user story, otherwise test level → scenario type.</summary>
+    private void ApplyDefaultGrouping()
+    {
+        if (_gChosen) return;
+        (_gPrimary, _gSecondary) = ScenarioGrouping.Default(SelectedSpecificationPath is not null);
+    }
+
+    private async Task SetGroupingAsync(ScenarioGroupAxis primary, ScenarioGroupAxis secondary)
+    {
+        if (secondary == primary || primary == ScenarioGroupAxis.None) secondary = ScenarioGroupAxis.None;
+        (_gPrimary, _gSecondary, _gChosen) = (primary, secondary, true);
+        try { await JS.InvokeVoidAsync("localStorage.setItem", GroupingPreferenceKey, ScenarioGrouping.Format(primary, secondary)); }
+        catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
+    }
+
+    /// <summary>A group is open by default unless the list is large (then the tester opens what they need: no thousands of rows at once).</summary>
+    private bool IsOpen(string path, int shownCount) => _gOpen.TryGetValue(path, out var open) ? open : shownCount <= 200;
+
+    private void ToggleGroup(string path, int shownCount) => _gOpen[path] = !IsOpen(path, shownCount);
+
+    private void SetAllGroups(IEnumerable<string> paths, bool open) { foreach (var p in paths) _gOpen[p] = open; }
+
+    private async Task ClearGroupAsync(IEnumerable<S.Item> items) { foreach (var i in items) _selected.Remove(i.Id); await KeepAsync(); }
+
+    private RenderFragment GroupingTools(IReadOnlyList<S.Item> shown) => __builder =>
+    {
+        var shownIds = shown.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+        var inView = _selected.Count(shownIds.Contains);
+        var tree = _gPrimary == ScenarioGroupAxis.None ? [] : ScenarioGrouping.Build(shown, _gPrimary, _gSecondary);
+        <div class="mtg-tools" data-testid="mtd-grouping-tools">
+            <label class="mtg-field">Grupper etter
+                <select class="msb-select" @onchange="e => SetGroupingAsync(Enum.TryParse<ScenarioGroupAxis>(e.Value?.ToString(), out var a) ? a : ScenarioGroupAxis.None, _gSecondary)" data-testid="mtd-list-group">
+                    @foreach (var a in ScenarioGroupAxes.Choices) { <option value="@a" selected="@(_gPrimary == a)">@ScenarioGroupAxes.Label(a)</option> }
+                </select></label>
+            @if (_gPrimary != ScenarioGroupAxis.None)
+            {
+                <label class="mtg-field">Deretter etter
+                    <select class="msb-select" @onchange="e => SetGroupingAsync(_gPrimary, Enum.TryParse<ScenarioGroupAxis>(e.Value?.ToString(), out var a) ? a : ScenarioGroupAxis.None)" data-testid="mtd-list-group2">
+                        <option value="@ScenarioGroupAxis.None" selected="@(_gSecondary == ScenarioGroupAxis.None)">Én gruppering</option>
+                        @foreach (var a in ScenarioGroupAxes.Choices.Where(a => a != ScenarioGroupAxis.None && a != _gPrimary)) { <option value="@a" selected="@(_gSecondary == a)">@ScenarioGroupAxes.Label(a)</option> }
+                    </select></label>
+                <button type="button" class="msb-link" @onclick="() => SetAllGroups(ScenarioGrouping.Paths(tree), true)" data-testid="mtd-groups-expand">Vis alle grupper</button>
+                <button type="button" class="msb-link" @onclick="() => SetAllGroups(ScenarioGrouping.Paths(tree), false)" data-testid="mtd-groups-collapse">Skjul alle</button>
+            }
+            <span class="mtg-summary mt-muted msb-small" data-testid="mtd-selection-summary">
+                @(_selected.Count) valgt totalt · @inView i gjeldende visning@(_selected.Count > inView ? $" · {_selected.Count - inView} utenfor gjeldende filter" : "")
+            </span>
+        </div>
+    };
+
+    private RenderFragment GroupNode(ScenarioGrouping.Group g, int shownCount) => __builder =>
+    {
+        var open = IsOpen(g.Path, shownCount);
+        var selectedHere = g.Items.Count(i => _selected.Contains(i.Id));
+        var limit = _gLimit.GetValueOrDefault(g.Path, GroupRows);
+        var rows = g.Items.Take(limit).ToList();
+        <section class="mtg-group is-depth-@g.Depth" data-testid="mtd-sgroup" data-path="@g.Path" data-axis="@g.Axis" data-depth="@g.Depth" aria-label="@($"{g.Label}: {g.Items.Count} scenarioer")">
+            <div class="mtg-head">
+                <button type="button" class="mtg-toggle" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleGroup(g.Path, shownCount)" data-testid="mtd-sgroup-toggle">
+                    <span class="mtg-chevron" aria-hidden="true">@(open ? "▾" : "▸")</span>
+                    <span class="mtg-label" data-testid="mtd-sgroup-label">@g.Label</span>
+                    <span class="mtg-count" data-testid="mtd-sgroup-count">@g.Items.Count</span>
+                    @if (selectedHere > 0) { <span class="mtg-selected" data-testid="mtd-sgroup-selected">@selectedHere valgt</span> }
+                    @if (g.Candidates > 0) { <span class="mtg-candidates mt-muted msb-small" data-testid="mtd-sgroup-candidates">@g.Candidates kandidat@(g.Candidates == 1 ? "" : "er") (ikke gjennomgått)</span> }
+                </button>
+                <span class="mtg-actions">
+                    @if (selectedHere < g.Items.Count) { <button type="button" class="msb-link msb-small" @onclick="() => SelectAll(g.Items)" data-testid="mtd-sgroup-select">Velg alle (@g.Items.Count)</button> }
+                    @if (selectedHere > 0) { <button type="button" class="msb-link msb-small" @onclick="() => ClearGroupAsync(g.Items)" data-testid="mtd-sgroup-clear">Fjern valg</button> }
+                </span>
+            </div>
+            @if (open)
+            {
+                @if (g.Children.Count > 0)
+                {
+                    <div class="mtg-children">@foreach (var child in g.Children) { @GroupNode(child, shownCount) }</div>
+                }
+                else
+                {
+                    <ul class="msb-rows mtg-rows" role="listbox" aria-multiselectable="true" aria-label="@g.Label" tabindex="0" @onkeydown="e => KeyAsync(e, rows)" data-testid="mtd-sgroup-rows">
+                        @foreach (var i in rows) { @Row(i) }
+                    </ul>
+                    @if (g.Items.Count > limit)
+                    {
+                        <button type="button" class="btn btn-secondary btn-sm msb-more" @onclick="() => _gLimit[g.Path] = limit + GroupRows" data-testid="mtd-sgroup-more">Vis flere i gruppen (@(g.Items.Count - limit) igjen)</button>
+                    }
+                }
+            }
+        </section>
+    };
+
+    /// <summary>One scenario row (the same row in the flat list and inside a group).</summary>
+    private RenderFragment Row(S.Item i) => __builder =>
+    {
+        var selected = _selected.Contains(i.Id);
+                        <li id="@($"msb-row-{i.Id}")" role="option" aria-selected="@(selected ? "true" : "false")" class="msb-row mtw-ac-row @(i.Id == _active ? "is-active" : null) @(selected ? "is-selected" : null)"
+                            data-testid="mtd-scenario" data-id="@i.Id" data-relevance="@i.Relevance" @onclick="() => Open(i.Id)">
+                            <input type="checkbox" class="msb-check" checked="@selected" aria-label="@($"Velg {i.Title}")" @onclick:stopPropagation="true"
+                                   @onchange="() => ToggleAsync(i.Id)" data-testid="mtd-select" />
+                            <span class="msb-row-main">
+                                @if (i.Candidate.Story is { } rs && i.Candidate.NumberInStory is not null)
+                                {
+                                    <span class="mtw-row-label" data-testid="mtd-scenario-label">@W.ScenarioLabel(i)@(_filter.Story is null ? $" · {W.StoryLabel(rs)}" : "")</span>
+                                }
+                                <span class="msb-row-title" data-testid="mtd-scenario-title">@W.RowTitle(i)</span>
+                                <span class="msb-row-meta">@i.Area@(i.Candidate.Story?.Priority is { } pri ? $" · {pri}" : "")@(i.Relevance switch { S.Relevance.Technical => " · teknisk", S.Relevance.Both => " · manuell + teknisk", _ => i.KindDecided ? " · manuell" : "" })@(i.KindDecided ? " (valgt)" : "")@if (i.Tech is { } techState && TC.ListTag(techState) is { } techTag) { <span class="mtw-tech-tag is-@(techState.ToString().ToLowerInvariant())" data-testid="mtd-scenario-tech"> · @techTag</span> }<span class="msb-approach" title="@string.Join(" ", i.Suitability.Approaches.Select(a => a.Reason))" data-testid="mtd-scenario-approach"> · @string.Join(" · ", i.Suitability.Approaches.Take(2).Select(a => TestDesignAdvisor.ApproachLabel(a.Approach)))</span></span>
+                                @if (i.TypeResult is { } rowType && ScenarioTypeClassifier.RowLabel(rowType) is { } typeLabel)
+                                {
+                                    <span class="mtw-type-tag is-@rowType.Type.ToString().ToLowerInvariant()" data-testid="mtd-scenario-type" data-type="@rowType.Type">@typeLabel</span>
+                                }
+                                @if (i.Candidate.RequirementIds.Count > 0)
+                                {
+                                    <span class="mtw-row-reqs" data-testid="mtd-scenario-reqs">@foreach (var r in i.Candidate.RequirementIds.Take(4)) { <span class="mtw-fr">@r</span> }@if (i.Candidate.RequirementIds.Count > 4) { <span class="mtw-fr is-more">+@(i.Candidate.RequirementIds.Count - 4)</span> }</span>
+                                }
+                            </span>
+                            @if (i.Prepared is { Cases: > 0 } prep) { <span class="msb-count" title="Testtilfeller i lagrede planer">@prep.Cases</span> }
+                            <span class="msb-status msb-tone-@i.Status.Tone" data-testid="mtd-scenario-status">@i.Status.Text</span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm mtw-details-btn" @onclick:stopPropagation="true" @onclick="() => OpenDetails(i.Id)"
+                                    aria-controls="mtd-drawer" aria-expanded="@(_drawerOpen && i.Id == _active ? "true" : "false")" data-testid="mtd-show-details">Vis detaljer</button>
+                        </li>
+    };
 
     private async Task SelectAll(IEnumerable<S.Item> items) { foreach (var i in items) _selected.Add(i.Id); await KeepAsync(); }
 

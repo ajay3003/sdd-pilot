@@ -358,14 +358,14 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         drawer.GetAttribute("data-open").Should().Be("false", "closed on first load");
         drawer.HasAttribute("hidden").Should().BeTrue("no reserved third column");
 
-        cut.FindAll("[data-testid=mtd-scenario]")[0].Click();
+        cut.Find("[data-testid=mtd-scenario][data-id='US1-AS1']").Click();
         cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("false", "selecting a scenario does not open the drawer");
 
-        cut.FindAll("[data-testid=mtd-show-details]")[1].Click();
+        cut.Find("[data-testid=mtd-scenario][data-id='US1-AS2'] [data-testid=mtd-show-details]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true"));
         cut.Find("[data-testid=mtd-detail-title]").TextContent.Should().Contain("Attendance above plan", "the drawer shows the scenario it was opened for");
 
-        cut.FindAll("[data-testid=mtd-scenario]")[0].Click();
+        cut.Find("[data-testid=mtd-scenario][data-id='US1-AS1']").Click();
         cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true", "while open it follows the selection");
         cut.Find("[data-testid=mtd-detail-title]").TextContent.Should().Contain("Valid report accepted");
 
@@ -373,7 +373,7 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("false");
         cut.Find("[data-testid=mtd-scenario][data-id='US1-AS1']").ClassList.Should().Contain("is-active", "closing keeps the selected scenario");
 
-        cut.FindAll("[data-testid=mtd-scenario]")[1].Click();
+        cut.Find("[data-testid=mtd-scenario][data-id='US1-AS2']").Click();
         cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("false", "while closed it stays closed");
         cut.FindAll("[data-testid=mtd-show-details]")[0].Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true"));

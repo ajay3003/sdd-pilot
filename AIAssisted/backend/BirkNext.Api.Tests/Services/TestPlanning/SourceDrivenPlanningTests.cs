@@ -664,6 +664,32 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task A_new_plan_can_use_the_grouping_as_its_suites_and_an_existing_plan_is_never_regrouped()
+    {
+        await using var db = Context();
+        var x = Services(db);
+        var flow = InSpec("e1", SkoleSpec, "US1", "f1") with { Type = ScenarioCandidateType.BusinessE2E, Area = "Rapportering" };
+        var receive = InSpec("i1", SkoleSpec, "US2", "f2") with { Type = ScenarioCandidateType.Integration, Area = "Meldingsmottak" };
+        _discoveries.Store(Selected("d-grp", DateTimeOffset.UtcNow, SkoleSpec, flow, receive));
+        var existing = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-grp", CandidateIds = ["e1", "i1"],
+            PlanName = "Eksisterende", Structure = PlanStructureTemplates.LevelArea, CreationRequestId = "grp-old" }, "anna", default);
+        var before = (existing.Revision, existing.Suites.Select(s => (s.Id, s.Name, s.ParentId)).ToList(), existing.Cases.Select(c => (c.Source.ScenarioId, c.SuiteId)).ToList());
+
+        var grouped = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-grp", CandidateIds = ["e1", "i1"],
+            PlanName = "Gruppert", Structure = ScenarioGroupAxes.StructureKey(ScenarioGroupAxis.TestLevel, ScenarioGroupAxis.Area), CreationRequestId = "grp-new" }, "anna", default);
+        PlanStructure.Flatten(grouped.Suites).Select(t => new string(' ', t.Depth * 2) + t.Suite.Name).Should().Equal(
+            "Ende-til-ende-tester", "  Rapportering", "Integrasjonstester", "  Meldingsmottak");
+        grouped.Cases.Should().HaveCount(2, "one case per scenario: grouping never copies a scenario");
+        PlanStructure.PathOf(grouped.Suites, grouped.Cases.Single(c => c.Source.ScenarioId == "e1").SuiteId).Should().Be("Ende-til-ende-tester / Rapportering");
+        var reread = await x.Plans.DraftAsync(grouped.Id, default);
+        reread.Suites.Select(s => s.Id).Should().Equal(grouped.Suites.Select(s => s.Id), "the suites are persisted, not only shown");
+
+        var now = await x.Plans.DraftAsync(existing.Id, default);
+        (now.Revision, now.Suites.Select(s => (s.Id, s.Name, s.ParentId)).ToList(), now.Cases.Select(c => (c.Source.ScenarioId, c.SuiteId)).ToList())
+            .Should().BeEquivalentTo(before, "creating another plan with a grouping never regroups an existing plan");
+    }
+
+    [Fact]
     public async Task A_historical_inspection_can_never_extend_a_plan_or_move_its_basis()
     {
         await using var db = Context();
