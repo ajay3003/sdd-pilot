@@ -120,7 +120,8 @@ public static partial class AcceptanceScenarioInterpreter
         {
             kind = ActionKind.SystemProcessing;
             var resolved = pronounWord is "it" or "this" or "that" && subject is not null ? $"the {subject} {rest}" : ResolveTrailingIt(trimmed, subject);
-            action = $"Trigger and observe: {resolved}.";
+            // 2026-11-26: no vague «Trigger and observe»; the event as the source states it, and the missing action said plainly (never invented).
+            action = $"{Capital(resolved)} (the action that makes this happen in the test environment must be specified).";
             unresolved.Add("How this processing is triggered and observed in the test environment is not stated in the source — clarify before execution.");
         }
         else

@@ -397,6 +397,10 @@ public sealed record CreateProjectTestPlanRequest
     public string? TemplateId { get; init; }
     /// <summary>Set by the server from <see cref="TemplateId"/> (never read from a client).</summary>
     [System.Text.Json.Serialization.JsonIgnore] public IReadOnlyList<TestSuiteDraft>? TemplateSuites { get; init; }
+    /// <summary>«Legg til scenario» (2026-11-26): plan the chosen scenarios without creating test cases (scenario-only items). Cases can be prepared later.</summary>
+    public bool ScenarioOnly { get; init; }
+    /// <summary>With <see cref="DraftId"/> and <see cref="ScenarioOnly"/>: the destination suite in the existing plan (null = its first suite).</summary>
+    public string? SuiteId { get; init; }
 }
 
 /// <summary>A test case a person writes by hand: title and purpose; steps are added while editing. <see cref="ScenarioKey"/> = write it under that
@@ -489,7 +493,11 @@ public sealed record ScenarioCaseCoverage
 public sealed record ScenarioTranslationView(string? Title, string? Given, string? When, string? Then, string? ExpectedResult, TranslationOrigin Origin, bool Current, DateTimeOffset At);
 
 /// <summary>One saved case of a scenario in one plan: where it lives and how to open it.</summary>
-public sealed record ScenarioPlanMembership(Guid PlanId, string PlanName, bool Active, string CaseId, string CaseTitle, string? SuitePath, TestCaseReviewState Review);
+public sealed record ScenarioPlanMembership(Guid PlanId, string PlanName, bool Active, string CaseId, string CaseTitle, string? SuitePath, TestCaseReviewState Review)
+{
+    /// <summary>A scenario-only plan item (planned, no test case prepared): <see cref="CaseId"/> is empty.</summary>
+    public bool ScenarioOnly { get; init; }
+}
 
 /// <summary>One scenario's place in the work queues, with plain-Norwegian reasons (no score) and what stands between it and execution.</summary>
 public sealed record ScenarioWorkItem

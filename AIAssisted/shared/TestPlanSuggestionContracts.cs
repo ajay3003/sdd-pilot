@@ -417,6 +417,10 @@ public sealed record TestPlanDraft
     public TestPlanSourceBasis Basis { get; init; } = new();
     public List<TestSuiteDraft> Suites { get; init; } = [];
     public List<TestCaseDraft> Cases { get; init; } = [];
+    /// <summary>Scenario-only plan items (2026-11-26): a scenario planned in a suite without a test case yet. Null/empty on older plans. A case
+    /// prepared later for the same scenario attaches to it by <see cref="PlannedScenario.ScenarioId"/> (no second item); the scenario id is the
+    /// plan's occurrence key for the scenario.</summary>
+    public List<PlannedScenario>? PlannedScenarios { get; init; }
     public string RuleVersion { get; init; } = "";
     public string CreatedBy { get; init; } = "";
     public DateTimeOffset CreatedAt { get; init; }
@@ -1023,3 +1027,23 @@ public sealed record TestPlanRevisionSummary(int Revision, string Reason, string
 
 /// <summary>Restores an earlier revision as a new revision (never rewriting history). <see cref="BaseRevision"/> is the draft revision the tester saw.</summary>
 public sealed record RestoreTestPlanRevisionRequest(int BaseRevision, int Revision);
+
+/// <summary>A scenario planned in a suite of a plan without requiring a test case (2026-11-26). Not a case: no steps, approval, readiness or
+/// execution of its own; never exported to Azure DevOps as a test case. The scenario's own text is kept as it was when it was planned.</summary>
+public sealed record PlannedScenario
+{
+    /// <summary>The discovered scenario's id (the plan's occurrence key; the same id a case prepared from it carries as its scenario).</summary>
+    public string ScenarioId { get; init; } = "";
+    public string? SourceIdentity { get; init; }
+    public string Title { get; init; } = "";
+    public string? ExpectedBehaviour { get; init; }
+    public string? StoryKey { get; init; }
+    public string? StoryId { get; init; }
+    public int? NumberInStory { get; init; }
+    public string? SpecificationPath { get; init; }
+    public string? SnapshotKey { get; init; }
+    public string SuiteId { get; init; } = "";
+    public int Order { get; init; }
+    public string AddedBy { get; init; } = "";
+    public DateTimeOffset AddedAt { get; init; }
+}

@@ -690,6 +690,44 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task A_scenario_can_be_planned_without_a_case_prepared_later_once_and_is_never_exported_or_ready()
+    {
+        await using var db = Context();
+        var x = Services(db);
+        var flow = InSpec("e1", SkoleSpec, "US1", "f1") with { Type = ScenarioCandidateType.BusinessE2E, Area = "Rapportering" };
+        var receive = InSpec("i1", SkoleSpec, "US2", "f2") with { Type = ScenarioCandidateType.Integration, Area = "Meldingsmottak" };
+        _discoveries.Store(Selected("d-opt", DateTimeOffset.UtcNow, SkoleSpec, flow, receive));
+
+        // «Legg til scenario»: planned, no case.
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-opt", CandidateIds = ["e1", "i1"],
+            PlanName = "Sprint 12", ScenarioOnly = true, CreationRequestId = "opt-1" }, "anna", default);
+        plan.Cases.Should().BeEmpty("planning a scenario creates no test case");
+        plan.PlannedScenarios!.Select(p => p.ScenarioId).Should().BeEquivalentTo(["e1", "i1"]);
+        plan.PlannedScenarios.Should().OnlyContain(p => plan.Suites.Any(s => s.Id == p.SuiteId), "each item sits in a saved suite");
+
+        // Adding the same scenario again is not a second item.
+        var again = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-opt", CandidateIds = ["e1"],
+            DraftId = plan.Id, BaseRevision = plan.Revision, ScenarioOnly = true }, "anna", default);
+        again.PlannedScenarios.Should().HaveCount(2, "no duplicate membership");
+        again.Revision.Should().Be(plan.Revision, "nothing to add: no revision");
+
+        // Prepare later: one case for the scenario; the item stays (same suite), never a second item.
+        var prepared = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-opt", CandidateIds = ["e1"],
+            DraftId = plan.Id, BaseRevision = plan.Revision }, "anna", default);
+        prepared.Cases.Where(c => c.ParentScenario == "e1").Should().ContainSingle();
+        prepared.PlannedScenarios.Should().HaveCount(2);
+        prepared.Cases.Single().Review.Should().NotBe(TestCaseReviewState.Accepted, "a prepared case is never approved by planning");
+
+        // Saving the plan keeps the scenario-only item; the export holds only cases (the item is not a test case).
+        var saved = await x.Plans.SaveAsync(prepared.Id, Human(prepared, (_, part) => part), "anna", default);
+        saved.PlannedScenarios.Should().HaveCount(2);
+        var package = AdoExportPackage.Build(saved, saved.Cases.Select(c => c.Source.ScenarioId).ToHashSet(),
+            subset => new AdoExportPreview { Rows = [.. subset.Select(c => new AdoExportRow("", "Test Case", c.EffectiveTitle, 1, "Open", "Opens", "Area", "", "Design", null) { CaseId = c.Source.ScenarioId })] },
+            p => System.Text.Encoding.UTF8.GetBytes(string.Join(",", p.Rows.Select(r => r.Title))), "csv");
+        package.Rows.Should().Be(1, "only the prepared case; a scenario-only item is never exported as a test case");
+    }
+
+    [Fact]
     public async Task A_historical_inspection_can_never_extend_a_plan_or_move_its_basis()
     {
         await using var db = Context();

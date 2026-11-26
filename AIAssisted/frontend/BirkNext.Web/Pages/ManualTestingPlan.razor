@@ -163,6 +163,7 @@
                 <a class="msb-link mtp-tools-advanced" href="@($"{M.LegacyPlanRoute}?draft={plan.Id}&advanced=1")" data-testid="mtp-advanced">Avanserte verktøy</a>
             </nav>
 
+            @PreviewDialog()
             @if (_tool == "versions" && Api is { } versionsApi)
             {
                 <BirkNext.Web.Components.ManualTesting.PlanVersionsPanel Draft="plan" Api="versionsApi" CanWrite="CanWrite" ReadOnly="ReadOnlyPlan" Dirty="Dirty" Restored="ReplacedAsync" />
@@ -176,6 +177,29 @@
                 var (rows, hidden) = P.Rows(plan, _showTechnical, _query);
                 <div class="mtp-layout">
                     <nav class="mtp-master" aria-label="Scenarioer og testtilfeller" data-testid="mtp-master">
+                        @if (plan.PlannedScenarios is { Count: > 0 } plannedItems && PlannedOnly(plan) is { Count: > 0 } notPrepared)
+                        {
+                            @* Scenario-only plan items (2026-11-26): planned, not prepared. Preparing one creates its case through the normal flow (no duplicate item). *@
+                            <section class="mtp-planned" aria-label="Planlagte scenarioer uten testtilfelle" data-testid="mtp-planned">
+                                <span class="mtp-ctx-label">Planlagt – ikke klargjort (@notPrepared.Count)</span>
+                                <ul class="mtp-planned-list">
+                                    @foreach (var item in notPrepared)
+                                    {
+                                        var it = item;
+                                        <li data-testid="mtp-planned-item" data-scenario="@it.ScenarioId">
+                                            <span class="mtp-planned-title">@(it.StoryId is { } sid && it.NumberInStory is { } n ? $"{sid} · AC {n} — " : "")@it.Title</span>
+                                            <span class="msb-status msb-tone-muted" data-testid="mtp-planned-state">Scenario – ikke klargjort</span>
+                                            @if (plan.Suites.Any(s => s.Id == it.SuiteId)) { <span class="mt-muted msb-small">@PlanStructure.PathOf(plan.Suites, it.SuiteId)</span> }
+                                            <button type="button" class="msb-link" @onclick="() => _preview = new(null, it)" data-testid="mtp-planned-preview">Forhåndsvis</button>
+                                            @if (CanWrite && !ReadOnlyPlan)
+                                            {
+                                                <button type="button" class="msb-link" disabled="@(_busy || Dirty)" @onclick="() => PrepareItemAsync(it)" data-testid="mtp-planned-prepare">Forbered testtilfelle</button>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                            </section>
+                        }
                         <div class="mtp-master-tools">
                             <input type="search" class="mtp-search" placeholder="Søk i scenarioer, krav …" aria-label="Søk" value="@_query" @oninput="e => _query = e.Value?.ToString() ?? string.Empty" data-testid="mtp-search" />
                             <label class="mtp-toggle"><input type="checkbox" checked="@_showTechnical" @onchange="e => _showTechnical = e.Value is true" data-testid="mtp-technical" /> Vis teknisk innhold</label>
@@ -831,6 +855,7 @@
                                 <div class="mtp-actions" data-testid="mtp-actions">
                                     <button type="button" class="btn btn-primary" disabled="@(!Dirty || _busy)" @onclick="SaveAsync" data-testid="mtp-save">Lagre</button>
                                     <button type="button" class="btn btn-secondary" disabled="@(!Dirty || _busy)" @onclick="Discard" data-testid="mtp-discard">Forkast endringer</button>
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="() => _preview = new(current.Source.ScenarioId, null)" data-testid="mtp-preview-open">Forhåndsvisning</button>
                                     <span class="mtp-spacer"></span>
                                     @if (current.Review is TestCaseReviewState.Generated or TestCaseReviewState.NeedsClarification)
                                     {
@@ -1282,6 +1307,116 @@
                             }
                         </li>
     };
+
+    // ── Scenario-only items and the read-only preview (2026-11-26) ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Planned scenarios no current case of the plan represents yet (a prepared case replaces the item in the list; the item stays stored).</summary>
+    private static List<PlannedScenario> PlannedOnly(TestPlanDraft plan) =>
+        [.. (plan.PlannedScenarios ?? []).Where(p => !plan.Cases.Any(c => c.ParentScenario == p.ScenarioId && c.Review is not (TestCaseReviewState.Superseded or TestCaseReviewState.Excluded)))
+            .OrderBy(p => p.Order)];
+
+    /// <summary>«Forbered testtilfelle» for a planned scenario: the normal «add to this plan» flow creates its generated case (the server skips a
+    /// scenario the plan already holds as a case, so a retry never duplicates). Needs the scenario in the current discovery.</summary>
+    private async Task PrepareItemAsync(PlannedScenario item)
+    {
+        if (_plan is null || Api is not { } api || _ws?.ProjectKey is not { } key) return;
+        if (_ws.Discovery is not { } discovery || discovery.Candidates.All(c => c.CandidateId != item.ScenarioId))
+        { _error = "Scenarioet finnes ikke i gjeldende oppdagelse. Åpne Finn og forstå for samme spesifikasjon og prøv igjen."; return; }
+        _busy = true; _error = null;
+        try
+        {
+            var (draft, error) = await api.CreateProjectAsync(new CreateProjectTestPlanRequest
+            { ProjectKey = key, DiscoveryId = discovery.DiscoveryId, CandidateIds = [item.ScenarioId], DraftId = _plan.Id, BaseRevision = _plan.Revision });
+            if (draft is null) { _error = P.Friendly(error, "Testtilfellet kunne ikke forberedes."); return; }
+            _plan = draft;
+            if (draft.Cases.FirstOrDefault(c => c.ParentScenario == item.ScenarioId) is { } made) Open(P.IdOf(made));
+            _notice = "Testtilfellet er forberedt. Scenarioet ligger fortsatt i samme testgruppe.";
+        }
+        finally { _busy = false; }
+    }
+
+    /// <summary>The open preview: a case (by id; shown from the editor's CURRENT values, saved or not) or a scenario-only item.</summary>
+    private sealed record PreviewTarget(string? CaseId, PlannedScenario? Item);
+    private PreviewTarget? _preview;
+
+    private RenderFragment PreviewDialog() => __builder =>
+    {
+        if (_preview is not { } target || _plan is not { } plan) return;
+        var c = target.CaseId is { } cid ? plan.Cases.FirstOrDefault(x => P.IdOf(x) == cid) : null;
+        var form = c is not null && _form is { } f && f.CaseId == P.IdOf(c) ? f : null;
+        var unsaved = form is not null && c is not null && form.IsDirty(c);
+        var suiteId = c?.SuiteId ?? target.Item?.SuiteId;
+        <div class="mtp-preview-backdrop" data-testid="mtp-preview">
+            <section class="mtp-preview" role="dialog" aria-modal="true" aria-labelledby="mtp-preview-title" @onkeydown="PreviewKey">
+                <header class="mtp-preview-head">
+                    <div>
+                        <span class="mtp-ctx-label">Forhåndsvisning · @plan.PlanName@(suiteId is { } sid && plan.Suites.Any(s => s.Id == sid) ? $" · {PlanStructure.PathOf(plan.Suites, sid)}" : "")</span>
+                        <h2 id="mtp-preview-title" class="mtp-preview-title" data-testid="mtp-preview-title">@(c is not null ? P.ScenarioHeading(c, _lang) : target.Item!.Title)</h2>
+                        @if (unsaved) { <span class="msb-status msb-tone-warn" data-testid="mtp-preview-unsaved">Ulagret utkast</span> }
+                        else if (c is not null) { <span class="msb-status msb-tone-muted" data-testid="mtp-preview-saved">Lagret versjon</span> }
+                    </div>
+                    <div class="mtp-preview-actions">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="PrintAsync" data-testid="mtp-preview-print">Skriv ut</button>
+                        <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _preview = null" data-testid="mtp-preview-close">Lukk</button>
+                    </div>
+                </header>
+                <section class="mtp-preview-sec" aria-label="Scenario" data-testid="mtp-preview-scenario">
+                    <h3>Scenario</h3>
+                    <p>@(c?.Generated.Title ?? target.Item!.Title)</p>
+                    <p><strong>Forventet atferd:</strong> @(c?.Generated.ExpectedResult ?? target.Item?.ExpectedBehaviour ?? "Ikke oppgitt i kilden – må avklares")</p>
+                </section>
+                <section class="mtp-preview-sec" aria-label="Testtilfelle" data-testid="mtp-preview-case">
+                    <h3>Testtilfelle</h3>
+                    @if (form is null && c is null)
+                    {
+                        <p class="mt-muted" data-testid="mtp-preview-no-case">Ingen testtilfelle er klargjort.</p>
+                    }
+                    else
+                    {
+                        var title = form?.Title ?? c!.EffectiveTitle;
+                        var purpose = form?.Purpose ?? c!.EffectivePurpose;
+                        var pre = form?.Preconditions ?? c!.EffectivePreconditions;
+                        var expected = form?.ExpectedResult ?? c!.EffectiveExpected;
+                        var steps = form is not null ? form.Steps.Where(s => !string.IsNullOrWhiteSpace(s.Action) || !string.IsNullOrWhiteSpace(s.Expected)).Select(s => (s.Action, (string?)s.Expected)).ToList()
+                            : c!.EffectiveSteps.Select((s, i) => (s, c.EffectiveStepExpected.ElementAtOrDefault(i))).ToList();
+                        <dl class="mtp-preview-dl">
+                            <dt>Tittel</dt><dd data-testid="mtp-preview-case-title">@Given(title)</dd>
+                            <dt>Formål</dt><dd data-testid="mtp-preview-purpose">@Given(purpose)</dd>
+                            <dt>Forutsetninger</dt><dd data-testid="mtp-preview-preconditions">@Given(pre)</dd>
+                        </dl>
+                        @if (steps.Count == 0) { <p class="msb-tone-warn" data-testid="mtp-preview-no-steps">Teststeg: Ikke angitt</p> }
+                        else
+                        {
+                            <table class="mtp-preview-steps" data-testid="mtp-preview-steps">
+                                <thead><tr><th scope="col">Steg</th><th scope="col">Handling</th><th scope="col">Forventet resultat</th></tr></thead>
+                                <tbody>@for (var i = 0; i < steps.Count; i++) { <tr data-testid="mtp-preview-step"><td>@(i + 1)</td><td>@Given(steps[i].Item1)</td><td>@Given(steps[i].Item2)</td></tr> }</tbody>
+                            </table>
+                        }
+                        <p><strong>Samlet forventet resultat:</strong> <span data-testid="mtp-preview-expected">@Given(expected)</span></p>
+                    }
+                </section>
+                <section class="mtp-preview-sec" aria-label="Klargjøringsstatus" data-testid="mtp-preview-status">
+                    <h3>Klargjøringsstatus</h3>
+                    @if (c is null) { <p data-testid="mtp-preview-status-text">Scenario – ikke klargjort. Ikke klart til kjøring.</p> }
+                    else
+                    {
+                        var problems = P.ReadyProblems(c);
+                        <p data-testid="mtp-preview-status-text">@(c.Review == TestCaseReviewState.Accepted ? "Godkjent" : "Ikke godkjent") · @(problems.Count == 0 ? "ingen kjente mangler (lagret versjon)" : $"{problems.Count} mangler (lagret versjon)")</p>
+                    }
+                    <p class="mt-muted msb-small">Forhåndsvisningen lagrer ingenting og endrer ikke status, godkjenning eller oversettelse.</p>
+                </section>
+            </section>
+        </div>
+    };
+
+    private void PreviewKey(KeyboardEventArgs e) { if (e.Key == "Escape") _preview = null; }
+
+    private static string Given(string? text) => string.IsNullOrWhiteSpace(text) ? "Ikke angitt" : text.Trim();
+
+    private async Task PrintAsync()
+    {
+        try { await JS.InvokeVoidAsync("print"); } catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
+    }
 
     // ── Suite tree and suite management (2026-11-26) ───────────────────────────────────────────────────────────────────────────
     // Expanding and collapsing are view state only (never saved). A suite change is one saved revision through the normal plan save.

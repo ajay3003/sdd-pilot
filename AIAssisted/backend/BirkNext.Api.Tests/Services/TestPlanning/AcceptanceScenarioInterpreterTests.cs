@@ -147,7 +147,7 @@ public sealed class AcceptanceScenarioInterpreterTests
         var receiver = AcceptanceScenarioInterpreter.Interpret("a valid skolenærvær v2.0.1 message", "the intake processes it",
             "SkoleService receives one request containing the child's identifier and its type, the reporter's type and identity, period dates, planned and actual hours, absence lines, message id, send time and message-chain information.", null);
         receiver.Kind.Should().Be(K.SystemProcessing);
-        receiver.Action.Should().Be("Trigger and observe: the intake processes the valid skolenærvær v2.0.1 message.");
+        receiver.Action.Should().Be("The intake processes the valid skolenærvær v2.0.1 message (the action that makes this happen in the test environment must be specified).", "the event as stated and the missing action said plainly — never a vague «trigger and observe»");
         receiver.Unresolved.Should().ContainSingle(u => u.StartsWith("How this processing is triggered and observed", StringComparison.Ordinal));
         receiver.Expected.Should().ContainSingle("one assertion listing many fields is never split at its commas");
 

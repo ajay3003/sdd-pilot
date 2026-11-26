@@ -51,6 +51,17 @@ public sealed partial class TestPlanSuggestionService
             foreach (var st in plan.StoryTranslations ?? [])
                 if (string.Equals(st.Language, ScenarioPlanning.Norwegian, StringComparison.OrdinalIgnoreCase) && (!storyTranslations.TryGetValue(st.StoryKey, out var held) || held.At < st.At))
                     storyTranslations[st.StoryKey] = st;
+            foreach (var item in plan.PlannedScenarios ?? [])
+            {
+                // A scenario-only item is membership when no current case of the plan represents the same scenario (then the case is shown).
+                if (plan.Cases.Any(c => c.ParentScenario == item.ScenarioId && c.Review is not (TestCaseReviewState.Superseded or TestCaseReviewState.Excluded))) continue;
+                var target = byId.GetValueOrDefault(item.ScenarioId)
+                    ?? (item.SourceIdentity is { } si ? discovery.Candidates.FirstOrDefault(x => x.SourceIdentity == si || x.FormerIdentities.Contains(si)) : null);
+                if (target is null) continue;
+                if (!counts.TryGetValue(target.CandidateId, out var ti)) counts[target.CandidateId] = ti = new Tally();
+                ti.Memberships.Add(new ScenarioPlanMembership(plan.Id, plan.PlanName, active, "", item.Title,
+                    plan.Suites.Any(s => s.Id == item.SuiteId) ? PlanStructure.PathOf(plan.Suites, item.SuiteId) : null, TestCaseReviewState.Generated) { ScenarioOnly = true });
+            }
             foreach (var c in plan.Cases)
             {
                 var target = c.Source.Kind switch

@@ -297,6 +297,8 @@
                                 @foreach (var (key, label, _) in PlanStructureTemplates.All) { <option value="@key" selected="@(draft.Structure == key)">@label</option> }
                             </select>
                             var proposed = ProposedStructure(draft.Structure);
+                            <label class="adx-check" data-testid="mt-new-plan-scenario-only-label"><input type="checkbox" checked="@draft.ScenarioOnly" disabled="@_creating" @onchange="e => draft.ScenarioOnly = e.Value is true" data-testid="mt-new-plan-scenario-only" />
+                                <span><strong>Legg til scenarioene uten testtilfeller</strong> <span class="mt-muted msb-small">Scenarioene planlegges nå; testtilfeller kan forberedes senere i Planlegg og klargjør. Ingenting markeres som klart til kjøring.</span></span></label>
                             <div class="mt-new-plan-preview" data-testid="mt-new-plan-preview">
                                 <span class="mt-muted msb-small">Testgruppene i den nye testplanen (@proposed.Suites.Count testgrupper, @proposed.Assignment.Count testtilfeller):</span>
                                 <ul class="mt-structure-tree">
@@ -640,6 +642,8 @@
         public string Name { get; set; } = name;
         /// <summary>How the plan starts (2026-11-26): «Fra mal» by default.</summary>
         public NewPlanMethod Method { get; set; } = NewPlanMethod.FromTemplate;
+        /// <summary>«Legg til scenarioene uten testtilfeller» (2026-11-26): scenario-only plan items; cases are prepared later.</summary>
+        public bool ScenarioOnly { get; set; }
         public bool WithSelection { get => Method == NewPlanMethod.FromSelection; set => Method = value ? NewPlanMethod.FromSelection : NewPlanMethod.FromTemplate; }
         public string TemplateId { get; set; } = TestPlanTemplateRules.StandardId;
         /// <summary>The grouping template of the new plan (2026-11-26); the System Settings default unless the tester picks another.</summary>
@@ -767,6 +771,7 @@
                 ProjectKey = key, ProjectName = _ws.ProjectName, PlanName = draft.Name.Trim(), CreationRequestId = draft.RequestId,
                 DiscoveryId = withSelection ? _ws.Discovery!.DiscoveryId : "", CandidateIds = withSelection ? [.. _selection] : [], AllowEmpty = !withSelection,
                 Structure = withSelection ? draft.Structure : null,
+                ScenarioOnly = withSelection && draft.ScenarioOnly,
                 TemplateId = !withSelection && draft.Method == NewPlanMethod.FromTemplate ? draft.TemplateId : null,
             });
             // A failed save keeps the draft (same name, same request id: a retry never creates a second test plan).

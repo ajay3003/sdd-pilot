@@ -623,7 +623,9 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         // The same «Opprett testplan» draft again (double-click, retry after a lost answer): the plan already created from it, never a second one.
         if (request.DraftId is null && !string.IsNullOrWhiteSpace(request.CreationRequestId) && await CreatedFromAsync(key, request.CreationRequestId.Trim(), ct) is { } already) return already;
         if (chosen.Count > MaxCases) throw new TestPlanException(400, "too-many-cases", $"At most {MaxCases} cases per plan.");
-        var cases = chosen.Select(c => ProjectCase(key, c, discovery?.Basis)).ToList();
+        // «Legg til scenario» (2026-11-26): scenario-only items instead of generated cases (no case is created).
+        var cases = request.ScenarioOnly ? new List<TestCaseDraft>() : chosen.Select(c => ProjectCase(key, c, discovery?.Basis)).ToList();
+        var items = request.ScenarioOnly ? chosen.Select((c, i) => Planned(c, discovery?.SnapshotKey, actor, i)).ToList() : new List<PlannedScenario>();
         if (manualTitle is not null) cases.Add(ManualCase(key, manualTitle, null, null));
 
         if (request.DraftId is { } draftId)
@@ -636,6 +638,30 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             if (current.ProjectKey != key && !sameApplication) throw new TestPlanException(404, "draft-not-found", "No such Test Plan draft in this project.");
             var known = current.Cases.Select(c => c.Source.ScenarioId).ToHashSet(StringComparer.Ordinal);
             var knownSources = current.Cases.Select(c => c.Generated.SourceIdentity).OfType<string>().ToHashSet(StringComparer.Ordinal);
+            if (request.ScenarioOnly)
+            {
+                // A scenario the plan already holds — as an item or by a case — is never planned twice (no duplicate membership).
+                var planned = current.PlannedScenarios ?? [];
+                bool Holds(PlannedScenario p) => known.Contains(p.ScenarioId) || p.SourceIdentity is { } si && knownSources.Contains(si)
+                    || planned.Any(x => x.ScenarioId == p.ScenarioId || p.SourceIdentity is { } s2 && x.SourceIdentity == s2);
+                var newItems = items.Where(p => !Holds(p)).ToList();
+                if (newItems.Count == 0) return current;
+                var suite = request.SuiteId is { Length: > 0 } sid ? current.Suites.FirstOrDefault(s => s.Id == sid)?.Id ?? throw new TestPlanException(400, "suite-unknown", "Testgruppen finnes ikke i testplanen.")
+                    : current.Suites.FirstOrDefault()?.Id;
+                var itemSuites = current.Suites;
+                if (suite is null)
+                {
+                    var fresh = new TestSuiteDraft("suite:p:" + Guid.NewGuid().ToString("N")[..10], "Planlagte scenarioer", "planned", null);
+                    itemSuites = [.. current.Suites, fresh];
+                    suite = fresh.Id;
+                }
+                var order = planned.Count;
+                return await WriteAsync(row, current with
+                {
+                    PlannedScenarios = [.. planned, .. newItems.Select((p, i) => p with { SuiteId = suite, Order = order + i })], Suites = itemSuites,
+                    Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
+                }, ct, $"{newItems.Count} scenario{(newItems.Count == 1 ? "" : "er")} lagt til uten testtilfelle");
+            }
             var added = cases.Where(c => !known.Contains(c.Source.ScenarioId) && (c.Generated.SourceIdentity is null || !knownSources.Contains(c.Generated.SourceIdentity))).ToList();
             var suites = current.Suites.Concat(TestScenarioDiscoveryEngine.ProjectSuites(added.Select(c => c.Generated)).Where(s => current.Suites.All(x => x.Id != s.Id))).ToList();
             return await WriteAsync(row, FlagProject(current with
@@ -660,6 +686,17 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         };
         // «Fra mal» (2026-11-26): an empty plan starts with the template's structure — suites only, new ids; no case, approval or remote id is copied.
         if (empty && request.TemplateSuites is { Count: > 0 } templateSuites) plan = plan with { Suites = [.. templateSuites] };
+        if (items.Count > 0)
+        {
+            // Scenario-only items get the same structure rules as cases (the preview's), keyed by the scenario id.
+            var itemStructure = PlanStructure.Build(PlanStructureTemplates.Known(request.Structure) ? request.Structure! : PlanStructureTemplates.Default,
+                [.. chosen.Select(c => PlanStructure.FactsOf(c.CandidateId, c))]);
+            plan = plan with
+            {
+                Suites = [.. plan.Suites, .. itemStructure.Suites.Where(s => plan.Suites.All(x => x.Id != s.Id))],
+                PlannedScenarios = [.. items.Select(p => p with { SuiteId = itemStructure.Assignment.GetValueOrDefault(p.ScenarioId, itemStructure.Suites.FirstOrDefault()?.Id ?? "") })],
+            };
+        }
         // Hierarchical plan (2026-11-26): the chosen template becomes the saved suite structure — the same rules as the browser's preview.
         if (PlanStructureTemplates.Known(request.Structure) && cases.Count > 0)
         {
@@ -676,6 +713,14 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         await db.SaveChangesAsync(ct);
         return plan;
     }
+
+    /// <summary>A scenario-only plan item from a discovered scenario (its text as it is now; no case, no steps, no approval).</summary>
+    internal PlannedScenario Planned(DiscoveredScenario c, string? snapshotKey, string actor, int order) => new()
+    {
+        ScenarioId = c.CandidateId, SourceIdentity = c.SourceIdentity.Length > 0 ? c.SourceIdentity : null, Title = c.Title, ExpectedBehaviour = c.ExpectedBehaviour,
+        StoryKey = c.Story?.Key, StoryId = c.Story?.StoryId, NumberInStory = c.NumberInStory, SpecificationPath = c.Story?.SpecificationPath,
+        SnapshotKey = snapshotKey ?? c.SnapshotKey, Order = order, AddedBy = actor, AddedAt = Now,
+    };
 
     /// <summary>What the plan structure reads about one new case: its scenario's facts (shared with the browser's preview), or a hand-written case.</summary>
     internal static PlanStructureFacts StructureFacts(TestCaseDraft c, DiscoveredScenario? scenario) => scenario is null
@@ -1016,7 +1061,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
                 Name = s.Name.Trim()[..Math.Min(s.Name.Trim().Length, 200)], Origin = s.Origin is "area" or "stage" or "structure" ? s.Origin : "reviewer",
                 ParentId = string.IsNullOrWhiteSpace(s.ParentId) ? null : s.ParentId,
             }).ToList();
-        if (suites.Count == 0 && current.Cases.Count > 0) suites = current.Suites;
+        if (suites.Count == 0 && (current.Cases.Count > 0 || current.PlannedScenarios is { Count: > 0 })) suites = current.Suites;
         // The suite hierarchy is saved business data (2026-11-26): an unknown parent, a cycle or a duplicate id is refused, never repaired silently.
         if (PlanStructure.Validate(suites) is { } invalid) throw new TestPlanException(400, "invalid-suites", invalid);
         var assets = await AssetsAsync(ct);
@@ -1067,6 +1112,8 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         {
             PlanName = string.IsNullOrWhiteSpace(request.PlanName) ? current.PlanName : Name(request.PlanName), DeliveryLabel = Label(request.DeliveryLabel),
             Revision = row.Revision + 1, Suites = suites, Cases = cases, UpdatedBy = actor, UpdatedAt = Now,
+            // A scenario-only item whose suite was removed moves to the first suite (never dropped; 2026-11-26).
+            PlannedScenarios = current.PlannedScenarios is { Count: > 0 } items ? [.. items.Select(p => suites.Count == 0 || suites.Any(x => x.Id == p.SuiteId) ? p : p with { SuiteId = suites[0].Id })] : current.PlannedScenarios,
             StoryRequirementLinks = request.StoryRequirementLinks is { } storyLinks ? StoryLinks(current, storyLinks, catalog, serverCatalog, actor) : current.StoryRequirementLinks,
             StoryRejectedSuggestions = request.StoryRejectedSuggestions is { } storyRejections ? StoryRejections(current, storyRejections, actor) : current.StoryRejectedSuggestions,
             StoryTranslations = request.StoryTranslations is { } storyTexts ? StoryTexts(current, storyTexts, actor) : current.StoryTranslations,
