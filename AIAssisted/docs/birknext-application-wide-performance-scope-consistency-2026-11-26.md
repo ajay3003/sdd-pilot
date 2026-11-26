@@ -65,3 +65,8 @@ These are honest limits of this pass:
   - loading/error state harmonisation outside Manual Testing.
 - **NOT VERIFIED:** modules outside Manual Testing beyond «loads with status ok» in the sweep.
 - **2,000-candidate cap:** discovery truncates M2LB (pre-existing; recommended: raise it, or apply it per provider with measurement).
+
+## Measurements after the change (v1env19)
+- Testplaner full load: **11.3–11.4 s** (before 11.3–12.1 s): `discover/last` is no longer requested (verified in the request list), but the time to content barely moved — the discovery was not the dominant cost.
+- **Dominant cost found (app-wide):** request timeline of a Testplaner full load — boot calls until ~2.0 s, workspace `bootstrap` (463 KB) and `documents` until ~4.8 s, then **~5.4 s with no network at all** (client CPU) before the page's own calls at ~10.3 s. This is the app shell's workspace restore / document processing that every page pays on a full load (Testoversikt 8.7 s has the same shape). NOT FIXED in this pass: it needs step-level instrumentation of `WorkspaceRestore` and the review-context build in a WASM build; recommended as the next performance task.
+- **Finn og forstå pipeline** on the real M2LB discovery (589 candidates, 1.4 MB; `DiscoverPipelineTimingTests` with BIRKNEXT_DISCOVERY_JSON, .NET desktop runtime): deserialize 316 ms, Items 143 ms, classify 77 ms, filter 6 ms, grouping 37 ms, type summaries 7 ms, suitability 154 ms, readiness facts 41 ms — < 0.8 s natively; in WASM several times slower. Biggest single step: deserialising the payload → recommended: a projected/paged discovery endpoint for list views.

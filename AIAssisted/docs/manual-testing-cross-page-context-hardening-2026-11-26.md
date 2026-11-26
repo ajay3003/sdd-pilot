@@ -74,3 +74,15 @@ v1env19, the exact journey with IDs checked in the address and on the page. See 
 - The multi-selection still survives scope changes by design. It is shown with its count, and is not used by the single-scenario action any more.
 - A colliding key whose candidate ID changed: an existing plan case linked to the old merged ID is matched by its source identity in source-change checks but not by candidate ID.
 - Slow-response ordering is covered for plan loads, not for every API call on every page.
+
+## Browser (isolated v1env19, M2LB, committed tree `20e7cd94`) — VERIFIED
+| Check | Result | Observation (actual ids) |
+|---|---|---|
+| P0-A-intent | PASS | Finn og forstå scenario A → `/manual-testing/plan?scenario=tsc-84470491ee7644e2`, banner `data-scenario` = A |
+| P0-B-different | PASS | module changed (project level → AutorisasjonService); B = `tsc-38684830d49e4e99` (AC 3 · US1) ≠ A |
+| P0-B-opens-B | PASS | `/manual-testing/plan?scenario=tsc-38684830d49e4e99`, banner = B, «Ikke i testplanen», no editor; A never shown |
+| P0-back-forward | PASS | history restores `?scenario=B` exactly |
+| P0-refresh | PASS | reload keeps B |
+| Console | PASS | no errors |
+
+Limitation of this run: the script could not give A a case first (A's case title «None»), so «A's case is not selected» is proven by the component test X01 (A's case present in the plan), not by this browser run. Screenshots: `scratchpad/v1/v1env19/shots/p0-a-planlegg.png`, `p0-b-planlegg.png`.
