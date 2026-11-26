@@ -32,9 +32,15 @@ public sealed class ManualTestingDashboardSettingsStore(string directory)
         if (unknown.Count > 0) throw new ArgumentException($"Ukjent del av testoversikten: {string.Join(", ", unknown.Take(5))}.");
         if (request.PlanStructure is { } structure && !PlanStructureTemplates.Known(structure)) throw new ArgumentException($"Ukjent testplanstruktur: {structure}.");
         var tiles = request.Tiles is { } requested ? DashboardKpiTiles.Normalize(requested) : null;
+        // The KPI order is a list of display ids; malformed ones are refused, unknown ones are kept and ignored when shown (a tile may come back).
+        var order = request.KpiOrder is { } o
+            ? o.Count > 60 || o.Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 64 || !System.Text.RegularExpressions.Regex.IsMatch(id, @"^[A-Za-z0-9][A-Za-z0-9._\-]*$"))
+                ? throw new ArgumentException("Ugyldig rekkefølge for nøkkeltall.") : o.Distinct(StringComparer.Ordinal).ToList()
+            : null;
         lock (_gate)
         {
             var current = request.ResetToDefaults ? new ManualTestingDashboardSettings() : Read();
+            if (request.ResetLayout) current = new ManualTestingDashboardSettings { PlanStructure = current.PlanStructure };
             var visible = new Dictionary<string, bool>(current.Visible, StringComparer.Ordinal);
             foreach (var (id, on) in request.Visible ?? []) visible[id] = on;
             var saved = new ManualTestingDashboardSettings
@@ -43,6 +49,7 @@ public sealed class ManualTestingDashboardSettingsStore(string directory)
                 PlanStructure = request.ResetToDefaults ? null : request.PlanStructure ?? current.PlanStructure,
                 // Tiles: reset → the defaults (null); a list → exactly that list; otherwise kept. Never touches scenarios, plans or cases.
                 Tiles = request.ResetToDefaults || request.ResetTiles ? null : tiles ?? current.Tiles,
+                KpiOrder = request.ResetToDefaults ? null : order ?? current.KpiOrder,
             };
             Directory.CreateDirectory(directory);
             var temp = FilePath + ".tmp";

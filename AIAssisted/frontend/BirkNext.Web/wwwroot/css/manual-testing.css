@@ -1269,3 +1269,37 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 @media (max-width: 600px) { .spp-item { grid-template-columns: 1.2rem minmax(0, 1fr); } .spp-act { grid-column: 2; justify-self: start; } }
 .mtp-step-warn { grid-column: 2 / -1; font-size: 0.8rem; color: var(--clr-warning-text, #9a6700); background: color-mix(in srgb, #d4a72c 10%, transparent); border-radius: 6px; padding: 0.25rem 0.5rem; }
 .mtp-step-warn::before { content: "! "; font-weight: 700; }
+/* ── Testoversikt customisation v5 (2026-11-26): balanced KPI row (five in one row when there is room, never a lonely last card) and a local
+   «Tilpass oversikten» mode ── */
+.mto-kpis-core { grid-template-columns: repeat(var(--kpi-cols, 4), minmax(0, 1fr)); }
+.mto-kpis-core[data-count="1"] { --kpi-cols: 1; } .mto-kpis-core[data-count="2"] { --kpi-cols: 2; } .mto-kpis-core[data-count="3"] { --kpi-cols: 3; }
+.mto-kpis-core[data-count="4"] { --kpi-cols: 4; } .mto-kpis-core[data-count="5"] { --kpi-cols: 5; } .mto-kpis-core[data-count="6"] { --kpi-cols: 6; }
+.mto-kpis-core[data-count="7"], .mto-kpis-core[data-count="8"] { --kpi-cols: 4; }
+@container mto (max-width: 66rem) {
+  .mto-kpis-core[data-count="5"], .mto-kpis-core[data-count="6"] { --kpi-cols: 3; }
+  .mto-kpis-core[data-count="7"], .mto-kpis-core[data-count="8"] { --kpi-cols: 4; }
+}
+@container mto (max-width: 52rem) {
+  .mto-kpis-core[data-count] { --kpi-cols: 2; }
+  .mto-kpis-core[data-count="3"], .mto-kpis-core[data-count="5"], .mto-kpis-core[data-count="7"] { --kpi-cols: 2; }
+  .mto-kpis-core[data-count="3"] > .mto-kpi-slot:last-child, .mto-kpis-core[data-count="5"] > .mto-kpi-slot:last-child,
+  .mto-kpis-core[data-count="7"] > .mto-kpi-slot:last-child { grid-column: 1 / -1; }
+}
+@container mto (max-width: 30rem) { .mto-kpis-core[data-count] { --kpi-cols: 1; } }
+.mto-kpi-slot { display: grid; gap: 0.3rem; min-width: 0; }
+.mto-kpi-slot > .mto-kpi { height: 100%; }
+.mto-slot-tools { display: flex; gap: 0.3rem; align-items: center; justify-content: center; }
+.is-customizing .mto-kpi-slot > .mto-kpi { outline: 1px dashed var(--msb-border); outline-offset: 2px; }
+.is-customizing .mto-kpi-slot > a.mto-kpi { pointer-events: none; }
+.mto-custom { border: 1px solid var(--msb-border); border-radius: var(--msb-radius); background: var(--msb-surface); padding: 0.75rem 1rem; margin-bottom: 0.9rem; display: grid; gap: 0.5rem; }
+.mto-custom-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; }
+.mto-custom-h { font-size: 1.05rem; margin: 0; }
+.mto-custom-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-left: auto; }
+.mto-custom-confirm { display: inline-flex; gap: 0.4rem; align-items: center; font-size: 0.85rem; }
+.mto-custom-note { margin: 0; }
+.mto-custom-catalog > summary { cursor: pointer; font-weight: 600; }
+.mto-custom-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 0.6rem 1rem; margin-top: 0.5rem; }
+.mto-custom-group { border: 1px solid var(--msb-border); border-radius: 8px; padding: 0.4rem 0.7rem 0.6rem; margin: 0; min-width: 0; display: grid; gap: 0.3rem; }
+.mto-custom-group legend { font-size: 0.8rem; font-weight: 600; padding: 0 0.3rem; }
+.mto-custom-item { display: flex; gap: 0.45rem; align-items: flex-start; font-size: 0.88rem; }
+.mto-custom-item > span { display: grid; }

@@ -19,7 +19,7 @@
    «Manuell testing» tab led to «Testplaner» and was never marked as the current page. *@
 <PageTitle>@(IsHome ? "Testoversikt — Manuell testing" : "Testplaner — Manuell testing")</PageTitle>
 
-<div class="mt msb-page @(IsHome ? "mto-page" : null)" data-testid="mt" aria-busy="@(_loading ? "true" : "false")">
+<div class="mt msb-page @(IsHome ? "mto-page" : null) @(_draft is not null ? "is-customizing" : null)" data-testid="mt" aria-busy="@(_loading ? "true" : "false")">
     <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="@(IsHome ? null : "plans")" Title="@(IsHome ? "Testoversikt" : "Testplaner")"
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
         Lead="@(IsHome ? "Testforberedelse, dekning og prioriteringer. Velg modul og spesifikasjon her; Finn og forstå viser det samme utvalget." : "Opprett, åpne og overfør testplanene for applikasjonen. Testtilfellene forberedes i Planlegg og klargjør.")">
@@ -62,7 +62,7 @@
                         }
                     </div>
                     <span class="mto-scope-chip" title="@O.ScopeLabel(CurrentScope)" data-testid="mto-scope">@O.ScopeLabel(CurrentScope)</span>
-                    @if (CanWrite) { <a class="msb-link msb-small mto-customize" href="admin/system-settings?section=manual-testing" data-testid="mto-customize">Tilpass oversikten</a> }
+                    @if (CanWrite && _draft is null) { <button type="button" class="msb-link msb-small mto-customize" @onclick="EnterCustomize" data-testid="mto-customize">Tilpass oversikten</button> }
                 </div>
             </div>
             @if (_overviewLoading)
@@ -81,34 +81,24 @@
                 var attention = O.P1Attention(slice);
                 var blockers = O.Blockers(slice);
                 var changes = O.SourceChanges(slice);
-                <section class="mto-kpis mto-kpis-core" aria-label="Nøkkeltall" data-testid="mto-kpis">
-                    @if (On("metric.scenarios"))
+                @if (_draft is not null) { @CustomizePanel() }
+                var kpis = ManualTestingDashboard.KpiSequence(View).Where(KpiShown).ToList();
+                <section class="mto-kpis mto-kpis-core" aria-label="Nøkkeltall" data-count="@kpis.Count" data-testid="mto-kpis">
+                    @foreach (var kpiId in kpis)
                     {
-                        <a class="mto-kpi is-core" href="@M.DiscoverRoute" data-testid="mto-kpi" data-widget="metric.scenarios"><span class="mto-kpi-k"><span class="mto-kpi-icon is-scenarios" aria-hidden="true"></span>Scenarioforslag</span>
-                            <span class="mto-kpi-v">@(fig.Scenarios?.ToString("N0", Nb) ?? "—")</span>
-                            @if (fig.Scenarios is { } sc && sc > 0 && fig.Covered is { } cv) { @Meter(cv, sc, "med testtilfeller") }
-                            @if (explain) { <span class="mto-kpi-e">@(fig.Scenarios is null ? "Ikke tilgjengelig: spesifikasjonen er ikke lagret for prosjektet" : fig.Covered is { } cov ? $"{cov} har testtilfeller" : "")</span> }</a>
-                    }
-                    @if (On("metric.testCases"))
-                    {
-                        <a class="mto-kpi is-core" href="@M.PlanRoute" data-testid="mto-kpi" data-widget="metric.testCases"><span class="mto-kpi-k"><span class="mto-kpi-icon is-cases" aria-hidden="true"></span>Testtilfeller</span><span class="mto-kpi-v">@fig.Cases.ToString("N0", Nb)</span>
-                            @if (explain) { <span class="mto-kpi-e">Lagret i aktive testplaner</span> }</a>
-                    }
-                    @if (On("metric.approved"))
-                    {
-                        <div class="mto-kpi is-core" data-testid="mto-kpi" data-widget="metric.approved"><span class="mto-kpi-k"><span class="mto-kpi-icon is-approved" aria-hidden="true"></span>Godkjente</span><span class="mto-kpi-v">@fig.Approved.ToString("N0", Nb)</span>
-                            @if (fig.Cases > 0) { @Meter(fig.Approved, fig.Cases, "godkjent") }
-                            @if (explain) { <span class="mto-kpi-e">@fig.Approved av @fig.Cases testtilfeller</span> }</div>
-                    }
-                    @foreach (var tile in _dashboard.EffectiveTiles.Where(t => t.Visible).OrderBy(t => t.Order))
-                    {
-                        @Tile(tile, slice, explain)
-                    }
-                    @if (On("metric.ready"))
-                    {
-                        <div class="mto-kpi is-core" data-testid="mto-kpi" data-widget="metric.ready"><span class="mto-kpi-k"><span class="mto-kpi-icon is-ready" aria-hidden="true"></span>Klar til testing</span><span class="mto-kpi-v">@fig.Ready.ToString("N0", Nb)</span>
-                            @if (fig.Cases > 0) { @Meter(fig.Ready, fig.Cases, "klar") }
-                            @if (explain) { <span class="mto-kpi-e">@fig.Ready av @fig.Cases · godkjent er ikke det samme som klar</span> }</div>
+                        <div class="mto-kpi-slot" data-slot="@kpiId" @key="kpiId">
+                            @CoreKpi(kpiId, fig, slice, explain)
+                            @if (_draft is not null)
+                            {
+                                var pos = kpis.IndexOf(kpiId);
+                                var name = KpiName(kpiId);
+                                <span class="mto-slot-tools" role="group" aria-label="@($"Ordne {name}")" data-testid="mto-slot-tools">
+                                    <button type="button" class="mtp-icon" disabled="@(pos == 0)" @onclick="() => MoveKpi(kpiId, -1, kpis)" aria-label="@($"Flytt {name} til venstre")" data-testid="mto-slot-up">←</button>
+                                    <button type="button" class="mtp-icon" disabled="@(pos == kpis.Count - 1)" @onclick="() => MoveKpi(kpiId, 1, kpis)" aria-label="@($"Flytt {name} til høyre")" data-testid="mto-slot-down">→</button>
+                                    <button type="button" class="msb-link msb-small" @onclick="() => SetShown(kpiId, false)" data-testid="mto-slot-hide">Skjul flis</button>
+                                </span>
+                            }
+                        </div>
                     }
                 </section>
                 @if (_tileError is { } tileError) { <p class="msb-error" role="alert" data-testid="mto-tile-error">@tileError</p> }
@@ -428,7 +418,7 @@
     private O.Level _level = O.Level.Project;
     private int _overviewGeneration;
 
-    private bool On(string id) => _dashboard.IsOn(id);
+    private bool On(string id) => View.IsOn(id);
 
     private O.Scope CurrentScope => _level switch
     {
@@ -558,7 +548,7 @@
         var declared = O.TileDeclared(slice, t);
         var metric = $"{DashboardKpiTiles.DimensionLabel(t.Dimension)} · {DashboardKpiTiles.MetricLabel(t.Dimension, t.Metric)}";
         <div class="mto-kpi is-core mto-tile" data-testid="mto-tile" data-tile="@t.Id" data-dimension="@t.Dimension" data-metric="@t.Metric">
-            <button type="button" class="mto-tile-open" @onclick="() => OpenTileAsync(t)" title="@title" aria-label="@($"{title}: {(count?.ToString() ?? "ikke tilgjengelig")} ({metric}). Åpne i Finn og forstå")" data-testid="mto-tile-open">
+            <button type="button" class="mto-tile-open" disabled="@(_draft is not null)" @onclick="() => OpenTileAsync(t)" title="@title" aria-label="@($"{title}: {(count?.ToString() ?? "ikke tilgjengelig")} ({metric}). Åpne i Finn og forstå")" data-testid="mto-tile-open">
                 <span class="mto-kpi-k"><span class="mto-kpi-icon is-scenarios" aria-hidden="true"></span><span class="mto-tile-title" data-testid="mto-tile-title">@title</span></span>
                 <span class="mto-kpi-v" data-testid="mto-tile-count">@(count?.ToString("N0", Nb) ?? "—")</span>
                 <span class="msb-tag mto-tile-badge" data-testid="mto-tile-metric">@metric</span>
@@ -567,20 +557,6 @@
                     <span class="mto-kpi-e" data-testid="mto-tile-explain">@TileExplain(t, slice, count, declared)</span>
                 }
             </button>
-            <span class="mto-tile-tools">
-                <button type="button" class="mtp-icon mto-tile-menu-btn" aria-haspopup="menu" aria-expanded="@(_tileMenu == t.Id ? "true" : "false")" aria-label="@($"Innstillinger for flisen {title}")"
-                        @onclick="() => _tileMenu = _tileMenu == t.Id ? null : t.Id" data-testid="mto-tile-menu">⋯</button>
-                @if (_tileMenu == t.Id)
-                {
-                    <span class="mto-tile-menu" role="menu" data-testid="mto-tile-menu-list">
-                        <button type="button" role="menuitem" @onclick="() => EditTile(t)" data-testid="mto-tile-edit">Rediger flis</button>
-                        <button type="button" role="menuitem" @onclick="() => EditTile(null)" data-testid="mto-tile-add">Legg til flis</button>
-                        <button type="button" role="menuitem" @onclick="() => HideTileAsync(t)" data-testid="mto-tile-hide">Skjul flis</button>
-                        <button type="button" role="menuitem" @onclick="() => RemoveTileAsync(t)" data-testid="mto-tile-remove">Fjern flis</button>
-                        <button type="button" role="menuitem" @onclick="() => ResetTilesAsync()" data-testid="mto-tile-reset">Tilbakestill standard</button>
-                    </span>
-                }
-            </span>
         </div>
     };
 
@@ -594,51 +570,215 @@
         return count == 0 && unknown > 0 ? $"{unknown:N0} scenarioer har uavklart testnivå – 0 betyr ikke at det ikke finnes slike tester" : "Unike scenarioer i utvalget";
     }
 
-    private List<DashboardKpiTile> TilesWith(DashboardKpiTile changed)
+    // ── «Tilpass oversikten» (customisation v5, 2026-11-26) ──
+    // One configuration: the existing dashboard settings store (installation-wide; this BirkNext has no per-user preference store, so the layout is
+    // the workspace's and says so). The mode edits a DRAFT — nothing is written until «Ferdig», «Avbryt» writes nothing — and only presentation
+    // changes: which cards show and in what order. Every number still comes from the same overview calculation.
+
+    private ManualTestingDashboardSettings? _draft;
+    private bool _draftReset, _resetAsk, _leaveAsk;
+    private ManualTestingDashboardSettings View => _draft ?? _dashboard;
+
+    private static readonly Dictionary<string, string> CoreNames = new(StringComparer.Ordinal)
     {
-        var list = _dashboard.EffectiveTiles.ToList();
-        var i = list.FindIndex(x => x.Id == changed.Id);
-        if (i >= 0) list[i] = changed; else list.Add(changed with { Order = list.Count });
-        return list;
+        ["metric.scenarios"] = "Scenarioforslag", ["metric.testCases"] = "Testtilfeller", ["metric.approved"] = "Godkjente", ["metric.ready"] = "Klar til testing",
+    };
+
+    private string KpiName(string id) => CoreNames.TryGetValue(id, out var n) ? n
+        : View.EffectiveTiles.FirstOrDefault(t => t.Id == id) is { } t ? DashboardKpiTiles.DisplayTitle(t) : id;
+
+    private bool KpiShown(string id) => CoreNames.ContainsKey(id) ? On(id) : View.EffectiveTiles.FirstOrDefault(t => t.Id == id)?.Visible ?? false;
+
+    private void EnterCustomize() { _draft = _dashboard; _draftReset = false; _resetAsk = false; _leaveAsk = false; _tileError = null; _tileNotice = null; }
+
+    private void SetShown(string id, bool on)
+    {
+        if (_draft is null) return;
+        if (CoreNames.ContainsKey(id) || ManualTestingDashboard.IsKnown(id))
+            _draft = _draft with { Visible = new(_draft.Visible, StringComparer.Ordinal) { [id] = on } };
+        else
+            _draft = _draft with { Tiles = [.. _draft.EffectiveTiles.Select(t => t.Id == id ? t with { Visible = on } : t)] };
     }
 
-    private Task HideTileAsync(DashboardKpiTile t) =>
-        SaveTilesAsync(TilesWith(t with { Visible = false }), $"«{DashboardKpiTiles.DisplayTitle(t)}» er skjult. Vis den igjen under Systeminnstillinger → Manuell testing → Testoversikt.");
-
-    /// <summary>Removes only the tile's configuration — never a scenario, case, plan or translation.</summary>
-    private Task RemoveTileAsync(DashboardKpiTile t) =>
-        SaveTilesAsync([.. _dashboard.EffectiveTiles.Where(x => x.Id != t.Id)], $"«{DashboardKpiTiles.DisplayTitle(t)}» er fjernet fra oversikten.");
-
-    private void EditTile(DashboardKpiTile? t) { _tileMenu = null; _tileEdit = t; _tileEditing = true; _tileError = null; _tileNotice = null; }
-
-    private int? TileCountNow(DashboardKpiTile t) => _overview is { } ov ? O.TileCount(O.Of(ov, CurrentScope), t) : null;
-
-    private Task SaveEditedTileAsync(DashboardKpiTile t) => SaveTilesAsync(TilesWith(t), null, close: true);
-
-    /// <summary>Saves the whole tile list in the dashboard setup (the existing settings store and permission); scenarios, cases and plans are untouched.</summary>
-    private async Task SaveTilesAsync(List<DashboardKpiTile> tiles, string? notice, bool close = false)
+    /// <summary>Moves a shown card one place among the shown cards (hidden cards keep their place in the stored order).</summary>
+    private void MoveKpi(string id, int delta, IReadOnlyList<string> shown)
     {
-        _tileMenu = null; _tileError = null; _tileNotice = null;
-        if (ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) { _tileError = "Innstillingene kan ikke lagres nå."; return; }
-        _tileBusy = true;
+        if (_draft is null) return;
+        var i = shown.ToList().IndexOf(id);
+        var j = i + delta;
+        if (i < 0 || j < 0 || j >= shown.Count) return;
+        var seq = ManualTestingDashboard.KpiSequence(_draft).ToList();
+        var (a, b) = (seq.IndexOf(id), seq.IndexOf(shown[j]));
+        (seq[a], seq[b]) = (seq[b], seq[a]);
+        _draft = _draft with { KpiOrder = seq };
+    }
+
+    private void ResetDraft()
+    {
+        _draft = new ManualTestingDashboardSettings { PlanStructure = _dashboard.PlanStructure };
+        _draftReset = true; _resetAsk = false;
+    }
+
+    private bool DraftDirty => _draft is { } d && (_draftReset
+        || ManualTestingDashboard.Widgets.Any(w => d.IsOn(w.Id) != _dashboard.IsOn(w.Id))
+        || !ManualTestingDashboard.KpiSequence(d).SequenceEqual(ManualTestingDashboard.KpiSequence(_dashboard))
+        || System.Text.Json.JsonSerializer.Serialize(d.EffectiveTiles) != System.Text.Json.JsonSerializer.Serialize(_dashboard.EffectiveTiles));
+
+    private void CancelCustomize() { _draft = null; _draftReset = false; _resetAsk = false; _leaveAsk = false; }
+
+    /// <summary>«Ferdig»: one save of the draft (only the switches that differ from what they would otherwise be, the tiles and the order).</summary>
+    private async Task SaveCustomizeAsync()
+    {
+        if (_draft is not { } d || _tileBusy) return;
+        if (!DraftDirty) { CancelCustomize(); return; }
+        if (ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) { _tileError = "Oppsettet kan ikke lagres nå."; return; }
+        var baseline = _draftReset ? new ManualTestingDashboardSettings() : _dashboard;
+        _tileBusy = true; _tileError = null;
         try
         {
-            var (settings, error) = await api.SaveDashboardSettingsAsync(new SaveManualTestingDashboardSettingsRequest(null) { Tiles = [.. tiles.Select((x, i) => x with { Order = i })] });
-            if (settings is null) { _tileError = $"Flisene ble ikke lagret. {error}"; return; }
-            _dashboard = settings; _tileNotice = notice;
-            if (close) _tileEditing = false;
+            var (settings, error) = await api.SaveDashboardSettingsAsync(new SaveManualTestingDashboardSettingsRequest(
+                ManualTestingDashboard.Widgets.Where(w => d.IsOn(w.Id) != baseline.IsOn(w.Id)).ToDictionary(w => w.Id, w => d.IsOn(w.Id), StringComparer.Ordinal))
+            {
+                Tiles = d.Tiles is null ? null : [.. d.Tiles.Select((x, i) => x with { Order = i })],
+                KpiOrder = d.KpiOrder, ResetLayout = _draftReset,
+            });
+            if (settings is null) { _tileError = $"Oppsettet ble ikke lagret. {error}"; return; }
+            _dashboard = settings; _draft = null; _draftReset = false; _leaveAsk = false;
+            _tileNotice = "Oppsettet er lagret. Tallene er uendret.";
         }
         finally { _tileBusy = false; }
     }
 
-    private async Task ResetTilesAsync()
+    /// <summary>Leaving the page with unsaved layout changes is stopped once with an explanation (nothing is saved or lost silently).</summary>
+    private void GuardNavigation(LocationChangingContext context)
     {
-        _tileMenu = null; _tileError = null; _tileNotice = null;
-        if (ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) return;
-        var (settings, error) = await api.SaveDashboardSettingsAsync(new SaveManualTestingDashboardSettingsRequest(null) { ResetTiles = true });
-        if (settings is null) { _tileError = $"Flisene ble ikke tilbakestilt. {error}"; return; }
-        _dashboard = settings; _tileNotice = "Standardflisen «Ende-til-ende-tester» er gjenopprettet. Andre deler av oversikten er uendret.";
+        if (_draft is null || !DraftDirty) return;
+        context.PreventNavigation();
+        _leaveAsk = true;
+        StateHasChanged();
     }
+
+    private void EditTile(DashboardKpiTile? t) { _tileEdit = t; _tileEditing = true; _tileError = null; _tileNotice = null; }
+
+    private int? TileCountNow(DashboardKpiTile t) => _overview is { } ov ? O.TileCount(O.Of(ov, CurrentScope), t) : null;
+
+    /// <summary>A tile edited or added in the mode goes into the draft (saved with «Ferdig»).</summary>
+    private Task SaveEditedTileAsync(DashboardKpiTile t)
+    {
+        if (_draft is null) return Task.CompletedTask;
+        var list = _draft.EffectiveTiles.ToList();
+        var i = list.FindIndex(x => x.Id == t.Id);
+        if (i >= 0) list[i] = t; else list.Add(t with { Order = list.Count });
+        _draft = _draft with { Tiles = list };
+        _tileEditing = false;
+        return Task.CompletedTask;
+    }
+
+    private void RemoveDraftTile(DashboardKpiTile t)
+    {
+        if (_draft is null) return;
+        _draft = _draft with { Tiles = [.. _draft.EffectiveTiles.Where(x => x.Id != t.Id)], KpiOrder = _draft.KpiOrder?.Where(x => x != t.Id).ToList() };
+    }
+
+    private RenderFragment CustomizePanel() => __builder =>
+    {
+        var d = _draft!;
+        <NavigationLock OnBeforeInternalNavigation="GuardNavigation" ConfirmExternalNavigation="@DraftDirty" />
+        <section class="mto-custom" role="region" aria-labelledby="mto-custom-h" data-testid="mto-custom">
+            <div class="mto-custom-bar">
+                <h2 class="mto-custom-h" id="mto-custom-h">Tilpass testoversikten</h2>
+                <span class="msb-status msb-tone-@(DraftDirty ? "warn" : "muted")" role="status" data-testid="mto-custom-state">@(DraftDirty ? "Ulagrede endringer" : "Ingen endringer")</span>
+                <span class="mto-custom-actions">
+                    <button type="button" class="btn btn-primary btn-sm" disabled="@_tileBusy" @onclick="SaveCustomizeAsync" data-testid="mto-custom-save">Ferdig</button>
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_tileBusy" @onclick="CancelCustomize" data-testid="mto-custom-cancel">Avbryt</button>
+                    @if (_resetAsk)
+                    {
+                        <span class="mto-custom-confirm" role="group" aria-label="Bekreft tilbakestilling" data-testid="mto-custom-reset-confirm">
+                            Tilbakestille visning, rekkefølge og egne nøkkeltall?
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick="ResetDraft" data-testid="mto-custom-reset-yes">Tilbakestill</button>
+                            <button type="button" class="msb-link msb-small" @onclick="() => _resetAsk = false">Behold</button>
+                        </span>
+                    }
+                    else { <button type="button" class="msb-link msb-small" @onclick="() => _resetAsk = true" data-testid="mto-custom-reset">Tilbakestill standardoppsett</button> }
+                </span>
+            </div>
+            <p class="mt-muted msb-small mto-custom-note">Velg hvilke fliser som vises og i hvilken rekkefølge. Bare visningen endres — tallene, scenarioene, testtilfellene og testplanene er de samme.
+                Oppsettet gjelder for denne BirkNext-installasjonen (det finnes ingen egne brukerprofiler her). Lagres når du trykker «Ferdig».</p>
+            @if (_leaveAsk) { <p class="msb-callout is-warn" role="alert" data-testid="mto-custom-leave">Du har ulagrede endringer i oppsettet. Trykk «Ferdig» for å lagre eller «Avbryt» for å forkaste dem før du går videre.</p> }
+            <details class="mto-custom-catalog" open data-testid="mto-custom-catalog">
+                <summary>Tilgjengelige fliser</summary>
+                <div class="mto-custom-groups">
+                    @foreach (var group in ManualTestingDashboard.Widgets.Where(w => w.Group != ManualTestingDashboard.Display).GroupBy(w => w.Group))
+                    {
+                        <fieldset class="mto-custom-group" data-testid="mto-custom-group" data-group="@group.Key"><legend>@group.Key</legend>
+                            @foreach (var w in group)
+                            {
+                                var wid = w.Id;
+                                <label class="mto-custom-item" data-testid="mto-custom-widget" data-widget="@wid">
+                                    <input type="checkbox" checked="@d.IsOn(wid)" @onchange="e => SetShown(wid, e.Value is true)" />
+                                    <span><strong>@w.Title</strong><span class="mt-muted msb-small">@w.Description</span></span>
+                                </label>
+                            }
+                        </fieldset>
+                    }
+                    <fieldset class="mto-custom-group" data-testid="mto-custom-group" data-group="tiles"><legend>Egne nøkkeltall</legend>
+                        @foreach (var t in d.EffectiveTiles)
+                        {
+                            var tile = t;
+                            <div class="mto-custom-item" data-testid="mto-custom-tile" data-tile="@tile.Id">
+                                <label><input type="checkbox" checked="@tile.Visible" @onchange="e => SetShown(tile.Id, e.Value is true)" />
+                                    <strong>@DashboardKpiTiles.DisplayTitle(tile)</strong> <span class="mt-muted msb-small">@DashboardKpiTiles.DimensionLabel(tile.Dimension) / @DashboardKpiTiles.MetricLabel(tile.Dimension, tile.Metric)</span></label>
+                                <button type="button" class="msb-link msb-small" @onclick="() => EditTile(tile)" data-testid="mto-custom-tile-edit">Rediger</button>
+                                <button type="button" class="msb-link msb-small" @onclick="() => RemoveDraftTile(tile)" data-testid="mto-custom-tile-remove">Fjern</button>
+                            </div>
+                        }
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(d.EffectiveTiles.Count >= DashboardKpiTiles.MaxTiles)" @onclick="() => EditTile(null)" data-testid="mto-custom-tile-add">Legg til nøkkeltall</button>
+                    </fieldset>
+                    <fieldset class="mto-custom-group" data-testid="mto-custom-group" data-group="@ManualTestingDashboard.Display"><legend>@ManualTestingDashboard.Display</legend>
+                        @foreach (var w in ManualTestingDashboard.Widgets.Where(w => w.Group == ManualTestingDashboard.Display))
+                        {
+                            var wid = w.Id;
+                            <label class="mto-custom-item" data-testid="mto-custom-widget" data-widget="@wid">
+                                <input type="checkbox" checked="@d.IsOn(wid)" @onchange="e => SetShown(wid, e.Value is true)" />
+                                <span><strong>@w.Title</strong><span class="mt-muted msb-small">@w.Description</span></span>
+                            </label>
+                        }
+                    </fieldset>
+                </div>
+            </details>
+        </section>
+    };
+
+    /// <summary>One card of the main KPI row (the same markup and numbers as before; only its place in the row is configurable).</summary>
+    private RenderFragment CoreKpi(string id, O.Figures fig, O.Slice slice, bool explain) => __builder =>
+    {
+        switch (id)
+        {
+            case "metric.scenarios":
+                <a class="mto-kpi is-core" href="@M.DiscoverRoute" data-testid="mto-kpi" data-widget="metric.scenarios"><span class="mto-kpi-k"><span class="mto-kpi-icon is-scenarios" aria-hidden="true"></span>Scenarioforslag</span>
+                    <span class="mto-kpi-v">@(fig.Scenarios?.ToString("N0", Nb) ?? "—")</span>
+                    @if (fig.Scenarios is { } sc && sc > 0 && fig.Covered is { } cv) { @Meter(cv, sc, "med testtilfeller") }
+                    @if (explain) { <span class="mto-kpi-e">@(fig.Scenarios is null ? "Ikke tilgjengelig: spesifikasjonen er ikke lagret for prosjektet" : fig.Covered is { } cov ? $"{cov} har testtilfeller" : "")</span> }</a>
+                break;
+            case "metric.testCases":
+                <a class="mto-kpi is-core" href="@M.PlanRoute" data-testid="mto-kpi" data-widget="metric.testCases"><span class="mto-kpi-k"><span class="mto-kpi-icon is-cases" aria-hidden="true"></span>Testtilfeller</span><span class="mto-kpi-v">@fig.Cases.ToString("N0", Nb)</span>
+                    @if (explain) { <span class="mto-kpi-e">Lagret i aktive testplaner</span> }</a>
+                break;
+            case "metric.approved":
+                <div class="mto-kpi is-core" data-testid="mto-kpi" data-widget="metric.approved"><span class="mto-kpi-k"><span class="mto-kpi-icon is-approved" aria-hidden="true"></span>Godkjente</span><span class="mto-kpi-v">@fig.Approved.ToString("N0", Nb)</span>
+                    @if (fig.Cases > 0) { @Meter(fig.Approved, fig.Cases, "godkjent") }
+                    @if (explain) { <span class="mto-kpi-e">@fig.Approved av @fig.Cases testtilfeller</span> }</div>
+                break;
+            case "metric.ready":
+                <div class="mto-kpi is-core" data-testid="mto-kpi" data-widget="metric.ready"><span class="mto-kpi-k"><span class="mto-kpi-icon is-ready" aria-hidden="true"></span>Klar til testing</span><span class="mto-kpi-v">@fig.Ready.ToString("N0", Nb)</span>
+                    @if (fig.Cases > 0) { @Meter(fig.Ready, fig.Cases, "klar") }
+                    @if (explain) { <span class="mto-kpi-e">@fig.Ready av @fig.Cases · godkjent er ikke det samme som klar</span> }</div>
+                break;
+            default:
+                if (View.EffectiveTiles.FirstOrDefault(t => t.Id == id) is { } tile) { @Tile(tile, slice, explain) }
+                break;
+        }
+    };
 
     private async Task OpenTileAsync(DashboardKpiTile t)
     {

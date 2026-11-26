@@ -76,4 +76,21 @@ public sealed class ManualTestingDashboardSettingsStoreTests : IDisposable
         (reset.IsOn("chart.history"), reset.IsOn("chart.priority")).Should().Be((true, false), "only the tiles are reset");
         store.Save(new SaveManualTestingDashboardSettingsRequest(null) { Tiles = [] }, "lead", DateTimeOffset.UtcNow).EffectiveTiles.Should().BeEmpty("every tile removed is kept as a choice");
     }
+
+    [Fact]
+    public void Kpi_order_persists_unknown_ids_are_tolerated_and_a_layout_reset_keeps_the_plan_structure()
+    {
+        var store = new ManualTestingDashboardSettingsStore(_dir);
+        store.Save(new SaveManualTestingDashboardSettingsRequest(new() { ["metric.approved"] = false }, PlanStructure: PlanStructureTemplates.TypeLevel), "lead", DateTimeOffset.UtcNow);
+        store.Save(new SaveManualTestingDashboardSettingsRequest(null) { KpiOrder = ["metric.ready", "gone.widget", "metric.ready"] }, "lead", DateTimeOffset.UtcNow);
+        var read = new ManualTestingDashboardSettingsStore(_dir).Read();
+        read.KpiOrder.Should().Equal("metric.ready", "gone.widget");
+        ManualTestingDashboard.KpiSequence(read).Should().Equal("metric.ready", "metric.scenarios", "metric.testCases", "metric.approved", "tile.e2e");
+        FluentActions.Invoking(() => store.Save(new SaveManualTestingDashboardSettingsRequest(null) { KpiOrder = ["<script>"] }, "lead", DateTimeOffset.UtcNow)).Should().Throw<ArgumentException>();
+
+        var reset = store.Save(new SaveManualTestingDashboardSettingsRequest(new() { ["chart.history"] = true }) { ResetLayout = true }, "lead", DateTimeOffset.UtcNow);
+        (reset.IsOn("metric.approved"), reset.IsOn("chart.history"), reset.KpiOrder, reset.Tiles).Should().Be((true, true, (List<string>?)null, (List<DashboardKpiTile>?)null),
+            "the layout returns to the defaults, then the request's own change applies");
+        reset.PlanStructure.Should().Be(PlanStructureTemplates.TypeLevel, "the plan-structure setting is not part of the layout");
+    }
 }

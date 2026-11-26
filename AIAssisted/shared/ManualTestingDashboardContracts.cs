@@ -54,6 +54,21 @@ public static class ManualTestingDashboard
     ];
 
     public static bool IsKnown(string id) => Widgets.Any(w => w.Id == id);
+
+    /// <summary>The main KPI row's fixed cards (customisable KPI tiles sit among them, see <see cref="KpiSequence"/>).</summary>
+    public static readonly IReadOnlyList<string> CoreKpis = ["metric.scenarios", "metric.testCases", "metric.approved", "metric.ready"];
+
+    /// <summary>The display order of the main KPI row (2026-11-26, customisation v5): the saved order of the ids that still exist, then every other
+    /// card in the default order (scenarios, cases, approved, the custom tiles, ready). Unknown or repeated saved ids are ignored, never an error.</summary>
+    public static IReadOnlyList<string> KpiSequence(ManualTestingDashboardSettings s)
+    {
+        var defaults = new List<string> { "metric.scenarios", "metric.testCases", "metric.approved" };
+        defaults.AddRange(s.EffectiveTiles.OrderBy(t => t.Order).Select(t => t.Id));
+        defaults.Add("metric.ready");
+        var known = defaults.ToHashSet(StringComparer.Ordinal);
+        var saved = (s.KpiOrder ?? []).Where(known.Contains).Distinct(StringComparer.Ordinal).ToList();
+        return [.. saved, .. defaults.Where(d => !saved.Contains(d, StringComparer.Ordinal))];
+    }
 }
 
 // ── Custom KPI tiles (2026-11-26) ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -139,6 +154,8 @@ public sealed record ManualTestingDashboardSettings
     /// <summary>Custom KPI tiles (2026-11-26); null = never customised → <see cref="DashboardKpiTiles.Defaults"/>. An empty list is an explicit choice.</summary>
     public List<DashboardKpiTile>? Tiles { get; init; }
     public IReadOnlyList<DashboardKpiTile> EffectiveTiles => Tiles ?? DashboardKpiTiles.Defaults;
+    /// <summary>The main KPI row's order (core card ids and tile ids); null = the default order. See <see cref="ManualTestingDashboard.KpiSequence"/>.</summary>
+    public List<string>? KpiOrder { get; init; }
 
     public Dictionary<string, bool> Visible { get; init; } = new(StringComparer.Ordinal);
     public DateTimeOffset? UpdatedAt { get; init; }
@@ -158,6 +175,11 @@ public sealed record SaveManualTestingDashboardSettingsRequest(Dictionary<string
     public List<DashboardKpiTile>? Tiles { get; init; }
     /// <summary>«Tilbakestill standard» for the tiles only: restores <see cref="DashboardKpiTiles.Defaults"/>; other widgets are kept.</summary>
     public bool ResetTiles { get; init; }
+    /// <summary>The KPI row's order to store (null = keep).</summary>
+    public List<string>? KpiOrder { get; init; }
+    /// <summary>«Tilbakestill standardoppsett» from the customisation mode: visibility, tiles and order go back to the defaults BEFORE the request's own
+    /// changes are applied; the plan-structure setting is kept. Presentation only — never scenarios, cases, plans or results.</summary>
+    public bool ResetLayout { get; init; }
 }
 
 /// <summary>The project's saved test work and its specifications' scenarios, for Testoversikt (read-only; no discovery is run, nothing is written).</summary>
