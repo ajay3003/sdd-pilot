@@ -139,3 +139,19 @@ See the addendum below (isolated instance `v1env11`, disposable database, M2LB i
   - Discover-related tests **437 / 437** after it;
   - backend `ScenarioWorkQueueTests` **27 / 27**.
 - **Browser comparison against real saved plans:** the script `scratchpad/v1/v1_membership.py` is prepared. It creates two overlapping plans plus one archived plan in the disposable instance, reads them back through the API and compares every row. It was **not run at commit time** (the isolated instance was still publishing); its result follows in a later commit.
+
+## Addendum — browser comparison against real saved plans (VERIFIED)
+
+**Setup:** isolated instance `v1env12` (disposable database), M2LB imported; script `scratchpad/v1/v1_membership.py`.
+- It created «Verifisering A» (5 scenarios) and «Verifisering B» (5, overlapping 2) through the normal API, plus «Verifisering arkiv» (2, then archived).
+- It read every plan back (`GET drafts/{id}`, the stored truth) and mapped the cases to scenarios by source identity, independently of the membership code.
+- It then compared every Finn og forstå row (all queues, all kinds, no grouping).
+
+**Results:**
+- **Rows and colour:** 2,000 rows. **8 turquoise rows = 8 scenarios in active saved plans. Mismatches: 0** (colour and plan name).
+- **Overlap:** both overlapping scenarios show «Verifisering A» plus «+1 plan», and the list holds both real plan names with their suite and case.
+- **Archived plan:** its 2 scenarios are neutral (not turquoise) with «Kun i arkivert testplan».
+- **Colours:** in plan `rgb(232, 248, 248)`; neutral rows transparent.
+- **Filters:** «I aktiv testplan» → 8 rows; «Kun arkivert» → 2 rows.
+- **Performance:** the full flat list was ready in 12.3 s (2,000 rows expanded through «Vis flere», headless).
+- **Observation:** the suite path for plans created without a structure is the existing area suite named by the specification path. That is existing plan data, shown as stored.

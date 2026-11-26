@@ -38,3 +38,15 @@ Fixtures that test other features (the drawer, filters, membership, work queues)
 - **Manual Testing, Discover, work-queue and browser test classes:** 616 / 616.
 - **Project switch:** covered by the per-project storage key, re-read on project change (`LoadOpenGroupsAsync`). There is no dedicated bUnit test.
 - **Browser:** see the addendum (isolated instance, disposable database).
+
+## Addendum — browser verification (VERIFIED)
+
+**Setup:** isolated instance `v1env12` (disposable database, ports 5097/5197), M2LB imported; script `scratchpad/v1/v1_groups.py`; screenshots `v1env12/shots/groups-*.png`.
+
+**Results:**
+- **Initial (whole project, Testnivå → Scenariotype):** 4 primary groups, all `aria-expanded=false`, 0 rows rendered.
+- **Opening «Ende-til-ende-tester»:** only it opens. Its secondary group «Andre forslag» stays collapsed, and 0 rows are rendered until it is opened.
+- **«Vis alle grupper»:** every group open, 284 rows rendered. **«Skjul alle»:** all collapsed, 0 rows.
+- **Navigation:** open «Ende-til-ende-tester», go to Planlegg og klargjør, then browser Back: «Ende-til-ende-tester» is still open and the others are collapsed.
+- **Switching the axis to Testmetode:** collapsed.
+- **Console:** only 401s from requests made before the local session login.
