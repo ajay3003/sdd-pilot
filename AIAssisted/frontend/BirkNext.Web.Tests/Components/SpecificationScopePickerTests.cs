@@ -63,7 +63,7 @@ public sealed class SpecificationScopePickerTests : BunitContext
         _save.Verify(x => x.SaveNowAsync(), Times.Never, "the auto-save already saves the change: no second full save");
         changed.Should().Be(1);
         cut.Find("[data-testid=ssp-current]").GetAttribute("data-state").Should().Be("feature");
-        cut.FindAll("[data-testid=ssp-feature] option").Select(o => o.TextContent).Should().Equal("Velg funksjon …", "BiRK Hendelsesadapter (001-adapter)", "Translate HendelseAdapter (004-translate)");
+        cut.FindAll("[data-testid=ssp-feature] option").Select(o => o.TextContent).Should().Equal("Velg spesifikasjon …", "BiRK Hendelsesadapter (001-adapter)", "Translate HendelseAdapter (004-translate)");
     }
 
     [Fact]

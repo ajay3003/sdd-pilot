@@ -27,9 +27,9 @@
             }
             @if (s.HasPacks && !s.ModuleRequired)
             {
-                <label class="ssp-field"><span class="ssp-k">Funksjon</span>
+                <label class="ssp-field"><span class="ssp-k">Spesifikasjon</span>
                     <select class="ssp-select" data-testid="ssp-feature" disabled="@_busy" value="@(s.PackRequired ? "" : s.Pack ?? "")" @onchange="OnFeature">
-                        @if (s.PackRequired || s.Pack is null) { <option value="">Velg funksjon …</option> }
+                        @if (s.PackRequired || s.Pack is null) { <option value="">Velg spesifikasjon …</option> }
                         @foreach (var p in s.Packs!)
                         {
                             <option value="@p.Pack">@(p.DisplayName == p.Pack ? p.Pack : $"{p.DisplayName} ({p.Pack})")</option>
@@ -38,9 +38,9 @@
             }
             @if (!s.ModuleRequired && !s.PackRequired && SpecificationChoices(s) is { Count: > 1 } choices)
             {
-                <label class="ssp-field"><span class="ssp-k">Spesifikasjon</span>
+                <label class="ssp-field"><span class="ssp-k">Dokument</span>
                     <select @key="_renderKey" class="ssp-select" data-testid="ssp-specification" disabled="@_busy" value="@(s.Selected?.Id ?? "")" @onchange="OnSpecification">
-                        @if (s.Selected is null) { <option value="">Velg spesifikasjon …</option> }
+                        @if (s.Selected is null) { <option value="">Velg dokument …</option> }
                         @foreach (var a in choices)
                         {
                             <option value="@a.Id">@(a.DisplayName == a.FileName ? a.FileName : $"{a.DisplayName} ({a.SourcePath ?? a.FileName})")</option>
@@ -64,15 +64,15 @@
             }
             else if (s.PackRequired)
             {
-                <span>Velg funksjonen du tester i @(s.ModuleLabel ?? "denne modulen").</span>
+                <span>Velg spesifikasjonen du tester i @(s.ModuleLabel ?? "denne modulen").</span>
             }
             else if (s.Status == ExplorerArtifactStatus.SelectionRequired)
             {
-                <span>Det finnes flere spesifikasjoner; velg den du tester.</span>
+                <span>Spesifikasjonen har flere dokumenter; velg det du tester.</span>
             }
             else if (s.Status == ExplorerArtifactStatus.Empty && s.PackSummary is { } pack)
             {
-                <span>@pack.DisplayName har ingen egen spesifikasjon. Velg en annen funksjon, eller <a href="specification-explorer">åpne Specification Explorer</a> for å bruke et felles dokument.</span>
+                <span>@pack.DisplayName har ingen egen spesifikasjon. Velg en annen spesifikasjon, eller <a href="specification-explorer">åpne Specification Explorer</a> for å bruke et felles dokument.</span>
             }
             else
             {
