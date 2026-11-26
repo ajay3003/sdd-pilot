@@ -14,7 +14,6 @@ public sealed class NavigationDispositionTests
     private static readonly Dictionary<string, string> AllModulesOnly = new(StringComparer.OrdinalIgnoreCase)
     {
         ["all-modules"] = "the catalog itself; always shown in every workspace",
-        ["admin/system-settings"] = "administration; always shown in every workspace",
         ["workspace-transfer"] = "administration (backup, restore, transfer), not a testing or delivery task",
         ["security-classification-review"] = "M2LB Kode 6/7 domain extension, not a general workflow",
         ["extensions/skolenaervaer"] = "Skolenærvær project extension, not a general workflow",
@@ -43,7 +42,6 @@ public sealed class NavigationDispositionTests
     }
 
     [Theory]
-    [InlineData("demo-projects", WorkspaceView.ManualTesting)]
     [InlineData("demo-projects", WorkspaceView.Developer)]
     [InlineData("generated-documentation-health", WorkspaceView.Architect)]
     [InlineData("generated-documentation-health", WorkspaceView.Developer)]

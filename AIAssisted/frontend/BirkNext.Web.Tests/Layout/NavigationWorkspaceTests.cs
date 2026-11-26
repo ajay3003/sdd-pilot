@@ -45,7 +45,10 @@ public sealed class NavigationWorkspaceTests : BunitContext
 
         State.View.Should().Be(view);
         Location.Should().Be("delivery-reporting?week=2026-W44", "switching the view never navigates");
-        cut.Find("a[href='delivery-reporting']").GetAttribute("aria-current").Should().Be("page", "the open page keeps its row, in or outside the view");
+        if (WorkspaceViews.Of(view).Focused)
+            cut.FindAll("a[href='delivery-reporting']").Should().BeEmpty("a focused view (Manual Testing, V6) gives an open page outside it no row");
+        else
+            cut.Find("a[href='delivery-reporting']").GetAttribute("aria-current").Should().Be("page", "the open page keeps its row, in or outside the view");
         _repository.ProjectName.Should().Be("M2LB", "a Workspace View is a navigation preference only");
         _repository.SddLifecycle.CurrentProjectImportId.Should().BeNull();
     }
@@ -110,7 +113,9 @@ public sealed class NavigationWorkspaceTests : BunitContext
     {
         var definition = WorkspaceViews.Of(view);
         var routes = NavigationCatalog.Sections.SelectMany(s => s.Items).Select(i => i.Route).ToHashSet();
-        definition.Modules.Should().NotBeEmpty().And.OnlyHaveUniqueItems().And.OnlyContain(r => routes.Contains(r), "a preset never invents a module");
+        // A view link may name another route of a catalog page (Manual Testing's Testplaner = manual-testing/plans, the same page).
+        var linkRoutes = (definition.Groups ?? []).SelectMany(g => g.Links ?? []).Where(l => routes.Contains(l.PageRoute)).Select(l => l.Route).ToHashSet();
+        definition.Modules.Should().NotBeEmpty().And.OnlyHaveUniqueItems().And.OnlyContain(r => routes.Contains(r) || linkRoutes.Contains(r), "a preset never invents a module");
         definition.FocusSections.Should().OnlyContain(id => NavigationCatalog.Sections.Any(s => s.Id == id));
         routes.Should().Contain(definition.LandingRoute);
         definition.Description.Should().NotBeNullOrWhiteSpace();
@@ -120,7 +125,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
     [Theory]
     [InlineData(WorkspaceView.TestLead, new[] { "artifact-traceability", "test-data", "manual-testing/plan", "system-understanding", "specification-explorer", "test-coverage-review", "api-quality-review", "api-quality-review/contracts", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "execution-results" })]
     [InlineData(WorkspaceView.TechnicalTester, new[] { "api-quality-review/contracts", "api-quality-review", "integration-suites", "execution-results", "critical-e2e-regression", "integration-quality-review", "test-data", "test-coverage-review", "performance-test-review", "integration-topology" })]
-    [InlineData(WorkspaceView.ManualTesting, new[] { "manual-testing", "manual-testing/discover", "manual-testing/plan", "system-understanding", "specification-explorer", "quality/document", "test-data", "artifact-traceability", "test-coverage-review" })]
+    [InlineData(WorkspaceView.ManualTesting, new[] { "manual-testing", "manual-testing/discover", "manual-testing/plan", "admin/system-settings" })]
     [InlineData(WorkspaceView.ScrumMaster, new[] { "delivery-reporting", "delivery-overview", "task-alignment" })]
     [InlineData(WorkspaceView.ProjectLeader, new[] { "dashboard", "delivery-overview", "delivery-reporting", "critical-e2e-regression", "snapshots", "correlation-review" })]
     [InlineData(WorkspaceView.Developer, new[] { "source-analysis", "specification-explorer", "schema-studio", "api-quality-review", "technology-coverage", "dependency-review", "pipeline-review" })]
@@ -153,7 +158,9 @@ public sealed class NavigationWorkspaceTests : BunitContext
         catalogue.Where(i => !i.Visible(features)).Select(i => i.Route).Should().NotIntersectWith(rendered, "Feature Visibility still decides what exists");
         // Every specialized view stays a strict subset of the eligible catalogue.
         foreach (var view in WorkspaceViews.All.Where(v => !v.IsAllModules))
-            view.Modules.Where(r => catalogue.Single(i => i.Route == r).Visible(features)).Should().BeSubsetOf(eligible, $"{view.Label} only names catalogue modules");
+            view.Modules.Where(r => catalogue.SingleOrDefault(i => i.Route == r) is not { } item || item.Visible(features))
+                .Except((view.Groups ?? []).SelectMany(g => g.Links ?? []).Select(l => l.Route)) // a view link names a route of a catalogue page
+                .Should().BeSubsetOf(eligible, $"{view.Label} only names catalogue modules");
     }
 
     [Fact]
@@ -362,6 +369,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
     [Fact]
     public void MobileDrawer_OpensAsADialog_ShowsLabelsEvenWhenTheDesktopSidebarIsCollapsed_AndEscapeCloses()
     {
+        State.SetView(WorkspaceView.TestLead); // a view with module search (the focused Manual Testing view has none: ManualTestingViewTests V11)
         State.SetSidebarCollapsed(true);
         var cut = Render<NavMenu>();
         cut.Find("[data-testid=nav-drawer-toggle]").GetAttribute("aria-expanded").Should().Be("false");
@@ -484,6 +492,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
     [Fact]
     public void SearchBox_ShowsResultsWithTheirGroup_EnterOpensTheFirst_EscapeClears()
     {
+        State.SetView(WorkspaceView.TestLead); // module search exists outside the focused Manual Testing view (V6)
         var cut = Render<NavMenu>();
         var search = cut.Find("[data-testid=nav-search]");
         search.GetAttribute("type").Should().Be("search");

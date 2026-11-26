@@ -11,7 +11,15 @@
     var view = WorkspaceViews.Of(Sections.View);
     <div class="workspace-scope-notice" role="status" data-testid="nav-outside-view" data-route="@module.Item.Route">
         <span>Current module is outside your selected workspace view (@view.Label).</span>
-        <button type="button" class="btn btn-link btn-sm" data-testid="nav-outside-add" @onclick="() => Sections.AddToView(module.Item.Route)">Add @module.Item.Label to @view.Label</button>
+        @if (view.Focused)
+        {
+            @* A focused view (Manual Testing) lists exactly its own destinations: the way back is its start page, not an addition. *@
+            <a class="btn btn-link btn-sm" href="@view.HomeRoute" data-testid="nav-outside-back">Tilbake til @view.Label</a>
+        }
+        else
+        {
+            <button type="button" class="btn btn-link btn-sm" data-testid="nav-outside-add" @onclick="() => Sections.AddToView(module.Item.Route)">Add @module.Item.Label to @view.Label</button>
+        }
         <button type="button" class="btn btn-link btn-sm" data-testid="nav-outside-all" @onclick="() => Sections.SetView(WorkspaceView.AllModules)">Switch to All Modules</button>
     </div>
 }

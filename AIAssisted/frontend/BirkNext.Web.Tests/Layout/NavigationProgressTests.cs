@@ -165,6 +165,9 @@ public sealed class NavigationProgressTests : BunitContext
     [Fact]
     public void CancelledNavigation_ClearsPending_AndRestoresTheActiveSidebarItem()
     {
+        // Both rows exist in Test Management (the focused Manual Testing view lists neither).
+        Services.AddScoped<NavigationSectionState>();
+        Services.GetRequiredService<NavigationSectionState>().SetView(WorkspaceView.TestLead);
         Nav.NavigateTo("dashboard");
         var cut = Render<NavMenu>();
         Arm();

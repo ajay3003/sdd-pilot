@@ -14,7 +14,7 @@
    remembered in this browser. Mobile: an overlay drawer (not remembered). None of it touches the page, the project or running work. *@
 <div class="top-row ps-3 navbar navbar-dark @(Rail ? "nav-top-collapsed" : null)">
     <div class="container-fluid nav-top">
-        <a class="navbar-brand" href="dashboard" aria-label="BirkNext — Dashboard" title="BirkNext — Quality &amp; Testing Workspace" data-testid="nav-brand">
+        <a class="navbar-brand" href="@Home" aria-label="@(Home == "dashboard" ? "BirkNext — Dashboard" : "BirkNext — start page")" title="@BrandTitle" data-testid="nav-brand">
             <span class="nav-brand-full"><span class="nav-brand-name" data-testid="nav-brand-name">BirkNext</span><span class="nav-brand-sub" data-testid="nav-brand-sub">Quality &amp; Testing Workspace</span></span><span class="nav-brand-short" aria-hidden="true">BN</span>
         </a>
         <button type="button" id="nav-collapse-toggle" class="nav-collapse-toggle" data-testid="nav-collapse-toggle" aria-controls="nav-panel"
@@ -64,6 +64,8 @@
                 </div>
             }
         </div>
+        @if (!view.Focused)
+        {
         <div class="nav-rail-item">
             <button type="button" id="nav-rail-search" class="nav-rail-btn @(_flyout == "search" ? "nav-rail-open" : null)" data-testid="nav-rail-search" aria-label="Search modules" data-label="Search modules"
                     aria-haspopup="dialog" aria-expanded="@(_flyout == "search" ? "true" : "false")" aria-controls="nav-flyout-search" @onclick='() => ToggleFlyout("search")'>
@@ -76,6 +78,7 @@
                 </div>
             }
         </div>
+        }
         <nav class="nav-rail-groups" aria-label="Main">
             @foreach (var group in WorkspaceViews.Ordered(_sections.View))
             {
@@ -127,10 +130,11 @@
             </select>
             <p id="nav-workspace-view-help" class="nav-view-help" data-testid="nav-workspace-view-help">
                 @view.Description
-                @if (!view.IsAllModules) { <span> Everything else: <a href="@NavigationCatalog.AllModulesRoute" data-testid="nav-all-modules-hint">All modules</a>.</span> }
-                <span class="visually-hidden">A navigation preference, not a permission: every module stays available in All modules and through search.</span>
+                @if (!view.IsAllModules && !view.Focused) { <span> Everything else: <a href="@NavigationCatalog.AllModulesRoute" data-testid="nav-all-modules-hint">All modules</a>.</span> }
+                <span class="visually-hidden">A navigation preference, not a permission: @(view.Focused ? "other modules are listed in the other workspaces." : "every module stays available in All modules and through search.")</span>
             </p>
-            <NavSearch IdPrefix="nav" Sections="_sections" />
+            @* A focused view (Manual Testing) lists only its own destinations: no module search either (the other workspaces have it). *@
+            @if (!view.Focused) { <NavSearch IdPrefix="nav" Sections="_sections" /> }
         </div>
         <nav id="nav-groups" class="flex-column" aria-label="Main">
             @{ var firstGroup = true; }
@@ -140,7 +144,7 @@
                 if (rows.Count == 0) continue;
                 // Closed by default except the view's first group, the group of the page shown and the group holding All modules (the way to every
                 // module stays visible); the person's own choice always wins.
-                var collapsed = _sections.IsCollapsed(group.Id, byDefault: !firstGroup && !rows.Any(r => WorkspaceViews.IsCurrent(_sections.View, r.Item, location)
+                var collapsed = _sections.IsCollapsed(group.Id, byDefault: !view.Focused && !firstGroup && !rows.Any(r => WorkspaceViews.IsCurrent(_sections.View, r.Item, location)
                     || string.Equals(r.Item.Route, NavigationCatalog.AllModulesRoute, StringComparison.OrdinalIgnoreCase)));
                 firstGroup = false;
                 var listId = $"nav-section-{group.Id}";
@@ -229,7 +233,16 @@
     /// </summary>
     private IReadOnlyList<NavModule> Rows(IReadOnlyList<NavModule> modules, NavSection group, string location) =>
         [.. group.Items.Select(i => modules.FirstOrDefault(m => ReferenceEquals(m.Item, i)) ?? NavigationModules.Resolve(group, i, FeatureViz, _sections))
-            .Where(m => m.Enabled && (m.IsRow || m.Item.IsCurrentLocation(location)))];
+            // A focused view (Manual Testing, V6) shows exactly its own rows: an open page outside it gets no row (WorkspaceScopeNotice explains).
+            .Where(m => m.Enabled && (Focused ? m.Reach == ModuleReach.InView : m.IsRow || m.Item.IsCurrentLocation(location)))];
+
+    private bool Focused => WorkspaceViews.Of(_sections.View).Focused;
+
+    // A C# value: with a dynamic href on the element, a static attribute's HTML entity would be rendered as written (&amp;).
+    private const string BrandTitle = "BirkNext — Quality & Testing Workspace";
+
+    /// <summary>Where the brand leads: the focused view's start page (Testoversikt), else the dashboard as before.</summary>
+    private string Home => WorkspaceViews.Of(_sections.View).HomeRoute;
 
     private NavStatus? Status(NavModule module) =>
         module.Item.ReviewId is { } reviewId ? NavStatusPresentation.For(module.Item, _applicability?.For(reviewId)) : null;

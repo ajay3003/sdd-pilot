@@ -154,6 +154,8 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
     [Fact]
     public void Sidebar_SeesTheSampleProjectsRequirements_LikeTheDashboard()
     {
+        // All Modules lists Quality Review (the default, focused Manual Testing view lists only its own pages — V6).
+        Services.GetRequiredService<NavigationSectionState>().SetView(WorkspaceView.AllModules);
         var nav = Render<NavMenu>();
         nav.WaitForAssertion(() => nav.Find("[data-testid=nav-applicability-quality-review]").TextContent.Should().Be("No evidence"));
 

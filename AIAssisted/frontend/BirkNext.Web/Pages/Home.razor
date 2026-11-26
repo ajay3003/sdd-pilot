@@ -1,11 +1,19 @@
 @page "/"
 @inject NavigationManager Navigation
+@inject IServiceProvider Services
+@using BirkNext.Web.Services
+@using Microsoft.JSInterop
 
 <PageTitle>BirkNext — Quality &amp; Testing Workspace</PageTitle>
 
 @code {
     protected override void OnInitialized()
     {
-        Navigation.NavigateTo("dashboard", replace: true);
+        // The start page of the selected workspace (V6, 2026-11-26): Testoversikt for Manual Testing — the default without a valid remembered
+        // choice —, the dashboard for every other workspace (as before). Reading the remembered choice here never writes it.
+        var sections = Services.GetService<NavigationSectionState>();
+        sections?.EnsureRestored(Services.GetService<IJSRuntime>());
+        var view = WorkspaceViews.Of(sections?.View ?? WorkspaceViews.Default);
+        Navigation.NavigateTo(view.HomeRoute, replace: true);
     }
 }

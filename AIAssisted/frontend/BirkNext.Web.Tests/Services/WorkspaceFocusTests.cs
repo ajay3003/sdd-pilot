@@ -34,24 +34,27 @@ public sealed class WorkspaceFocusTests : BunitContext
     [Fact]
     public void Manual_testing_focuses_on_functional_work_and_keeps_identities()
     {
+        // V6 (2026-11-26): Manual Testing is a focused workspace of its own four pages; the review capabilities live in the other workspaces.
         var manual = WorkspaceFocus.Of(WorkspaceView.ManualTesting, Capabilities, null);
-        manual.Relevant.Should().Be(5, "api-quality-review and pipeline-review are not manual-testing modules");
-        manual.Primary.Should().HaveCount(3);
-        manual.Primary.Select(a => a.Id).Should().NotContain(["api", "pipeline"]);
-        manual.Primary.Should().OnlyContain(a => a.State == FocusActionState.CanDoNow, "ready work comes before blocked work");
-        manual.Primary.Select(a => a.Id).Should().Equal(new[] { "doc-quality", "test-data", "traceability" }, "the view's workflow order: requirements, preparation, coverage");
-        (manual.ReadyNow, manual.Blocked, manual.Completed).Should().Be((3, 1, 1));
+        manual.Relevant.Should().Be(0, "no review capability is a page of the focused Manual Testing workspace");
+        manual.Primary.Should().BeEmpty();
+
+        var lead = WorkspaceFocus.Of(WorkspaceView.TestLead, Capabilities, null);
+        lead.Relevant.Should().Be(6, "pipeline-review is not a test-management module");
+        lead.Primary.Select(a => a.Id).Should().NotContain("pipeline");
+        lead.Primary.Should().OnlyContain(a => a.State == FocusActionState.CanDoNow, "ready work comes before blocked work");
+        lead.Primary.Select(a => a.Id).Should().Equal(new[] { "doc-quality", "test-data", "traceability" }, "the view's workflow order: requirements, preparation, coverage");
 
         var developer = WorkspaceFocus.Of(WorkspaceView.Developer, Capabilities, null);
         developer.Primary.Select(a => a.Id).Should().Contain("api", "the same capability is relevant in a technical view");
-        var shared = manual.Primary.Select(a => (a.Id, a.Route)).Intersect(WorkspaceFocus.Of(WorkspaceView.TestLead, Capabilities, null).Primary.Select(a => (a.Id, a.Route)));
-        shared.Should().NotBeEmpty("a capability keeps its id and route in every view");
+        var shared = lead.Primary.Concat(developer.Primary).GroupBy(a => a.Id).Where(g => g.Count() > 1);
+        shared.Should().OnlyContain(g => g.Select(a => a.Route).Distinct().Count() == 1, "a capability keeps its id and route in every view");
     }
 
     [Fact]
     public void Blocked_steps_say_what_is_missing_and_completed_steps_are_not_offered()
     {
-        var focus = WorkspaceFocus.Of(WorkspaceView.ManualTesting, [Cap("coverage", "test-coverage-review", ReviewReadiness.NeedsSetup, ReviewDecisionState.NotReviewed, "Source snapshot"),
+        var focus = WorkspaceFocus.Of(WorkspaceView.TestLead, [Cap("coverage", "test-coverage-review", ReviewReadiness.NeedsSetup, ReviewDecisionState.NotReviewed, "Source snapshot"),
             Cap("spec", "specification-explorer", decision: ReviewDecisionState.Reviewed)], null);
         focus.Primary.Should().ContainSingle().Which.Should().Match<FocusAction>(a => a.State == FocusActionState.Blocked && a.StateLabel == "Blocked" && a.Blocker == "Needs setup: Source snapshot");
         focus.Completed.Should().Be(1);
@@ -77,8 +80,8 @@ public sealed class WorkspaceFocusTests : BunitContext
         var cut = Render<WorkspaceFocusPanel>(p => p.Add(x => x.Capabilities, Capabilities));
         cut.FindAll("[data-testid=workspace-focus]").Should().BeEmpty("All Modules already shows the full page");
 
-        navigation.SetView(WorkspaceView.ManualTesting);
-        cut.WaitForAssertion(() => cut.Find("[data-testid=workspace-focus]").GetAttribute("data-view").Should().Be("ManualTesting"));
+        navigation.SetView(WorkspaceView.TestLead);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=workspace-focus]").GetAttribute("data-view").Should().Be("TestLead"));
         cut.FindAll("[data-testid=wfp-action]").Select(a => a.GetAttribute("data-id")).Should().Equal("doc-quality", "test-data", "traceability");
         cut.FindAll("[data-testid=wfp-open]").Should().OnlyContain(a => !string.IsNullOrWhiteSpace(a.GetAttribute("href")), "no inert actions");
 

@@ -425,12 +425,16 @@ public sealed record WorkspaceViewLink(string Route, string PageRoute, string La
 /// <param name="Groups">Optional workflow groups. When set they come first, in this order, and the view's modules are exactly their routes; the
 /// catalog groups follow with only the modules not already placed (for the person's additions and Help &amp; Settings).</param>
 public sealed record WorkspaceViewDefinition(WorkspaceView View, string Label, string Description, string LandingRoute, IReadOnlyList<string> FocusSections,
-    IReadOnlyList<string> Modules, IReadOnlyList<WorkspaceViewGroup>? Groups = null)
+    IReadOnlyList<string> Modules, IReadOnlyList<WorkspaceViewGroup>? Groups = null, bool Focused = false)
 {
     public bool IsAllModules => View == WorkspaceView.AllModules;
 
     /// <summary>The module is part of the view's preset (Dashboard, User Guide and System Settings are part of every view).</summary>
-    public bool Contains(NavItem item) => IsAllModules || WorkspaceViews.EveryView.Contains(item.Route) || Modules.Contains(item.Route);
+    public bool Contains(NavItem item) => IsAllModules || (!Focused && WorkspaceViews.EveryView.Contains(item.Route)) || Modules.Contains(item.Route);
+
+    /// <summary>Where the brand and the start page ("/") lead in this view: its landing page for a focused view, the project dashboard otherwise
+    /// (unchanged for the other views).</summary>
+    public string HomeRoute => Focused ? LandingRoute : "dashboard";
 }
 
 public static class WorkspaceViews
@@ -479,7 +483,7 @@ public static class WorkspaceViews
         Groups(WorkspaceView.TestLead, "Test Management", "Monitor test progress, coverage, risk, readiness and release confidence.", "dashboard",
         [
             new("tl-overview", "Readiness & follow-up", "nav-icon-dashboard", ["dashboard"]),
-            new("tl-understand", "System & requirements", "nav-icon-system-understanding", ["system-understanding", "specification-explorer", "quality/document"]),
+            new("tl-understand", "System & requirements", "nav-icon-system-understanding", ["system-understanding", "specification-explorer", "quality/document", "documentation-drift"]),
             new("tl-prepare", "Functional test preparation", "nav-icon-workflow", ["manual-testing", "manual-testing/plan", "test-data"]),
             new("tl-coverage", "Coverage & traceability", "nav-icon-artifact-traceability", ["artifact-traceability", "test-coverage-review", "correlation-review"]),
             new("tl-execution", "Execution & regression", "nav-icon-task-alignment", ["critical-e2e-regression", "execution-results", "integration-suites"]),
@@ -522,27 +526,29 @@ public static class WorkspaceViews
     public static WorkspaceViewDefinition ManualTesting => Of(WorkspaceView.ManualTesting);
 
     /// <summary>
-    /// Manual Testing: functional testers who understand the business process, review requirements and prepare tests, without working with source
-    /// code, APIs or infrastructure. Ordered as the testing workflow. Every row is an existing module: scenarios are System Understanding's
-    /// "What to test" (candidates, never Azure DevOps Test Cases or executed tests); requirement review is Document Quality Review. Technical
-    /// modules stay one search (or All Modules) away. A navigation preference only: no permission, feature or source baseline changes.
+    /// Manual Testing (V6, 2026-11-26): a FOCUSED view — the sidebar lists exactly the tester's four destinations (the same routes as the step
+    /// bar on the Manual Testing pages, <see cref="ManualTestingPresentation"/>) and System Settings at the bottom. No other group, no
+    /// "All modules", no every-view rows, no additions and no row for an open page outside it: other modules stay registered and enabled,
+    /// open by URL and by the contextual links on the pages, and are listed in the other workspaces. A navigation preference only: no
+    /// permission, feature or source baseline changes.
     /// </summary>
     private static WorkspaceViewDefinition CreateManualTesting() => Groups(WorkspaceView.ManualTesting, "Manual Testing",
-        "Review requirements, prepare functional tests and test data, run them and record results.", "manual-testing",
+        "Review requirements, prepare functional tests and test data, run them and record results.", ManualTestingPresentation.HomeRoute,
         [
-            new("manual-workspace", "Manual Testing", "nav-icon-workflow", ["manual-testing", "manual-testing/discover", "manual-testing/plan"]),
-            new("manual-setup", "Project setup", "nav-icon-import", ["project-import", "sources", "demo-projects"]),
-            new("manual-understand", "Understand the system", "nav-icon-system-understanding", ["system-understanding"]),
-            new("manual-requirements", "Requirements", "nav-icon-task-alignment", ["specification-explorer", "quality/document", "documentation-drift"]),
-            // "Functional Test Scenarios" (a shortcut to System Understanding → What to test) was removed: it duplicated the System Understanding row
-            // and competed with Test Plan Suggestions, the place where scenarios are prepared. The tab and its deep link stay.
-            new("manual-prepare", "Test preparation", "nav-icon-constitution-compliance", ["test-data"]),
-            new("manual-coverage", "Coverage & traceability", "nav-icon-workflow", ["artifact-traceability", "test-coverage-review"]),
-            new("manual-follow-up", "Quality & follow-up", "nav-icon-dashboard", ["dashboard", "user-guide"]),
-        ]);
+            new("manual-workspace", "Manual Testing", "nav-icon-workflow",
+                [ManualTestingPresentation.HomeRoute, ManualTestingPresentation.DiscoverRoute, ManualTestingPresentation.PlanRoute, ManualTestingPresentation.PlansRoute],
+                [
+                    new(ManualTestingPresentation.HomeRoute, ManualTestingPresentation.HomeRoute, "Testoversikt", "status, coverage and follow-up of the project's manual testing"),
+                    new(ManualTestingPresentation.DiscoverRoute, ManualTestingPresentation.DiscoverRoute, "Finn og forstå", "what needs testing: requirements, scenarios and existing tests"),
+                    new(ManualTestingPresentation.PlanRoute, ManualTestingPresentation.PlanRoute, "Planlegg og klargjør", "write and review the test cases of the chosen scenarios"),
+                    new(ManualTestingPresentation.PlansRoute, ManualTestingPresentation.HomeRoute, "Testplaner", "the project's test plans: create, open, execute, transfer to Azure DevOps"),
+                ]),
+            new("manual-settings", "Help & Settings", "nav-icon-settings", ["admin/system-settings"]),
+        ], focused: true);
 
-    private static WorkspaceViewDefinition Groups(WorkspaceView view, string label, string description, string landing, IReadOnlyList<WorkspaceViewGroup> groups) =>
-        new(view, label, description, landing, [], [.. groups.SelectMany(g => g.Routes)], groups);
+    private static WorkspaceViewDefinition Groups(WorkspaceView view, string label, string description, string landing, IReadOnlyList<WorkspaceViewGroup> groups,
+        bool focused = false) =>
+        new(view, label, description, landing, [], [.. groups.SelectMany(g => g.Routes)], groups, focused);
 
     public static WorkspaceViewDefinition Of(WorkspaceView view) => All.FirstOrDefault(v => v.View == view) ?? All[0];
 
@@ -563,10 +569,13 @@ public static class WorkspaceViews
         {
             var items = NavigationCatalog.Sections.SelectMany(s => s.Items).ToDictionary(i => i.Route, StringComparer.OrdinalIgnoreCase);
             var placed = groups.SelectMany(g => g.Routes).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            NavItem? Row(WorkspaceViewGroup g, string route) => items.TryGetValue(route, out var item) ? item
-                : g.Links?.FirstOrDefault(l => string.Equals(l.Route, route, StringComparison.OrdinalIgnoreCase)) is { } link && items.TryGetValue(link.PageRoute, out var page)
-                    ? Shortcut(link, page) : null;
-            return [.. groups.Select(g => new NavSection(g.Id, g.Label, [.. g.Routes.Select(r => Row(g, r)).OfType<NavItem>()], g.Icon)),
+            // A view link (its own label, or another route of a page) wins over the catalog row of the same route.
+            NavItem? Row(WorkspaceViewGroup g, string route) =>
+                g.Links?.FirstOrDefault(l => string.Equals(l.Route, route, StringComparison.OrdinalIgnoreCase)) is { } link && items.TryGetValue(link.PageRoute, out var page)
+                    ? Shortcut(view, link, page) : items.TryGetValue(route, out var item) ? item : null;
+            IReadOnlyList<NavSection> own = [.. groups.Select(g => new NavSection(g.Id, g.Label, [.. g.Routes.Select(r => Row(g, r)).OfType<NavItem>()], g.Icon))];
+            if (definition.Focused) return own;
+            return [.. own,
                 .. NavigationCatalog.Sections.Select(s => s with { Items = [.. s.Items.Where(i => !placed.Contains(i.Route))] }).Where(s => s.Items.Count > 0)];
         }
         var focus = definition.FocusSections;
@@ -577,8 +586,8 @@ public static class WorkspaceViews
 
     /// <summary>The row of a view shortcut: the page's own row with the shortcut's route, label and hint (one cached instance per shortcut, so a
     /// row keeps its identity across renders). No review status of its own.</summary>
-    private static NavItem Shortcut(WorkspaceViewLink link, NavItem page) =>
-        Shortcuts.GetOrAdd(link.Route, _ => page with { Route = link.Route, Label = link.Label, Hint = link.Hint, ReviewId = null, Aliases = null, Match = Microsoft.AspNetCore.Components.Routing.NavLinkMatch.All });
+    private static NavItem Shortcut(WorkspaceView view, WorkspaceViewLink link, NavItem page) =>
+        Shortcuts.GetOrAdd($"{view}|{link.Route}", _ => page with { Route = link.Route, Label = link.Label, Hint = link.Hint, ReviewId = null, Aliases = null, Match = Microsoft.AspNetCore.Components.Routing.NavLinkMatch.All });
 
     /// <summary>Whether the row is the current one in this view: a deep link (catalog or view shortcut) that matches claims the location, so its
     /// page row is not current at the same time.</summary>
@@ -637,7 +646,7 @@ public static class NavigationModules
         var view = WorkspaceViews.Of(state.View);
         var reach = !item.Visible(features) ? ModuleReach.DisabledByFeatureVisibility
             : view.Contains(item) ? ModuleReach.InView
-            : state.IsAdded(item.Route) ? ModuleReach.AddedByYou
+            : !view.Focused && state.IsAdded(item.Route) ? ModuleReach.AddedByYou
             : ModuleReach.HiddenByWorkspaceView;
         return new(section, item, reach, FeatureAvailabilityCatalog.IsUnavailable(item.FeatureId));
     }

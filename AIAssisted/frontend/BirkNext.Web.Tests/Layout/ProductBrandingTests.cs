@@ -51,7 +51,9 @@ public sealed class ProductBrandingTests : BunitContext
         var brand = cut.Find("[data-testid=nav-brand]");
         cut.Find("[data-testid=nav-brand-name]").TextContent.Should().Be("BirkNext");
         cut.Find("[data-testid=nav-brand-sub]").TextContent.Should().Be("Quality & Testing Workspace");
-        brand.GetAttribute("aria-label").Should().Be("BirkNext — Dashboard");
+        // Manual Testing (the default, focused) leads to its start page; every other workspace to the dashboard as before.
+        brand.GetAttribute("aria-label").Should().Be("BirkNext — start page");
+        brand.GetAttribute("href").Should().Be("manual-testing");
         brand.GetAttribute("title").Should().Be("BirkNext — Quality & Testing Workspace");
         cut.Markup.Should().NotContain(FormerName);
     }
