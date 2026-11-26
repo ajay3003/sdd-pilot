@@ -82,3 +82,19 @@ See the section appended below (isolated v1env24).
   - virtualisation;
   - Infrastructure dependencies and Requirements Traceability relationship lists (Traceability uses its own table component; it was not converted in this pass).
 - **Acceptance:** one shared pattern (IMPLEMENTED); search over all rows (VERIFIED by test); spinner only for real loading (VERIFIED by test); selection kept (IMPLEMENTED; browser below).
+
+## Browser (isolated v1env24, M2LB, 2,000 scenarios) — VERIFIED
+Script: `scratchpad/v1/v1_v5_progressive.py`.
+
+| Check | Result |
+|---|---|
+| A — initial batch | «Viser 40 av 2000 scenarioer», 40 rows |
+| B — «Vis flere» | 40 → 80 rows, first row still present; 530 ms click to render in WASM; no spinner (in memory) |
+| F — selection | the selected first row is still selected after «Vis flere» |
+| C — search beyond the first batch (acceptance test) | the title of row **2000 of 2000** typed into the search, found at once (1 hit) without clicking «Vis flere» |
+
+Screenshots: `pr-1-initial.png`, `pr-2-search.png`.
+
+NOT VERIFIED in the browser:
+- the error/retry path (no list fetches batches asynchronously yet; covered by test P04);
+- the other converted lists (covered by their component tests).

@@ -112,3 +112,20 @@ See the section appended below (isolated v1env24).
 | Steps readable as cards | IMPLEMENTED |
 | One primary action, grouped toolbar | IMPLEMENTED (test) |
 | No stale case on new AC intent | VERIFIED (P0) |
+
+## Browser (isolated v1env24, M2LB, a seeded plan with 20 cases) — VERIFIED, 13/13
+Script: `scratchpad/v1/v1_v5_only.py`. The seeded cases are technical API scenarios, so «Vis teknisk innhold» was switched on: Planlegg correctly hides technical cases by default.
+
+| Check | Result |
+|---|---|
+| One primary action | `["mtp-approve"]` (nothing unsaved) |
+| «Gjennomgang» group present | PASS |
+| No «Start test» | PASS |
+| Case editor top edge | `3px` |
+| Step card | solid border, 10px radius |
+| «Anbefalt» folded | PASS |
+| Open relevance text | «3 relevansvurderinger gjenstår – antallet påkrevde punkter kan endres.» |
+| 1920 / 1440 / 1024 / 390 px | no horizontal overflow |
+| Console errors | none |
+
+Screenshots: `scratchpad/v1/v1env24/shots/v5-*.png`, `v5-editor-1440.png`.
