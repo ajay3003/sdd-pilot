@@ -29,7 +29,7 @@ public static class ManualTestingDashboard
         new("metric.nonFunctionalScenarios", Metrics, "Ikke-funksjonelle scenarioer", "Akseptansescenarioer som beskriver en kvalitetsegenskap (blandede telles ikke her).", false),
 
         new("chart.preparation", Charts, "Testforberedelse", "Opprettet, godkjent og klar til testing — trinn som overlapper, ikke summeres.", true),
-        new("chart.moduleCoverage", Charts, "Testdekning per modul", "Hvor mange scenarioer som har minst ett lagret testtilfelle.", true),
+        new("chart.moduleCoverage", Charts, "Testdekning per modul (graf)", "Samme tall som «Oversikt per modul», som 0–100 %-graf. Av som standard (v3): tabellen viser dekningen.", false),
         new("chart.priority", Charts, "Scenarioer etter prioritet", "Scenarioer per prioritet fra spesifikasjonen (P1, P2, P3).", true),
         new("chart.coverageGaps", Charts, "Manglende testdekning", "Scenarioer uten lagret testtilfelle, etter prioritet.", true),
         new("chart.blockers", Charts, "Testbarhet og blokkeringer", "Hva som mangler før testtilfellene kan gjennomføres.", true),

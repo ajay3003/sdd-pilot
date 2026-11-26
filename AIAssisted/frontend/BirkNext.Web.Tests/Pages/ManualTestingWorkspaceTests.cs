@@ -208,7 +208,7 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.Markup.Should().NotContain("Gjennomført").And.NotContain("Bestått").And.NotContain("Feilet");
         cut.FindAll("[data-testid=mto-row]").Select(r => r.GetAttribute("data-key")).Should().Equal("Frontend", "SkoleService", "Uten modultilknytning");
         var skole = cut.Find("[data-testid=mto-row][data-key=SkoleService]").QuerySelectorAll("td").Select(td => td.TextContent).ToList();
-        skole.Should().Equal("SkoleService", "3", "1", "5", "1", "4");
+        skole.Should().Equal("SkoleService", "3", "1", "33 %", "5", "1", "4"); // v3: «Dekning» uses the one share policy
         cut.FindAll("[data-testid=mto-widget][data-widget='chart.history']").Should().BeEmpty("optional charts are off by default");
     }
 
@@ -539,7 +539,7 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
             Specifications = [.. Enumerable.Range(1, 11).Select(i => new OverviewSpecification($"M{i:00}/specs/001-x/spec.md", $"M{i:00}", "001-x", [new($"tss-m{i}", $"m{i}", "US1", "S", 1, "P2", "A")]))],
         };
         _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((many, (string?)null));
-        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ManualTestingDashboardSettings(), (string?)null));
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ManualTestingDashboardSettings { Visible = new() { ["chart.moduleCoverage"] = true } }, (string?)null));
         var cut = Open<ManualTesting>("manual-testing");
         cut.WaitForAssertion(() => cut.Find("[data-testid=mto-widget][data-widget='chart.moduleCoverage']"));
 

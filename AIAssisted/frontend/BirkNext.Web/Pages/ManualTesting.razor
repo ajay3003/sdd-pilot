@@ -188,7 +188,7 @@
                             <div class="mto-table-scroll" tabindex="0" role="region" aria-label="Tabell med tall per rad">
                             <table class="mto-table">
                                 <thead><tr>
-                                    @foreach (var (col, head) in new[] { ("name", _level switch { O.Level.Project => "Modul", O.Level.Module => "Spesifikasjon", _ => "Brukerhistorie" }), ("scenarios", "Scenarioer"), ("covered", "Med testtilfeller"), ("cases", "Testtilfeller"), ("approved", "Godkjent"), ("followup", "Trenger oppfølging") })
+                                    @foreach (var (col, head) in new[] { ("name", _level switch { O.Level.Project => "Modul", O.Level.Module => "Spesifikasjon", _ => "Brukerhistorie" }), ("scenarios", "Scenarioer"), ("covered", "Med testtilfeller"), ("share", "Dekning"), ("cases", "Testtilfeller"), ("approved", "Godkjent"), ("followup", "Trenger oppfølging") })
                                     {
                                         var c = col;
                                         <th scope="col" aria-sort="@(_sortCol == c ? (_sortDesc ? "descending" : "ascending") : "none")">
@@ -203,7 +203,7 @@
                                             <td>@if (_level == O.Level.Project && row.Module is { } mod && mod != "Uten modultilknytning" && _modules.Contains(mod))
                                                 { <button type="button" class="msb-link" @onclick="() => OpenModuleAsync(mod)" data-testid="mto-row-open">@row.Label</button> }
                                                 else { @row.Label }</td>
-                                            <td>@(row.Scenarios?.ToString() ?? "—")</td><td>@(row.Covered?.ToString() ?? "—")</td><td>@row.Cases</td><td>@row.Approved</td><td class="@(row.FollowUp > 0 ? "mto-num-attention" : null)">@row.FollowUp</td>
+                                            <td>@(row.Scenarios?.ToString() ?? "—")</td><td>@(row.Covered?.ToString() ?? "—")</td><td data-testid="mto-row-share" title="@(row.Scenarios is { } rs && row.Covered is { } rc ? $"{rc} av {rs} scenarioer har manuelle testtilfeller" : null)">@(row.Scenarios is { } ts && row.Covered is { } tc ? O.Share(tc, ts) : "—")</td><td>@row.Cases</td><td>@row.Approved</td><td class="@(row.FollowUp > 0 ? "mto-num-attention" : null)">@row.FollowUp</td>
                                         </tr>
                                     }
                                 </tbody>
@@ -903,7 +903,7 @@
         if (_sortCol == "name" && !_sortDesc) return rows; // the presentation's own order
         Func<O.Row, IComparable> key = _sortCol switch
         {
-            "scenarios" => r => r.Scenarios ?? -1, "covered" => r => r.Covered ?? -1, "cases" => r => r.Cases, "approved" => r => r.Approved, "followup" => r => r.FollowUp,
+            "scenarios" => r => r.Scenarios ?? -1, "covered" => r => r.Covered ?? -1, "share" => r => r.Scenarios is > 0 and { } n && r.Covered is { } c ? (int)Math.Round(100000.0 * c / n) : -1, "cases" => r => r.Cases, "approved" => r => r.Approved, "followup" => r => r.FollowUp,
             _ => r => r.Label,
         };
         return _sortDesc ? rows.OrderByDescending(key) : rows.OrderBy(key);
