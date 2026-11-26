@@ -534,6 +534,21 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
     }
 
     [Fact]
+    public void R04b_a_plan_with_open_scenarios_is_follow_up_and_links_to_its_own_execution()
+    {
+        // Follow-up v4 (2026-11-26): the empty text ignored plans with not-run, failed or blocked scenarios; the item opened the plan list.
+        Setup([Summary()], Discovery(3));
+        var empty = Overview() with { Cases = [] };
+        _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((empty with { Plans = [Overview().Plans[0] with { Execution = new PlanExecutionCounts(4, 1, 2, 1, 0) }], Specifications = [.. empty.Specifications.Select(s => s with { Scenarios = [.. s.Scenarios.Select(sc => sc with { Priority = "P3" })] })] }, (string?)null));
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ManualTestingDashboardSettings(), (string?)null));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-band][data-band=action]"));
+
+        cut.FindAll("[data-testid=mto-action-empty]").Should().BeEmpty("a plan has scenarios to follow up");
+        cut.Find("[data-testid=mto-plan-open-items]").GetAttribute("href").Should().Be($"manual-testing/plan-execution?plan={Overview().Plans[0].Id}");
+    }
+
+    [Fact]
     public void R05_a_long_module_comparison_shows_the_first_eight_and_Vis_alle_reaches_every_module()
     {
         Setup([Summary()], Discovery(3));

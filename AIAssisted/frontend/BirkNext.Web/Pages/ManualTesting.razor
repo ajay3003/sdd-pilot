@@ -128,7 +128,10 @@
                 var actionWidgets = new[] { "panel.p1Attention", "chart.blockers", "chart.sourceChanges" }.Where(On).ToList();
                 @if (actionWidgets.Count > 0)
                 {
-                    var anyAction = (On("panel.p1Attention") && attention.Count > 0) || (On("chart.blockers") && blockers.Any(b => b.Value > 0)) || (On("chart.sourceChanges") && changes.Any(b => b.Value > 0));
+                    // Follow-up v4 (2026-11-26): a plan with scenarios not run, failed or blocked is follow-up too — the empty text used to ignore it.
+                    var openPlans = On("panel.testPlans") ? ov.Plans.Where(pl => pl.Execution is { NotRun: > 0 } || pl.Execution is { Failed: > 0 } || pl.Execution is { Blocked: > 0 }).ToList() : [];
+                    var anyAction = (On("panel.p1Attention") && attention.Count > 0) || (On("chart.blockers") && blockers.Any(b => b.Value > 0)) || (On("chart.sourceChanges") && changes.Any(b => b.Value > 0))
+                        || openPlans.Count > 0;
                     <section class="mto-band mto-band-action" aria-labelledby="mto-band-action-h" data-testid="mto-band" data-band="action">
                         <h2 class="mto-band-h" id="mto-band-action-h">Dette bør følges opp</h2>
                         @if (!anyAction)
@@ -146,7 +149,7 @@
                             }
                             @ActionList("chart.blockers", "Testbarhet og blokkeringer", "blocker", blockers, $"{O.NotReady(slice)} av {fig.Cases} testtilfeller er ikke klare. Ett testtilfelle kan ha flere årsaker.")
                             @ActionList("chart.sourceChanges", "Kildeendringer", "source", changes, "Sammenlignet med testtilfellets egen spesifikasjon. «Kunne ikke sammenlignes» betyr ikke at noe er fjernet.")
-                            @if (On("panel.testPlans") && ov.Plans.Where(pl => pl.Execution is { NotRun: > 0 } || pl.Execution is { Failed: > 0 } || pl.Execution is { Blocked: > 0 }).ToList() is { Count: > 0 } open)
+                            @if (openPlans is { Count: > 0 } open)
                             {
                                 <section class="mto-card mto-actions-card" data-testid="mto-widget" data-widget="panel.planExecution"><h3 class="mto-card-h">Sprintplaner med gjenstående AC-er</h3>
                                     <p class="mt-muted msb-small mto-card-note">Resultater registreres per scenario i hver testplan.</p>
@@ -154,7 +157,7 @@
                                         @foreach (var pl in open.Take(5))
                                         {
                                             var ex = pl.Execution!;
-                                            <li><a class="mto-action-item" href="@M.PlansRoute" data-testid="mto-plan-open-items">
+                                            <li><a class="mto-action-item" href="@($"manual-testing/plan-execution?plan={pl.Id}")" data-testid="mto-plan-open-items">
                                                 <span class="mto-action-icon is-plan" aria-hidden="true"></span>
                                                 <span class="mto-action-count">@ex.NotRun</span>
                                                 <span class="mto-action-text">ikke kjørt i «@pl.Name»@(ex.Failed + ex.Blocked > 0 ? $" · {ex.Failed} feilet · {ex.Blocked} blokkert" : "")</span>
