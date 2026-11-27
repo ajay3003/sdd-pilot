@@ -346,6 +346,8 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui, Shutd
             throw new LauncherException(message, action,
                 $"missing: {string.Join(", ", result.Missing.Take(10))}; changed: {string.Join(", ", result.Changed.Take(10))}; unreadable: {string.Join(", ", result.Unreadable.Take(10))}");
         }
+        if (result.GeneratedCaches.Count > 0)
+            log.Info($"Package check: {result.GeneratedCaches.Count} generated Python cache file(s) listed by this build were not hashed (BirkNext never runs them): {string.Join(", ", result.GeneratedCaches.Take(10))}.");
         if (needFull) StateFile.Write(verifiedFile, new VerifiedRecord(manifestHash, package.Root, DateTimeOffset.UtcNow, result.Checked));
         log.Info($"Package verified ({(needFull ? "all" : "runtime")} files: {result.Checked}) in {clock.Elapsed.TotalSeconds:0.0} s.");
     }

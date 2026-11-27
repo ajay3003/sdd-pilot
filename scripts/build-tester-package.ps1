@@ -281,6 +281,8 @@ Offline translation (runtime/translation): model $($translationManifest.model.id
     if ($problems.Count -gt 0) { foreach ($p in $problems) { Write-Host "[FAIL] $p" -ForegroundColor Red }; exit 1 }
 
     Step 'Package manifest (every file + SHA-256 + migrations)'
+    # BUG-005 (2026-11-27): generated Python caches (the translator probe or any earlier Python run) are not package content.
+    Get-ChildItem -LiteralPath $stage -Recurse -Directory -Force -Filter '__pycache__' | Remove-Item -Recurse -Force
     & (Join-Path $PSScriptRoot 'validate-package.ps1') -PackageRoot $stage -CreateManifest -MigrationManifest $migrations -SourceCommit $identity.sourceCommit
     if ($LASTEXITCODE -ne 0) { throw 'package-manifest.json could not be written' }
 

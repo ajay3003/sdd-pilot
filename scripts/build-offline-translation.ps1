@@ -134,10 +134,12 @@ try {
 
     Step 'Verify: start the helper and translate a sample'
     $probe = '{"op":"probe"}' + "`n" + '{"op":"exit"}' + "`n"
-    $out = $probe | & (Join-Path $python 'python.exe') -I -X utf8 (Join-Path $bundle 'helper/birknext_translate.py') --model $modelDir --spm (Join-Path $modelDir 'sentencepiece.model') --threads 2
+    # -B: the probe writes no bytecode cache into the bundle (BUG-005: the probe wrote six __pycache__/*.pyc after the manifest step).
+    $out = $probe | & (Join-Path $python 'python.exe') -I -B -X utf8 (Join-Path $bundle 'helper/birknext_translate.py') --model $modelDir --spm (Join-Path $modelDir 'sentencepiece.model') --threads 2
     $answers = @($out | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
     if ($answers.Count -lt 2 -or -not $answers[0].ready -or -not $answers[1].ok -or -not $answers[1].sample) { throw "The bundle does not translate: $($out -join ' | ')" }
     Write-Host "  [OK] sample: $($answers[1].sample)"
+    Get-ChildItem -LiteralPath $bundle -Recurse -Directory -Force -Filter '__pycache__' | Remove-Item -Recurse -Force
     $size = (Get-ChildItem -LiteralPath $bundle -Recurse -File | Measure-Object Length -Sum).Sum
     Remove-Item -Recurse -Force -LiteralPath $work
     Write-Host ("[OK] {0} ({1} files, {2:N0} MB)" -f $bundle, $files.Count, ($size / 1MB)) -ForegroundColor Green

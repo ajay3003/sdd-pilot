@@ -64,7 +64,9 @@ try {
             foreach ($f in $files) {
                 $entryName = $f.FullName.Substring($root.Length).Replace([char]92, [char]47).TrimStart([char]47)
                 $entry = $zipArchive.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
-                $entry.LastWriteTime = $f.LastWriteTimeUtc
+                # BUG-005 (2026-11-27): a ZIP stores local time without a zone; writing the UTC clock time shifted every extracted file by the UTC
+                # offset (Norway: one hour), which also made Python rewrite bundled bytecode caches. Local time is what an extractor restores.
+                $entry.LastWriteTime = $f.LastWriteTime
                 # Long paths (deep package folders on Windows) are opened with the long-path prefix.
                 $source = if ($env:OS -eq 'Windows_NT' -and $f.FullName.Length -ge 248) { "\\?\$($f.FullName)" } else { $f.FullName }
                 $out = $entry.Open(); $in = [System.IO.File]::OpenRead($source)

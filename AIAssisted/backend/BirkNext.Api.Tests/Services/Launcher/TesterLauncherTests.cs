@@ -218,6 +218,63 @@ public sealed class TesterLauncherTests
         FluentActions.Invoking(() => PackageIntegrity.Verify(traversal)).Should().Throw<LauncherException>().WithMessage("*incomplete*");
     }
 
+    // ── BUG-005 (2026-11-27): «This BirkNext package has been changed after it was built: 6 file(s) differ» after normal use ──
+
+    private const string Pyc = "runtime/translation/lib/sentencepiece/__pycache__/__init__.cpython-312.pyc";
+
+    [Fact]
+    public void BUG005_a_package_listing_python_caches_starts_after_python_rewrote_them_and_real_tampering_is_still_refused()
+    {
+        // A, B: a freshly extracted package of an older build that listed the six caches verifies.
+        var root = Package(("runtime/k6/k6.exe", "k6"), ("runtime/translation/lib/sentencepiece/__init__.py", "import _sentencepiece"), (Pyc, "pyc as built"),
+            ("runtime/translation/lib/ctranslate2/__pycache__/version.cpython-312.pyc", "pyc as built"), ("runtime/translation/python/python.exe", "python"));
+        PackageIntegrity.Verify(root).Ok.Should().BeTrue();
+
+        // C, D, E: Python rewrote its caches during normal use (as it did on the tester PC); a restart still verifies, and the launcher says why.
+        File.WriteAllText(Path.Combine(root, Pyc.Replace('/', Path.DirectorySeparatorChar)), "pyc rewritten by Python for the extracted source");
+        var afterUse = PackageIntegrity.Verify(root);
+        afterUse.Ok.Should().BeTrue("a generated cache is not package content");
+        afterUse.GeneratedCaches.Should().HaveCount(2);
+        afterUse.Changed.Should().BeEmpty();
+
+        // F: genuine tampering with the Python source, the interpreter or another runtime file is still refused, byte for byte.
+        File.AppendAllText(Path.Combine(root, "runtime", "translation", "lib", "sentencepiece", "__init__.py"), " import os; os.system('x')");
+        File.AppendAllText(Path.Combine(root, "runtime", "translation", "python", "python.exe"), "tampered");
+        PackageIntegrity.Verify(root).Changed.Should().Equal("runtime/translation/lib/sentencepiece/__init__.py", "runtime/translation/python/python.exe");
+
+        // Only a .pyc inside a __pycache__ folder counts as a cache: a .pyc elsewhere, or another file in __pycache__, is verified as usual.
+        PackageIntegrity.IsGeneratedCache(Pyc).Should().BeTrue();
+        PackageIntegrity.IsGeneratedCache("runtime/translation/lib/evil.pyc").Should().BeFalse();
+        PackageIntegrity.IsGeneratedCache("runtime/translation/lib/x/__pycache__/payload.dll").Should().BeFalse();
+    }
+
+    [Fact]
+    public void BUG005_the_translator_python_never_reads_or_writes_bytecode_inside_the_package()
+    {
+        var args = BirkNext.Api.Services.TestPlanning.OfflineTranslation.OfflineTranslationEngine.PythonArguments("helper.py", "model", "spm", 2);
+        args.Should().ContainInOrder("-I", "-B");
+        var prefix = args.Single(a => a.StartsWith("pycache_prefix=", StringComparison.Ordinal))["pycache_prefix=".Length..];
+        Path.IsPathRooted(prefix).Should().BeTrue();
+        prefix.Should().NotContain("runtime" + Path.DirectorySeparatorChar + "translation", "the cache location is outside the package");
+    }
+
+    [Fact]
+    public void BUG005_many_files_are_hashed_by_several_readers_with_deterministic_results_and_progress()
+    {
+        // H: the full check reads files in parallel (antivirus scans each first read; measured 47.4 s → 10.2 s for 843 files), and the outcome
+        // and progress are the same as one reader's.
+        var files = Enumerable.Range(0, 40).Select(i => ($"runtime/f{i:00}.dll", new string((char)('a' + i % 26), 1000 + i))).ToArray();
+        var root = Package(files);
+        foreach (var i in new[] { 31, 7, 19 }) File.AppendAllText(Path.Combine(root, "runtime", $"f{i:00}.dll"), "x");
+        var reports = new List<PackageIntegrity.Progress>();
+        var result = PackageIntegrity.Verify(root, progress: reports.Add);
+        result.Changed.Should().Equal("runtime/f07.dll", "runtime/f19.dll", "runtime/f31.dll");
+        reports.Should().HaveCount(80);
+        reports.Select(r => r.Done).Should().BeInAscendingOrder();
+        reports[^1].Should().Match<PackageIntegrity.Progress>(r => r.Done == 40 && r.BytesDone == r.BytesTotal);
+        PackageIntegrity.Readers.Should().BeInRange(1, 4);
+    }
+
     // ── Package check progress (regression: a first start stayed at "Checking application files" with no feedback) ─────────────────
 
     [Fact]

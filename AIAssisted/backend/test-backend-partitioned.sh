@@ -10,6 +10,7 @@
 # of Services subfolders, and the classes directly in the Services namespace. Their totals must add up to the whole suite.
 #
 # Usage: ./test-backend-partitioned.sh [maxParallelThreads=4]   (after building BirkNext.Api.Tests)
+# Each partition line ends with its test host's peak memory (Windows; «?» elsewhere). Memory profile: AIAssisted/docs/birknext-backend-regression-stability-2026-11-26.md.
 set -u
 threads="${1:-4}"
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -29,12 +30,29 @@ done
 root="FullyQualifiedName~$ns."; for d in "${subs[@]}"; do root="$root&FullyQualifiedName!~$ns.$d."; done
 partitions+=("services-root|$root")
 
+# Peak memory of the partition's test host (Windows only, read-only on processes): PowerShell samples every 2 s until the partition ends.
+sampler=""
+peak_start() {
+  sampler=""; command -v powershell >/dev/null 2>&1 || return 0
+  local dir; dir="$(cygpath -w /tmp 2>/dev/null || echo /tmp)"
+  rm -f "/tmp/birknext-peak-$1" "/tmp/birknext-peak-$1.stop"
+  powershell -NoProfile -Command "\$s=Get-Date; \$m=0; while (-not (Test-Path '$dir\birknext-peak-$1.stop')) { Get-Process testhost -ErrorAction SilentlyContinue | Where-Object { \$_.StartTime -ge \$s } | ForEach-Object { if (\$_.PeakWorkingSet64 -gt \$m) { \$m = \$_.PeakWorkingSet64 } }; Start-Sleep -Seconds 2 }; [int](\$m/1MB) | Set-Content -Encoding ascii '$dir\birknext-peak-$1'" &
+  sampler=$!
+}
+peak_stop() {
+  peak="?"; [ -n "$sampler" ] || return 0
+  touch "/tmp/birknext-peak-$1.stop"; wait "$sampler"
+  peak=$(tr -cd '0-9' < "/tmp/birknext-peak-$1" 2>/dev/null); peak="${peak:-?}"
+}
+
 failed=0; total=0
 cd "$bin"
 for p in "${partitions[@]}"; do
   name="${p%%|*}"; filter="${p#*|}"
+  peak_start "$name"
   line=$(dotnet test BirkNext.Api.Tests.dll --filter "$filter" -- xUnit.MaxParallelThreads="$threads" 2>&1 | tee "/tmp/birknext-backend-$name.log" | grep -E "Passed!|Failed!|No test matches" | tail -1)
-  echo "$name: ${line:-NO SUMMARY}"
+  peak_stop "$name"
+  echo "$name: ${line:-NO SUMMARY} · peak test host ${peak} MB"
   grep -E "^\s+Failed " "/tmp/birknext-backend-$name.log" || true
   case "$line" in *"Failed!"*|"") failed=1;; esac
   t=$(echo "$line" | sed -nE 's/.*Total: *([0-9]+).*/\1/p'); total=$((total + ${t:-0}))

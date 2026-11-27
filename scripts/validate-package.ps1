@@ -60,6 +60,10 @@ try {
         $files = Get-ChildItem -Path $root -Recurse -File -Force |
             ForEach-Object { $_.FullName.Substring($root.Length).TrimStart('\', '/').Replace('\', '/') } |
             Where-Object { $_ -ne "package-manifest.json" } | Sort-Object
+        # BUG-005 (2026-11-27): a generated Python bytecode cache is never package content (Python rewrites it on the tester PC, and a full check
+        # then refused the package). The build removes them; a manifest is never written with one.
+        $caches = @($files | Where-Object { $_ -match '(^|/)__pycache__/' -or $_ -like '*.pyc' })
+        if ($caches.Count -gt 0) { throw "Generated Python caches must not be in a package (remove them before the manifest): $($caches[0..([Math]::Min(4, $caches.Count - 1))] -join ', ')" }
         # Format 2: every file also has its SHA-256, so a changed file is detected, not only a missing one.
         $hashes = @($files | ForEach-Object { [PSCustomObject]@{ path = $_; sha256 = (FileSha256 (P $root ($_ -split '/'))) } })
         [PSCustomObject]@{

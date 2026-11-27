@@ -173,8 +173,25 @@ public static class PackageIntegrity
     {
         /// <summary>Files that exist but could not be read (locked by another program, or no read permission).</summary>
         public IReadOnlyList<string> Unreadable { get; init; } = [];
+        /// <summary>Listed Python bytecode caches (<c>__pycache__/*.pyc</c>) that were not hashed (BUG-005, see <see cref="IsGeneratedCache"/>).</summary>
+        public IReadOnlyList<string> GeneratedCaches { get; init; } = [];
         public bool Ok => Missing.Count == 0 && Changed.Count == 0 && Unreadable.Count == 0;
     }
+
+    /// <summary>
+    /// BUG-005 (2026-11-27): a Python bytecode cache is generated data, not package content. Python validates a <c>.pyc</c> against its source
+    /// (mtime and size) and rewrites it when they differ — and after the package ZIP round trip they always differed (the archive stores UTC as
+    /// zone-less local DOS time, 2-second precision), so the bundled translator rewrote the six <c>.pyc</c> files an older build had listed, and
+    /// the next full check refused the whole package. BirkNext starts its Python with <c>-B -X pycache_prefix=…</c> outside the package, so a
+    /// <c>.pyc</c> inside the package is never read or written by BirkNext; it is reported, not hashed. Every other file — every executable,
+    /// library, <c>.py</c> source, model and configuration file — is still verified byte for byte. New builds do not ship such caches.
+    /// </summary>
+    public static bool IsGeneratedCache(string relativePath) =>
+        relativePath.EndsWith(".pyc", StringComparison.OrdinalIgnoreCase) && relativePath.Replace('\\', '/').Contains("/__pycache__/", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Files hashed at once: on a freshly extracted package the first read of each file is scanned by antivirus, which runs in
+    /// parallel (measured 2026-11-27: 843 files / 247 MB in 47.4 s with one reader, 10.2 s with four).</summary>
+    public static int Readers => Math.Clamp(Environment.ProcessorCount, 1, 4);
 
     /// <summary>Where the check is: files and bytes done of the total, and the file being read since <see cref="CurrentSince"/>.</summary>
     public sealed record Progress(int Done, int Total, long BytesDone, long BytesTotal, string? Current, DateTime CurrentSince);
@@ -196,6 +213,7 @@ public static class PackageIntegrity
         var missing = new List<string>(); var changed = new List<string>(); var unreadable = new List<string>();
         var listed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var files = new List<(string Rel, string Full, string Sha256, long Length)>();
+        var caches = new List<string>();
 
         // Pass 1 (metadata only): every listed file exists; never follow a manifest entry out of the package.
         foreach (var entry in hashes.EnumerateArray())
@@ -203,6 +221,7 @@ public static class PackageIntegrity
             var rel = entry.GetProperty("path").GetString() ?? "";
             listed.Add(rel);
             if (filter is not null && !filter.Contains(rel)) continue;
+            if (IsGeneratedCache(rel)) { caches.Add(rel); continue; }
             var full = Path.GetFullPath(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar)));
             if (!full.StartsWith(packageRoot, StringComparison.OrdinalIgnoreCase)) { changed.Add(rel); continue; }
             var info = new FileInfo(full);
@@ -212,34 +231,61 @@ public static class PackageIntegrity
         if (filter is not null) missing.AddRange(filter.Where(wanted => !listed.Contains(wanted)));
         var count = files.Count + missing.Count(m => listed.Contains(m));
         // A missing file already decides the outcome ("incomplete"): report it at once instead of hashing everything else first.
-        if (missing.Count > 0) return new Result(count, missing, changed);
+        if (missing.Count > 0) return new Result(count, missing, changed) { GeneratedCaches = caches };
 
-        // Pass 2: the hashes, in chunks (cancellable inside large files).
-        var total = files.Count; var bytesTotal = files.Sum(f => f.Length); long bytesDone = 0; var done = 0;
-        var buffer = new byte[1 << 20];
-        foreach (var file in files)
+        // Pass 2: the hashes, in chunks (cancellable inside large files), by up to Readers files at once. Progress and the order of the result
+        // lists stay deterministic: files are taken and reported under one lock, results are sorted by manifest order.
+        var total = files.Count; var bytesTotal = files.Sum(f => f.Length); long bytesDone = 0; var done = 0; var next = 0;
+        var gate = new object();
+        var order = files.Select((f, i) => (f.Rel, i)).ToDictionary(x => x.Rel, x => x.i, StringComparer.OrdinalIgnoreCase);
+        var changedFound = new List<string>(); var missingFound = new List<string>(); var unreadableFound = new List<(string Rel, string Text)>();
+        void Worker()
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            progress?.Invoke(new Progress(done, total, bytesDone, bytesTotal, file.Rel, DateTime.UtcNow));
-            try
+            var buffer = new byte[1 << 20];
+            while (true)
             {
-                using var stream = new FileStream(file.Full, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1, FileOptions.SequentialScan);
-                using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-                int read;
-                while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+                (string Rel, string Full, string Sha256, long Length) file;
+                lock (gate)
                 {
-                    sha.AppendData(buffer, 0, read);
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (next >= files.Count) return;
+                    file = files[next++];
+                    progress?.Invoke(new Progress(done, total, bytesDone, bytesTotal, file.Rel, DateTime.UtcNow));
                 }
-                if (!string.Equals(Convert.ToHexString(sha.GetHashAndReset()), file.Sha256, StringComparison.OrdinalIgnoreCase)) changed.Add(file.Rel);
+                string? outcome = null; string? unreadableText = null;
+                try
+                {
+                    using var stream = new FileStream(file.Full, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1, FileOptions.SequentialScan);
+                    using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                    int read;
+                    while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        sha.AppendData(buffer, 0, read);
+                        cancellationToken.ThrowIfCancellationRequested();
+                    }
+                    if (!string.Equals(Convert.ToHexString(sha.GetHashAndReset()), file.Sha256, StringComparison.OrdinalIgnoreCase)) outcome = "changed";
+                }
+                catch (FileNotFoundException) { outcome = "missing"; }
+                catch (DirectoryNotFoundException) { outcome = "missing"; }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { unreadableText = $"{file.Rel} ({e.GetType().Name}: {e.Message})"; }
+                lock (gate)
+                {
+                    if (outcome == "changed") changedFound.Add(file.Rel);
+                    else if (outcome == "missing") missingFound.Add(file.Rel);
+                    else if (unreadableText is not null) unreadableFound.Add((file.Rel, unreadableText));
+                    done++; bytesDone += file.Length;
+                    progress?.Invoke(new Progress(done, total, bytesDone, bytesTotal, null, DateTime.UtcNow));
+                }
             }
-            catch (FileNotFoundException) { missing.Add(file.Rel); }
-            catch (DirectoryNotFoundException) { missing.Add(file.Rel); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { unreadable.Add($"{file.Rel} ({e.GetType().Name}: {e.Message})"); }
-            done++; bytesDone += file.Length;
-            progress?.Invoke(new Progress(done, total, bytesDone, bytesTotal, null, DateTime.UtcNow));
         }
-        return new Result(count, missing, changed) { Unreadable = unreadable };
+        var workers = Enumerable.Range(0, Math.Min(Readers, Math.Max(1, files.Count))).Select(_ => Task.Factory.StartNew(Worker, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+        try { Task.WaitAll(workers); }
+        catch (AggregateException e) when (e.InnerExceptions.OfType<OperationCanceledException>().Any()) { throw e.InnerExceptions.OfType<OperationCanceledException>().First(); }
+        catch (AggregateException e) when (e.InnerExceptions.Count == 1) { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e.InnerExceptions[0]).Throw(); throw; }
+        changed.AddRange(changedFound.OrderBy(r => order[r]));
+        missing.AddRange(missingFound.OrderBy(r => order[r]));
+        unreadable.AddRange(unreadableFound.OrderBy(u => order[u.Rel]).Select(u => u.Text));
+        return new Result(count, missing, changed) { Unreadable = unreadable, GeneratedCaches = caches };
     }
 
     /// <summary>SHA-256 of the manifest itself: identifies the package build whose full verification is remembered.</summary>

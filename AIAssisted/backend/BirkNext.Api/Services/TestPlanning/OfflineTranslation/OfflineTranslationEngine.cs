@@ -17,6 +17,13 @@ namespace BirkNext.Api.Services.TestPlanning.OfflineTranslation;
 public sealed class OfflineTranslationEngine : IAsyncDisposable
 {
     public const string ProbeSentence = "Open the page, fill in all required fields and select Save.";
+
+    /// <summary>Where the translator's Python looks for bytecode caches: outside the package, and never written (-B). BUG-005.</summary>
+    public static string PythonCachePrefix => Path.Combine(Path.GetTempPath(), "BirkNext", "python-cache");
+
+    /// <summary>The arguments the helper is started with (pure; BUG-005 regression test).</summary>
+    public static IReadOnlyList<string> PythonArguments(string helperScript, string modelDirectory, string sentencePieceModel, int threads) =>
+        ["-I", "-B", "-X", $"pycache_prefix={PythonCachePrefix}", "-X", "utf8", helperScript, "--model", modelDirectory, "--spm", sentencePieceModel, "--threads", threads.ToString()];
     /// <summary>
     /// Loading normally takes about a second. The first start on a cold PC (a fresh non-persistent AVD session in particular) reads and
     /// antivirus-scans the 82 MB model and the 61 MB CTranslate2 DLL first: a tester's first start exceeded 90 s on 2026-11-23 and the second
@@ -207,7 +214,9 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
         };
-        foreach (var a in new[] { "-I", "-X", "utf8", bundle.HelperScript, "--model", bundle.ModelDirectory, "--spm", bundle.SentencePieceModel, "--threads", threads.ToString() })
+        // BUG-005 (2026-11-27): -B and a cache prefix outside the package: Python neither writes nor reads __pycache__ inside the (verified,
+        // immutable) package. Before, it rewrote the bundled .pyc files and the launcher's next full check refused the whole package.
+        foreach (var a in PythonArguments(bundle.HelperScript, bundle.ModelDirectory, bundle.SentencePieceModel, threads))
             info.ArgumentList.Add(a);
         // The helper gets no inherited Python settings, proxy variables or BirkNext secrets.
         foreach (var key in info.Environment.Keys.Where(k => k.StartsWith("PYTHON", StringComparison.OrdinalIgnoreCase) || k.Contains("PROXY", StringComparison.OrdinalIgnoreCase)
