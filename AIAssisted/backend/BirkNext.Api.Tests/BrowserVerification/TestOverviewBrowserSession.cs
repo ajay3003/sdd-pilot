@@ -38,8 +38,14 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
         await page.GotoAsync($"{host.WebUrl}/project-import?import=source", new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 120000 });
         var form = page.GetByTestId("pi-choose");
         var header = page.GetByTestId("pi-header-import");
-        await form.Or(header).First.WaitForAsync(new() { Timeout = 120000 });
-        if (await form.CountAsync() == 0) await header.ClickAsync();
+        // The import form may open by itself while the page settles (the header button then disappears): poll, click the header only while shown.
+        for (var attempt = 0; attempt < 120 && await form.CountAsync() == 0; attempt++)
+        {
+            if (await header.CountAsync() > 0 && await header.IsVisibleAsync())
+                try { await header.ClickAsync(new() { Timeout = 2000 }); } catch (TimeoutException) { }
+            await page.WaitForTimeoutAsync(1000);
+        }
+        await form.WaitForAsync(new() { Timeout = 30000 });
         var detect = page.GetByTestId("pi-zip-detect");
         await detect.WaitForAsync(new() { Timeout = 60000 });
         if (!await detect.IsCheckedAsync() && await page.Locator("[data-testid=pi-zip-role]:checked").CountAsync() == 0) await detect.CheckAsync();
@@ -253,6 +259,38 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
         return new(int.Parse(counts.Groups[1].Value), int.Parse(counts.Groups[2].Value), await page.GetByTestId("mtd-overview-selection-missing").CountAsync() > 0,
             [.. rows.SelectMany(Tokens)], page.Url);
     }
+
+    /// <summary>Planlegg og klargjør after a Testoversikt case hand-over: every (plan, case) the selection shows, visiting each named plan.</summary>
+    public async Task<PlanResult> ReadPlanSelectionAsync()
+    {
+        await page.WaitForURLAsync(u => u.Contains("/manual-testing/plan?draft=", StringComparison.Ordinal), new() { Timeout = 60000 });
+        var banner = page.GetByTestId("mtp-overview-selection");
+        await banner.WaitForAsync(new() { Timeout = 180000 });
+        var total = int.Parse(await banner.GetAttributeAsync("data-total") ?? "0");
+        var seen = new HashSet<(Guid, string)>();
+        var missing = false;
+        var visited = new HashSet<Guid>();
+        for (var hop = 0; hop < 10; hop++)
+        {
+            var planId = Guid.Parse(await page.GetByTestId("mtp-plan-select").CountAsync() > 0
+                ? await page.GetByTestId("mtp-plan-select").InputValueAsync()
+                : Regex.Match(page.Url, @"draft=([0-9a-f-]{36})").Groups[1].Value);
+            visited.Add(planId);
+            await Assertions.Expect(page.GetByTestId("mtp-loading")).ToHaveCountAsync(0, new() { Timeout = 60000 });
+            foreach (var id in await page.Locator("[data-testid=mtp-case]").EvaluateAllAsync<string[]>("els => els.map(e => e.dataset.case)")) seen.Add((planId, id));
+            missing |= await page.GetByTestId("mtp-overview-selection-missing").CountAsync() > 0;
+            ILocator? target = null;
+            foreach (var n in await page.GetByTestId("mtp-overview-selection-plan").AllAsync())
+                if (!visited.Contains(Guid.Parse(await n.GetAttributeAsync("data-plan") ?? Guid.Empty.ToString()))) { target = n; break; }
+            if (target is null) break;
+            var nextPlan = (await target.GetAttributeAsync("data-plan"))!;
+            await target.ClickAsync();
+            await Assertions.Expect(page.GetByTestId("mtp-plan-select")).ToHaveValueAsync(nextPlan, new() { Timeout = 60000 });
+        }
+        return new(total, missing, seen);
+    }
+
+    public sealed record PlanResult(int Total, bool Missing, IReadOnlySet<(Guid PlanId, string CaseId)> Cases);
 
     public sealed record DiscoverResult(int Found, int Wanted, bool Missing, IReadOnlyList<string> Tokens, string Url);
 

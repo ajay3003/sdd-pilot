@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using M = BirkNext.Web.Services.ManualTestingPresentation;
 using O = BirkNext.Web.Services.ManualTestingOverviewPresentation;
+using P = BirkNext.Web.Services.PlanPreparePresentation;
 
 namespace BirkNext.Web.Tests.Pages;
 
@@ -180,6 +181,44 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         ],
         Plans = [new(PlanId, "Library – test plan", 7, 2, 5, 1, ["Frontend", "SkoleService", "Uten modultilknytning"], DateTimeOffset.UtcNow)],
     };
+
+    /// <summary>The case population a Testoversikt figure handed to Planlegg og klargjør (the last one written).</summary>
+    private P.CaseSelection CasesHandedOver()
+    {
+        var written = JSInterop.Invocations.Where(i => i.Identifier == "sessionStorage.setItem" && (string)i.Arguments[0]! == TabDraftStore.PlanCaseSelectionKey("library")).Last();
+        return System.Text.Json.JsonSerializer.Deserialize<P.CaseSelection>((string)written.Arguments[1]!)!;
+    }
+
+    [Fact]
+    public void V12_case_follow_ups_open_Planlegg_og_klargjor_with_exactly_the_counted_cases()
+    {
+        SetupOverview();
+        Setup([Summary()], Discovery(3));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("li[data-key=p1-approval] [data-testid=mto-attention-open]"));
+        var line = cut.Find("li[data-key=p1-approval] [data-testid=mto-attention-open]");
+        line.GetAttribute("data-destination").Should().Be("plan");
+        line.Click();
+        cut.WaitForAssertion(() => Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith($"manual-testing/plan?draft={PlanId}"));
+        // Independent expectation from Overview()'s construction: the P1 cases s1-2..s1-5 are not accepted (s1-1 is).
+        CasesHandedOver().Cases.Should().BeEquivalentTo(new[] { "s1-2", "s1-3", "s1-4", "s1-5" }.Select(id => new P.CaseRef(PlanId, id)));
+        cut.FindAll("[data-testid=mto-drill]").Should().BeEmpty("no inline case list");
+    }
+
+    [Fact]
+    public void V12_blocker_and_source_change_lines_hand_over_their_exact_cases()
+    {
+        SetupOverview();
+        Setup([Summary()], Discovery(3));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-widget='chart.sourceChanges'] [data-testid=mto-bar][data-key=changed] [data-testid=mto-bar-open]"));
+        cut.Find("[data-widget='chart.sourceChanges'] [data-testid=mto-bar][data-key=changed] [data-testid=mto-bar-open]").Click();
+        cut.WaitForAssertion(() => CasesHandedOver().Cases.Should().Equal(new P.CaseRef(PlanId, "f1")));
+        Services.GetRequiredService<NavigationManager>().NavigateTo("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-widget='chart.blockers'] [data-testid=mto-bar][data-key=hindrance] [data-testid=mto-bar-open]"));
+        cut.Find("[data-widget='chart.blockers'] [data-testid=mto-bar][data-key=hindrance] [data-testid=mto-bar-open]").Click();
+        cut.WaitForAssertion(() => CasesHandedOver().Cases.Should().Equal(new P.CaseRef(PlanId, "s1-2")));
+    }
 
     private void SetupOverview(ManualTestingDashboardSettings? settings = null)
     {
@@ -434,16 +473,15 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
     }
 
     [Fact]
-    public void A_case_bar_lists_its_cases_with_links_to_each_case_in_its_test_plan()
+    public void A_case_bar_opens_its_test_plan_with_exactly_its_cases()
     {
         Setup([Summary()], Discovery(3));
         SetupOverview();
         var cut = Open<ManualTesting>("manual-testing");
         cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
         cut.Find("[data-widget='chart.blockers'] [data-testid=mto-bar][data-key=hindrance] [data-testid=mto-bar-open]").Click();
-        cut.FindAll("[data-testid=mto-drill-case]").Select(a => a.GetAttribute("href")).Should().Equal($"{M.PlanRoute}?draft={PlanId}&case=s1-2");
-        cut.Find("[data-widget='chart.blockers'] [data-key=hindrance] [data-testid=mto-bar-open]").GetAttribute("aria-pressed").Should().Be("true");
-        cut.Find("[data-testid=mto-drill-close]").Click();
+        cut.WaitForAssertion(() => Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith($"{M.PlanRoute}?draft={PlanId}"));
+        CasesHandedOver().Cases.Should().Equal(new P.CaseRef(PlanId, "s1-2"));
         cut.FindAll("[data-testid=mto-drill]").Should().BeEmpty();
     }
 
@@ -596,8 +634,10 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.FindAll("[data-testid=mto-action-empty]").Should().BeEmpty("the fixture has a changed source and a hindrance");
         var band = cut.Find("[data-testid=mto-band][data-band=action]");
         band.QuerySelectorAll("[data-testid=mto-widget]").Select(w => w.GetAttribute("data-widget")).Should().Contain(["chart.blockers", "chart.sourceChanges"]);
+        // V12: the line opens Planlegg og klargjør with exactly the changed case (f1), not an inline list.
         cut.Find("[data-testid=mto-band][data-band=action] [data-testid=mto-widget][data-widget='chart.sourceChanges'] [data-testid=mto-bar-open]").Click();
-        cut.Find("[data-testid=mto-drill]").GetAttribute("data-chart").Should().Be("chart.sourceChanges");
+        cut.WaitForAssertion(() => CasesHandedOver().Cases.Should().Equal(new P.CaseRef(PlanId, "f1")));
+        cut.FindAll("[data-testid=mto-drill]").Should().BeEmpty();
     }
 
     [Fact]
@@ -716,8 +756,9 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=mto-band][data-band=action]"));
         var source = cut.Find("[data-testid=mto-widget][data-widget='chart.sourceChanges']");
         source.QuerySelectorAll("[data-testid=mto-bar]").Should().OnlyContain(r => r.QuerySelector(".mto-action-count")!.TextContent != "0", "only rows with a count");
+        var shown = int.Parse(cut.Find("[data-testid=mto-widget][data-widget='chart.sourceChanges'] [data-testid=mto-bar] .mto-action-count").TextContent);
         cut.Find("[data-testid=mto-widget][data-widget='chart.sourceChanges'] [data-testid=mto-bar-open]").Click();
-        cut.Find("[data-testid=mto-drill]").GetAttribute("data-chart").Should().Be("chart.sourceChanges");
+        cut.WaitForAssertion(() => CasesHandedOver().Cases.Should().HaveCount(shown, "the row's count is the handed-over population"));
     }
 
     [Fact]

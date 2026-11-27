@@ -29,6 +29,9 @@ public static class TabDraftStore
     /// <summary>Testoversikt's open follow-up list, its search, filters and open groups for this tab and project (UX-107: restored on return).</summary>
     public static string OverviewFollowUpKey(string projectKey) => $"{Prefix}mto-followup.{projectKey}";
 
+    /// <summary>The test cases a Testoversikt figure handed over to Planlegg og klargjør (V12, 2026-11-27): exactly that population, across plans.</summary>
+    public static string PlanCaseSelectionKey(string projectKey) => $"{Prefix}mtp-cases.{projectKey}";
+
     public static async Task<T?> ReadAsync<T>(IJSRuntime js, string key)
     {
         try

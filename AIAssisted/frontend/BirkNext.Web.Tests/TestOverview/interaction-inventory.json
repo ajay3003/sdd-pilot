@@ -50,17 +50,17 @@
       "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S12"],
       "destinationOrTransition": "Naviger til scenario- eller testplanvisning med scope og måltallsfilter.",
       "requiredParameters": ["application", "scope", "metric", "sourceBaseline"],
-      "automatedTestIds": ["Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows", "ManualTestingWorkspaceTests", "B17_KPI_tile_and_scenario_KPI_navigation", "B23_back_and_forward_keep_the_scope", "B16_test_plan_navigation_with_no_plan"]
+      "automatedTestIds": ["Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows", "ManualTestingWorkspaceTests", "B17_KPI_tile_and_scenario_KPI_navigation", "B23_back_and_forward_keep_the_scope", "B16_test_plan_figure_and_cards_open_their_plans"]
     },
     {
       "controlId": "mto-attention-open",
       "component": "ManualTestingOverview",
       "type": "button",
-      "behavior": "P1-linjen («N P1-scenarioer mangler testtilfeller») åpner Finn og forstå med nøyaktig de tellede scenarioidentitetene og prioritet P1, i samme delte scope. Saksbaserte linjer (godkjenning/klar) viser fortsatt en kompakt sakliste.",
+      "behavior": "«Viktig å følge opp»: P1 uten testtilfeller åpner Finn og forstå med de tellede scenarioidentitetene + prioritet P1; P1-testtilfeller som venter på godkjenning, ikke er klare eller må gjennomgås etter kildeendring åpner Planlegg og klargjør med nøyaktig de tellede (plan, testtilfelle).",
       "applicableScopes": ["S01", "S02", "S03", "S04", "S07", "S08", "S09", "S10", "S11", "S12", "S13", "S14"],
-      "destinationOrTransition": "Naviger til manual-testing/discover; filter Identities = tellede P1-identiteter uten testtilfelle, Priority = P1; scope uendret (data-destination=discover).",
-      "requiredParameters": ["application", "scope", "identities", "priority"],
-      "automatedTestIds": ["UX107_the_P1_follow_up_opens_Finn_og_forsta_with_exactly_the_counted_scenarios_and_no_inline_list", "P1_SCOPE_01_project_only", "P1_SCOPE_02_module", "P1_SCOPE_03_specification", "P1_SCOPE_04_document", "P1_SCOPE_05_06_07_clearing_restores_the_wider_population", "P1_SCOPE_08_switching_applications", "P1_SCOPE_10_duplicate_display_ids_in_different_documents", "P1_SCOPE_12_back_forward_and_reload_keep_scope_and_filter", "P1_SCOPE_13_zero_matching_scenarios", "P1_SCOPE_14_scope_changed_while_a_request_is_pending", "P1_SCOPE_15_no_inline_P1_or_readiness_list_remains"]
+      "destinationOrTransition": "data-destination=discover: manual-testing/discover, filter Identities (+Priority=P1). data-destination=plan: manual-testing/plan?draft=<første plan>, sessionStorage mtp-cases.<prosjekt> = CaseSelection(plan, testtilfelle); andre planer navngis i banneret. Scope uendret.",
+      "requiredParameters": ["application", "scope", "followUpKey", "identities | (planId, caseId)"],
+      "automatedTestIds": ["B24_duplicate_display_ids_stay_separate", "CASE_01_P1_awaiting_approval_project", "CASE_02_P1_not_ready_project_and_reload_back", "CASE_04_module_scope_narrows_case_follow_ups", "CASE_05_specification_and_document_scope", "CASE_06_cases_of_another_application_never_appear", "P1_SCOPE_01_project_only", "P1_SCOPE_02_module", "P1_SCOPE_03_specification", "P1_SCOPE_04_document", "P1_SCOPE_05_06_07_clearing_restores_the_wider_population", "P1_SCOPE_08_switching_applications", "P1_SCOPE_10_duplicate_display_ids_in_different_documents", "P1_SCOPE_12_back_forward_and_reload_keep_scope_and_filter", "P1_SCOPE_13_zero_matching_scenarios", "P1_SCOPE_14_scope_changed_while_a_request_is_pending", "P1_SCOPE_15_no_inline_P1_or_readiness_list_remains", "UX107_the_P1_follow_up_opens_Finn_og_forsta_with_exactly_the_counted_scenarios_and_no_inline_list", "V12_a_handed_over_case_selection_shows_exactly_its_cases_names_other_plans_and_can_be_cleared", "V12_a_selected_case_that_left_the_plan_is_counted_as_missing_never_replaced", "V12_case_follow_ups_open_Planlegg_og_klargjor_with_exactly_the_counted_cases"]
     },
     {
       "controlId": "mto-sort",
@@ -116,11 +116,11 @@
       "controlId": "mto-bar-open",
       "component": "ManualTestingOverview.Chart",
       "type": "button",
-      "behavior": "Åpne drilldown for søylediagrammets viste kategori.",
+      "behavior": "Diagramsøyler (prioritet, manglende dekning m.fl.) åpner en kompakt liste ved diagrammet med nøyaktig søylens scenarioer. Rader i «Testbarhet og blokkeringer» og «Kildeendringer» (data-destination=plan) åpner Planlegg og klargjør med nøyaktig radens testtilfeller.",
       "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S12"],
-      "destinationOrTransition": "Vis nøyaktig kategoriens records i gjeldende scope.",
+      "destinationOrTransition": "Diagram: inline liste (mto-drill). Blokkering/kilde: manual-testing/plan?draft=<plan> med CaseSelection; scope uendret.",
       "requiredParameters": ["application", "scope", "chartId", "barKey", "sourceBaseline"],
-      "automatedTestIds": ["Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows", "B19_chart_bars_open_exactly_their_records", "B12_application_switching_replaces_every_figure", "B24_duplicate_display_ids_stay_separate"]
+      "automatedTestIds": ["A_case_bar_opens_its_test_plan_with_exactly_its_cases", "B12_application_switching_replaces_every_figure", "B19_chart_bars_open_exactly_their_records", "B24_duplicate_display_ids_stay_separate", "CASE_03_blockers_hindrance_and_clarification", "Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows", "V12_a_handed_over_case_selection_shows_exactly_its_cases_names_other_plans_and_can_be_cleared", "V12_a_selected_case_that_left_the_plan_is_counted_as_missing_never_replaced", "V12_blocker_and_source_change_lines_hand_over_their_exact_cases"]
     },
     {
       "controlId": "mto-tile-open",
@@ -135,7 +135,93 @@
   ],
   "notes": [
     "The guard compares the exact stable-ID sets, rejects duplicates in the registry, and validates required behavior-contract fields.",
-    "V12 2026-11-27: scenario metrics (P1 follow-up, readiness, KPI tiles) navigate to Finn og forstå with the exact counted identities; isolated browser journeys (BirkNext.Api.Tests/BrowserVerification, Category=IsolatedBrowser) check destination identities against an independent fixture oracle.",
-    "Controls without a contract entry here are listed as gaps in the Norwegian report; the browser journeys cover more controls than the contracts list."
-  ]
+    "V12 2026-11-27: every follow-up figure opens its work view with the exact counted population (scenarios -> Finn og forstå, cases -> Planlegg og klargjør); chart bars keep a compact list next to the chart.",
+    "controlScopeCoverage maps control x scope to the automated tests that verify exact identities; an empty list is a known missing pair reported in the Norwegian report."
+  ],
+  "controlScopeCoverage": {
+    "ssp-module": {
+      "S01": ["B01_project_only"],
+      "S02": ["B02_project_and_module", "B09_clear_module_restores_the_project"],
+      "S09": ["B07_project_level_source"],
+      "S11": ["B12_application_switching_replaces_every_figure"],
+      "S13": ["B13_rapid_scope_changes_settle_on_the_last_choice", "P1_SCOPE_14_scope_changed_while_a_request_is_pending"]
+    },
+    "ssp-feature": {
+      "S03": ["B03_project_module_and_specification", "B10_clear_specification_keeps_the_module"],
+      "S05": ["B05_B06_specification_or_document_without_module_is_not_offered"]
+    },
+    "ssp-specification": {
+      "S04": ["B04_full_hierarchy_with_document", "B11_clear_document_keeps_module_and_specification"],
+      "S06": ["B05_B06_specification_or_document_without_module_is_not_offered"]
+    },
+    "mto-attention-open (p1-uncovered)": {
+      "S01": ["P1_SCOPE_01_project_only", "B14_P1_follow_up_opens_Finn_og_forsta_with_the_project_population"],
+      "S02": ["P1_SCOPE_02_module", "P1_SCOPE_10_duplicate_display_ids_in_different_documents"],
+      "S03": ["P1_SCOPE_03_specification"],
+      "S04": ["P1_SCOPE_04_document"],
+      "S09": [],
+      "S10": ["B08_unassigned_source"],
+      "S11": ["P1_SCOPE_08_switching_applications"],
+      "S12": ["P1_SCOPE_13_zero_matching_scenarios"],
+      "S14": []
+    },
+    "mto-attention-open (p1-approval)": {
+      "S01": ["CASE_01_P1_awaiting_approval_project", "B24_duplicate_display_ids_stay_separate"],
+      "S02": ["CASE_04_module_scope_narrows_case_follow_ups"],
+      "S03": [],
+      "S04": ["CASE_05_specification_and_document_scope"],
+      "S11": ["CASE_06_cases_of_another_application_never_appear"],
+      "S14": []
+    },
+    "mto-attention-open (p1-ready)": {
+      "S01": ["CASE_02_P1_not_ready_project_and_reload_back"],
+      "S02": ["CASE_04_module_scope_narrows_case_follow_ups"],
+      "S03": [],
+      "S04": []
+    },
+    "mto-attention-open (p1-source)": {
+      "S01": [],
+      "S14": []
+    },
+    "mto-bar-open (chart.blockers)": {
+      "S01": ["CASE_03_blockers_hindrance_and_clarification"],
+      "S02": [],
+      "S03": [],
+      "S04": []
+    },
+    "mto-bar-open (chart.sourceChanges)": {
+      "S01": [],
+      "S14": []
+    },
+    "mto-bar-open (chart.priority / chart.coverageGaps)": {
+      "S01": ["B19_chart_bars_open_exactly_their_records", "B20_pagination_and_show_more", "B24_duplicate_display_ids_stay_separate"],
+      "S02": ["B21_empty_results"],
+      "S03": ["B15_exact_scenario_opens_that_scenario"],
+      "S11": ["B12_application_switching_replaces_every_figure"]
+    },
+    "mto-readiness-open": {
+      "S01": ["READY_01_start_assessment_opens_exactly_the_review_needed_scenarios"],
+      "S02": ["READY_01_start_assessment_opens_exactly_the_review_needed_scenarios"],
+      "S03": ["READY_01_start_assessment_opens_exactly_the_review_needed_scenarios"],
+      "S04": []
+    },
+    "mto-tile-open": {
+      "S01": ["B17_KPI_tile_and_scenario_KPI_navigation"]
+    },
+    "mto-kpi (metric.scenarios / metric.testPlans)": {
+      "S01": ["B16_test_plan_figure_and_cards_open_their_plans"],
+      "S02": ["B17_KPI_tile_and_scenario_KPI_navigation", "B23_back_and_forward_keep_the_scope"]
+    },
+    "mto-sort / mto-row-open": {
+      "S01": ["B18_table_links_and_sorting"]
+    },
+    "mto-follow-prev / mto-follow-next / mto-follow-more": {
+      "S01": ["B20_pagination_and_show_more"]
+    },
+    "mtp-overview-selection": {
+      "S01": ["CASE_01_P1_awaiting_approval_project", "CASE_02_P1_not_ready_project_and_reload_back"],
+      "S02": ["CASE_04_module_scope_narrows_case_follow_ups"],
+      "S04": ["CASE_05_specification_and_document_scope"]
+    }
+  }
 }

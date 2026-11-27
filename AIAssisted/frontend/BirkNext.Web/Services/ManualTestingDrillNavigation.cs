@@ -68,6 +68,18 @@ public static class ManualTestingDrillNavigation
         return null;
     }
 
+    /// <summary>
+    /// A test-case figure of Testoversikt (V12, 2026-11-27): Planlegg og klargjør opens on the first plan of the population with exactly these cases
+    /// (all plans named there); the shared scope is unchanged. Nothing opens for an empty population.
+    /// </summary>
+    public static async Task<string?> OpenCasesAsync(IJSRuntime js, NavigationManager nav, string projectKey, string label, IReadOnlyList<PlanPreparePresentation.CaseRef> cases)
+    {
+        if (cases.Count == 0) return "Ingen testtilfeller i utvalget.";
+        await TabDraftStore.WriteAsync(js, TabDraftStore.PlanCaseSelectionKey(projectKey), new PlanPreparePresentation.CaseSelection(label, [.. cases]));
+        nav.NavigateTo($"{ManualTestingPresentation.PlanRoute}?draft={cases[0].PlanId}");
+        return null;
+    }
+
     /// <summary>A KPI tile's click-through (2026-11-26): Finn og forstå with exactly this filter, keeping the active project/module/specification
     /// selection (the scope is not changed) and opening no earlier scenario.</summary>
     public static async Task OpenFilteredAsync(IJSRuntime js, NavigationManager nav, string projectKey, ScenarioBrowserPresentation.Filter filter)

@@ -15,6 +15,9 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
 {
     private static readonly SemaphoreSlim ImportGate = new(1, 1);
     private static bool _imported;
+    private static Exception? _fixtureFailure;
+    /// <summary>The seeded Aurora cases as the API stored them (plan id, case id).</summary>
+    private static TestOverviewCaseSeeding.Seeded _seeded = null!;
     private IBrowserContext? _context;
     private TestOverviewBrowserSession _s = null!;
     private bool _passed;
@@ -33,12 +36,18 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
         await ImportGate.WaitAsync();
         try
         {
+            if (_fixtureFailure is { } failed) throw new InvalidOperationException("The isolated fixture could not be prepared: " + failed.Message, failed);
             if (!_imported)
             {
                 // Two applications through the real Project Import page (the supported user path; nothing is seeded behind the API's back).
-                try { await _s.ImportAsync(B); await _s.ImportAsync(A); }
-                catch { await host.FinishContextAsync(_context, "fixture-import", failed: true); _context = null; throw; }
-                _imported = true;
+                try
+                {
+                    await _s.ImportAsync(B);
+                    await _s.ImportAsync(A);
+                    _imported = true; // never imported twice, even when seeding fails below
+                    _seeded = await TestOverviewCaseSeeding.SeedAsync(host, _s.Page, A);
+                }
+                catch (Exception e) { _fixtureFailure = e; await host.FinishContextAsync(_context, "fixture-import", failed: true); _context = null; throw; }
             }
         }
         finally { ImportGate.Release(); }
@@ -72,15 +81,16 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
     private async Task ExpectFiguresAsync(F.Application app, F.Scope scope)
     {
         (await _s.KpiAsync("metric.scenarios")).Should().Be(F.ScenarioProposals(app, scope), "«Scenarioforslag» = acceptance scenarios + requirement-only proposals");
-        (await _s.KpiAsync("metric.testCases")).Should().Be(0, "the fixture has no test cases");
-        (await _s.KpiAsync("metric.approved")).Should().Be(0);
-        (await _s.KpiAsync("metric.ready")).Should().Be(0);
+        var cases = F.CasesIn(app, scope);
+        (await _s.KpiAsync("metric.testCases")).Should().Be(cases.Count, "the seeded cases of the scope's documents");
+        (await _s.KpiAsync("metric.approved")).Should().Be(cases.Count(c => F.IsApproved(c.State)));
+        (await _s.KpiAsync("metric.ready")).Should().Be(cases.Count(c => F.IsReady(c.State)), "approved is not ready");
+        if (await _s.KpiAsync("metric.testPlans") is { } plans) plans.Should().Be(cases.Select(c => c.Plan).Distinct().Count(), "plans with cases in the scope");
         foreach (var p in new[] { "P1", "P2", "P3" })
         {
-            var expected = F.Priority(app, scope, p);
             var shown = await _s.BarValueAsync("chart.priority", p);
-            (shown ?? 0).Should().Be(expected, $"priority bar {p}");
-            ((await _s.BarValueAsync("chart.coverageGaps", p)) ?? 0).Should().Be(expected, $"{p} without test cases (no case exists)");
+            (shown ?? 0).Should().Be(F.Priority(app, scope, p), $"priority bar {p}");
+            ((await _s.BarValueAsync("chart.coverageGaps", p)) ?? 0).Should().Be(F.GapOf(app, scope, p), $"{p} without test cases");
         }
     }
 
@@ -105,7 +115,7 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
     /// <summary>Back from Finn og forstå to Testoversikt (browser history).</summary>
     private async Task BackToOverviewAsync()
     {
-        await _s.Page.GoBackAsync();
+        await _s.Page.GoBackAsync(new() { WaitUntil = WaitUntilState.Commit });
         await _s.Page.WaitForURLAsync(u => u.EndsWith("/manual-testing", StringComparison.Ordinal), new() { Timeout = 60000 });
         await _s.WaitForFiguresAsync();
     }
@@ -351,22 +361,20 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
     }
 
     [IsolatedBrowserFact]
-    public async Task B16_test_plan_navigation_with_no_plan()
+    public async Task B16_test_plan_figure_and_cards_open_their_plans()
     {
         _name = "B16";
-        // The fixture has no test plan: the plan figure is 0 and its link opens «Testplaner» (the populated case is NOT VERIFIED, see the report).
-        var plans = _s.Page.Locator("[data-testid=mto-kpi][data-widget='metric.testPlans']");
-        if (await plans.CountAsync() > 0)
+        var plans = F.CasesOf(A).Select(c => c.Plan).Distinct().ToList();
+        // The «Testplaner» figure is optional (System Settings); when shown it counts the plans with cases in the scope.
+        if (await _s.KpiAsync("metric.testPlans") is { } shown) shown.Should().Be(plans.Count);
+        foreach (var plan in plans)
         {
-            (await _s.KpiAsync("metric.testPlans")).Should().Be(0);
-            await plans.ClickAsync();
-            await _s.Page.WaitForURLAsync(u => u.Contains("/manual-testing/plans", StringComparison.Ordinal), new() { Timeout = 60000 });
+            var id = _seeded.Cases.First(e => e.Key.Plan == plan).Value.PlanId;
+            var card = _s.Page.Locator("[data-testid=mto-plan-card]", new() { HasTextString = plan });
+            (await card.Locator("a.mto-plan-name").GetAttributeAsync("href")).Should().EndWith($"draft={id}", "a plan card opens exactly its own plan");
         }
-        else
-        {
-            await _s.Page.GotoAsync($"{host.WebUrl}/manual-testing/plans");
-        }
-        await Assertions.Expect(_s.Page.Locator("h1")).ToContainTextAsync("Testplaner", new() { Timeout = 60000 });
+        await _s.Page.GotoAsync($"{host.WebUrl}/manual-testing/plans", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+        foreach (var plan in plans) await Assertions.Expect(_s.Page.Locator("main")).ToContainTextAsync(plan, new() { Timeout = 60000 });
         Clean();
     }
 
@@ -428,10 +436,11 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
     public async Task B19_chart_bars_open_exactly_their_records()
     {
         _name = "B19";
-        foreach (var (chart, key) in new[] { ("chart.priority", "P2"), ("chart.priority", "P3"), ("chart.coverageGaps", "P2") })
+        var covered = F.Covered(A);
+        foreach (var (chart, key) in new[] { ("chart.priority", "P2"), ("chart.priority", "P3"), ("chart.coverageGaps", "P3"), ("chart.coverageGaps", "P1") })
         {
             var drill = await _s.OpenBarAsync(chart, key);
-            var expected = F.Scenarios(A, new F.Scope(), s => s.Priority == key);
+            var expected = F.Scenarios(A, new F.Scope(), s => s.Priority == key).Where(k => chart == "chart.priority" || !covered.Contains(k)).ToHashSet();
             (await TestOverviewBrowserSession.DrillCountAsync(drill)).Should().Be(expected.Count, $"{chart}/{key}");
             (await _s.DrillIdentitiesAsync(drill)).Should().BeEquivalentTo(expected, $"{chart}/{key}");
             await drill.GetByTestId("mto-drill-close").ClickAsync();
@@ -497,12 +506,12 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
         await _s.Page.Locator("[data-testid=mto-kpi][data-widget='metric.scenarios']").ClickAsync();
         await _s.Page.WaitForURLAsync(u => u != overview, new() { Timeout = 60000 });
         var destination = _s.Page.Url;
-        await _s.Page.GoBackAsync();
+        await _s.Page.GoBackAsync(new() { WaitUntil = WaitUntilState.Commit });
         await _s.Page.WaitForURLAsync(u => u == overview, new() { Timeout = 60000 });
         await _s.WaitForFiguresAsync();
         (await _s.Page.GetByTestId("ssp-module").InputValueAsync()).Should().Be(A.ModuleKey("Billing"));
         await ExpectFiguresAsync(A, new F.Scope("Billing"));
-        await _s.Page.GoForwardAsync();
+        await _s.Page.GoForwardAsync(new() { WaitUntil = WaitUntilState.Commit });
         await _s.Page.WaitForURLAsync(u => u == destination, new() { Timeout = 60000 });
         Clean();
     }
@@ -519,8 +528,12 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
         var identities = await drill.GetByTestId("mto-drill-row").EvaluateAllAsync<string[]>("rows => rows.map(r => r.dataset.identity)");
         identities.Should().OnlyHaveUniqueItems("every listed scenario has its own source identity");
         await drill.GetByTestId("mto-drill-close").ClickAsync();
-        var result = await _s.FollowUpToDiscoverAsync("p1-uncovered");
-        result.Tokens.Count(t => t == "AUR-SHARED-S1").Should().Be(2, "Finn og forstå lists both scenarios with the shared title");
+        // The same title in two documents with two different case states: only the Booking case (awaiting) is in «venter på godkjenning».
+        var booking = _seeded.Cases.Single(e => e.Key.Scenario == new F.Key(Booking1.Path, "AUR-SHARED-S1")).Value;
+        var billing = _seeded.Cases.Single(e => e.Key.Scenario == new F.Key(Spec(A, "Billing", "001-invoices").Path, "AUR-SHARED-S1")).Value;
+        await _s.Page.Locator("li[data-key='p1-approval'] [data-testid=mto-attention-open]").ClickAsync();
+        var plan = await _s.ReadPlanSelectionAsync();
+        plan.Cases.Should().Contain(booking).And.NotContain(billing);
         Clean();
     }
 
@@ -601,11 +614,11 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
     public async Task P1_SCOPE_10_duplicate_display_ids_in_different_documents()
     {
         _name = "P1-SCOPE-10";
-        // US1 and FR-001 exist in both Booking/001 and Billing/001, and AUR-SHARED-S1 has one title in both: the project hand-over holds both.
-        var expected = F.P1WithoutCases(A, new F.Scope()).Where(k => k.Token == "AUR-SHARED-S1").ToList();
-        expected.Should().HaveCount(2);
-        var result = await _s.FollowUpToDiscoverAsync("p1-uncovered");
-        result.Tokens.Count(t => t == "AUR-SHARED-S1").Should().Be(2);
+        // «US1 · AC 1» exists in 23 Catalog documents (and FR-001 in every document): the hand-over holds each document's own scenario.
+        var expected = F.P1WithoutCases(A, new F.Scope("Catalog"));
+        expected.Select(k => k.SpecPath).Distinct().Count().Should().BeGreaterThan(20);
+        await _s.SelectModuleAsync(A.ModuleKey("Catalog"));
+        await ExpectP1DestinationAsync(A, new F.Scope("Catalog"));
         Clean();
     }
 
@@ -625,7 +638,7 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
         await BackToOverviewAsync();
         (await _s.Page.GetByTestId("ssp-module").InputValueAsync()).Should().Be(A.ModuleKey("Billing"));
         await ExpectFiguresAsync(A, new F.Scope("Billing"));
-        await _s.Page.GoForwardAsync();
+        await _s.Page.GoForwardAsync(new() { WaitUntil = WaitUntilState.Commit });
         var forward = await _s.ReadDiscoverAsync();
         forward.Tokens.Should().BeEquivalentTo(expected.Select(k => k.Token));
         Clean();
@@ -693,6 +706,96 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
             result.Tokens.Should().BeEquivalentTo(expected.Select(k => k.Token), $"{scope}");
             await BackToOverviewAsync();
         }
+        Clean();
+    }
+
+    // ================================================================================================ test-case follow-ups → Planlegg og klargjør
+
+    /// <summary>Clicks a case follow-up (a «Viktig å følge opp» line or a blocker/source row) and compares the destination's (plan, case) set with
+    /// the oracle's: exact identities, every plan visited.</summary>
+    private async Task ExpectCaseDestinationAsync(ILocator control, Func<F.CaseFixture, bool> oracle, F.Scope scope)
+    {
+        var expected = F.CasesIn(A, scope).Where(oracle).Select(c => _seeded.Cases[c]).ToHashSet();
+        if (expected.Count == 0) { (await control.CountAsync()).Should().Be(0, "no such case in the scope, no line"); return; }
+        (await control.GetAttributeAsync("data-destination")).Should().Be("plan");
+        await control.ClickAsync();
+        var result = await _s.ReadPlanSelectionAsync();
+        result.Total.Should().Be(expected.Count, "the hand-over carries exactly the counted cases");
+        result.Missing.Should().BeFalse();
+        result.Cases.Should().BeEquivalentTo(expected, "Planlegg og klargjør shows exactly the represented cases");
+    }
+
+    private ILocator Line(string key) => _s.Page.Locator($"li[data-key='{key}'] [data-testid=mto-attention-open]");
+    private ILocator Row(string chart, string key) => _s.Page.Locator($"[data-widget='{chart}'] [data-testid=mto-bar][data-key='{key}'] [data-testid=mto-bar-open]");
+    private static bool P1(F.CaseFixture c) => F.PriorityOf(A, c.Scenario) == "P1";
+
+    [IsolatedBrowserFact]
+    public async Task CASE_01_P1_awaiting_approval_project()
+    {
+        _name = "CASE-01";
+        await ExpectCaseDestinationAsync(Line("p1-approval"), c => P1(c) && !F.IsApproved(c.State), new F.Scope());
+        Clean();
+    }
+
+    [IsolatedBrowserFact]
+    public async Task CASE_02_P1_not_ready_project_and_reload_back()
+    {
+        _name = "CASE-02";
+        await ExpectCaseDestinationAsync(Line("p1-ready"), c => P1(c) && !F.IsReady(c.State), new F.Scope());
+        var expected = F.CasesOf(A).Where(c => P1(c) && !F.IsReady(c.State)).Select(c => _seeded.Cases[c]).ToHashSet();
+        await _s.Page.ReloadAsync(new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+        (await _s.ReadPlanSelectionAsync()).Cases.Should().BeEquivalentTo(expected, "a reload keeps the hand-over");
+        await _s.Page.GoBackAsync(new() { WaitUntil = WaitUntilState.Commit });
+        await _s.Page.WaitForURLAsync(u => u.EndsWith("/manual-testing", StringComparison.Ordinal), new() { Timeout = 60000 });
+        await _s.WaitForFiguresAsync();
+        await ExpectFiguresAsync(A, new F.Scope());
+        Clean();
+    }
+
+    [IsolatedBrowserFact]
+    public async Task CASE_03_blockers_hindrance_and_clarification()
+    {
+        _name = "CASE-03";
+        await ExpectCaseDestinationAsync(Row("chart.blockers", "hindrance"), c => c.State == F.CaseState.Blocked, new F.Scope());
+        await _s.OpenOverviewAsync();
+        await ExpectCaseDestinationAsync(Row("chart.blockers", "clarify"), c => c.State == F.CaseState.NeedsClarification, new F.Scope());
+        Clean();
+    }
+
+    [IsolatedBrowserFact]
+    public async Task CASE_04_module_scope_narrows_case_follow_ups()
+    {
+        _name = "CASE-04";
+        await _s.SelectModuleAsync(A.ModuleKey("Billing"));
+        var scope = new F.Scope("Billing");
+        await ExpectFiguresAsync(A, scope);
+        await ExpectCaseDestinationAsync(Line("p1-approval"), c => P1(c) && !F.IsApproved(c.State), scope);
+        await ExpectCaseDestinationAsync(Line("p1-ready"), c => P1(c) && !F.IsReady(c.State), scope);
+        Clean();
+    }
+
+    [IsolatedBrowserFact]
+    public async Task CASE_05_specification_and_document_scope()
+    {
+        _name = "CASE-05";
+        await _s.SelectModuleAsync(A.ModuleKey("Booking"));
+        await _s.SelectPackAsync("001-reservations");
+        if (await _s.Page.GetByTestId("ssp-specification").CountAsync() > 0) await _s.SelectDocumentAsync("spec.md");
+        var scope = new F.Scope("Booking", "001-reservations", Booking1.Path);
+        await ExpectFiguresAsync(A, scope);
+        await ExpectCaseDestinationAsync(Line("p1-approval"), c => P1(c) && !F.IsApproved(c.State), scope);
+        Clean();
+    }
+
+    [IsolatedBrowserFact]
+    public async Task CASE_06_cases_of_another_application_never_appear()
+    {
+        _name = "CASE-06";
+        await _s.UseAsync(B);
+        await _s.OpenOverviewAsync();
+        if (await _s.Page.GetByTestId("ssp-module").CountAsync() > 0) await _s.SelectModuleAsync(null);
+        (await _s.KpiAsync("metric.testCases")).Should().Be(0, "Borealis has no cases; Aurora's never count here");
+        (await Line("p1-approval").CountAsync()).Should().Be(0);
         Clean();
     }
 }

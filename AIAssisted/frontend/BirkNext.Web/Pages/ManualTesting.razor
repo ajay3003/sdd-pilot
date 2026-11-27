@@ -200,15 +200,15 @@
                                    list of hundreds of scenarios here. The band heading already says «Viktig å følge opp». *@
                                 <section class="mto-card mto-attention" data-testid="mto-widget" data-widget="panel.p1Attention" aria-label="P1-oppfølging">
                                     <ul class="mto-action-list">@foreach (var (k, text) in attention)
-                                        { var key = k; var opensScenarios = OpensScenarios("panel.p1Attention", key);
-                                          <li data-key="@k"><button type="button" class="mto-action-item mto-attention-open" disabled="@_drillBusy" aria-pressed="@(!opensScenarios && IsDrill("panel.p1Attention", k) ? "true" : "false")"
-                                            @onclick="@(() => opensScenarios ? OpenInDiscoverAsync(slice, "panel.p1Attention", key) : ToggleDrillAsync("panel.p1Attention", key))" data-testid="mto-attention-open"
-                                            data-destination="@(opensScenarios ? "discover" : "inline")"><span>@text</span><span class="mto-action-go" aria-hidden="true">›</span></button></li> }</ul>
+                                        { var key = k;
+                                          <li data-key="@k"><button type="button" class="mto-action-item mto-attention-open" disabled="@_drillBusy"
+                                            @onclick="@(() => OpenInDiscoverAsync(slice, "panel.p1Attention", key))" data-testid="mto-attention-open"
+                                            data-destination="@(key == "p1-uncovered" ? "discover" : "plan")"><span>@text</span><span class="mto-action-go" aria-hidden="true">›</span></button></li> }</ul>
                                     @if (_drillError is { } navError && _drill is null) { <p class="mt-alert msb-small" role="alert" data-testid="mto-drill-error">@navError</p> }
                                     <p class="msb-small mto-card-links"><a href="@M.DiscoverRoute">Se scenarioer</a> · <a href="@M.PlanRoute">Se testtilfeller</a></p></section>
                             }
-                            @ActionList("chart.blockers", "Testbarhet og blokkeringer", "blocker", blockers, $"{O.NotReady(slice)} av {fig.Cases} testtilfeller er ikke klare. Ett testtilfelle kan ha flere årsaker.")
-                            @ActionList("chart.sourceChanges", "Kildeendringer", "source", changes, "Sammenlignet med testtilfellets egen spesifikasjon. «Kunne ikke sammenlignes» betyr ikke at noe er fjernet.")
+                            @ActionList("chart.blockers", "Testbarhet og blokkeringer", "blocker", blockers, $"{O.NotReady(slice)} av {fig.Cases} testtilfeller er ikke klare. Ett testtilfelle kan ha flere årsaker.", slice)
+                            @ActionList("chart.sourceChanges", "Kildeendringer", "source", changes, "Sammenlignet med testtilfellets egen spesifikasjon. «Kunne ikke sammenlignes» betyr ikke at noe er fjernet.", slice)
                             @if (openPlans is { Count: > 0 } open)
                             {
                                 <section class="mto-card mto-actions-card" data-testid="mto-widget" data-widget="panel.planExecution"><h3 class="mto-card-h">Sprintplaner med gjenstående AC-er</h3>
@@ -514,12 +514,13 @@
 
     private bool IsDrill(string chart, string key) => _drill is { } d && d.Chart == chart && d.Key == key;
 
-    /// <summary>Follow-up lines, readiness states and KPI tiles count SCENARIOS: they open Finn og forstå (V12, 2026-11-27) instead of an inline list.
-    /// Case populations (approval, readiness of cases, blockers, source changes) keep their compact case list.</summary>
+    /// <summary>
+    /// V12 (2026-11-27): every follow-up figure opens its work view instead of an inline list — scenario populations (P1 without cases, readiness
+    /// states, KPI tiles) Finn og forstå; case populations (approval, case readiness, blockers, source changes) Planlegg og klargjør.
+    /// </summary>
     private static bool OpensScenarios(string chart, string key) => chart switch
     {
-        "panel.p1Attention" => key == "p1-uncovered",
-        "chart.scenarioReadiness" or "tile" => true,
+        "panel.p1Attention" or "chart.scenarioReadiness" or "tile" or "chart.blockers" or "chart.sourceChanges" => true,
         _ => false,
     };
 
@@ -534,18 +535,22 @@
         _drillError = null;
         var drill = DrillFor(slice, chart, key);
         var ids = drill?.Scenarios.Select(x => x.Scenario.Identity).Where(i => i.Length > 0).Distinct(StringComparer.Ordinal).ToList() ?? [];
-        if (drill is null || ids.Count == 0) { _drillError = "Ingen scenarioer i utvalget."; return; }
+        var cases = drill?.Cases.Select(x => new P.CaseRef(x.PlanId, x.CaseId)).Distinct().ToList() ?? [];
+        if (drill is null || ids.Count == 0 && cases.Count == 0) { _drillError = "Ingenting i utvalget."; return; }
         _drillBusy = true;
         try
         {
-            var filter = ScenarioBrowserPresentation.FromOverview(ids, drill.Title) with { Priority = chart == "panel.p1Attention" ? "P1" : null };
-            await ManualTestingDrillNavigation.OpenFilteredAsync(JS, Nav, projectKey, filter);
+            if (cases.Count > 0)
+                _drillError = await ManualTestingDrillNavigation.OpenCasesAsync(JS, Nav, projectKey, drill.Title, cases);
+            else
+            {
+                var filter = ScenarioBrowserPresentation.FromOverview(ids, drill.Title) with { Priority = chart == "panel.p1Attention" ? "P1" : null };
+                await ManualTestingDrillNavigation.OpenFilteredAsync(JS, Nav, projectKey, filter);
+            }
         }
         catch (Exception e) when (e is JSException or InvalidOperationException) { _drillError = "Finn og forstå kunne ikke åpnes: " + e.Message; }
         finally { _drillBusy = false; }
     }
-
-    private Task ToggleDrillAsync(string chart, string key) { ToggleDrill(chart, key); return Task.CompletedTask; }
 
     private void ToggleDrill(string chart, string key)
     {
@@ -1135,7 +1140,7 @@
     // ── Testoversikt v2 (2026-11-26): action rows, plan execution bar, table sorting ─────────────────────────────────────────────────────
 
     /// <summary>A registry widget as counted action rows (only rows with a count); each row opens the same drill-down as the chart did.</summary>
-    private RenderFragment ActionList(string id, string title, string icon, IReadOnlyList<DeliveryBar> bars, string note) => __builder =>
+    private RenderFragment ActionList(string id, string title, string icon, IReadOnlyList<DeliveryBar> bars, string note, O.Slice slice) => __builder =>
     {
         if (!On(id)) return;
         var active = bars.Where(b => b.Value > 0).ToList();
@@ -1149,8 +1154,9 @@
                 {
                     var bar = b;
                     <li data-testid="mto-bar" data-key="@b.Key">
-                        <button type="button" class="mto-action-item @(IsDrill(id, b.Key) ? "is-selected" : null)" aria-pressed="@(IsDrill(id, b.Key) ? "true" : "false")"
-                                aria-label="@($"{b.Label}: {b.Value}. {b.Info}. Vis hvilke.")" title="@b.Info" @onclick="@(() => ToggleDrill(id, bar.Key))" data-testid="mto-bar-open">
+                        @* V12 (2026-11-27): opens Planlegg og klargjør with exactly these test cases (no inline list). *@
+                        <button type="button" class="mto-action-item" disabled="@_drillBusy"
+                                aria-label="@($"{b.Label}: {b.Value}. {b.Info}. Åpne i Planlegg og klargjør.")" title="@b.Info" @onclick="@(() => OpenInDiscoverAsync(slice, id, bar.Key))" data-testid="mto-bar-open" data-destination="plan">
                             <span class="mto-action-icon is-@icon is-@DeliveryDashboard.ToneClass(b.Tone)" aria-hidden="true"></span>
                             <span class="mto-action-count">@b.Value</span><span class="mto-action-text">@b.Label</span><span class="mto-action-go" aria-hidden="true">›</span>
                         </button>

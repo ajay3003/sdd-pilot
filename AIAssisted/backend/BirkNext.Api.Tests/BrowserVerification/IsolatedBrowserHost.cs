@@ -67,7 +67,7 @@ public sealed class IsolatedBrowserHost : IAsyncLifetime
         && (File.Exists(Path.Combine(root, "index.html")) || root.EndsWith(".staticwebassets.runtime.json", StringComparison.OrdinalIgnoreCase) && File.Exists(root))
             ? null
             : $"Isolated browser verification not run (environment prerequisite): set {WebRootVariable} to a built BirkNext.Web " +
-              "(its staticwebassets.runtime.json, or a published wwwroot); scripts/run-testoverview-browser-verification.ps1 builds one and runs these tests.";
+              "(its staticwebassets.runtime.json, or a published wwwroot); AIAssisted/scripts/run-testoverview-browser-verification.ps1 builds one, proves isolation and runs these tests.";
 
     public async Task InitializeAsync()
     {

@@ -129,7 +129,23 @@ public static partial class PlanPreparePresentation
 
     /// <summary>The plan's scenarios with their visible cases (technical ones only when <paramref name="showTechnical"/>), filtered by
     /// <paramref name="query"/> (title, story, requirement id); and how many cases are hidden as technical.</summary>
-    public static (List<ScenarioRow> Rows, int HiddenTechnical) Rows(TestPlanDraft plan, bool showTechnical, string? query = null)
+    /// <summary>One test case handed over from Testoversikt: its plan and its case identity (<see cref="IdOf"/>).</summary>
+    public sealed record CaseRef(Guid PlanId, string CaseId);
+
+    /// <summary>
+    /// A case population handed over from a Testoversikt figure (V12, 2026-11-27): exactly the cases the figure counted, in every plan they are in.
+    /// Planlegg og klargjør shows only these cases of the open plan (technical ones included: they were counted) and names the other plans.
+    /// </summary>
+    public sealed record CaseSelection(string Label, List<CaseRef> Cases)
+    {
+        public IReadOnlySet<string> In(Guid planId) => Cases.Where(c => c.PlanId == planId).Select(c => c.CaseId).ToHashSet(StringComparer.Ordinal);
+
+        /// <summary>The other plans holding selected cases, with their count (plan order as handed over).</summary>
+        public IReadOnlyList<(Guid PlanId, int Count)> OtherPlans(Guid planId) =>
+            [.. Cases.Where(c => c.PlanId != planId).GroupBy(c => c.PlanId).Select(g => (g.Key, g.Count()))];
+    }
+
+    public static (List<ScenarioRow> Rows, int HiddenTechnical) Rows(TestPlanDraft plan, bool showTechnical, string? query = null, IReadOnlySet<string>? onlyCases = null)
     {
         var q = query?.Trim() ?? "";
         var rows = new List<ScenarioRow>();
@@ -137,7 +153,9 @@ public static partial class PlanPreparePresentation
         foreach (var group in ScenarioPlanning.Groups(plan))
         {
             var cases = group.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).ToList();
-            var technical = cases.Where(c => TechnicalReason(c) is not null).ToList();
+            // A handed-over selection narrows to exactly its cases; a counted technical case is shown (never hidden from its own selection).
+            if (onlyCases is not null) cases = [.. cases.Where(c => onlyCases.Contains(IdOf(c)))];
+            var technical = onlyCases is null ? cases.Where(c => TechnicalReason(c) is not null).ToList() : [];
             var visible = showTechnical ? cases : cases.Except(technical).ToList();
             hidden += cases.Count - visible.Count;
             if (visible.Count == 0) continue;

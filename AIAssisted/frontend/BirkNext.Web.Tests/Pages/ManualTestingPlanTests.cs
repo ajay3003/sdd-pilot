@@ -89,6 +89,40 @@ public sealed partial class ManualTestingPlanTests : BunitContext
         return cut;
     }
 
+    // ── V12 (2026-11-27): a Testoversikt case population handed over to Planlegg og klargjør ───────────────────────────────
+
+    [Fact]
+    public void V12_a_handed_over_case_selection_shows_exactly_its_cases_names_other_plans_and_can_be_cleared()
+    {
+        Setup();
+        var other = Guid.Parse("77777777-7777-7777-7777-777777777777");
+        // Expected population from the fixture's own construction: c1 and t1 (technical — counted, so shown), plus one case in another plan.
+        var selection = new P.CaseSelection("P1-testtilfeller som venter på godkjenning", [new(PlanId, "c1"), new(PlanId, "t1"), new(other, "x9")]);
+        JSInterop.Setup<string?>("sessionStorage.getItem", TabDraftStore.PlanCaseSelectionKey("library")).SetResult(System.Text.Json.JsonSerializer.Serialize(selection));
+        var cut = Open($"manual-testing/plan?draft={PlanId}");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtp-overview-selection]"));
+        cut.FindAll("[data-testid=mtp-case]").Select(c => c.GetAttribute("data-case")).Should().BeEquivalentTo(["c1", "t1"],
+            "exactly the handed-over cases of this plan — m1 and api1 are not in the selection, t1 is shown although technical");
+        cut.Find("[data-testid=mtp-overview-selection-count]").TextContent.Should().Be("2 av 2");
+        cut.FindAll("[data-testid=mtp-overview-selection-plan]").Should().ContainSingle().Which.GetAttribute("data-plan").Should().Be(other.ToString());
+        cut.Find("[data-testid=mtp-overview-selection-clear]").Click();
+        cut.FindAll("[data-testid=mtp-overview-selection]").Should().BeEmpty();
+        cut.FindAll("[data-testid=mtp-case]").Select(c => c.GetAttribute("data-case")).Should().Contain(["c1", "m1"], "the plan's own list is back");
+        JSInterop.Invocations.Should().Contain(i => i.Identifier == "sessionStorage.removeItem" && i.Arguments[0]!.ToString() == TabDraftStore.PlanCaseSelectionKey("library"));
+    }
+
+    [Fact]
+    public void V12_a_selected_case_that_left_the_plan_is_counted_as_missing_never_replaced()
+    {
+        Setup();
+        var selection = new P.CaseSelection("Testtilfeller der kilden er endret", [new(PlanId, "c1"), new(PlanId, "gone")]);
+        JSInterop.Setup<string?>("sessionStorage.getItem", TabDraftStore.PlanCaseSelectionKey("library")).SetResult(System.Text.Json.JsonSerializer.Serialize(selection));
+        var cut = Open($"manual-testing/plan?draft={PlanId}");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtp-overview-selection-missing]"));
+        cut.Find("[data-testid=mtp-overview-selection-count]").TextContent.Should().Be("1 av 2");
+        cut.FindAll("[data-testid=mtp-case]").Select(c => c.GetAttribute("data-case")).Should().Equal("c1");
+    }
+
     // ── A: editor working copy ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]

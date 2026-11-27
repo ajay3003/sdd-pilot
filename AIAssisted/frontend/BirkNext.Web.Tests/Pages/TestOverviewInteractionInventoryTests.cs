@@ -48,6 +48,33 @@ public sealed class TestOverviewInteractionInventoryTests
         }
     }
 
+    /// <summary>
+    /// V12 (2026-11-27): every automated test the inventory names — per control and in the control × scope matrix — exists as a test method or test
+    /// class in the frontend tests or the isolated browser journeys. An empty matrix cell is allowed (a reported gap); a name that is not a test is not.
+    /// </summary>
+    [Fact]
+    public void Every_test_the_inventory_maps_a_control_and_scope_to_exists()
+    {
+        var root = FindRepositoryRoot();
+        using var inventory = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "AIAssisted", "frontend", "BirkNext.Web.Tests", "TestOverview", "interaction-inventory.json")));
+        var named = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var control in inventory.RootElement.GetProperty("controls").EnumerateArray())
+            named.UnionWith(control.GetProperty("automatedTestIds").EnumerateArray().Select(e => e.GetString()!));
+        if (inventory.RootElement.TryGetProperty("controlScopeCoverage", out var matrix))
+            foreach (var control in matrix.EnumerateObject())
+                foreach (var scope in control.Value.EnumerateObject())
+                {
+                    Assert.Matches("^S\\d{2}$", scope.Name);
+                    named.UnionWith(scope.Value.EnumerateArray().Select(e => e.GetString()!));
+                }
+        var sources = new[] { Path.Combine(root, "AIAssisted", "frontend", "BirkNext.Web.Tests"), Path.Combine(root, "AIAssisted", "backend", "BirkNext.Api.Tests", "BrowserVerification") }
+            .SelectMany(d => Directory.EnumerateFiles(d, "*.cs", SearchOption.AllDirectories))
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+            .Select(File.ReadAllText).ToList();
+        var missing = named.Where(n => !sources.Any(text => Regex.IsMatch(text, $@"\b(void|Task|class)\s+{Regex.Escape(n)}\b"))).Order(StringComparer.Ordinal).ToList();
+        Assert.True(missing.Count == 0, "interaction-inventory.json names tests that do not exist: " + string.Join(", ", missing));
+    }
+
     private static string FindRepositoryRoot()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)

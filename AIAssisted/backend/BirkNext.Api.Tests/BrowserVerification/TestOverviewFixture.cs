@@ -164,6 +164,55 @@ public static class TestOverviewFixture
         writer.Write(text);
     }
 
+    // ---------------------------------------------------------------- test plans and cases (seeded through the plan API)
+
+    /// <summary>How a fixture case is left after seeding (each through the normal plan API: create, review, edit).</summary>
+    public enum CaseState
+    {
+        /// <summary>Generated, never reviewed: waits for approval, not ready.</summary>
+        Awaiting,
+        /// <summary>Accepted, but no verification method: approved and NOT ready.</summary>
+        Approved,
+        /// <summary>Accepted + «needs no Test Data» + a verification method: approved and ready.</summary>
+        ApprovedReady,
+        /// <summary>A reviewer asked for clarification: waits, not ready.</summary>
+        NeedsClarification,
+        /// <summary>Generated with a blocking prerequisite (a registered hindrance): waits, not ready.</summary>
+        Blocked,
+    }
+
+    /// <summary>One seeded case: its plan, the scenario it is prepared from (oracle key) and the state it is left in.</summary>
+    public sealed record CaseFixture(string Plan, Key Scenario, CaseState State);
+
+    public const string PlanA = "Fixture A – Booking og Billing", PlanB = "Fixture B – tvers av moduler";
+
+    /// <summary>Aurora's cases: two plans, cases across specifications and modules, one per state, and the shared title in both documents.</summary>
+    public static IReadOnlyList<CaseFixture> AuroraCases { get; } =
+    [
+        new(PlanA, new("Booking/specs/001-reservations/spec.md", "AUR-BKG1-US1-S1"), CaseState.ApprovedReady),
+        new(PlanA, new("Booking/specs/001-reservations/spec.md", "AUR-BKG1-US1-S2"), CaseState.Awaiting),
+        new(PlanA, new("Booking/specs/001-reservations/spec.md", "AUR-SHARED-S1"), CaseState.Awaiting),
+        new(PlanA, new("Billing/specs/001-invoices/spec.md", "AUR-SHARED-S1"), CaseState.Approved),
+        new(PlanA, new("Billing/specs/001-invoices/spec.md", "AUR-BIL1-US2-S1"), CaseState.NeedsClarification),
+        new(PlanB, new("Booking/specs/002-cancellations/spec.md", "AUR-BKG2-US1-S1"), CaseState.Blocked),
+        new(PlanB, new("specs/001-platform/spec.md", "AUR-PLT1-US1-S1"), CaseState.Awaiting),
+        new(PlanB, new("Booking/specs/001-reservations/spec.md", "AUR-BKG1-US2-S1"), CaseState.ApprovedReady),
+    ];
+
+    public static IReadOnlyList<CaseFixture> CasesOf(Application app) => app == Aurora ? AuroraCases : [];
+
+    public static IReadOnlyList<CaseFixture> CasesIn(Application app, Scope scope)
+    {
+        var specs = SpecsIn(app, scope).Select(s => s.Path).ToHashSet(StringComparer.Ordinal);
+        return [.. CasesOf(app).Where(c => specs.Contains(c.Scenario.SpecPath))];
+    }
+
+    public static string? PriorityOf(Application app, Key k) =>
+        app.Specs.Single(s => s.Path == k.SpecPath).Stories.Single(st => st.Scenarios.Any(x => x.Token == k.Token)).Priority;
+
+    public static bool IsApproved(CaseState s) => s is CaseState.Approved or CaseState.ApprovedReady;
+    public static bool IsReady(CaseState s) => s == CaseState.ApprovedReady;
+
     // ---------------------------------------------------------------- oracle (independent of production aggregation)
 
     /// <summary>A scope of the fixture: null = all at that level. <paramref name="Module"/> «» = project-level documents.</summary>
@@ -180,8 +229,22 @@ public static class TestOverviewFixture
     /// <summary>«Scenarioforslag»: acceptance scenarios plus requirement-only proposals (no test cases exist in this fixture).</summary>
     public static int ScenarioProposals(Application app, Scope scope) => Scenarios(app, scope).Count + RequirementsWithoutScenario(app, scope);
 
-    /// <summary>P1 scenarios without test cases (no test case exists in the fixture: every P1 scenario).</summary>
-    public static HashSet<Key> P1WithoutCases(Application app, Scope scope) => Scenarios(app, scope, s => s.Priority == "P1");
+    /// <summary>Scenarios with at least one seeded case (covered).</summary>
+    public static HashSet<Key> Covered(Application app) => [.. CasesOf(app).Select(c => c.Scenario)];
+
+    /// <summary>P1 scenarios without a test case: every P1 acceptance scenario of the scope minus those the seeded cases cover.</summary>
+    public static HashSet<Key> P1WithoutCases(Application app, Scope scope)
+    {
+        var covered = Covered(app);
+        return [.. Scenarios(app, scope, s => s.Priority == "P1").Where(k => !covered.Contains(k))];
+    }
+
+    /// <summary>Scenarios of one priority without a test case.</summary>
+    public static int GapOf(Application app, Scope scope, string priority)
+    {
+        var covered = Covered(app);
+        return Scenarios(app, scope, s => s.Priority == priority).Count(k => !covered.Contains(k));
+    }
 
     public static int Priority(Application app, Scope scope, string priority) => Scenarios(app, scope, s => s.Priority == priority).Count;
 

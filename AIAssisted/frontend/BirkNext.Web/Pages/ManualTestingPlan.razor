@@ -200,7 +200,23 @@
             }
             else
             {
-                var (rows, hidden) = P.Rows(plan, _showTechnical, _query);
+                var (rows, hidden) = P.Rows(plan, _showTechnical, _query, _caseSelection?.In(plan.Id));
+                @if (_caseSelection is { } handed)
+                {
+                    @* V12 (2026-11-27): a Testoversikt figure's exact case population; the other plans holding some of it are named, never merged in. *@
+                    var mine = handed.In(plan.Id);
+                    var found = plan.Cases.Count(c => c.Review != TestCaseReviewState.Superseded && mine.Contains(P.IdOf(c)));
+                    <p class="msb-spec-note mtp-overview-selection" role="status" data-testid="mtp-overview-selection" data-total="@handed.Cases.Count">
+                        <b>Utvalg fra Testoversikt:</b> @handed.Label · <span data-testid="mtp-overview-selection-count">@found av @mine.Count</span> testtilfelle@(mine.Count == 1 ? "" : "r") i denne testplanen
+                        @if (found < mine.Count) { <span data-testid="mtp-overview-selection-missing"> (@(mine.Count - found) finnes ikke lenger i planen)</span> }
+                        @foreach (var (otherId, n) in handed.OtherPlans(plan.Id))
+                        {
+                            var target = otherId;
+                            <span> · </span><button type="button" class="msb-link" @onclick="() => OpenSelectionPlanAsync(target)" data-testid="mtp-overview-selection-plan" data-plan="@otherId">@n i «@(PlanNameOf(otherId))»</button>
+                        }
+                        <span> · </span><button type="button" class="msb-link" @onclick="ClearCaseSelectionAsync" data-testid="mtp-overview-selection-clear">Fjern utvalget</button>
+                    </p>
+                }
                 <div class="mtp-layout">
                     <nav class="mtp-master" aria-label="Scenarioer og testtilfeller" data-testid="mtp-master">
                         @if (plan.PlannedScenarios is { Count: > 0 } plannedItems && PlannedOnly(plan) is { Count: > 0 } notPrepared)
@@ -1246,6 +1262,7 @@
                 _selection = [.. await TabDraftStore.ReadAsync<string[]>(JS, TabDraftStore.SelectionKey(key)) ?? []];
                 // BUG-003: the tester's explicit «Vis teknisk innhold» for this tab survives F5.
                 if (await TabDraftStore.ReadAsync<bool?>(JS, TabDraftStore.PlanTechnicalKey(key)) is { } technical) _showTechnical = technical;
+                _caseSelection = await TabDraftStore.ReadAsync<P.CaseSelection>(JS, TabDraftStore.PlanCaseSelectionKey(key)) is { Cases.Count: > 0 } handed ? handed : null;
             }
             await LoadTraceAsync();
             _intent = ScenarioParameter is { Length: > 0 } wantedScenario ? wantedScenario : null;
@@ -1276,7 +1293,8 @@
         await LoadScenarioKindsAsync();
         await LoadPlanRunsAsync();
         if (_intent is not null) { ApplyIntent(draft); StartAutoTranslation(); return; }
-        var first = P.Rows(draft, _showTechnical).Rows.SelectMany(r => r.Cases).FirstOrDefault() ?? draft.Cases.FirstOrDefault();
+        var first = P.Rows(draft, _showTechnical, null, _caseSelection?.In(draft.Id)).Rows.SelectMany(r => r.Cases).FirstOrDefault()
+            ?? (_caseSelection is null ? draft.Cases.FirstOrDefault() : null);
         Open(_selectedId is { } keep && draft.Cases.Any(c => P.IdOf(c) == keep) ? keep : first is null ? null : P.IdOf(first));
         StartAutoTranslation();
     }
@@ -1437,6 +1455,20 @@
         if (key == _tool) return;
         if (Dirty && _tool == "cases") { _pending = () => { _tool = key; Discard(); return Task.CompletedTask; }; return; }
         _tool = key;
+    }
+
+    /// <summary>The handed-over Testoversikt case population (null = the plan's own full list).</summary>
+    private P.CaseSelection? _caseSelection;
+
+    private string PlanNameOf(Guid id) => _plans.FirstOrDefault(p => p.Id == id)?.PlanName ?? _archived.FirstOrDefault(p => p.Id == id)?.PlanName ?? "annen testplan";
+
+    /// <summary>Another plan of the same hand-over (the selection stays; unsaved edits are guarded as for the plan dropdown).</summary>
+    private Task OpenSelectionPlanAsync(Guid id) => ChoosePlanAsync(new ChangeEventArgs { Value = id.ToString() });
+
+    private async Task ClearCaseSelectionAsync()
+    {
+        _caseSelection = null;
+        if (_ws?.ProjectKey is { } key) await TabDraftStore.RemoveAsync(JS, TabDraftStore.PlanCaseSelectionKey(key));
     }
 
     private Task ChoosePlanAsync(ChangeEventArgs e)
