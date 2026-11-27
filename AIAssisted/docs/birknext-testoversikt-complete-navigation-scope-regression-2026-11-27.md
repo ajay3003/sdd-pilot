@@ -85,7 +85,7 @@ Mindre tekst: ingressen er kortet til én linje. Forklaringsavsnittet under «Kl
 
 ### Nettleser, isolert host (Chromium, ekte PostgreSQL-testdatabase)
 
-> Resultatet av sluttkjøringen er lagt inn i kap. 12. Første fulle kjøring av B01–B24 (før rettingene) ga **21 bestått og 3 feilet**: B03 (feil testforventning), B11 og B23 (reelle scope-feil, rettet i kap. 5).
+> **Sluttkjøring (kjøring 3, etter commit 93896e64): 36 av 36 bestått, 0 feilet, 0 hoppet over, 6 min 18 s**: I00, B01–B24, P1-SCOPE-01…15 (sammenslåtte reiser) og READY-01. Første fulle kjøring av B01–B24 (før rettingene) ga **21 bestått og 3 feilet**: B03 (feil testforventning), B11 og B23 (reelle scope-feil, rettet i kap. 5).
 
 ### Frontend (bUnit) – målrettet
 
@@ -194,5 +194,7 @@ Ikke del av denne commiten (vurderes i worktree-revisjonen):
 - `TestHostMemoryDiagnostics.cs`
 - `RealProjectAcceptanceFrameworkTests.cs`
 - `birknext-v12-final-verification-2026-11-27.md`
+
+Kjøring 3 ble fullført etter commit: **36/36 bestått** (se kap. 7).
 
 Ingen push.
