@@ -63,6 +63,32 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
             { Specification = specification, DiscoveryScope = discovery ? scope : null };
     }
 
+    /// <summary>
+    /// The snapshot with these scenarios added to its discovery when they are beyond the loaded window (2026-11-27): a page asked for a scenario
+    /// it did not load (<c>?scenario=</c>, a plan's scenarios, a Testoversikt selection; candidate ids or source identities) fetches exactly
+    /// those, never the whole population. A complete population, or ids already held, makes no request. The counts stay whole: what is added
+    /// leaves <see cref="ScenarioDiscoveryResult.NotKept"/>.
+    /// </summary>
+    public async Task<Snapshot> WithScenariosAsync(Snapshot snapshot, IEnumerable<string?> ids, CancellationToken ct = default)
+    {
+        if (snapshot is not { ProjectKey: { } key, Discovery: { NotKept: > 0 } d } || Get<ITestPlanSuggestionsApiService>() is not { } api) return snapshot;
+        var held = d.Candidates.SelectMany(c => new[] { c.CandidateId, c.SourceIdentity }).ToHashSet(StringComparer.Ordinal);
+        var missing = ids.OfType<string>().Where(i => i.Length > 0 && !held.Contains(i)).Distinct(StringComparer.Ordinal).ToList();
+        if (missing.Count == 0) return snapshot;
+        var (found, _) = await api.DiscoveryCandidatesAsync(key, snapshot.DiscoveryScope, missing, ct);
+        var added = (found ?? []).Where(c => !held.Contains(c.CandidateId)).DistinctBy(c => c.CandidateId).ToList();
+        if (added.Count == 0) return snapshot;
+        return snapshot with
+        {
+            Discovery = d with
+            {
+                Candidates = [.. d.Candidates, .. added],
+                NotKept = Math.Max(0, d.NotKept.Value - added.Count),
+                NotKeptNeedsClarification = d.NotKeptNeedsClarification is { } n ? Math.Max(0, n - added.Count(c => c.NeedsClarification)) : null,
+            },
+        };
+    }
+
     private async Task<(string? Key, string? Name)> ProjectAsync()
     {
         if (Get<ICurrentWorkspaceProjection>() is not { } projection) return (null, null);

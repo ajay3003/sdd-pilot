@@ -52,6 +52,7 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
     private bool _known = true;
     /// <summary>Candidates the discovery did not keep (above the safety limit); null = a complete population.</summary>
     private int? _notKept;
+    private ScenarioFacets? _notKeptFacets;
     private readonly List<string?> _scopes = [];
 
     private IRenderedComponent<ManualTestingDiscover> Open(string? selectedSpecification, params DiscoveredScenario[] candidates) => Open(selectedSpecification, true, candidates);
@@ -78,7 +79,7 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
             .ReturnsAsync((new TestPlanWorkspace { ProjectKey = "library", GuideKey = "project:library", CanWrite = true }, (string?)null));
         _api.Setup(x => x.LastDiscoveryAsync("library", It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Callback<string, Guid?, string?, CancellationToken>((_, _, scope, _) => _scopes.Add(scope))
-            .ReturnsAsync(() => _known ? (new ScenarioDiscoveryResult { DiscoveryId = "d1", ProjectKey = "library", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = [.. candidates], NotKept = _notKept }, (string?)null) : (null, null));
+            .ReturnsAsync(() => _known ? (new ScenarioDiscoveryResult { DiscoveryId = "d1", ProjectKey = "library", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = [.. candidates], NotKept = _notKept, NotKeptFacets = _notKeptFacets }, (string?)null) : (null, null));
         _api.Setup(x => x.WorkQueuesAsync("library", "d1", It.IsAny<CancellationToken>())).ReturnsAsync((new ScenarioWorkQueueView
         {
             DiscoveryId = "d1", DiscoveryCurrent = true, CoverageComplete = true,
@@ -205,9 +206,9 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
         _notKept = 2_000;
         var far = C("c-12000", "Scenario nummer 12000 sendes på nytt");
         var calls = new List<(string Query, int Skip)>();
-        _api.Setup(x => x.SearchDiscoveryAsync("library", It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Callback<string, string?, string, int, int, CancellationToken>((_, _, q, skip, _, _) => calls.Add((q, skip)))
-            .ReturnsAsync((string _, string? _, string q, int skip, int _, CancellationToken _) =>
+        _api.Setup(x => x.SearchDiscoveryAsync("library", It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<ScenarioSearchFilter?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string?, string, int, int, ScenarioSearchFilter?, CancellationToken>((_, _, q, skip, _, _, _) => calls.Add((q, skip)))
+            .ReturnsAsync((string _, string? _, string q, int skip, int _, ScenarioSearchFilter? _, CancellationToken _) =>
                 (new ScenarioSearchPage("d1", q, 41, skip, skip == 0 ? [far, .. Enumerable.Range(1, 39).Select(i => C($"x{i}", $"Scenario nummer 12000 variant {i}"))] : [C("x40", "Scenario nummer 12000 variant 40")]), (string?)null));
         var cut = Open(MainPath, Spec1, Spec2);
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-scenarios]"));
@@ -253,7 +254,59 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-scenarios]"));
         cut.Find("[data-testid=mtd-search]").Input("report");
         cut.FindAll("[data-testid=mtd-beyond]").Should().BeEmpty();
-        _api.Verify(x => x.SearchDiscoveryAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        _api.Verify(x => x.SearchDiscoveryAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<ScenarioSearchFilter?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void A_filter_alone_searches_the_scenarios_not_loaded_with_that_filter_and_names_the_filters_it_cannot_apply()
+    {
+        // 2026-11-27: the area «Arkiv» exists only among the scenarios not loaded. It is offered (from the facets), and choosing it asks the server
+        // for that area's scenarios — no search words needed — with the filter sent, not ignored.
+        _notKept = 1_500;
+        _notKeptFacets = new(["Arkiv"], [], ["REQ-900"], [], [], false, false);
+        var asked = new List<(string Query, ScenarioSearchFilter? Filter)>();
+        _api.Setup(x => x.SearchDiscoveryAsync("library", It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<ScenarioSearchFilter?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string?, string, int, int, ScenarioSearchFilter?, CancellationToken>((_, _, q, _, _, f, _) => asked.Add((q, f)))
+            .ReturnsAsync((string _, string? _, string q, int skip, int _, ScenarioSearchFilter? _, CancellationToken _) =>
+                (new ScenarioSearchPage("d1", q, 1, skip, [C("c-arkiv", "Arkivert rapport hentes") with { Area = "Arkiv" }]), (string?)null));
+        var cut = Open(MainPath, Spec1, Spec2);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-more-filters]"));
+        cut.Find("[data-testid=mtd-more-filters]").Click();
+        cut.FindAll("[data-testid=mtd-filter-area] option").Select(o => o.TextContent).Should().Contain("Arkiv", "a value of the scenarios not loaded is offered too");
+        cut.FindAll("[data-testid=mtd-filter-requirement] option").Select(o => o.TextContent).Should().Contain("REQ-900");
+
+        cut.Find("[data-testid=mtd-filter-area]").Change("Arkiv");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-beyond-row]").Should().ContainSingle(), TimeSpan.FromSeconds(5));
+        asked.Should().ContainSingle();
+        asked[0].Query.Should().BeEmpty();
+        asked[0].Filter.Should().Be(new ScenarioSearchFilter(Area: "Arkiv"));
+        cut.Find("[data-testid=mtd-beyond-unfiltered]").TextContent.Should().Contain("arbeidskø").And.Contain("Ikke brukt på disse treffene");
+    }
+
+    [Fact]
+    public void Without_words_or_a_server_filter_the_scenarios_not_loaded_are_not_searched()
+    {
+        _notKept = 1_500;
+        var cut = Open(MainPath, Spec1, Spec2);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-scenarios]"));
+        cut.Find("[data-testid=mtd-search]").Input("r");
+        cut.FindAll("[data-testid=mtd-beyond]").Should().BeEmpty("one letter and no filter: nothing to search for");
+        _api.Verify(x => x.SearchDiscoveryAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<ScenarioSearchFilter?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void An_open_scenario_beyond_the_loaded_window_is_fetched_by_id_not_reported_missing()
+    {
+        // 2026-11-27: coming back to Finn og forstå with a scenario open that the (smaller) window does not hold: it is fetched by id.
+        _notKept = 1_500;
+        var far = C("c-far", "Scenario langt ute i utvalget");
+        _api.Setup(x => x.DiscoveryCandidatesAsync("library", It.IsAny<string?>(), It.Is<IReadOnlyCollection<string>>(ids => ids.Contains("c-far")), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(([far], (string?)null));
+        JSInterop.Setup<string?>("sessionStorage.getItem", TabDraftStore.DiscoverContextKey("library"))
+            .SetResult(System.Text.Json.JsonSerializer.Serialize(new ScenarioWorkspacePresentation.WorkContext(null, "c-far", ScenarioWorkspacePresentation.Tabs.Scenarios, "Scenario langt ute i utvalget")));
+        var cut = Open(MainPath, Spec1, Spec2);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail-title]").TextContent.Should().Contain("Scenario langt ute i utvalget"));
+        cut.FindAll("[data-testid=mtd-detail-empty]").Should().BeEmpty();
     }
 
     [Fact]

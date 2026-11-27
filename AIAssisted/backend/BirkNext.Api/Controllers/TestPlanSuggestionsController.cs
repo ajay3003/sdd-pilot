@@ -146,11 +146,31 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     /// </summary>
     [HttpGet("discover/search")]
     public Task<ActionResult> SearchDiscovery([FromQuery] string projectKey, [FromQuery] string? scope, [FromQuery] string? q, [FromQuery] int skip,
-        [FromQuery] int take, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>
+        [FromQuery] int take, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct,
+        [FromQuery] string? area = null, [FromQuery] string? type = null, [FromQuery] string? story = null, [FromQuery] string? requirement = null,
+        [FromQuery] string? priority = null, [FromQuery] string? level = null) =>
         Run(async () =>
         {
             if (await discovery.LastAsync(projectKey, null, ct, scope) is not { } result) return NoContent();
-            return Ok(TestScenarioDiscoveryEngine.Search(result, q, TestScenarioDiscoveryEngine.MaxCandidates, skip, take <= 0 ? 40 : take));
+            // The page's scenario filters (2026-11-27) apply on the server too, so a filtered search beyond the window means the same as on the page.
+            var filter = new ScenarioSearchFilter(Blank(area), Blank(type), Blank(story), Blank(requirement), Blank(priority), Blank(level));
+            return Ok(TestScenarioDiscoveryEngine.Search(result, q, TestScenarioDiscoveryEngine.MaxCandidates, skip, take <= 0 ? 40 : take, filter));
+        });
+
+    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    /// <summary>
+    /// Named candidates of the project's last discovery (for the selection), also those beyond the window a page holds (2026-11-27): a page asked
+    /// for a scenario it did not load (<c>?scenario=</c>, a plan item, a Testoversikt selection) fetches exactly those. At most 200 ids,
+    /// candidate ids or source identities; unknown ids are absent from the answer. 204 when there is no discovery.
+    /// </summary>
+    [HttpGet("discover/candidates")]
+    public Task<ActionResult> DiscoveryCandidates([FromQuery] string projectKey, [FromQuery] string? scope, [FromQuery] string[] id,
+        [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>
+        Run(async () =>
+        {
+            if (await discovery.LastAsync(projectKey, null, ct, scope) is not { } result) return NoContent();
+            return Ok(TestScenarioDiscoveryEngine.Pick(result, id));
         });
 
     /// <summary>Scenario changes of a new import against the application's previous current discovery (runs discovery; only computed counts).</summary>

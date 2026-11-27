@@ -1020,7 +1020,7 @@
 
     private string DiscoverStatus(ManualTestingPresentation.Facts facts) =>
         facts.SpecificationChoice is not null ? "Velg modul og spesifikasjon"
-        : _ws?.Discovery is { } d ? $"{d.Candidates.Count} forslag · {d.Candidates.Count(c => c.NeedsClarification)} trenger avklaring"
+        : _ws?.Discovery is { } d ? $"{d.TotalCandidates} forslag · {d.TotalNeedsClarification} trenger avklaring"
         : "Ingen scenarioer funnet ennå";
 
     private static string StatusSummary(int cases, int approved, int notReady) =>

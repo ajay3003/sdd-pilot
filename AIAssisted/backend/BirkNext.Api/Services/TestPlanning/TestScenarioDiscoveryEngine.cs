@@ -33,8 +33,10 @@ public static class TestScenarioDiscoveryEngine
     /// The window a client receives at once (2026-11-26), NOT a limit on the population: discovery keeps and stores every candidate (source-backed
     /// first); a result sent to a client holds the first <see cref="MaxCandidates"/> and says how many it does not (<see cref="Window"/>); the rest
     /// is searched on the server (<see cref="Search"/>).
+    /// 2026-11-27: 10,000 → 2,000. Server search (with the page's own scenario filters) and <see cref="Pick"/> reach everything beyond it, so the
+    /// first load no longer pays for a population nobody scrolls through (10,000 synthetic scenarios were 15.7 MB on the wire).
     /// </summary>
-    public const int MaxCandidates = 10000;
+    public const int MaxCandidates = 2000;
 
     /// <summary>The order the window is cut in: source priority (specification and documented tests first), stable within a source — the same order
     /// for <see cref="Window"/> and <see cref="Search"/>, so "beyond the window" means the same candidates for both.</summary>
@@ -51,6 +53,8 @@ public static class TestScenarioDiscoveryEngine
         {
             Candidates = [.. ordered.Take(max)],
             NotKept = result.Candidates.Count - max,
+            NotKeptNeedsClarification = ordered.Skip(max).Count(c => c.NeedsClarification),
+            NotKeptFacets = Facets(ordered.Skip(max)),
             Limitations = [.. result.Limitations, $"{result.Candidates.Count - max} of {result.Candidates.Count} candidates are not sent at once (source-backed first); "
                 + "search finds them on the server. Not sent: " + string.Join(", ", rest.OrderBy(d => CapPriority(d.Key)).Select(d => $"{d.Value} {d.Key}")) + "."],
         };
@@ -60,16 +64,41 @@ public static class TestScenarioDiscoveryEngine
     /// Server-side search over the candidates a client did not receive (from <paramref name="fromIndex"/> on), every word matched (case-insensitive)
     /// against what Finn og forstå's own search reads: title, purpose, expected result, area, requirement ids and the user story. Stable order.
     /// </summary>
-    public static ScenarioSearchPage Search(ScenarioDiscoveryResult result, string? query, int fromIndex, int skip, int take)
+    /// <remarks>2026-11-27: also the page's scenario filters (<see cref="ScenarioSearchFilter"/>); a filter alone (no words) is a search too, so a
+    /// chosen area or user story shows its scenarios beyond the window. No words and no filter returns nothing, never everything.</remarks>
+    public static ScenarioSearchPage Search(ScenarioDiscoveryResult result, string? query, int fromIndex, int skip, int take, ScenarioSearchFilter? filter = null)
     {
         var words = (query ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         take = Math.Clamp(take, 1, 200); skip = Math.Max(0, skip);
-        if (words.Length == 0) return new(result.DiscoveryId, query ?? "", 0, skip, []);
+        filter ??= new();
+        if (words.Length == 0 && filter.IsEmpty) return new(result.DiscoveryId, query ?? "", 0, skip, []);
         static string Text(DiscoveredScenario c) => string.Join(' ', c.Title, c.Purpose, c.ExpectedBehaviour, c.Area, string.Join(' ', c.RequirementIds),
             c.Story?.StoryId, c.Story?.Title);
         var matches = WindowOrder(result).Skip(Math.Max(0, fromIndex))
-            .Where(c => Text(c) is var t && words.All(w => t.Contains(w, StringComparison.OrdinalIgnoreCase))).ToList();
+            .Where(c => filter.Matches(c) && Text(c) is var t && words.All(w => t.Contains(w, StringComparison.OrdinalIgnoreCase))).ToList();
         return new(result.DiscoveryId, query ?? "", matches.Count, skip, [.. matches.Skip(skip).Take(take)]);
+    }
+
+    /// <summary>The filter values of these candidates, read as the page reads them (<see cref="ScenarioSearchFilter"/>).</summary>
+    public static ScenarioFacets Facets(IEnumerable<DiscoveredScenario> candidates)
+    {
+        var list = candidates as IReadOnlyCollection<DiscoveredScenario> ?? [.. candidates];
+        return new(
+            [.. list.Select(ScenarioSearchFilter.AreaOf).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
+            [.. list.Select(c => ScenarioCandidateTypes.Label(c.Type)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
+            [.. list.SelectMany(c => c.RequirementIds).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)],
+            [.. list.Select(c => c.Story?.Priority).OfType<string>().Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)],
+            [.. list.Select(c => c.Story).OfType<BirkNext.TestCoverage.CoverageUserStory>().DistinctBy(st => st.Key).OrderBy(st => st.Ordinal)],
+            list.Any(c => c.Story is null), list.Any(c => string.IsNullOrEmpty(c.Story?.Priority)));
+    }
+
+    /// <summary>The stored candidates with these ids, in the window order (2026-11-27): a page that holds the window and is asked for a scenario
+    /// beyond it (a link with <c>?scenario=</c>, a plan item, a Testoversikt selection) fetches exactly those instead of the whole population.
+    /// At most 200 ids; unknown ids are simply absent.</summary>
+    public static List<DiscoveredScenario> Pick(ScenarioDiscoveryResult result, IEnumerable<string> ids)
+    {
+        var wanted = ids.Where(i => !string.IsNullOrWhiteSpace(i)).Take(200).ToHashSet(StringComparer.Ordinal);
+        return [.. WindowOrder(result).Where(c => wanted.Contains(c.CandidateId) || wanted.Contains(c.SourceIdentity))];
     }
 
     public const string Specification = "specification";

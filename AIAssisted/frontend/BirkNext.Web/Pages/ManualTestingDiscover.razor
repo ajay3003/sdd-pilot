@@ -651,11 +651,16 @@
 
                         @* The scenario collection: compact rows, paged, keyboard-navigable, multi-select. *@
                         <section class="msb-list" aria-label="Scenarioer" data-testid="mtd-scenarios">
-                            @if (_ws?.Discovery?.NotKept is > 0 && _filter.Query.Trim().Length >= 2)
+                            @if (_ws?.Discovery?.NotKept is > 0 && SearchesBeyond(_filter))
                             {
                                 @* Server-side search (2026-11-26): the matches among the scenarios this page did not load — found without loading the ones before them. *@
                                 <section class="msb-beyond" aria-label="Treff i hele utvalget" data-testid="mtd-beyond">
                                     <h3 class="mtp-ctx-label">Treff blant scenarioene som ikke er lastet inn@(_beyond is { } bp ? $" ({bp.Total})" : "")</h3>
+                                    @if (NotAppliedBeyond(_filter) is { Count: > 0 } notApplied)
+                                    {
+                                        @* Honest about what the server cannot know (2026-11-27): these filters need the page's own state. *@
+                                        <p class="mt-muted msb-small" data-testid="mtd-beyond-unfiltered">Søk, område, type, brukerhistorie, krav, prioritet og testnivå gjelder også her. Ikke brukt på disse treffene: @string.Join(", ", notApplied).</p>
+                                    }
                                     @if (_beyond is { Items.Count: > 0 } beyondPage)
                                     {
                                         <ul class="msb-rows">
@@ -1376,6 +1381,17 @@
             _types = [.. _items.Select(i => i.TypeLabel).Distinct().Order()];
             _priorities = S.Priorities(_items);
             _requirementIds = [.. candidates.SelectMany(c => c.RequirementIds).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+            // The filter values of the scenarios not loaded (2026-11-27): offered too, so a filter finds them through the server search.
+            if (_ws.Discovery?.NotKeptFacets is { } more)
+            {
+                _stories = [.. _stories.Concat(more.Stories).DistinctBy(s => s.Key).OrderBy(s => s.Ordinal)];
+                _areas = [.. _areas.Concat(more.Areas).Distinct().Order()];
+                _types = [.. _types.Concat(more.Types).Distinct().Order()];
+                _requirementIds = [.. _requirementIds.Concat(more.RequirementIds).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+                var declared = _priorities.Where(p => p != S.NoPriority).Concat(more.Priorities).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+                if (declared.Count > 0 && (_priorities.Contains(S.NoPriority) || more.AnyWithoutPriority)) declared.Add(S.NoPriority);
+                _priorities = declared;
+            }
             if (!_contextRestored && _ws.ProjectKey is { } contextKey)
             {
                 _contextRestored = true;
@@ -1384,6 +1400,19 @@
                     _active = context.Scenario; _tab = context.Tab is W.Tabs.Cases or W.Tabs.Coverage ? context.Tab : W.Tabs.Scenarios; _activeTitle = context.ScenarioTitle;
                 }
                 if (generation != _loadGeneration) return;
+            }
+            // The open scenario or a Testoversikt selection beyond the loaded window (2026-11-27): fetched by id and added like a server match.
+            if (_ws.Discovery is { NotKept: > 0 } && (_active is { } want && _items.All(i => i.Id != want) || _filter.Identities is { Length: > 0 }))
+            {
+                var before = _ws.Discovery.Candidates.Count;
+                _ws = await new ManualTestingWorkspace(ServiceProvider).WithScenariosAsync(_ws, [_active, .. _filter.Identities ?? []]);
+                if (generation != _loadGeneration) return;
+                if (_ws.Discovery!.Candidates.Count > before)
+                {
+                    var added = _ws.Discovery.Candidates.Skip(before).ToList();
+                    _items = [.. _items, .. _workView is { } wv ? S.Items(added, wv.Items.ToDictionary(w => w.CandidateId, StringComparer.Ordinal)) : S.Items(added, new Dictionary<string, S.Prepared>())];
+                    Recompute();
+                }
             }
             // A scenario that no longer exists (another specification, a new discovery) is reported, never silently replaced by another one.
             if (_active is not null && _items.All(i => i.Id != _active)) { _missingScenario = _activeTitle ?? "ukjent scenario"; _active = null; }
@@ -1592,10 +1621,10 @@
         var query = _filter.Query.Trim();
         var generation = more ? _beyondGeneration : ++_beyondGeneration;
         if (!more) { _beyond = null; _beyondItems = []; _beyondError = null; }
-        if (_ws?.Discovery is not { NotKept: > 0 } || query.Length < 2 || _ws.ProjectKey is not { } key
+        if (_ws?.Discovery is not { NotKept: > 0 } || !SearchesBeyond(_filter) || _ws.ProjectKey is not { } key
             || ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) return;
         if (!more) { await Task.Delay(250); if (generation != _beyondGeneration) return; }
-        var (page, error) = await api.SearchDiscoveryAsync(key, _ws.DiscoveryScope, query, more ? _beyondItems.Count : 0, 40);
+        var (page, error) = await api.SearchDiscoveryAsync(key, _ws.DiscoveryScope, query.Length >= 2 ? query : "", more ? _beyondItems.Count : 0, 40, ServerFilter(_filter));
         if (generation != _beyondGeneration) return;
         if (page is null) { _beyondError = error ?? "Søket i hele utvalget feilet."; StateHasChanged(); return; }
         _beyondError = null;
@@ -1603,6 +1632,20 @@
         _beyondItems = [.. _beyondItems, .. page.Items.Where(c => _beyondItems.All(b => b.CandidateId != c.CandidateId))];
         StateHasChanged();
     }
+
+    /// <summary>The page's filters the server applies too (2026-11-27): properties of the scenario itself (<see cref="ScenarioSearchFilter"/>).</summary>
+    private static ScenarioSearchFilter ServerFilter(S.Filter f) => new(f.Area, f.Type, f.Story, f.Requirement, f.Priority, f.TestLevel);
+
+    /// <summary>A server search runs for a query of two characters or more, or for any filter the server applies (an area, a user story …).</summary>
+    private static bool SearchesBeyond(S.Filter f) => f.Query.Trim().Length >= 2 || !ServerFilter(f).IsEmpty;
+
+    /// <summary>The active filters a server match is NOT filtered by (they need the page's own state), named on the page.</summary>
+    private static List<string> NotAppliedBeyond(S.Filter f) => [.. new (bool On, string Label)[]
+    {
+        (f.Queue is not null, "arbeidskø"), (f.Status is not null, "status"), (f.ScenarioType is not null, "scenariotype"),
+        (f.ImplementationStatus is not null, "implementeringsstatus"), (f.Approach is not null, "testtilnærming"), (f.Tech is not null, "automatiske tester"),
+        (f.PlanStatus is not null, "testplanstatus"), (!f.All && !f.Technical, "skjuling av tekniske forslag"),
+    }.Where(x => x.On).Select(x => x.Label)];
 
     /// <summary>Opens a server match: it joins the page's scenarios (classified like the others) and its detail opens.</summary>
     private void OpenBeyond(DiscoveredScenario candidate)

@@ -37,14 +37,15 @@ public sealed class DiscoveryCapTests
         var sent = D.Window(Result(D.Finalize("p", "snap", TwelveThousand(), [])));
         sent.Candidates.Should().HaveCount(D.MaxCandidates);
         sent.Candidates.Where(c => c.CapabilityId == D.Specification).Should().HaveCount(3);
-        sent.NotKept.Should().Be(2_000);
+        sent.NotKept.Should().Be(12_000 - D.MaxCandidates);
+        sent.TotalCandidates.Should().Be(12_000, "counts over the whole population stay honest");
         sent.Limitations.Should().ContainSingle(l => l.Contains("not sent at once") && l.Contains("search finds them on the server"));
     }
 
     [Fact]
     public void A_result_within_the_window_is_sent_unchanged()
     {
-        var small = Result(D.Finalize("p", "snap", [.. Enumerable.Range(0, 2015).Select(i => C($"c{i}", D.Specification))], []));
+        var small = Result(D.Finalize("p", "snap", [.. Enumerable.Range(0, D.MaxCandidates).Select(i => C($"c{i}", D.Specification))], []));
         D.Window(small).Should().BeSameAs(small);
         D.Window(small).NotKept.Should().BeNull();
     }
@@ -65,10 +66,72 @@ public sealed class DiscoveryCapTests
 
         // Paging: stable order, no duplicates, no gaps.
         var all = D.Search(stored, "Operation", D.MaxCandidates, 0, 200);
-        all.Total.Should().Be(2_000);
-        var pages = Enumerable.Range(0, 10).SelectMany(p => D.Search(stored, "Operation", D.MaxCandidates, p * 200, 200).Items).Select(c => c.CandidateId).ToList();
-        pages.Should().OnlyHaveUniqueItems().And.HaveCount(2_000);
-        D.Search(stored, "Operation", D.MaxCandidates, 1_960, 40).HasMore.Should().BeFalse();
+        var beyond = 12_000 - D.MaxCandidates;
+        all.Total.Should().Be(beyond);
+        var pages = Enumerable.Range(0, beyond / 200).SelectMany(p => D.Search(stored, "Operation", D.MaxCandidates, p * 200, 200).Items).Select(c => c.CandidateId).ToList();
+        pages.Should().OnlyHaveUniqueItems().And.HaveCount(beyond);
+        D.Search(stored, "Operation", D.MaxCandidates, beyond - 40, 40).HasMore.Should().BeFalse();
         D.Search(stored, "", D.MaxCandidates, 0, 40).Total.Should().Be(0, "an empty query returns nothing, never everything");
+    }
+
+    [Fact]
+    public void The_window_is_two_thousand_so_the_first_load_stays_small()
+    {
+        D.MaxCandidates.Should().Be(2_000, "server search and Pick reach everything beyond it (2026-11-27; 10,000 synthetic scenarios were 15.7 MB)");
+    }
+
+    /// <summary>Scenarios with areas, stories, requirements and priorities, all beyond a window of the three specification scenarios.</summary>
+    private static List<DiscoveredScenario> Filtered()
+    {
+        var story = new BirkNext.TestCoverage.CoverageUserStory { Key = "us-7", StoryId = "US7", Title = "Arkiv", Priority = "P1", Ordinal = 7 };
+        return [.. Enumerable.Range(1, 3).Select(i => C($"spec{i}", D.Specification, $"Spesifikasjon {i}")),
+            C("a1", D.ApiContract, "Henter arkivert rapport") with { Area = "Arkiv", RequirementIds = ["FR-900"], Story = story },
+            C("a2", D.ApiContract, "Henter aktiv rapport") with { Area = "Rapporter", RequirementIds = ["FR-100"] },
+            C("a3", D.ApiContract, "Sletter arkivert rapport") with { Area = "Arkiv", Type = ScenarioCandidateType.Integration }];
+    }
+
+    [Fact]
+    public void Server_search_applies_the_pages_scenario_filters_and_a_filter_alone_is_a_search()
+    {
+        var stored = Result(Filtered());
+        D.Search(stored, "", 3, 0, 40, new(Area: "Arkiv")).Items.Select(c => c.CandidateId).Should().Equal("a1", "a3");
+        D.Search(stored, "Henter", 3, 0, 40, new(Area: "Arkiv")).Items.Select(c => c.CandidateId).Should().Equal("a1");
+        D.Search(stored, "", 3, 0, 40, new(Requirement: "fr-900")).Items.Select(c => c.CandidateId).Should().Equal("a1");
+        D.Search(stored, "", 3, 0, 40, new(Story: "us-7")).Items.Select(c => c.CandidateId).Should().Equal("a1");
+        D.Search(stored, "", 3, 0, 40, new(Story: ScenarioSearchFilter.NoStory)).Items.Select(c => c.CandidateId).Should().Equal("a2", "a3");
+        D.Search(stored, "", 3, 0, 40, new(Priority: "p1")).Items.Select(c => c.CandidateId).Should().Equal("a1");
+        D.Search(stored, "", 3, 0, 40, new(Priority: ScenarioSearchFilter.NoPriority)).Items.Select(c => c.CandidateId).Should().Equal("a2", "a3");
+        D.Search(stored, "", 3, 0, 40, new(Type: ScenarioCandidateTypes.Label(ScenarioCandidateType.Integration))).Items.Select(c => c.CandidateId).Should().Equal("a3");
+        D.Search(stored, "", 3, 0, 40, new(TestLevel: nameof(ScenarioTestLevel.Integration))).Items.Select(c => c.CandidateId).Should().Equal("a3");
+        D.Search(stored, "", 3, 0, 40, new()).Total.Should().Be(0, "no words and no filter: nothing, never everything");
+        D.Search(stored, "", 3, 0, 40, new(Area: "Rapporter")).Items.Select(c => c.CandidateId).Should().Equal(["a2"], "a scenario inside the window is never repeated");
+    }
+
+    [Fact]
+    public void A_window_names_the_filter_values_and_clarification_count_of_what_it_does_not_send()
+    {
+        var all = Filtered().Select(c => c with { ExpectedBehaviour = "Vises" }).ToList();
+        all[4] = all[4] with { ExpectedBehaviour = null }; // no expected result → needs clarification
+        var sent = D.Window(Result(all), 3);
+        sent.NotKept.Should().Be(3);
+        sent.NotKeptNeedsClarification.Should().Be(1);
+        sent.TotalNeedsClarification.Should().Be(1);
+        var f = sent.NotKeptFacets!;
+        f.Areas.Should().Equal("Arkiv", "Rapporter");
+        f.RequirementIds.Should().Equal("FR-100", "FR-900");
+        f.Stories.Should().ContainSingle(st => st.Key == "us-7");
+        f.Priorities.Should().Equal("P1");
+        f.AnyWithoutStory.Should().BeTrue();
+        f.AnyWithoutPriority.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Pick_returns_named_scenarios_beyond_the_window_by_candidate_id_or_source_identity()
+    {
+        var stored = Result(D.Finalize("p", "snap", TwelveThousand(), []));
+        var far = stored.Candidates.Single(c => c.CandidateId == "api11997");
+        D.Pick(stored, ["api11997", "unknown"]).Should().ContainSingle().Which.CandidateId.Should().Be("api11997");
+        D.Pick(stored, [far.SourceIdentity]).Should().ContainSingle().Which.CandidateId.Should().Be("api11997");
+        D.Pick(stored, Enumerable.Range(1, 500).Select(i => $"api{i}")).Should().HaveCount(200, "at most 200 ids per request");
     }
 }

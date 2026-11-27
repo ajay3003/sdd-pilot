@@ -346,6 +346,10 @@ public static class DiscoveryScope
     }
 }
 
+/// <summary>Filter values of a set of candidates (see <see cref="ScenarioDiscoveryResult.NotKeptFacets"/>).</summary>
+public sealed record ScenarioFacets(List<string> Areas, List<string> Types, List<string> RequirementIds, List<string> Priorities,
+    List<BirkNext.TestCoverage.CoverageUserStory> Stories, bool AnyWithoutStory, bool AnyWithoutPriority);
+
 /// <summary>
 /// One page of a server-side scenario search (2026-11-26): the matches among the candidates the discovery holds but did not send (beyond the
 /// <see cref="ScenarioDiscoveryResult.Candidates"/> window, see <see cref="ScenarioDiscoveryResult.NotKept"/>), in the stored source-priority
@@ -377,6 +381,16 @@ public sealed record ScenarioDiscoveryResult
     /// <summary>Candidates beyond the safety limit that this result does NOT hold (2026-11-26); null when the population is complete. The page says
     /// so where the scenarios are listed — never only in a collapsed detail — and how to reach the rest (a narrower module/specification).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? NotKept { get; init; }
+    /// <summary>How many of the <see cref="NotKept"/> candidates need clarification (2026-11-27), so a count over the whole population stays
+    /// honest when only the window is sent.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? NotKeptNeedsClarification { get; init; }
+    /// <summary>Every candidate of the result, also those not sent (<see cref="Candidates"/> plus <see cref="NotKept"/>).</summary>
+    [JsonIgnore] public int TotalCandidates => Candidates.Count + (NotKept ?? 0);
+    /// <summary>The filter values (areas, types, user stories, requirements, priorities) of the candidates NOT sent (2026-11-27), so the page's
+    /// filters offer them too and a server search (<see cref="ScenarioSearchFilter"/>) can find them. Null when everything is sent.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public ScenarioFacets? NotKeptFacets { get; init; }
+    /// <summary>Candidates needing clarification over the whole population.</summary>
+    [JsonIgnore] public int TotalNeedsClarification => Candidates.Count(c => c.NeedsClarification) + (NotKeptNeedsClarification ?? 0);
     /// <summary>Compact wire form only (<see cref="ScenarioDiscoveryWire"/>): each distinct user story once, by key.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Dictionary<string, BirkNext.TestCoverage.CoverageUserStory>? StoryTable { get; init; }
     /// <summary>Compact wire form only: each distinct existing test once, by test id (the per-scenario link keeps basis, confirmation, origin).</summary>

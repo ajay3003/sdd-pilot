@@ -1202,9 +1202,11 @@
                 _selection = [.. await TabDraftStore.ReadAsync<string[]>(JS, TabDraftStore.SelectionKey(key)) ?? []];
             await LoadTraceAsync();
             _intent = ScenarioParameter is { Length: > 0 } wantedScenario ? wantedScenario : null;
-            _intentUnknown = _intent is { } si && _ws.Discovery is { } disc && disc.Candidates.All(c => c.CandidateId != si);
             var id = DraftParameter is { } wanted && (_plans.Any(p => p.Id == wanted) || _archived.Any(p => p.Id == wanted)) ? wanted : _plans.FirstOrDefault()?.Id;
             if (id is { } draftId) await OpenPlanAsync(draftId);
+            // A scenario beyond the loaded window (2026-11-27): the handed-over scenario and the plan's own scenarios are fetched by id.
+            _ws = await new ManualTestingWorkspace(ServiceProvider).WithScenariosAsync(_ws, [_intent, .. _plan?.Cases.Select(c => c.ParentScenario) ?? []]);
+            _intentUnknown = _intent is { } si && _ws.Discovery is { } disc && disc.Candidates.All(c => c.CandidateId != si);
             if (CaseParameter is { Length: > 0 } wantedCase && _plan?.Cases.FirstOrDefault(c => P.IdOf(c) == wantedCase) is { } linked)
             {
                 if (P.TechnicalReason(linked) is not null) _showTechnical = true;

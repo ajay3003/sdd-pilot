@@ -82,8 +82,8 @@ public static class ManualTestingPresentation
         if (f.ProjectKey is null)
             return [.. Stages.Select(s => new GuidedStep(s.Id, s.Title, GuidedStepState.Waiting, "No project", s.Question,
                 DisabledReason: f.AnyProjectImported ? "Choose a project in the Project list above first." : "Import a project first."))];
-        var candidates = f.Discovery?.Candidates.Count ?? 0;
-        var clarify = f.Discovery?.Candidates.Count(c => c.NeedsClarification) ?? 0;
+        var candidates = f.Discovery?.TotalCandidates ?? 0;
+        var clarify = f.Discovery?.TotalNeedsClarification ?? 0;
         var discover = new GuidedStep("discover", "Discover & understand", f.Discovery is null && f.Plans.Count == 0 ? GuidedStepState.Current : GuidedStepState.Done,
             f.Discovery is null ? "Not discovered yet" : $"{candidates} suggestion{(candidates == 1 ? "" : "s")}",
             "What needs testing? Requirements, scenario suggestions from the project's evidence, existing tests and what needs clarification.",
@@ -116,7 +116,7 @@ public static class ManualTestingPresentation
         if (f.Plans.Count == 0 || Cases(f) == 0)
             return f.Discovery is null
                 ? new("Finn scenarioer", DiscoverRoute, "Ingenting er forberedt ennå. Finn scenarioer i applikasjonens kilder, eller skriv et testtilfelle selv.")
-                : new("Velg scenarioer", DiscoverRoute, $"{f.Discovery.Candidates.Count} forslag venter; ingenting er forberedt ennå.");
+                : new("Velg scenarioer", DiscoverRoute, $"{f.Discovery.TotalCandidates} forslag venter; ingenting er forberedt ennå.");
         if (NeedClarification(f) > 0 && f.Plans.FirstOrDefault(p => p.NeedsClarification > 0) is { } unclear)
             return new("Avklar testtilfeller", $"{PlanRoute}?draft={unclear.Id}", $"{NeedClarification(f)} testtilfelle(r) venter på svar før de kan godkjennes.");
         if (Approved(f) > 0 && f.Plans.OrderByDescending(p => p.UpdatedAt).FirstOrDefault(p => p.Accepted > 0) is { } ready)

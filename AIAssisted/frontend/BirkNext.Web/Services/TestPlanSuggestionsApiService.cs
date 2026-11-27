@@ -48,8 +48,11 @@ public interface ITestPlanSuggestionsApiService
     Task<(ScenarioDiscoveryResult? Result, string? Error)> LastDiscoveryAsync(string projectKey, Guid? snapshotId, string? scope = null, CancellationToken ct = default) =>
         Task.FromResult<(ScenarioDiscoveryResult?, string?)>((null, null));
     /// <summary>Server-side search among the scenarios the discovery did not send (GET discover/search): one page of matches and their total.</summary>
-    Task<(ScenarioSearchPage? Page, string? Error)> SearchDiscoveryAsync(string projectKey, string? scope, string query, int skip, int take, CancellationToken ct = default) =>
+    Task<(ScenarioSearchPage? Page, string? Error)> SearchDiscoveryAsync(string projectKey, string? scope, string query, int skip, int take, ScenarioSearchFilter? filter = null, CancellationToken ct = default) =>
         Task.FromResult<(ScenarioSearchPage?, string?)>((null, NotAvailable));
+    /// <summary>Named scenarios of the last discovery, also beyond the loaded window (2026-11-27; at most 200 ids).</summary>
+    Task<(List<DiscoveredScenario>? Items, string? Error)> DiscoveryCandidatesAsync(string projectKey, string? scope, IReadOnlyCollection<string> ids, CancellationToken ct = default) =>
+        Task.FromResult<(List<DiscoveredScenario>?, string?)>((null, NotAvailable));
     /// <summary>The plan compared with its application's current source basis (changed, removed, unavailable, new). Read-only.</summary>
     Task<(PlanImpactAnalysis? Impact, string? Error)> ImpactAsync(Guid id, CancellationToken ct = default) =>
         Task.FromResult<(PlanImpactAnalysis?, string?)>((null, "Konsekvensanalyse er ikke tilgjengelig her."));
@@ -193,8 +196,19 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
     public Task<(ScenarioDiscoveryResult?, string?)> DiscoverAsync(ScenarioDiscoveryRequest request, CancellationToken ct = default) =>
         Send<ScenarioDiscoveryResult>(() => http.PostAsJsonAsync($"{Base}/discover", request, Json, ct), ct);
 
-    public Task<(ScenarioSearchPage?, string?)> SearchDiscoveryAsync(string projectKey, string? scope, string query, int skip, int take, CancellationToken ct = default) =>
-        Send<ScenarioSearchPage>(() => http.GetAsync($"{Base}/discover/search?projectKey={Uri.EscapeDataString(projectKey)}{(scope is { } sc ? $"&scope={Uri.EscapeDataString(sc)}" : "")}&q={Uri.EscapeDataString(query)}&skip={skip}&take={take}", ct), ct);
+    public Task<(ScenarioSearchPage?, string?)> SearchDiscoveryAsync(string projectKey, string? scope, string query, int skip, int take, ScenarioSearchFilter? filter = null, CancellationToken ct = default) =>
+        Send<ScenarioSearchPage>(() => http.GetAsync($"{Base}/discover/search?projectKey={Uri.EscapeDataString(projectKey)}{(scope is { } sc ? $"&scope={Uri.EscapeDataString(sc)}" : "")}&q={Uri.EscapeDataString(query)}&skip={skip}&take={take}{FilterQuery(filter)}", ct), ct);
+
+    private static string FilterQuery(ScenarioSearchFilter? f)
+    {
+        if (f is null || f.IsEmpty) return "";
+        static string P(string name, string? value) => value is null ? "" : $"&{name}={Uri.EscapeDataString(value)}";
+        return P("area", f.Area) + P("type", f.Type) + P("story", f.Story) + P("requirement", f.Requirement) + P("priority", f.Priority) + P("level", f.TestLevel);
+    }
+
+    public Task<(List<DiscoveredScenario>?, string?)> DiscoveryCandidatesAsync(string projectKey, string? scope, IReadOnlyCollection<string> ids, CancellationToken ct = default) =>
+        ids.Count == 0 ? Task.FromResult<(List<DiscoveredScenario>?, string?)>(([], null))
+        : Send<List<DiscoveredScenario>>(() => http.GetAsync($"{Base}/discover/candidates?projectKey={Uri.EscapeDataString(projectKey)}{(scope is { } sc ? $"&scope={Uri.EscapeDataString(sc)}" : "")}{string.Concat(ids.Take(200).Select(i => "&id=" + Uri.EscapeDataString(i)))}", ct), ct);
 
     public async Task<(ScenarioDiscoveryResult?, string?)> LastDiscoveryAsync(string projectKey, Guid? snapshotId, string? scope = null, CancellationToken ct = default)
     {
