@@ -3,7 +3,8 @@
    pattern as the Planlegg preview); nothing is saved until «Lagre», and saving changes only the dashboard setup — never a scenario, case or plan.
    Used on Testoversikt (Norwegian) and in System Settings (English labels, per the settings rule). *@
 
-<div class="mtp-preview-backdrop kte-backdrop" @onclick="CancelAsync" data-testid="kte">
+@* BUG-001 policy (2026-11-27): an edit dialog is never closed by a click beside it; «Avbryt» and Escape close it. *@
+<div class="mtp-preview-backdrop kte-backdrop" data-testid="kte">
     <div class="mtp-preview kte" role="dialog" aria-modal="true" aria-labelledby="kte-title" tabindex="-1" @ref="_dialog"
          @onclick:stopPropagation="true" @onkeydown="KeyAsync" data-testid="kte-dialog">
         <header class="mtp-preview-head">

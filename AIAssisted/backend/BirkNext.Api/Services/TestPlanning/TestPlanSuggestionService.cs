@@ -700,7 +700,13 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
                 }, ct, $"{newItems.Count} scenario{(newItems.Count == 1 ? "" : "er")} lagt til uten testtilfelle");
             }
             var added = cases.Where(c => !known.Contains(c.Source.ScenarioId) && (c.Generated.SourceIdentity is null || !knownSources.Contains(c.Generated.SourceIdentity))).ToList();
-            var suites = current.Suites.Concat(TestScenarioDiscoveryEngine.ProjectSuites(added.Select(c => c.Generated)).Where(s => current.Suites.All(x => x.Id != s.Id))).ToList();
+            // FUN-011 (2026-11-27): a case prepared for a scenario already in the plan goes to that scenario's suite; no «Module …» suite is made for
+            // it, so preparing a case never moves the scenario (before, the case got its area suite and execution showed the scenario there).
+            var plannedSuites = (current.PlannedScenarios ?? []).Where(p => current.Suites.Any(s => s.Id == p.SuiteId))
+                .GroupBy(p => p.ScenarioId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().SuiteId, StringComparer.Ordinal);
+            added = [.. added.Select(c => c.ParentScenario is { } sid && plannedSuites.TryGetValue(sid, out var placed) ? c with { SuiteId = placed } : c)];
+            var suites = current.Suites.Concat(TestScenarioDiscoveryEngine.ProjectSuites(added.Where(c => c.ParentScenario is not { } sid || !plannedSuites.ContainsKey(sid)).Select(c => c.Generated))
+                .Where(s => current.Suites.All(x => x.Id != s.Id))).ToList();
             return await WriteAsync(row, FlagProject(current with
             {
                 Cases = [.. current.Cases, .. added], Suites = suites, Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
@@ -1535,7 +1541,8 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         p.Cases.Count(c => c.Review != TestCaseReviewState.Excluded && c.TestData.Count == 0),
         p.Cases.Count(c => c.Review != TestCaseReviewState.Excluded && !c.Testability.Ready), p.UpdatedBy, p.UpdatedAt)
     {
-        Scenarios = p.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).Select(c => c.ParentScenario).OfType<string>().Distinct(StringComparer.Ordinal).Count(),
+        // FUN-015 (2026-11-27): the plan's scenario occurrences, also those without a case (was: only scenarios with a case).
+        Scenarios = PlanOccurrences.Of(p).Count,
         ApplicationKey = p.ApplicationKey, ProjectName = p.ProjectName,
     };
 

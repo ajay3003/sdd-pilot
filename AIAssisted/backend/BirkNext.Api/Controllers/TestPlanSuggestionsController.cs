@@ -148,12 +148,13 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     public Task<ActionResult> SearchDiscovery([FromQuery] string projectKey, [FromQuery] string? scope, [FromQuery] string? q, [FromQuery] int skip,
         [FromQuery] int take, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct,
         [FromQuery] string? area = null, [FromQuery] string? type = null, [FromQuery] string? story = null, [FromQuery] string? requirement = null,
-        [FromQuery] string? priority = null, [FromQuery] string? level = null) =>
+        [FromQuery] string? priority = null, [FromQuery] string? level = null, [FromQuery] string? module = null, [FromQuery] bool plannable = false) =>
         Run(async () =>
         {
             if (await discovery.LastAsync(projectKey, null, ct, scope) is not { } result) return NoContent();
             // The page's scenario filters (2026-11-27) apply on the server too, so a filtered search beyond the window means the same as on the page.
-            var filter = new ScenarioSearchFilter(Blank(area), Blank(type), Blank(story), Blank(requirement), Blank(priority), Blank(level));
+            var filter = new ScenarioSearchFilter(Blank(area), Blank(type), Blank(story), Blank(requirement), Blank(priority), Blank(level))
+                { Module = Blank(module), ClassifiableOnly = plannable };
             return Ok(TestScenarioDiscoveryEngine.Search(result, q, TestScenarioDiscoveryEngine.MaxCandidates, skip, take <= 0 ? 40 : take, filter));
         });
 

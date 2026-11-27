@@ -23,7 +23,7 @@ public sealed class PlanRevisionDiffTests
         var changes = PlanRevisionDiff.Compare(old, @new).Select(c => (c.CaseTitle, c.Text)).ToList();
 
         changes.Should().Contain((null, "Navnet er endret fra «Plan» til «Plan 2»."));
-        changes.Should().Contain(("New case", "Lagt til.")).And.Contain(("Old case", "Fjernet."));
+        changes.Should().Contain(("New case", "Testtilfelle lagt til.")).And.Contain(("Old case", "Testtilfelle fjernet."));
         changes.Should().Contain(("Valid report", "Endret: forutsetninger, teststeg, forventet resultat per steg."));
         changes.Should().Contain(c => c.CaseTitle == "Valid report" && c.Text.StartsWith("Status: "));
         PlanRevisionDiff.Compare(old, old).Should().BeEmpty();
@@ -56,4 +56,33 @@ public sealed class PlanRevisionDiffTests
         var codeOnly = guide with { Generated = guide.Generated with { Evidence = [guide.Generated.Evidence[0], guide.Generated.Evidence[2]] } };
         PlanPreparePresentation.PlanSourceLine(new TestPlanDraft { Cases = [codeOnly] }).Should().BeNull("source code never names a specification, and the title is never used");
     }
+
+    // -- FUN-016 (manual E2E 2026-11-27): revision 8 «1 scenario lagt til uten testtilfelle»; «Se endringer» said «Ingen endringer i testtilfellene». --
+
+    private static readonly List<TestSuiteDraft> Suites = [new("s-k", "Komponent", "template", null), new("s-e", "Ende til ende", "template", null)];
+
+    [Fact]
+    public void FUN016_a_scenario_added_without_a_case_is_a_change_with_its_identity_and_testgruppe()
+    {
+        var v7 = new TestPlanDraft { Suites = Suites, Cases = [Case("ac4", "A method comment written in Norwegian") with { SuiteId = "s-k" }] };
+        var v8 = v7 with { PlannedScenarios = [new PlannedScenario { ScenarioId = "teste01", Title = "TEST-E-01: Inngrep-hendelse fra adapter til GraphQL", SuiteId = "s-e" }] };
+        var changes = PlanRevisionDiff.Compare(v7, v8);
+        changes.Should().ContainSingle().Which.Should().Be(new PlanRevisionDiff.Change("TEST-E-01: Inngrep-hendelse fra adapter til GraphQL",
+            "Scenario lagt til i «Ende til ende» uten testtilfelle.", PlanRevisionDiff.ScenarioKind));
+    }
+
+    [Fact]
+    public void FUN016_moving_and_removing_scenario_occurrences_and_preparing_a_case_are_named_separately_from_case_changes()
+    {
+        var item = new PlannedScenario { ScenarioId = "ac4", Title = "AC4 tittel", StoryId = "US1", NumberInStory = 4, SuiteId = "s-k" };
+        var before = new TestPlanDraft { Suites = Suites, PlannedScenarios = [item, new PlannedScenario { ScenarioId = "x", Title = "Fjernes", SuiteId = "s-e" }] };
+        var after = before with { PlannedScenarios = [item with { SuiteId = "s-e" }], Cases = [Case("ac4", "AC4 tittel") with { SuiteId = "s-e" }] };
+        var changes = PlanRevisionDiff.Compare(before, after).Select(c => (c.Kind, c.CaseTitle, c.Text)).ToList();
+        changes.Should().Contain((PlanRevisionDiff.ScenarioKind, "US1 · AC 4 — AC4 tittel", "Scenario flyttet fra «Komponent» til «Ende til ende»."));
+        changes.Should().Contain((PlanRevisionDiff.ScenarioKind, "Fjernes", "Scenario fjernet fra «Ende til ende»."));
+        changes.Should().Contain((PlanRevisionDiff.ScenarioKind, "US1 · AC 4 — AC4 tittel", "Testtilfelle forberedt for scenarioet (scenarioet står i samme testgruppe)."));
+        changes.Should().Contain((PlanRevisionDiff.CaseKind, "AC4 tittel", "Testtilfelle lagt til."));
+        PlanRevisionDiff.Compare(after, after).Should().BeEmpty("the same revision has no changes");
+    }
 }
+

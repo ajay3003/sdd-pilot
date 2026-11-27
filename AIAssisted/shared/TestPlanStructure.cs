@@ -301,3 +301,42 @@ public static class ScenarioGroupAxes
         _ => ("Alle", 0, null),
     };
 }
+
+/// <summary>The one definition of a plan's scenario occurrences (2026-11-27, FUN-015): execution, Testplaner and Planlegg count the same thing.</summary>
+public static class PlanOccurrences
+{
+    /// <summary>A plan's scenario occurrences: each scenario once (its cases grouped under it), each scenario-only item, and each hand-written case
+    /// without a scenario on its own. Excluded and superseded cases are not executed.</summary>
+    public static List<ScenarioOccurrence> Of(TestPlanDraft plan)
+    {
+        var result = new List<ScenarioOccurrence>();
+        string? Path(string? suite) => suite is not null && plan.Suites.Any(s => s.Id == suite) ? PlanStructure.PathOf(plan.Suites, suite) : null;
+        // FUN-011 (2026-11-27): a scenario's membership is its planned item when it has one; its cases may sit in another suite (written before
+        // the fix, or grouped by hand) and never move the scenario. Only a scenario without a planned item takes its first case's suite.
+        var plannedItem = (plan.PlannedScenarios ?? []).GroupBy(p => p.ScenarioId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var plannedSuite = plannedItem.ToDictionary(kv => kv.Key, kv => kv.Value.SuiteId, StringComparer.Ordinal);
+        foreach (var g in plan.Cases.Where(c => c.Review is not (TestCaseReviewState.Superseded or TestCaseReviewState.Excluded))
+                     .GroupBy(c => c.ParentScenario is { } sid ? "scenario:" + sid : "case:" + c.Source.ScenarioId, StringComparer.Ordinal))
+        {
+            var first = g.First();
+            var suiteId = first.ParentScenario is { } psid && plannedSuite.TryGetValue(psid, out var ps) && plan.Suites.Any(s => s.Id == ps) ? ps : first.SuiteId;
+            result.Add(new ScenarioOccurrence
+            {
+                Key = g.Key, ScenarioId = first.ParentScenario, Title = first.Source.Kind == ScenarioSourceKind.Manual && first.ParentScenario is null ? first.EffectiveTitle : first.Generated.Title,
+                StoryId = first.Generated.Story?.StoryId ?? (first.ParentScenario is { } ps2 && plannedItem.TryGetValue(ps2, out var pi) ? pi.StoryId : null),
+                NumberInStory = first.Generated.NumberInStory ?? (first.ParentScenario is { } ps3 && plannedItem.TryGetValue(ps3, out var pj) ? pj.NumberInStory : null), ExpectedBehaviour = first.Generated.ExpectedResult ?? first.EffectiveExpected,
+                SuiteId = suiteId, SuitePath = Path(suiteId), CaseIds = [.. g.Select(c => c.Source.ScenarioId)],
+            });
+        }
+        foreach (var item in plan.PlannedScenarios ?? [])
+        {
+            if (result.Any(o => o.Key == "scenario:" + item.ScenarioId)) continue;
+            result.Add(new ScenarioOccurrence
+            {
+                Key = "scenario:" + item.ScenarioId, ScenarioId = item.ScenarioId, Title = item.Title, StoryId = item.StoryId, NumberInStory = item.NumberInStory,
+                ExpectedBehaviour = item.ExpectedBehaviour, SuiteId = item.SuiteId, SuitePath = Path(item.SuiteId), ScenarioOnly = true,
+            });
+        }
+        return result;
+    }
+}

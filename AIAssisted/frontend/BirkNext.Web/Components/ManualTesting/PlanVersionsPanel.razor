@@ -45,11 +45,19 @@
                     {
                         <div class="mtp-version-changes" data-testid="mtp-version-diff">
                             @if (_changes is null) { <span class="mt-muted msb-small">@(_changesError ?? "Henter endringer …")</span> }
-                            else if (_changes.Count == 0) { <span class="mt-muted msb-small">Ingen endringer i testtilfellene sammenlignet med versjon @previous?.Revision.</span> }
+                            else if (_changes.Count == 0) { <span class="mt-muted msb-small" data-testid="mtp-version-diff-none">Ingen endringer i testplanen (scenarioer, testgrupper eller testtilfeller) sammenlignet med versjon @previous?.Revision.</span> }
                             else
                             {
-                                <ul>@foreach (var ch in _changes) { <li data-testid="mtp-version-change">@(ch.CaseTitle is { } t ? $"«{t}»: " : "")@ch.Text</li> }</ul>
+                                @* FUN-016 (2026-11-27): scenarios, testgrupper and testtilfeller each in their own group. *@
+                                @foreach (var (kind, heading) in new[] { (PlanRevisionDiff.PlanKind, "Testplanen"), (PlanRevisionDiff.ScenarioKind, "Scenarioer"), (PlanRevisionDiff.SuiteKind, "Testgrupper"), (PlanRevisionDiff.CaseKind, "Testtilfeller") })
+                                {
+                                    var group = _changes.Where(c => c.Kind == kind).ToList();
+                                    if (group.Count == 0) continue;
+                                    <span class="mtp-ctx-label" data-testid="mtp-version-diff-group" data-kind="@kind">@heading</span>
+                                    <ul>@foreach (var ch in group) { <li data-testid="mtp-version-change" data-kind="@ch.Kind">@(ch.CaseTitle is { } t ? $"«{t}»: " : "")@ch.Text</li> }</ul>
+                                }
                             }
+                            <span class="mt-muted msb-small">Testresultater registreres i Testgjennomføring og er ikke en del av en versjon.</span>
                         </div>
                     }
                 </li>

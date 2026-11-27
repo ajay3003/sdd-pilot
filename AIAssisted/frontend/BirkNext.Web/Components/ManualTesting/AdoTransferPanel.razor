@@ -18,7 +18,7 @@
 
     <div class="gar-tabs atp-methods" role="tablist" aria-label="Overføringsmåte">
         <button type="button" role="tab" id="atp-tab-file" aria-controls="atp-method" aria-selected="@(!_direct ? "true" : "false")" class="gar-tab @(!_direct ? "is-active" : "")"
-                @onclick="() => _direct = false" data-testid="atp-method-file">Eksporter til fil</button>
+                @onclick="() => _direct = false" data-testid="atp-method-file">Eksporter testtilfeller til fil</button>
         <button type="button" role="tab" id="atp-tab-direct" aria-controls="atp-method" aria-selected="@(_direct ? "true" : "false")" class="gar-tab @(_direct ? "is-active" : "")"
                 @onclick="() => _direct = true" data-testid="atp-method-direct">Send direkte til Azure DevOps</button>
     </div>
@@ -49,6 +49,14 @@
         }
         else if (!_direct)
         {
+            @* FUN-018 (2026-11-27): what the file holds and what it leaves out, with reasons, before anything is chosen. *@
+            var occurrences = PlanOccurrences.Of(Draft).Count; var excludedCases = Draft.Cases.Count(c => c.Review == TestCaseReviewState.Excluded);
+            <ul class="gsx-muted msb-small atp-file-summary" data-testid="atp-file-summary">
+                <li data-testid="atp-sum-occurrences">Testplanen har @occurrences scenario@(occurrences == 1 ? "" : "er").</li>
+                <li data-testid="atp-sum-cases">@exportable testtilfelle@(exportable == 1 ? "" : "r") kan eksporteres (velg hvilke nedenfor; bare godkjente anbefales).</li>
+                @if (plannedOnly > 0) { <li data-testid="atp-sum-planned-only">@plannedOnly scenario@(plannedOnly == 1 ? "" : "er") uten testtilfelle utelates: Azure DevOps tar imot testtilfeller, ikke scenarioer.</li> }
+                @if (excludedCases > 0) { <li data-testid="atp-sum-excluded">@excludedCases utelatt@(excludedCases == 1 ? "" : "e") testtilfelle@(excludedCases == 1 ? "" : "r") eksporteres ikke (utelatt i Planlegg og klargjør).</li> }
+            </ul>
             <p class="gsx-muted" data-testid="atp-file-intro">Last ned testtilfellene som Excel/CSV og importer dem i Azure DevOps. Testplan og testgrupper må eventuelt opprettes eller velges i Azure DevOps.
                 <span data-testid="atp-file-safe">Ingenting blir endret i Azure DevOps.</span>
                 <span class="gar-help" data-testid="atp-file-reminder">Anbefaling: la testleder se over testtilfellene før eksport. BirkNext har ingen egen godkjenning av testplaner; hvert testtilfelle godkjennes for seg.</span></p>

@@ -539,8 +539,9 @@ public static partial class PlanPreparePresentation
 public static partial class PlanPreparePresentation
 {
     /// <summary>Distinct scenarios the plan's cases belong to (hand-written cases without a scenario are not counted).</summary>
-    public static int ScenarioCount(TestPlanDraft plan) =>
-        plan.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).Select(c => c.ParentScenario).OfType<string>().Distinct(StringComparer.Ordinal).Count();
+    /// <summary>The plan's scenario occurrences (FUN-015, 2026-11-27): the same shared definition as Testplaner and Testgjennomføring, so a
+    /// scenario planned without a test case counts and a scenario with two cases counts once.</summary>
+    public static int ScenarioCount(TestPlanDraft plan) => PlanOccurrences.Of(plan).Count;
 
     /// <summary>Why the expected result is what it is: the source that states it, and whether a person confirmed it.</summary>
     public static string ExpectedBasisText(TestCaseDraft c)

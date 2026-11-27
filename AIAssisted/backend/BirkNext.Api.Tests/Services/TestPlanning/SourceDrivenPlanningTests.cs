@@ -728,6 +728,100 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task FUN015_FUN011_a_case_prepared_for_a_planned_scenario_keeps_its_suite_and_every_plan_surface_counts_scenario_occurrences()
+    {
+        // Manual E2E 2026-11-27: AC4 planned in «Komponent», a case prepared later appeared in a new «Module …» suite and execution showed AC4
+        // there (FUN-011); Testplaner and Planlegg said «1 scenario» while execution said 2 (AC4 with a case + TEST-E-01 scenario-only, FUN-015).
+        await using var db = Context();
+        var x = Services(db);
+        var ac4 = InSpec("ac4", SkoleSpec, "US1", "f4") with { Type = ScenarioCandidateType.BusinessFunctional, Area = "Module AutorisasjonService" };
+        var e2e = InSpec("teste01", SkoleSpec, "US2", "f5") with { Type = ScenarioCandidateType.BusinessE2E, Area = "Hendelser" };
+        _discoveries.Store(Selected("d-fun015", DateTimeOffset.UtcNow, SkoleSpec, ac4, e2e));
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-fun015", CandidateIds = [],
+            PlanName = "E2E 2026-11-27", CreationRequestId = "fun015", AllowEmpty = true, TemplateSuites = [new TestSuiteDraft("suite:t:komponent", "Komponent", "template", null),
+                new TestSuiteDraft("suite:t:e2e", "Ende til ende", "template", null)] }, "anna", default);
+        plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-fun015", CandidateIds = ["ac4"], DraftId = plan.Id,
+            BaseRevision = plan.Revision, ScenarioOnly = true, SuiteId = "suite:t:komponent" }, "anna", default);
+        await x.Plans.RecordResultAsync(plan.Id, new RecordScenarioResultRequest("scenario:ac4", ScenarioExecutionStatus.Blocked, "Mangler tilgang", null, null), "tester", default);
+        var suitesBefore = plan.Suites.Select(s => s.Id).ToList();
+
+        // Prepare the case for the planned AC4.
+        plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-fun015", CandidateIds = ["ac4"], DraftId = plan.Id,
+            BaseRevision = plan.Revision }, "anna", default);
+        plan.Cases.Single(c => c.ParentScenario == "ac4").SuiteId.Should().Be("suite:t:komponent", "a case never moves its scenario's membership (FUN-011)");
+        plan.Suites.Select(s => s.Id).Should().Equal(suitesBefore, "no «Module …» suite appears for a scenario already placed");
+        plan.PlannedScenarios!.Single(p => p.ScenarioId == "ac4").SuiteId.Should().Be("suite:t:komponent");
+
+        // TEST-E-01 scenario-only in «Ende til ende».
+        plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-fun015", CandidateIds = ["teste01"], DraftId = plan.Id,
+            BaseRevision = plan.Revision, ScenarioOnly = true, SuiteId = "suite:t:e2e" }, "anna", default);
+
+        var view = await x.Plans.ExecutionAsync(plan.Id, default);
+        view.Occurrences.Should().HaveCount(2);
+        view.Occurrences.Single(o => o.Key == "scenario:ac4").Should().Match<ScenarioOccurrence>(o => o.SuiteId == "suite:t:komponent" && o.Status == ScenarioExecutionStatus.Blocked);
+        view.Occurrences.Single(o => o.Key == "scenario:teste01").SuiteId.Should().Be("suite:t:e2e");
+        PlanOccurrences.Of(plan).Should().HaveCount(2, "the shared definition every surface uses");
+        var summary = (await x.Plans.ProjectWorkspaceAsync("import:m", null, true, default)).Drafts.Single(d => d.Id == plan.Id);
+        summary.Scenarios.Should().Be(2, "Testplaner counts the scenario-only occurrence too (FUN-015)");
+        summary.Cases.Should().Be(1, "a case is not a scenario occurrence");
+
+        // A copy has the same occurrences, results reset.
+        var copy = await x.Plans.DuplicateAsync(plan.Id, new DuplicatePlanRequest("Kopi", null, "fun015-copy"), "anna", default);
+        PlanOccurrences.Of(copy).Should().HaveCount(2);
+        (await x.Plans.ExecutionAsync(copy.Id, default)).Occurrences.Should().OnlyContain(o => o.Status == ScenarioExecutionStatus.NotRun);
+    }
+
+    [Fact]
+    public async Task ASP_a_scenario_beyond_the_window_a_page_received_can_be_planned_by_its_id()
+    {
+        // «Legg til scenarioer» (2026-11-27, P1): the page holds the first 2,000; the plan accepts a scenario beyond them (the server resolves the id
+        // against the complete stored result), once, and never a duplicate.
+        await using var db = Context();
+        var x = Services(db);
+        var many = Enumerable.Range(1, TestScenarioDiscoveryEngine.MaxCandidates + 5).Select(i => InSpec($"s{i}", SkoleSpec, "US1", $"f{i}") with { Type = ScenarioCandidateType.BusinessFunctional }).ToArray();
+        _discoveries.Store(Selected("d-asp", DateTimeOffset.UtcNow, SkoleSpec, many));
+        var beyond = $"s{TestScenarioDiscoveryEngine.MaxCandidates + 4}";
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-asp", CandidateIds = ["s1", beyond],
+            PlanName = "Utover vinduet", ScenarioOnly = true, CreationRequestId = "asp-1" }, "anna", default);
+        plan.PlannedScenarios!.Select(p => p.ScenarioId).Should().BeEquivalentTo(["s1", beyond]);
+        var again = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-asp", CandidateIds = [beyond], DraftId = plan.Id,
+            BaseRevision = plan.Revision, ScenarioOnly = true }, "anna", default);
+        again.PlannedScenarios.Should().HaveCount(2, "no duplicate membership");
+    }
+
+    [Fact]
+    public async Task FUN017_scenarios_not_in_the_plan_exclude_scenario_only_items_and_are_not_called_new_in_the_source()
+    {
+        // Manual E2E 2026-11-27: «549 nye scenarioer» with 550 proposals and 1 case — the count is «not in this plan yet», and a scenario planned
+        // without a case was counted as well.
+        await using var db = Context();
+        var x = Services(db);
+        _discoveries.Store(Selected("d-017", DateTimeOffset.UtcNow, SkoleSpec, InSpec("a", SkoleSpec, "US1", "f1"), InSpec("b", SkoleSpec, "US1", "f2"), InSpec("c", SkoleSpec, "US1", "f3")));
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-017", CandidateIds = ["a"], PlanName = "P", CreationRequestId = "f017" }, "t", default);
+        plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-017", CandidateIds = ["b"], DraftId = plan.Id,
+            BaseRevision = plan.Revision, ScenarioOnly = true }, "t", default);
+        var impact = await x.Plans.ImpactAsync(plan.Id, default);
+        impact.NewScenarios.Select(n => n.CaseId).Should().Equal(["c"], "a has a case and b is planned without one; only c is not in the plan");
+        impact.NewScenarios.Single().Summary.Should().StartWith("Ikke i testplanen");
+        (await x.Plans.ProjectWorkspaceAsync("import:m", null, true, default)).PlanStatus![plan.Id].NewScenarios.Should().Be(1, "the status count uses the same rule");
+    }
+
+    [Fact]
+    public void FUN011_an_existing_plan_whose_case_sits_in_another_suite_shows_the_scenario_in_its_planned_suite()
+    {
+        // Plans written before the fix: the planned item says «Komponent», the case says «Module …». Membership is the planned item's.
+        var plan = new TestPlanDraft
+        {
+            Suites = [new TestSuiteDraft("suite:k", "Komponent", "template", null), new TestSuiteDraft("suite:m", "Module AutorisasjonService", "area", null)],
+            PlannedScenarios = [new PlannedScenario { ScenarioId = "ac4", Title = "AC4", SuiteId = "suite:k" }],
+            Cases = [new TestCaseDraft { Source = new ScenarioReference { ScenarioId = "ac4", Kind = ScenarioSourceKind.ProjectDiscovery }, SuiteId = "suite:m" },
+                new TestCaseDraft { Source = new ScenarioReference { ScenarioId = "ac4", Kind = ScenarioSourceKind.ProjectDiscovery }, SuiteId = "suite:m", Review = TestCaseReviewState.Superseded }],
+        };
+        var occurrences = PlanOccurrences.Of(plan);
+        occurrences.Should().ContainSingle().Which.SuiteId.Should().Be("suite:k");
+    }
+
+    [Fact]
     public async Task A_scenario_moves_between_suites_with_its_cases_and_results_and_only_a_scenario_only_item_without_results_is_removed()
     {
         // Testplaner (2026-11-26): move and remove a scenario between suites.

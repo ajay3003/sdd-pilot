@@ -201,9 +201,10 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http, LastDiscovery
 
     private static string FilterQuery(ScenarioSearchFilter? f)
     {
-        if (f is null || f.IsEmpty) return "";
+        if (f is null || f.IsEmpty && !f.ClassifiableOnly) return "";
         static string P(string name, string? value) => value is null ? "" : $"&{name}={Uri.EscapeDataString(value)}";
-        return P("area", f.Area) + P("type", f.Type) + P("story", f.Story) + P("requirement", f.Requirement) + P("priority", f.Priority) + P("level", f.TestLevel);
+        return P("area", f.Area) + P("type", f.Type) + P("story", f.Story) + P("requirement", f.Requirement) + P("priority", f.Priority) + P("level", f.TestLevel)
+            + P("module", f.Module) + (f.ClassifiableOnly ? "&plannable=true" : "");
     }
 
     public Task<(List<DiscoveredScenario>?, string?)> DiscoveryCandidatesAsync(string projectKey, string? scope, IReadOnlyCollection<string> ids, CancellationToken ct = default) =>

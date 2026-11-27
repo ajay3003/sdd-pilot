@@ -33,7 +33,12 @@
         }
         @if (_impact.NewScenarios.Count > 0)
         {
-            <p class="mt-muted" data-testid="mtp-changes-new">@_impact.NewScenarios.Count nye scenario@(_impact.NewScenarios.Count == 1 ? "" : "er") i gjeldende kilde. <a href="@ManualTestingPresentation.DiscoverRoute">Velg dem i Finn og forstå</a>.</p>
+            @* FUN-017 (2026-11-27): this count is «in the current source but not in this plan», not «new since the previous source version». *@
+            <p class="mt-muted" data-testid="mtp-changes-new">@_impact.NewScenarios.Count scenario@(_impact.NewScenarios.Count == 1 ? "" : "er") i gjeldende kilde er ikke i denne testplanen ennå
+                (verken som scenario eller med testtilfelle). <a href="@ManualTestingPresentation.DiscoverRoute">Velg dem i Finn og forstå</a>.</p>
+            <p class="mt-muted msb-small" data-testid="mtp-changes-basis">@(_impact.PlanBasis?.Fingerprint is { } was && was == _impact.CurrentBasis?.Fingerprint
+                ? "Kilden er ikke endret siden testplanen ble laget, så de er ikke nye i kilden."
+                : "Kilden er endret siden testplanen ble laget; noen av dem kan være nye i kilden.")</p>
         }
         @if (CanWrite && !ReadOnly && (_impact.Cases.Count > 0 || _impact.PlanBasis?.Fingerprint != _impact.CurrentBasis?.Fingerprint))
         {

@@ -4,6 +4,7 @@ using BirkNext.Web.Components.ManualTesting;
 using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
+using Microsoft.AspNetCore.Components.Web;
 using Moq;
 
 namespace BirkNext.Web.Tests.Components;
@@ -100,5 +101,128 @@ public sealed class AddScenariosToPlanTests : BunitContext
         cut.Find("[data-testid=asp-row][data-id=e1]").GetAttribute("data-in-plan").Should().Be("true", "the list follows the saved plan");
         _api.Verify(x => x.AddManualCaseAsync(It.IsAny<Guid>(), It.IsAny<AddManualTestCaseRequest>(), It.IsAny<CancellationToken>()), Times.Never, "no case is created");
         _api.Verify(x => x.RecordResultAsync(It.IsAny<Guid>(), It.IsAny<RecordScenarioResultRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ── BUG-001 (manual E2E 2026-11-27): the dialog closed on a click beside it and lost the tester's choices ──
+
+    private (IRenderedComponent<AddScenariosToPlan> Cut, List<int> Closed) OpenTracked()
+    {
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        var closed = new List<int>();
+        var cut = Render<AddScenariosToPlan>(p => p.Add(x => x.Api, _api.Object).Add(x => x.ProjectKey, "m2lb").Add(x => x.PlanId, PlanId).Add(x => x.Discovery, Discovery)
+            .Add(x => x.OnClose, () => closed.Add(1)).Add(x => x.ReturnFocusId, "mtp-add-scenarios"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=asp-list]"));
+        return (cut, closed);
+    }
+
+    [Fact]
+    public void BUG001_a_click_on_the_backdrop_never_closes_the_dialog_or_loses_the_choice()
+    {
+        var (cut, closed) = OpenTracked();
+        cut.Find("[data-testid=asp-search]").Input("Scenario");
+        cut.Find("[data-testid=asp-row][data-id=a1] input").Change(true);
+        var backdrop = cut.Find("[data-testid=asp]");
+        if (backdrop.HasAttribute("blazor:onclick")) backdrop.Click(); // before the fix: the backdrop closed the dialog
+        else FluentActions.Invoking(() => backdrop.Click()).Should().Throw<MissingEventHandlerException>("the backdrop has no close action at all");
+        closed.Should().BeEmpty("a click beside the dialog is not a decision to close");
+        cut.Find("[data-testid=asp-row][data-id=a1] input").HasAttribute("checked").Should().BeTrue();
+        cut.Find("[data-testid=asp-search]").GetAttribute("value").Should().Be("Scenario");
+    }
+
+    [Fact]
+    public void BUG001_Escape_and_Lukk_ask_first_with_unsaved_choices_and_close_at_once_without()
+    {
+        var (cut, closed) = OpenTracked();
+        cut.Find("[data-testid=asp-dialog]").KeyDown(new KeyboardEventArgs { Key = "Escape" });
+        closed.Should().ContainSingle("nothing was chosen: Escape closes at once");
+        JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "mtp-add-scenarios", "focus returns to the button that opened it");
+
+        (cut, closed) = OpenTracked();
+        cut.Find("[data-testid=asp-row][data-id=a1] input").Change(true);
+        cut.Find("[data-testid=asp-dialog]").KeyDown(new KeyboardEventArgs { Key = "Escape" });
+        closed.Should().BeEmpty();
+        cut.Find("[data-testid=asp-confirm]").TextContent.Should().Contain("1 valgt scenario er ikke lagt til");
+        cut.Find("[data-testid=asp-dialog]").KeyDown(new KeyboardEventArgs { Key = "Escape" });
+        cut.FindAll("[data-testid=asp-confirm]").Should().BeEmpty("Escape on the question keeps the dialog and the choice");
+        closed.Should().BeEmpty();
+
+        cut.Find("[data-testid=asp-close]").Click();
+        cut.Find("[data-testid=asp-confirm-keep]").Click();
+        closed.Should().BeEmpty();
+        cut.Find("[data-testid=asp-row][data-id=a1] input").HasAttribute("checked").Should().BeTrue();
+
+        cut.Find("[data-testid=asp-close]").Click();
+        cut.Find("[data-testid=asp-confirm-discard]").Click();
+        closed.Should().ContainSingle("closing without adding is an explicit choice");
+    }
+
+    // -- «Legg til scenarioer» beyond the loaded window (2026-11-27, P1). Before: only Discovery.Candidates (the first 2,000) could be found. --
+
+    private readonly List<(string Query, int Skip, ScenarioSearchFilter? Filter, string? Scope)> _searches = [];
+
+    private IRenderedComponent<AddScenariosToPlan> OpenWindowed(Func<string, int, ScenarioSearchFilter?, ScenarioSearchPage> server)
+    {
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        _api.Setup(x => x.SearchDiscoveryAsync("m2lb", It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<ScenarioSearchFilter?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, string? scope, string q, int skip, int _, ScenarioSearchFilter? f, CancellationToken _) => { _searches.Add((q, skip, f, scope)); return (server(q, skip, f), (string?)null); });
+        var windowed = Discovery with { NotKept = 1_500, SelectionScope = "scope:Skole|spec", NotKeptFacets = new([], [], [], ["P2"], [], false, false) { Modules = ["Arkiv"] } };
+        var cut = Render<AddScenariosToPlan>(p => p.Add(x => x.Api, _api.Object).Add(x => x.ProjectKey, "m2lb").Add(x => x.PlanId, PlanId).Add(x => x.Discovery, windowed));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=asp-list]"));
+        return cut;
+    }
+
+    private static DiscoveredScenario Far(string id, string title) => new()
+    {
+        CandidateId = id, SourceIdentity = "tss-" + id, CapabilityId = "test-specification", CanonicalKey = $"testspec:Arkiv/docs/T.md#{id}", Title = title,
+        Type = ScenarioCandidateType.BusinessE2E, Area = "Arkiv",
+    };
+
+    [Fact]
+    public void ASP_a_scenario_beyond_the_first_window_is_found_on_the_server_chosen_and_added_with_the_loaded_choice()
+    {
+        var cut = OpenWindowed((q, skip, _) => q.Contains("TEST-E-99") ? new ScenarioSearchPage("d1", q, 1, skip, [Far("far99", "TEST-E-99: Arkivering")]) : new ScenarioSearchPage("d1", q, 0, skip, []));
+        cut.Find("[data-testid=asp-beyond-hint]").TextContent.Should().Contain("1500 scenarioer er ikke lastet inn");
+        _searches.Should().BeEmpty("nothing is fetched without a search or filter");
+
+        cut.Find("[data-testid=asp-row][data-id=a1] input").Change(true);
+        cut.Find("[data-testid=asp-search]").Input("TEST-E-99");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=asp-beyond-row]").Should().ContainSingle(), TimeSpan.FromSeconds(5));
+        _searches.Should().ContainSingle().Which.Should().Match<(string Query, int Skip, ScenarioSearchFilter? Filter, string? Scope)>(s =>
+            s.Query == "TEST-E-99" && s.Skip == 0 && s.Filter!.ClassifiableOnly && s.Scope == "scope:Skole|spec");
+        cut.Find("[data-testid=asp-beyond-row][data-id=far99] input").Change(true);
+
+        // Another search: the earlier choices stay chosen.
+        cut.Find("[data-testid=asp-search]").Input("noe annet");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=asp-beyond-none]"), TimeSpan.FromSeconds(5));
+        cut.Find("[data-testid=asp-count]").TextContent.Should().Contain("2 valgt");
+
+        cut.Find("[data-testid=asp-add]").Click();
+        cut.WaitForAssertion(() => _sent.Should().ContainSingle());
+        _sent[0].CandidateIds.Should().BeEquivalentTo(["a1", "far99"]);
+        _sent[0].DiscoveryId.Should().Be("d1");
+    }
+
+    [Fact]
+    public void ASP_a_filter_alone_searches_the_unloaded_scenarios_with_the_dialogs_module_and_never_repeats_a_loaded_row()
+    {
+        var cut = OpenWindowed((q, skip, _) => new ScenarioSearchPage("d1", q, 2, skip, [Discovery.Candidates[0], Far("far1", "TEST-E-01: Arkiv")]));
+        cut.FindAll("[data-testid=asp-module] option").Select(o => o.TextContent).Should().Contain("Arkiv", "a module of the unloaded scenarios is offered");
+        cut.FindAll("[data-testid=asp-priority] option").Select(o => o.TextContent).Should().Contain("P2");
+        cut.Find("[data-testid=asp-module]").Change("Arkiv");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=asp-beyond-row]").Should().ContainSingle(), TimeSpan.FromSeconds(5));
+        cut.Find("[data-testid=asp-beyond-row]").GetAttribute("data-id").Should().Be("far1", "a row already in the loaded list is not shown twice");
+        _searches.Single().Filter!.Module.Should().Be("Arkiv");
+        _searches.Single().Query.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ASP_a_scenario_already_in_the_plan_is_marked_and_cannot_be_chosen_again_from_the_server_results()
+    {
+        _plan = _plan with { PlannedScenarios = [.. _plan.PlannedScenarios!, new PlannedScenario { ScenarioId = "far7", SourceIdentity = "tss-far7", SuiteId = "s-e2e" }] };
+        var cut = OpenWindowed((q, skip, _) => new ScenarioSearchPage("d1", q, 1, skip, [Far("far7", "TEST-E-07: Arkiv")]));
+        cut.Find("[data-testid=asp-search]").Input("TEST-E-07");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=asp-beyond-row][data-id=far7]"), TimeSpan.FromSeconds(5));
+        cut.Find("[data-testid=asp-beyond-row][data-id=far7]").GetAttribute("data-in-plan").Should().Be("true");
+        cut.Find("[data-testid=asp-beyond-row][data-id=far7] input").HasAttribute("disabled").Should().BeTrue();
     }
 }

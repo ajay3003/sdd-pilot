@@ -348,7 +348,11 @@ public static class DiscoveryScope
 
 /// <summary>Filter values of a set of candidates (see <see cref="ScenarioDiscoveryResult.NotKeptFacets"/>).</summary>
 public sealed record ScenarioFacets(List<string> Areas, List<string> Types, List<string> RequirementIds, List<string> Priorities,
-    List<BirkNext.TestCoverage.CoverageUserStory> Stories, bool AnyWithoutStory, bool AnyWithoutPriority);
+    List<BirkNext.TestCoverage.CoverageUserStory> Stories, bool AnyWithoutStory, bool AnyWithoutPriority)
+{
+    /// <summary>«Legg til scenarioer»'s modules of these candidates (<see cref="ScenarioSearchFilter.ModuleOf"/>).</summary>
+    public List<string> Modules { get; init; } = [];
+}
 
 /// <summary>
 /// One page of a server-side scenario search (2026-11-26): the matches among the candidates the discovery holds but did not send (beyond the

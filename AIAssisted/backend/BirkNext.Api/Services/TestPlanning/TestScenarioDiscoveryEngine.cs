@@ -73,7 +73,7 @@ public static class TestScenarioDiscoveryEngine
         filter ??= new();
         if (words.Length == 0 && filter.IsEmpty) return new(result.DiscoveryId, query ?? "", 0, skip, []);
         static string Text(DiscoveredScenario c) => string.Join(' ', c.Title, c.Purpose, c.ExpectedBehaviour, c.Area, string.Join(' ', c.RequirementIds),
-            c.Story?.StoryId, c.Story?.Title);
+            c.Story?.StoryId, c.Story?.Title, c.CanonicalKey);
         var matches = WindowOrder(result).Skip(Math.Max(0, fromIndex))
             .Where(c => filter.Matches(c) && Text(c) is var t && words.All(w => t.Contains(w, StringComparison.OrdinalIgnoreCase))).ToList();
         return new(result.DiscoveryId, query ?? "", matches.Count, skip, [.. matches.Skip(skip).Take(take)]);
@@ -89,7 +89,10 @@ public static class TestScenarioDiscoveryEngine
             [.. list.SelectMany(c => c.RequirementIds).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)],
             [.. list.Select(c => c.Story?.Priority).OfType<string>().Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)],
             [.. list.Select(c => c.Story).OfType<BirkNext.TestCoverage.CoverageUserStory>().DistinctBy(st => st.Key).OrderBy(st => st.Ordinal)],
-            list.Any(c => c.Story is null), list.Any(c => string.IsNullOrEmpty(c.Story?.Priority)));
+            list.Any(c => c.Story is null), list.Any(c => string.IsNullOrEmpty(c.Story?.Priority)))
+        {
+            Modules = [.. list.Select(ScenarioSearchFilter.ModuleOf).OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.CurrentCultureIgnoreCase)],
+        };
     }
 
     /// <summary>The stored candidates with these ids, in the window order (2026-11-27): a page that holds the window and is asked for a scenario

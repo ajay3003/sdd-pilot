@@ -242,7 +242,7 @@ public sealed class AdoTransferTests : BunitContext
         Setup();
         var cut = Panel(canWrite: false);
         cut.Find("[data-testid=atp-method-direct]").Click();
-        cut.Find("[data-testid=adt-no-access]").TextContent.Should().Contain("Bruk «Eksporter til fil»");
+        cut.Find("[data-testid=adt-no-access]").TextContent.Should().Contain("Bruk «Eksporter testtilfeller til fil»");
         cut.FindAll("[data-testid=adt-declare]").Should().BeEmpty();
     }
 
@@ -362,6 +362,22 @@ public sealed class AdoTransferTests : BunitContext
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=adp-project-option]").Should().HaveCount(2));
         cut.Find("[data-testid=adp-connection-state]").TextContent.Should().Be("Tilkoblet");
         cut.Find("[data-testid=adp-check]").TextContent.Should().Be("Kontroller tilkobling");
+    }
+
+    [Fact]
+    public void FUN018_the_file_export_names_itself_and_says_what_it_holds_and_leaves_out()
+    {
+        // Manual E2E 2026-11-27: 2 scenarios in the plan (AC4 with an approved case, TEST-E-01 without one); the file held 1 case and the UI did
+        // not say clearly that TEST-E-01 was left out, or why.
+        var draft = Draft();
+        var one = draft.Cases.First();
+        draft = draft with { Cases = [one], PlannedScenarios = [new PlannedScenario { ScenarioId = "teste01", Title = "TEST-E-01", SuiteId = one.SuiteId }] };
+        var cut = Render<AdoTransferPanel>(p => p.Add(x => x.Draft, draft).Add(x => x.ProjectKey, "m2lb").Add(x => x.CanWrite, true));
+        cut.Find("[data-testid=atp-method-file]").TextContent.Should().Be("Eksporter testtilfeller til fil");
+        cut.Find("[data-testid=atp-sum-occurrences]").TextContent.Should().Be("Testplanen har 2 scenarioer.");
+        cut.Find("[data-testid=atp-sum-cases]").TextContent.Should().StartWith("1 testtilfelle kan eksporteres");
+        cut.Find("[data-testid=atp-sum-planned-only]").TextContent.Should().Contain("1 scenario uten testtilfelle utelates").And.Contain("ikke scenarioer");
+        cut.FindAll("[data-testid=atp-sum-excluded]").Should().BeEmpty();
     }
 
     [Fact]

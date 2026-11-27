@@ -410,10 +410,13 @@ public sealed partial class TestPlanSuggestionService
                 Summary = kinds.SequenceEqual([CaseImpactKind.WordingOnly]) ? "Kun ordlyd er endret; innholdet er det samme." : "Må gjennomgås: " + string.Join(", ", kinds.Select(ImpactLabel)) + ".",
             });
         }
-        var planned = plan.Cases.Select(c => c.Source.ScenarioId).ToHashSet(StringComparer.Ordinal);
-        var fresh = latest.Candidates.Where(c => !matched.Contains(c.CandidateId) && !planned.Contains(c.CandidateId)
-                && plan.Cases.All(p => p.Generated.SourceIdentity is null || p.Generated.SourceIdentity != c.SourceIdentity))
-            .Select(c => new CaseImpact { CaseId = c.CandidateId, Title = c.Title, Kinds = [CaseImpactKind.NewScenario], Summary = $"Nytt scenario fra {c.SourceCategory}." }).ToList();
+        // FUN-017 (2026-11-27): «not in this plan yet» — every scenario of the current source the plan holds neither by a case NOR as a scenario-only item
+        // (before, a scenario planned without a case was listed here too). This is NOT «new since the previous source version» (see the panel text).
+        var planned = plan.Cases.Select(c => c.Source.ScenarioId).Concat((plan.PlannedScenarios ?? []).Select(p => p.ScenarioId)).ToHashSet(StringComparer.Ordinal);
+        var plannedIdentities = plan.Cases.Select(p => p.Generated.SourceIdentity).Concat((plan.PlannedScenarios ?? []).Select(p => p.SourceIdentity))
+            .OfType<string>().Where(s => s.Length > 0).ToHashSet(StringComparer.Ordinal);
+        var fresh = latest.Candidates.Where(c => !matched.Contains(c.CandidateId) && !planned.Contains(c.CandidateId) && !plannedIdentities.Contains(c.SourceIdentity))
+            .Select(c => new CaseImpact { CaseId = c.CandidateId, Title = c.Title, Kinds = [CaseImpactKind.NewScenario], Summary = $"Ikke i testplanen: scenario fra {c.SourceCategory}." }).ToList();
         var removed = impacts.Count(i => i.Kinds.Contains(CaseImpactKind.ScenarioRemoved));
         var unavailable = impacts.Count(i => i.Kinds.Contains(CaseImpactKind.SourceUnavailable));
         var substantive = impacts.Count(i => !i.Kinds.SequenceEqual([CaseImpactKind.WordingOnly]) && !i.Kinds.Contains(CaseImpactKind.ScenarioRemoved) && !i.Kinds.Contains(CaseImpactKind.SourceUnavailable));
@@ -467,10 +470,12 @@ public sealed partial class TestPlanSuggestionService
         var notCompared = active.Count(c => c.SourceState == CaseSourceState.NotCompared);
         var conflicts = active.Count(c => c.HasUnresolvedConflict);
         var index = new CandidateIndex(latest.Candidates);
-        var covered = plan.Cases.Select(c => index.Find(c)?.CandidateId).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        // FUN-017: a scenario-only item covers its scenario too (the same rule as the impact view).
+        var covered = plan.Cases.Select(c => index.Find(c)?.CandidateId).OfType<string>().Concat((plan.PlannedScenarios ?? []).Select(p => p.ScenarioId)).ToHashSet(StringComparer.Ordinal);
+        var coveredIdentities = (plan.PlannedScenarios ?? []).Select(p => p.SourceIdentity).OfType<string>().Where(s => s.Length > 0).ToHashSet(StringComparer.Ordinal);
         // New scenarios: only from the plan's own specifications (a scenario of the specification selected now is not new for this plan).
         var ownSpecs = plan.Cases.Where(c => c.Generated.Capability == D.Specification).Select(SpecificationPathOf).OfType<string>().ToList();
-        var fresh = latest.Candidates.Count(c => !covered.Contains(c.CandidateId) && (c.CapabilityId != D.Specification || ownSpecs.Count == 0
+        var fresh = latest.Candidates.Count(c => !covered.Contains(c.CandidateId) && !coveredIdentities.Contains(c.SourceIdentity) && (c.CapabilityId != D.Specification || ownSpecs.Count == 0
             || SpecificationPathOf(c) is { } p && ownSpecs.Any(o => BirkNext.Specifications.SpecificationCatalogRules.SamePath(o, p))));
         // Another source version = other source content; the specification selected in Finn og forstå is part of the basis fingerprint, not of it.
         var basisChanged = plan.DiscoveryBasis is not null && latest.Basis is not null

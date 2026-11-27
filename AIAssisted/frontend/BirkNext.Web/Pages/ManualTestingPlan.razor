@@ -229,10 +229,16 @@
                         }
                         <div class="mtp-master-tools">
                             <input type="search" class="mtp-search" placeholder="Søk i scenarioer, krav …" aria-label="Søk" value="@_query" @oninput="e => _query = e.Value?.ToString() ?? string.Empty" data-testid="mtp-search" />
-                            <label class="mtp-toggle"><input type="checkbox" checked="@_showTechnical" @onchange="e => _showTechnical = e.Value is true" data-testid="mtp-technical" /> Vis teknisk innhold</label>
+                            <label class="mtp-toggle"><input type="checkbox" checked="@_showTechnical" @onchange="e => SetTechnicalAsync(e.Value is true)" data-testid="mtp-technical" /> Vis teknisk innhold</label>
                             @if (CanWrite && !ReadOnlyPlan)
                             {
                                 <button type="button" class="msb-link" disabled="@_busy" @onclick="() => OpenNewCaseAsync(null, null)" data-testid="mtp-new-case">+ Nytt testtilfelle</button>
+                            }
+                            @if (!_showTechnical && Selected is { } openCase && P.TechnicalReason(openCase) is not null)
+                            {
+                                @* BUG-003 (2026-11-27): the open case is never hidden without a word — it is technical, the list hides technical content. *@
+                                <p class="mt-alert msb-small" role="status" data-testid="mtp-open-hidden">Testtilfellet som er åpent, er teknisk og vises ikke i listen.
+                                    <button type="button" class="msb-link" @onclick="() => SetTechnicalAsync(true)" data-testid="mtp-open-hidden-show">Vis teknisk innhold</button></p>
                             }
                             @if (!_showTechnical && hidden > 0)
                             {
@@ -370,7 +376,7 @@
                                         <p><strong>Ingen testtilfeller i denne testplanen.</strong> Testtilfeller er valgfrie: de @plannedOnly planlagte scenarioene kan klargjøres og gjennomføres uten. Velg «Klargjør AC» eller «Forbered testtilfelle» ved et scenario.</p>
                                     }
                                     <span class="mtp-empty-actions">
-                                        @if (CanWrite && !ReadOnlyPlan) { <button type="button" class="btn btn-primary btn-sm" @onclick="() => _addScenarios = true" data-testid="mtp-add-scenarios">Legg til scenarioer</button> }
+                                        @if (CanWrite && !ReadOnlyPlan) { <button type="button" id="mtp-add-scenarios" class="btn btn-primary btn-sm" @onclick="() => _addScenarios = true" data-testid="mtp-add-scenarios">Legg til scenarioer</button> }
                                         <a class="btn btn-secondary btn-sm" href="@M.DiscoverRoute" data-testid="mtp-find-scenarios">Finn scenarioer</a>
                                         <a class="msb-link" href="@M.PlansRoute" data-testid="mtp-go-plans">Gå til Testplaner</a>
                                     </span>
@@ -944,11 +950,24 @@
                                     @if (current.Review != TestCaseReviewState.Accepted)
                                     {
                                         <button type="button" class="btn @(Dirty ? "btn-secondary" : "btn-primary")" disabled="@(Dirty || _busy || problems.Count > 0)" title="@(Dirty ? "Lagre først." : string.Join(" ", problems))"
-                                                @onclick="() => ReviewAsync(TestCaseReviewState.Accepted)" data-testid="mtp-approve">Godkjenn</button>
+                                                @onclick="ApproveAsync" data-testid="mtp-approve">Godkjenn</button>
                                     }
                                     </span>
                                     <button type="button" class="msb-link" disabled="@(Dirty || _busy)" @onclick="() => _excludeAsk = true" data-testid="mtp-exclude">Utelat</button>
                                 </div>
+                                @if (_approveAsk && ApprovalWarnings() is { Count: > 0 } approvalWarnings)
+                                {
+                                    @* BUG-004 (2026-11-27): the policy is unchanged — approval needs every step's action and expected result (the export rule), not
+                                       concrete steps and not scenario readiness. A step warning is now an explicit, recorded decision instead of a silent one. *@
+                                    <div class="mtp-confirm" role="alertdialog" aria-labelledby="mtp-approve-ask-text" data-testid="mtp-approve-confirm">
+                                        <p id="mtp-approve-ask-text"><strong>Godkjenne med @approvalWarnings.Count advarsel@(approvalWarnings.Count == 1 ? "" : "er") om teststegene?</strong></p>
+                                        <ul class="msb-small">@foreach (var w in approvalWarnings) { <li data-testid="mtp-approve-warning">@w</li> }</ul>
+                                        <p class="mt-muted msb-small">Godkjent betyr at testtilfellet kan eksporteres. Det gjør ikke scenarioet klart for testing: klargjøringen (Klargjør AC) vurderes for seg.
+                                            Valget og advarslene lagres i testtilfellets historikk.</p>
+                                        <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="ApproveAnywayAsync" data-testid="mtp-approve-anyway">Godkjenn likevel</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _approveAsk = false" data-testid="mtp-approve-cancel">Avbryt</button>
+                                    </div>
+                                }
                                 @if (_excludeAsk)
                                 {
                                     <div class="mtp-confirm" role="group" aria-label="Utelat testtilfellet" data-testid="mtp-exclude-confirm">
@@ -1108,8 +1127,8 @@
 
 @if (_addScenarios && _plan is { } addPlan && ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is ITestPlanSuggestionsApiService addApi && _ws?.ProjectKey is { } addKey)
 {
-    <BirkNext.Web.Components.ManualTesting.AddScenariosToPlan Api="addApi" ProjectKey="@addKey" PlanId="addPlan.Id" Discovery="_ws.Discovery"
-        OnClose="() => _addScenarios = false" OnAdded="ScenariosAddedAsync" />
+    <BirkNext.Web.Components.ManualTesting.AddScenariosToPlan Api="addApi" ProjectKey="@addKey" PlanId="addPlan.Id" Discovery="_ws.Discovery" DiscoveryScope="@_ws.DiscoveryScope"
+        OnClose="() => _addScenarios = false" OnAdded="ScenariosAddedAsync" ReturnFocusId="mtp-add-scenarios" />
 }
 @code {
     [SupplyParameterFromQuery(Name = "draft")] public Guid? DraftParameter { get; set; }
@@ -1170,6 +1189,13 @@
     private bool ReadOnlyPlan => _plan is not null && _archived.Any(a => a.Id == _plan.Id);
     private IReadOnlyList<TestDataOption> TestDataOptions => _ws?.Plans?.TestData ?? [];
     private TestCaseDraft? Selected => _plan?.Cases.FirstOrDefault(c => P.IdOf(c) == _selectedId);
+
+    /// <summary>«Vis teknisk innhold»: an explicit choice, kept for this tab and project (BUG-003).</summary>
+    private async Task SetTechnicalAsync(bool on)
+    {
+        _showTechnical = on;
+        if (_ws?.ProjectKey is { } key) await TabDraftStore.WriteAsync(JS, TabDraftStore.PlanTechnicalKey(key), on);
+    }
     private bool Dirty => _form is not null && Selected is { } s && _form.IsDirty(s);
     private static int ActiveCases(TestPlanDraft p) => p.Cases.Count(c => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded));
 
@@ -1199,7 +1225,11 @@
                 catch (Exception e) when (e is not OperationCanceledException) { }
             }
             if (_ws.ProjectKey is { } key)
+            {
                 _selection = [.. await TabDraftStore.ReadAsync<string[]>(JS, TabDraftStore.SelectionKey(key)) ?? []];
+                // BUG-003: the tester's explicit «Vis teknisk innhold» for this tab survives F5.
+                if (await TabDraftStore.ReadAsync<bool?>(JS, TabDraftStore.PlanTechnicalKey(key)) is { } technical) _showTechnical = technical;
+            }
             await LoadTraceAsync();
             _intent = ScenarioParameter is { Length: > 0 } wantedScenario ? wantedScenario : null;
             var id = DraftParameter is { } wanted && (_plans.Any(p => p.Id == wanted) || _archived.Any(p => p.Id == wanted)) ? wanted : _plans.FirstOrDefault()?.Id;
@@ -1788,6 +1818,26 @@
         Open(_selectedId is { } keep && draft.Cases.Any(c => P.IdOf(c) == keep) ? keep : draft.Cases.Select(P.IdOf).FirstOrDefault());
         _notice = $"Testplanen er oppdatert (revisjon {draft.Revision}).";
         return Task.CompletedTask;
+    }
+
+    // -- BUG-004 (2026-11-27): approval with step warnings is a conscious, recorded decision --
+    private bool _approveAsk;
+
+    /// <summary>The open case's step warnings («Teststeget bør konkretiseres»), by step number.</summary>
+    private List<string> ApprovalWarnings() => _form is null ? [] :
+        [.. _form.Steps.Select((s, i) => P.StepWarning(s.Action, s.Expected) is { } w ? $"Steg {i + 1}: {string.Join(" ", w)}" : null).OfType<string>()];
+
+    private Task ApproveAsync()
+    {
+        if (ApprovalWarnings().Count > 0) { _approveAsk = true; return Task.CompletedTask; }
+        return ReviewAsync(TestCaseReviewState.Accepted);
+    }
+
+    private Task ApproveAnywayAsync()
+    {
+        var warnings = ApprovalWarnings();
+        _approveAsk = false;
+        return ReviewAsync(TestCaseReviewState.Accepted, $"Godkjent med {warnings.Count} advarsel(er) om teststegene: {string.Join(" ", warnings)}");
     }
 
     private async Task ReviewAsync(TestCaseReviewState state, string? rationale = null)

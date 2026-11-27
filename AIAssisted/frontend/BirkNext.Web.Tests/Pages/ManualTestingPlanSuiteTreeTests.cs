@@ -100,6 +100,6 @@ public sealed partial class ManualTestingPlanTests
         var after = PlanSuiteEditing.MoveCase(PlanSuiteEditing.Rename(PlanSuiteEditing.Add(before, "Duplikater", "s-int", () => "s-dup").Plan, "s-cdc", "CDC-flyt").Plan, "i1", "s-dup").Plan;
         PlanRevisionDiff.Compare(before, after).Select(c => c.Text).Should().Contain([
             "Testgruppen «Integrasjon / Duplikater» er lagt til.", "Testgruppen «CDC» heter nå «CDC-flyt».",
-            "Flyttet fra testgruppen «Integrasjon / Meldingsmottak» til «Integrasjon / Duplikater»."]);
+            "Testtilfellet er flyttet fra testgruppen «Integrasjon / Meldingsmottak» til «Integrasjon / Duplikater»."]);
     }
 }

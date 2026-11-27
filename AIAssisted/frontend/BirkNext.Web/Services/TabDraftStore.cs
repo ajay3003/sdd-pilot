@@ -23,6 +23,9 @@ public static class TabDraftStore
     /// <summary>Finn og forstå's working context for this tab and project: the user story group, the open scenario and the tab (restored on return).</summary>
     public static string DiscoverContextKey(string projectKey) => $"{Prefix}mtd-context.{projectKey}";
 
+    /// <summary>Planlegg og klargjør's «Vis teknisk innhold» for this tab and project: the tester's explicit choice survives F5 (BUG-003, 2026-11-27).</summary>
+    public static string PlanTechnicalKey(string projectKey) => $"{Prefix}mtp-technical.{projectKey}";
+
     public static async Task<T?> ReadAsync<T>(IJSRuntime js, string key)
     {
         try

@@ -1279,7 +1279,7 @@
                             }
                         </ul>
                     }
-                    @if (impact.NewScenarios.Count > 0) { <p class="tps-small" data-testid="tps-impact-new">Nye scenarier: @string.Join(" · ", impact.NewScenarios.Take(8).Select(n => n.Title))@(impact.NewScenarios.Count > 8 ? $" (+{impact.NewScenarios.Count - 8})" : "")</p> }
+                    @if (impact.NewScenarios.Count > 0) { <p class="tps-small" data-testid="tps-impact-new">Ikke i testplanen: @string.Join(" · ", impact.NewScenarios.Take(8).Select(n => n.Title))@(impact.NewScenarios.Count > 8 ? $" (+{impact.NewScenarios.Count - 8})" : "")</p> }
                     <p class="tps-muted tps-small">Ingenting er endret i planen. Oppdater planen for å ta inn endringene — dine redigeringer, manuelle testtilfeller og historikk beholdes.</p>
                 </section>
             }

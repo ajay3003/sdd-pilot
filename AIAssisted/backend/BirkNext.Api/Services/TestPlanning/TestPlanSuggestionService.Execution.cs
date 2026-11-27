@@ -89,34 +89,8 @@ public sealed partial class TestPlanSuggestionService
             .GroupBy(x => x.Key, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Select(x => x.Event).OrderByDescending(x => x.At).ThenByDescending(x => x.Id).ToList(), StringComparer.Ordinal);
 
-    /// <summary>A plan's scenario occurrences: each scenario once (its cases grouped under it), each scenario-only item, and each hand-written case
-    /// without a scenario on its own. Excluded and superseded cases are not executed.</summary>
-    internal static List<ScenarioOccurrence> Occurrences(TestPlanDraft plan)
-    {
-        var result = new List<ScenarioOccurrence>();
-        string? Path(string? suite) => suite is not null && plan.Suites.Any(s => s.Id == suite) ? PlanStructure.PathOf(plan.Suites, suite) : null;
-        foreach (var g in plan.Cases.Where(c => c.Review is not (TestCaseReviewState.Superseded or TestCaseReviewState.Excluded))
-                     .GroupBy(c => c.ParentScenario is { } sid ? "scenario:" + sid : "case:" + c.Source.ScenarioId, StringComparer.Ordinal))
-        {
-            var first = g.First();
-            result.Add(new ScenarioOccurrence
-            {
-                Key = g.Key, ScenarioId = first.ParentScenario, Title = first.Source.Kind == ScenarioSourceKind.Manual && first.ParentScenario is null ? first.EffectiveTitle : first.Generated.Title,
-                StoryId = first.Generated.Story?.StoryId, NumberInStory = first.Generated.NumberInStory, ExpectedBehaviour = first.Generated.ExpectedResult ?? first.EffectiveExpected,
-                SuiteId = first.SuiteId, SuitePath = Path(first.SuiteId), CaseIds = [.. g.Select(c => c.Source.ScenarioId)],
-            });
-        }
-        foreach (var item in plan.PlannedScenarios ?? [])
-        {
-            if (result.Any(o => o.Key == "scenario:" + item.ScenarioId)) continue;
-            result.Add(new ScenarioOccurrence
-            {
-                Key = "scenario:" + item.ScenarioId, ScenarioId = item.ScenarioId, Title = item.Title, StoryId = item.StoryId, NumberInStory = item.NumberInStory,
-                ExpectedBehaviour = item.ExpectedBehaviour, SuiteId = item.SuiteId, SuitePath = Path(item.SuiteId), ScenarioOnly = true,
-            });
-        }
-        return result;
-    }
+    /// <summary>A plan's scenario occurrences (<see cref="PlanOccurrences"/>, shared with every surface that counts them).</summary>
+    internal static List<ScenarioOccurrence> Occurrences(TestPlanDraft plan) => PlanOccurrences.Of(plan);
 
     // ── «Kopier testplan» ──
 

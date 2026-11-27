@@ -243,6 +243,17 @@ public sealed partial class ManualTestingPlanTests : BunitContext
         cut.Find("[data-testid=mtp-plan-counts]").TextContent.Should().Contain("revisjon 4");
     }
 
+    [Fact]
+    public void FUN015_the_plan_header_counts_scenario_occurrences_including_scenario_only_items_and_a_scenario_with_two_cases_once()
+    {
+        // Manual E2E 2026-11-27: Planlegg said «1 scenario» for AC4 (with a case) + TEST-E-01 (planned without a case); execution said 2.
+        var plan = Plan(Case("ac4", "A method comment written in Norwegian", story: Story6), Case("m1", "AC4 twice", kind: ScenarioSourceKind.Manual, scenarioKey: "ac4"))
+            with { PlannedScenarios = [new PlannedScenario { ScenarioId = "teste01", Title = "Inngrep-hendelse fra adapter til GraphQL", SuiteId = "" }] };
+        Setup(plan);
+        var cut = Open();
+        cut.Find("[data-testid=mtp-plan-counts]").TextContent.Should().StartWith("2 scenarioer · 2 testtilfeller");
+    }
+
     // ── E: unsaved protection ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -297,6 +308,8 @@ public sealed partial class ManualTestingPlanTests : BunitContext
         _api.Verify(x => x.ReviewAsync(PlanId, new ReviewTestCaseRequest(3, "c1", TestCaseReviewState.UnderReview, null), It.IsAny<CancellationToken>()));
         cut.Find("[data-testid=mtp-detail-state]").TextContent.Should().Be("Klar for gjennomgang");
         cut.Find("[data-testid=mtp-approve]").Click();
+        // BUG-004 (2026-11-27): this fixture's steps carry step warnings, so approval is an explicit decision first.
+        if (cut.FindAll("[data-testid=mtp-approve-anyway]") is { Count: > 0 } anyway) anyway[0].Click();
         cut.Find("[data-testid=mtp-detail-state]").TextContent.Should().Be("Godkjent");
 
         cut.Find("[data-testid=mtp-case][data-case=c2]").Click();
@@ -547,6 +560,66 @@ public sealed partial class ManualTestingPlanTests : BunitContext
         cut.Find("[data-testid=mtp-exclude-why]").Input("Dekket av en annen test");
         cut.Find("[data-testid=mtp-exclude-yes]").Click();
         _api.Verify(x => x.ReviewAsync(PlanId, new ReviewTestCaseRequest(3, "c1", TestCaseReviewState.Excluded, "Dekket av en annen test"), It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public void BUG004_approving_with_step_warnings_asks_explains_that_readiness_is_separate_and_records_the_decision()
+    {
+        // Manual E2E 2026-11-27: a case was approved while a step warning said the trigger must be specified; readiness stayed «Trenger klargjøring».
+        // Policy (unchanged): approval = exportable content; readiness is assessed separately. The warning is now an explicit, recorded decision.
+        var plan = Standard();
+        plan = plan with { Cases = [.. plan.Cases.Select((c, i) => i == 0 ? c with { Generated = c.Generated with { Steps = ["Åpne rapporten"], StepExpected = ["ok"] } } : c)] };
+        Setup(plan);
+        _api.Setup(x => x.ReviewAsync(PlanId, It.IsAny<ReviewTestCaseRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync((plan with { Revision = 4 }, (string?)null));
+        var cut = Open();
+        cut.FindAll("[data-testid=mtp-step-warning]").Should().NotBeEmpty("«ok» is not an observable expected result");
+        cut.Find("[data-testid=mtp-approve]").Click();
+        _api.Verify(x => x.ReviewAsync(PlanId, It.IsAny<ReviewTestCaseRequest>(), It.IsAny<CancellationToken>()), Times.Never(), "not approved silently");
+        cut.Find("[data-testid=mtp-approve-confirm]").TextContent.Should().Contain("Det gjør ikke scenarioet klart for testing");
+        cut.Find("[data-testid=mtp-approve-anyway]").Click();
+        _api.Verify(x => x.ReviewAsync(PlanId, It.Is<ReviewTestCaseRequest>(r => r.State == TestCaseReviewState.Accepted && r.Rationale!.StartsWith("Godkjent med")), It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public void BUG002_previewing_and_opening_the_readiness_of_a_planned_scenario_never_writes()
+    {
+        // Manual E2E 2026-11-27 (BUG-002, causation not proven): «Forhåndsvis» and «Klargjør AC» are read-only; only «Forbered testtilfelle» creates.
+        var plan = Standard() with { PlannedScenarios = [new PlannedScenario { ScenarioId = "ac4", Title = "AC4 uten testtilfelle", StoryId = "US1", NumberInStory = 4, SuiteId = "" }] };
+        Setup(plan);
+        var cut = Open();
+        cut.Find("[data-testid=mtp-planned-item][data-scenario=ac4] [data-testid=mtp-planned-preview]").Click();
+        cut.Find("[data-testid=mtp-preview-close]").Click();
+        cut.Find("[data-testid=mtp-planned-item][data-scenario=ac4] [data-testid=mtp-planned-ready]").Click();
+        _api.Verify(x => x.CreateProjectAsync(It.IsAny<CreateProjectTestPlanRequest>(), It.IsAny<CancellationToken>()), Times.Never(), "no case is created by previewing or opening readiness");
+        _api.Verify(x => x.SaveAsync(It.IsAny<Guid>(), It.IsAny<SaveTestPlanDraftRequest>(), It.IsAny<CancellationToken>()), Times.Never());
+        _api.Verify(x => x.ReviewAsync(It.IsAny<Guid>(), It.IsAny<ReviewTestCaseRequest>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Fact]
+    public void BUG003_the_testers_explicit_technical_setting_survives_F5()
+    {
+        // Manual E2E 2026-11-27: «Vis teknisk innhold» was off again after F5 while a technical case stayed open (and hidden in the list).
+        Setup();
+        JSInterop.Setup<string?>("sessionStorage.getItem", TabDraftStore.PlanTechnicalKey("library")).SetResult("true");
+        var cut = Open();
+        cut.Find("[data-testid=mtp-technical]").HasAttribute("checked").Should().BeTrue("the choice this tab made is restored");
+
+        cut.Find("[data-testid=mtp-technical]").Change(false);
+        JSInterop.Invocations.Should().Contain(i => i.Identifier == "sessionStorage.setItem" && i.Arguments[0]!.ToString() == TabDraftStore.PlanTechnicalKey("library")
+            && i.Arguments[1]!.ToString() == "false", "an explicit change is kept");
+    }
+
+    [Fact]
+    public void BUG003_an_open_technical_case_hidden_by_the_list_is_explained_with_a_way_to_show_it()
+    {
+        Setup();
+        var cut = Open($"manual-testing/plan?draft={PlanId}&case=api1");
+        cut.Find("[data-testid=mtp-technical]").Change(false);
+        cut.Find("[data-testid=mtp-title]").GetAttribute("value").Should().Be("GET /reports", "the open case stays open");
+        cut.Find("[data-testid=mtp-open-hidden]").TextContent.Should().Contain("er teknisk og vises ikke i listen");
+        cut.Find("[data-testid=mtp-open-hidden-show]").Click();
+        cut.Find("[data-testid=mtp-technical]").HasAttribute("checked").Should().BeTrue();
+        cut.FindAll("[data-testid=mtp-open-hidden]").Should().BeEmpty();
     }
 
     [Fact]

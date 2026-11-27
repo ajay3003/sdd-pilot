@@ -134,4 +134,20 @@ public sealed class DiscoveryCapTests
         D.Pick(stored, [far.SourceIdentity]).Should().ContainSingle().Which.CandidateId.Should().Be("api11997");
         D.Pick(stored, Enumerable.Range(1, 500).Select(i => $"api{i}")).Should().HaveCount(200, "at most 200 ids per request");
     }
+
+    [Fact]
+    public void ASP_server_search_honours_the_add_scenarios_dialogs_module_and_only_returns_plannable_scenarios()
+    {
+        // «Legg til scenarioer» (2026-11-27, P1): the dialog's module rule (specification module, else area) and its population (plannable only).
+        var story = new BirkNext.TestCoverage.CoverageUserStory { Key = "us-9", StoryId = "US9", Title = "Arkiv", SpecificationPath = "Arkiv/specs/001-a/spec.md" };
+        var stored = Result([.. Enumerable.Range(1, 3).Select(i => C($"spec{i}", D.Specification)),
+            C("ac", D.Specification, "Arkivert rapport hentes") with { Story = story, CanonicalKey = "scenario:Arkiv|AC1", Type = ScenarioCandidateType.BusinessFunctional },
+            C("req", D.Specification, "Arkivert rapport krav") with { Story = story, CanonicalKey = "requirement:Arkiv|FR-9" }]);
+        var module = ScenarioSearchFilter.ModuleOf(stored.Candidates.Single(c => c.CandidateId == "ac"))!;
+        D.Search(stored, "", 3, 0, 40, new() { Module = module }).Items.Select(c => c.CandidateId).Should().BeEquivalentTo(["ac", "req"]);
+        D.Search(stored, "", 3, 0, 40, new() { Module = module, ClassifiableOnly = true }).Items.Select(c => c.CandidateId).Should().Equal(["ac"], "a requirement without a scenario is not plannable");
+        D.Search(stored, "", 3, 0, 40, new() { ClassifiableOnly = true }).Total.Should().Be(0, "the population flag alone is not a search");
+        D.Search(stored, "AC1", 3, 0, 40, new() { ClassifiableOnly = true }).Items.Select(c => c.CandidateId).Should().Equal(["ac"], "the canonical key (TEST/AC id) is searched too");
+        D.Facets(stored.Candidates.Skip(3)).Modules.Should().Equal(module);
+    }
 }

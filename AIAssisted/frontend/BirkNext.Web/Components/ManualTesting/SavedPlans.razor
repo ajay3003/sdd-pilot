@@ -57,7 +57,7 @@
                     @if (!_archivedView && CanWrite && Api is not null)
                     {
                         <button type="button" class="btn @(p.Scenarios == 0 && p.Cases == 0 ? "btn-primary" : "btn-outline-secondary") btn-sm" disabled="@_busy"
-                                @onclick="() => _adding = p.Id" data-testid="mt-plan-add-scenarios">Legg til scenarioer</button>
+                                id="@($"mt-plan-add-{p.Id}")" @onclick="() => _adding = p.Id" data-testid="mt-plan-add-scenarios">Legg til scenarioer</button>
                     }
                     @if (!_archivedView)
                     {
@@ -110,7 +110,7 @@
     }
     @if (_adding is { } addId && Api is not null)
     {
-        <AddScenariosToPlan Api="Api" ProjectKey="@Workspace.ProjectKey" PlanId="addId" Discovery="Discovery" LoadDiscovery="LoadDiscovery" OnClose="CloseAddAsync" OnAdded="_ => _added = true" />
+        <AddScenariosToPlan Api="Api" ProjectKey="@Workspace.ProjectKey" PlanId="addId" Discovery="Discovery" LoadDiscovery="LoadDiscovery" OnClose="CloseAddAsync" OnAdded="_ => _added = true" ReturnFocusId="@($"mt-plan-add-{addId}")" />
     }
 </section>
 
