@@ -1568,9 +1568,8 @@
         @* 2026-11-26 fix: a real modal (backdrop + panel above the page, own scroll, focus moved in and back). Before, the markup had no styles and
            rendered as ordinary content at the top of the page, so nothing appeared to happen where the tester was working. Read-only: no inputs,
            no save, approval or execution controls. *@
-        <div class="mtp-preview-backdrop" data-testid="mtp-preview" @onclick="ClosePreviewAsync">
-            <section class="mtp-preview" role="dialog" aria-modal="true" aria-labelledby="mtp-preview-title" tabindex="-1" @ref="_previewRef"
-                     @onclick:stopPropagation="true" @onkeydown="PreviewKey" data-testid="mtp-preview-dialog">
+        <AccessibleDialog BackdropClass="mtp-preview-backdrop" BackdropTestId="mtp-preview" PanelClass="mtp-preview" LabelledBy="mtp-preview-title" TestId="mtp-preview-dialog"
+                          OnClose="ClosePreviewAsync" CloseOnBackdrop="true">
                 <header class="mtp-preview-head">
                     <div class="mtp-preview-head-text">
                         <span class="mtp-ctx-label">Forhåndsvisning · @plan.PlanName@(suiteId is { } sid && plan.Suites.Any(s => s.Id == sid) ? $" · {PlanStructure.PathOf(plan.Suites, sid)}" : "")</span>
@@ -1646,17 +1645,13 @@
                         <p class="mt-muted msb-small">Forhåndsvisningen lagrer ingenting og endrer ikke status, godkjenning eller oversettelse. Testgjennomføring skjer i Testplaner.</p>
                     </section>
                 </div>
-            </section>
-        </div>
+        </AccessibleDialog>
     };
 
-    private Task PreviewKey(KeyboardEventArgs e) => e.Key == "Escape" ? ClosePreviewAsync() : Task.CompletedTask;
-
-    private ElementReference _previewRef;
-    private bool _focusPreview, _focusPreviewButton;
+    private bool _focusPreviewButton;
 
     /// <summary>Opens the preview and moves focus into it (Escape and «Lukk forhåndsvisning» close it and return focus).</summary>
-    private void OpenPreview(PreviewTarget target) { _preview = target; _focusPreview = true; }
+    private void OpenPreview(PreviewTarget target) { _preview = target; }
 
     private Task ClosePreviewAsync() { _preview = null; _focusPreviewButton = true; return Task.CompletedTask; }
 
@@ -1664,8 +1659,7 @@
     {
         try
         {
-            if (_focusPreview && _preview is not null) { _focusPreview = false; await _previewRef.FocusAsync(); }
-            else if (_focusPreviewButton) { _focusPreviewButton = false; await JS.InvokeVoidAsync("eval", "document.querySelector('[data-testid=mtp-preview-open]')?.focus()"); }
+            if (_focusPreviewButton) { _focusPreviewButton = false; await JS.InvokeVoidAsync("eval", "document.querySelector('[data-testid=mtp-preview-open]')?.focus()"); }
         }
         catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
     }

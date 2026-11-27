@@ -458,7 +458,7 @@ public static class ManualTestingOverviewPresentation
     /// <summary>What an E2E tile counts and what it does not (FUN-014).</summary>
     public static string? TileMeaning(DashboardKpiTile t) => t.Dimension == KpiTileDimension.TestLevel && t.Metric == nameof(ScenarioTestLevel.EndToEnd)
         ? "Dokumenterte E2E-tester: tester i kildens testspesifikasjoner som selv sier at de er ende til ende (for eksempel TEST-E). Nivået er oppgitt i dokumentet, "
-          + "ikke verifisert. E2E-kandidater (forslag fra andre kilder, som integrasjonsflyter) telles ikke her. «Har testtilfelle» betyr forberedt, ikke kjørt eller bestått."
+          + "ikke verifisert. E2E-scenarioforslag (fra andre kilder, som integrasjonsflyter) telles ikke her. «Har testtilfelle» betyr forberedt, ikke kjørt eller bestått."
         : null;
 
     /// <summary>Finn og forstå's filter for a tile: exactly the tile's dimension and value; nothing else is changed.</summary>

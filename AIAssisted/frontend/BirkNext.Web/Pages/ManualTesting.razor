@@ -396,7 +396,7 @@
                                 </ul>
                                 @if (proposed.Suites.Any(x => x.TestLevel == ScenarioTestLevel.EndToEnd) && SelectedScenarios().Any(c => TestLevelClassifier.Of(c.Type).Candidate))
                                 {
-                                    <p class="mt-muted msb-small" data-testid="mt-new-plan-e2e-candidates">E2E-scenarioene er kandidater fra dokumenterte forretningsflyter. Testtilfellene lages som utkast og må gjennomgås.</p>
+                                    <p class="mt-muted msb-small" data-testid="mt-new-plan-e2e-candidates">E2E-scenarioene er scenarioforslag fra dokumenterte forretningsflyter. Testtilfellene lages som utkast og må gjennomgås.</p>
                                 }
                             </div>
                     }

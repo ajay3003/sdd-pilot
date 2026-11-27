@@ -13,7 +13,7 @@
         <p class="drp-muted" data-testid="reset-summary">Remove all local data, all except protected Test Data, all project data while keeping settings, or only Delivery Management data. Installation settings, the database schema and external systems are never affected.</p>
         @if (!Allowed && !string.IsNullOrWhiteSpace(NotAllowedReason)) { <p class="drp-reason" data-testid="reset-not-allowed">@NotAllowedReason</p> }
     </div>
-    <button type="button" class="drp-open" data-testid="reset-open" disabled="@(!Allowed || Disabled || _busy)" @onclick="Open">Reset data…</button>
+    <button type="button" id="drp-open" class="drp-open" data-testid="reset-open" disabled="@(!Allowed || Disabled || _busy)" @onclick="Open">Reset data…</button>
     @if (_lastDelivery is { } done)
     {
         <p class="drp-done" role="status" data-testid="reset-delivery-done">@done.Message</p>
@@ -22,8 +22,7 @@
 
 @if (_open)
 {
-    <div class="modal-backdrop" @onclick="Close" role="presentation">
-        <div class="modal-panel drp-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-labelledby="drp-title" data-testid="reset-dialog">
+    <AccessibleDialog PanelClass="modal-panel drp-modal" LabelledBy="drp-title" TestId="reset-dialog" OnClose="Close" CanClose="!_busy" CloseOnBackdrop="true" ReturnFocusId="drp-open">
             <h2 id="drp-title" class="modal-title">Reset data</h2>
             @if (_result is { } result)
             {
@@ -141,8 +140,7 @@
                     <button type="button" class="btn-danger" data-testid="reset-run" disabled="@(!CanRun)" @onclick="RunAsync">@(_busy ? "Resetting…" : RunLabel)</button>
                 </div>
             }
-        </div>
-    </div>
+    </AccessibleDialog>
 }
 
 @code {

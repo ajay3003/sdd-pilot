@@ -350,7 +350,7 @@
             <section class="dlr-card" data-testid="dlr-summary">
                 <h2 class="dlr-h2">This week</h2>
                 <ul class="dlr-list">@foreach (var line in report.ExecutiveSummary) { <li>@line</li> }</ul>
-                @{ var changed = report.Stories.Where(s => s.Changed).Take(8).ToList(); }
+                @{ var allChanged = report.Stories.Where(s => s.Changed).ToList(); var changed = ShowsAll("moved") ? allChanged : allChanged.Take(8).ToList(); }
                 @if (changed.Count > 0)
                 {
                     <h3 class="dlr-h3">Features that moved</h3>
@@ -360,6 +360,7 @@
                             <li><span class="dlr-badge @P.MovementTone(s.Movement)">@DeliveryReportingText.Movement(s.Movement)</span> <strong>@s.Title</strong> <span class="dlr-muted">@DeliveryReportStories.ProgressChange(s)</span></li>
                         }
                     </ul>
+                    @if (allChanged.Count > 8) { <p class="dlr-muted" data-testid="dlr-moved-count">Showing @changed.Count of @allChanged.Count. <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick='() => ToggleAll("moved")' data-testid="dlr-moved-all">@(ShowsAll("moved") ? "Show fewer" : $"Show all ({allChanged.Count})")</button></p> }
                     <a href="@TabHref("stories")" class="dlr-link">See all story changes</a>
                 }
             </section>
@@ -1747,4 +1748,9 @@
         _confirm = null;
         if (confirm is not null) await confirm.Run();
     }
+
+    // V12 (2026-11-27, APP-3): lists that were silently capped with .Take(n) say how many there are and can show all of them.
+    private readonly HashSet<string> _showAll = new(StringComparer.Ordinal);
+    private bool ShowsAll(string key) => _showAll.Contains(key);
+    private void ToggleAll(string key) { if (!_showAll.Remove(key)) _showAll.Add(key); }
 }

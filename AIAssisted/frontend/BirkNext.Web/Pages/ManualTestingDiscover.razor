@@ -628,8 +628,9 @@
                                     <option value="">Alle områder</option>
                                     @foreach (var a in _areas) { <option value="@a" selected="@(_filter.Area == a)">@a</option> }
                                 </select>
-                                <select class="msb-select" aria-label="Type" @onchange="e => Set(_filter with { Type = Opt(e) })" data-testid="mtd-filter-type">
-                                    <option value="">Alle typer</option>
+                                @* V12 bundle: two filters both said «Alle typer»; this one is the scenario's kind (forretningsfunksjon, UI, API-kontrakt …). *@
+                                <select class="msb-select" aria-label="Kategori" title="Hva slags scenario det er (forretningsfunksjon, brukergrensesnitt, API-kontrakt …)" @onchange="e => Set(_filter with { Type = Opt(e) })" data-testid="mtd-filter-type">
+                                    <option value="">Alle kategorier</option>
                                     @foreach (var t in _types) { <option value="@t" selected="@(_filter.Type == t)">@t</option> }
                                 </select>
                                 @if (_requirementIds.Count > 0)
@@ -643,8 +644,8 @@
                                     <option value="">Alle testtilnærminger</option>
                                     @foreach (var ap in Enum.GetValues<ExecutionApproach>()) { <option value="@ap" selected="@(_filter.Approach == ap)">@TestDesignAdvisor.ApproachLabel(ap)</option> }
                                 </select>
-                                <select class="msb-select" aria-label="Scenariotype" @onchange="e => Set(_filter with { ScenarioType = Opt(e) })" data-testid="mtd-filter-scenario-type">
-                                    <option value="">Alle typer</option>
+                                <select class="msb-select" aria-label="Scenariotype" title="Funksjonelt, ikke-funksjonelt eller blandet krav" @onchange="e => Set(_filter with { ScenarioType = Opt(e) })" data-testid="mtd-filter-scenario-type">
+                                    <option value="">Alle scenariotyper</option>
                                     @foreach (var (key, label) in S.TypeFilters) { <option value="@key" selected="@(_filter.ScenarioType == key)">@label</option> }
                                 </select>
                                 <select class="msb-select" aria-label="Testnivå" @onchange="e => Set(_filter with { TestLevel = Opt(e) })" data-testid="mtd-filter-level">
@@ -1762,6 +1763,24 @@
         if (!Enum.TryParse<G.Mode>(value, out var mode)) return;
         _groupMode = mode; _groupModeChosen = true; _drillGroup = null;
         if (mode == G.Mode.None && _filter.Story is not null && _filter.Story != W.NoStory) SelectStory(null);
+        // V12 one grouping state: «Ingen gruppering» in the rail is «Ingen gruppering» in the list, and grouping the stories again groups the
+        // list by user story.
+        var list = (mode, _gPrimary) switch
+        {
+            (G.Mode.None, not ScenarioGroupAxis.None) => (ScenarioGroupAxis.None, ScenarioGroupAxis.None),
+            (not G.Mode.None, ScenarioGroupAxis.None) => (ScenarioGroupAxis.Story, ScenarioGroupAxis.None),
+            _ => ((ScenarioGroupAxis, ScenarioGroupAxis)?)null,
+        };
+        if (list is { } l) _ = SetGroupingAsync(l.Item1, l.Item2);
+    }
+
+    /// <summary>V12 (2026-11-27, approved): the rail, the overview cards and the list follow ONE grouping state — the list's choice. When the list
+    /// is not grouped, the rail shows no area groups and the area cards do not replace the list (the stories stay in the rail as navigation, a
+    /// filter rather than a grouping); when it is grouped again, a rail that was set to «Ingen gruppering» returns to its story view.</summary>
+    private void SyncRailWithList()
+    {
+        if (_gPrimary == ScenarioGroupAxis.None && _groupMode is G.Mode.Functional or G.Mode.Business) { _groupMode = G.Mode.Stories; _groupModeChosen = true; _drillGroup = null; }
+        else if (_gPrimary != ScenarioGroupAxis.None && _groupMode == G.Mode.None) { _groupMode = G.Mode.Stories; _groupModeChosen = true; }
     }
 
     /// <summary>The figures of one group: stories, unique scenarios, scenarios with saved cases and distinct established requirements (deduplicated).</summary>
@@ -2096,7 +2115,7 @@
 
     private RenderFragment ScenarioTypeSection(S.Item item) => __builder =>
     {
-        <p class="msb-small mtw-level" data-testid="mtd-detail-level" data-level="@item.Level.Level"><span class="mtp-ctx-label">Testnivå</span> <b>@TestLevelClassifier.Label(item.Level.Level)</b>@(item.Level.Candidate ? " (kandidat)" : "") — <span class="mt-muted">@item.Level.Explanation</span></p>
+        <p class="msb-small mtw-level" data-testid="mtd-detail-level" data-level="@item.Level.Level"><span class="mtp-ctx-label">Testnivå</span> <b>@TestLevelClassifier.Label(item.Level.Level)</b>@(item.Level.Candidate ? " (foreslått)" : "") — <span class="mt-muted">@item.Level.Explanation</span></p>
         if (item.TypeResult is not { } type)
         {
             if (S.IsRequirementOnly(item.Candidate)) { <p class="mt-muted msb-small" data-testid="mtd-detail-type-requirement">Dette er et krav uten akseptansescenario i spesifikasjonen; det får ingen scenariotype.</p> }
@@ -2389,7 +2408,9 @@
         {
             if (ScenarioGrouping.Parse(await JS.InvokeAsync<string?>("localStorage.getItem", GroupingPreferenceKey)) is { } saved)
             {
-                (_gPrimary, _gSecondary, _gChosen) = (saved.Primary, saved.Secondary, true);
+                (_gPrimary, _gSecondary) = ScenarioGrouping.Normalise(saved);
+                _gChosen = true;
+                SyncRailWithList();
                 StateHasChanged();
                 return;
             }
@@ -2411,14 +2432,17 @@
     {
         (_gPrimary, _gSecondary) = ScenarioGrouping.Default();
         _gChosen = false;
+        SyncRailWithList();
         try { await JS.InvokeVoidAsync("localStorage.removeItem", GroupingPreferenceKey); }
         catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
     }
 
     private async Task SetGroupingAsync(ScenarioGroupAxis primary, ScenarioGroupAxis secondary)
     {
+        (primary, secondary) = ScenarioGrouping.Normalise((primary, secondary));
         if (secondary == primary || primary == ScenarioGroupAxis.None) secondary = ScenarioGroupAxis.None;
         (_gPrimary, _gSecondary, _gChosen) = (primary, secondary, true);
+        SyncRailWithList();
         try { await JS.InvokeVoidAsync("localStorage.setItem", GroupingPreferenceKey, ScenarioGrouping.Format(primary, secondary)); }
         catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
     }
@@ -2508,14 +2532,14 @@
         <div class="mtg-tools" data-testid="mtd-grouping-tools">
             <label class="mtg-field">Grupper etter
                 <select class="msb-select" @onchange="e => SetGroupingAsync(Enum.TryParse<ScenarioGroupAxis>(e.Value?.ToString(), out var a) ? a : ScenarioGroupAxis.None, _gSecondary)" data-testid="mtd-list-group">
-                    @foreach (var a in ScenarioGroupAxes.Choices) { <option value="@a" selected="@(_gPrimary == a)">@ScenarioGroupAxes.Label(a)</option> }
+                    @foreach (var a in ScenarioGroupAxes.PrimaryChoices) { <option value="@a" selected="@(_gPrimary == a)">@ScenarioGroupAxes.Label(a)</option> }
                 </select></label>
             @if (_gPrimary != ScenarioGroupAxis.None)
             {
                 <label class="mtg-field">Deretter etter
                     <select class="msb-select" @onchange="e => SetGroupingAsync(_gPrimary, Enum.TryParse<ScenarioGroupAxis>(e.Value?.ToString(), out var a) ? a : ScenarioGroupAxis.None)" data-testid="mtd-list-group2">
                         <option value="@ScenarioGroupAxis.None" selected="@(_gSecondary == ScenarioGroupAxis.None)">Én gruppering</option>
-                        @foreach (var a in ScenarioGroupAxes.Choices.Where(a => a != ScenarioGroupAxis.None && a != _gPrimary)) { <option value="@a" selected="@(_gSecondary == a)">@ScenarioGroupAxes.Label(a)</option> }
+                        @foreach (var a in ScenarioGroupAxes.OtherChoices.Concat(ScenarioGroupAxes.PrimaryChoices).Where(a => a != ScenarioGroupAxis.None && a != _gPrimary)) { <option value="@a" selected="@(_gSecondary == a)">@ScenarioGroupAxes.Label(a)</option> }
                     </select></label>
                 <button type="button" class="msb-link" @onclick="() => SetAllGroups(ScenarioGrouping.Paths(tree), true)" data-testid="mtd-groups-expand">Vis alle grupper</button>
                 <button type="button" class="msb-link" @onclick="() => SetAllGroups(ScenarioGrouping.Paths(tree), false)" data-testid="mtd-groups-collapse">Skjul alle</button>
@@ -2552,7 +2576,7 @@
                     <span class="mtg-label" data-testid="mtd-sgroup-label">@g.Label</span>
                     <span class="mtg-count" data-testid="mtd-sgroup-count">@g.Items.Count</span>
                     @if (selectedHere > 0) { <span class="mtg-selected" data-testid="mtd-sgroup-selected">@selectedHere valgt</span> }
-                    @if (g.Candidates > 0) { <span class="mtg-candidates mt-muted msb-small" data-testid="mtd-sgroup-candidates">@g.Candidates kandidat@(g.Candidates == 1 ? "" : "er") (ikke gjennomgått)</span> }
+                    @if (g.Candidates > 0) { <span class="mtg-candidates mt-muted msb-small" data-testid="mtd-sgroup-candidates">@g.Candidates scenarioforslag (ikke gjennomgått)</span> }
                     @if (g.Axis == ScenarioGroupAxis.Story && ScenarioGrouping.TypeSummary(g.Items) is { Count: > 0 } typeSummary)
                     {
                         <span class="mtg-type-summary mt-muted msb-small" data-testid="mtd-sgroup-type-summary" title="Oppsummering av akseptansescenarioene i brukerhistorien. Brukerhistorien selv har ingen scenariotype.">

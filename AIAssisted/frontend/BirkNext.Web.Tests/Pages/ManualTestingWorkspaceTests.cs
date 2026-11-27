@@ -466,7 +466,7 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.Find("[data-testid=mt-new-plan-selection]").Change(true);
         cut.FindAll("[data-testid=mt-new-plan-suite]").Select(e => (e.TextContent.Split('·')[0].Trim(), e.GetAttribute("data-depth"))).Should().Equal(
             ("Ende til ende", "0"), ("Rapportering", "1"), ("Integrasjon", "0"), ("Meldingsmottak", "1"));
-        cut.Find("[data-testid=mt-new-plan-e2e-candidates]").TextContent.Should().Contain("kandidater");
+        cut.Find("[data-testid=mt-new-plan-e2e-candidates]").TextContent.Should().Contain("scenarioforslag").And.NotContain("kandidat", "V12 glossary: «Kandidat» is not shown to testers");
         cut.Find("[data-testid=mt-new-plan-structure]").Change(PlanStructureTemplates.None);
         cut.FindAll("[data-testid=mt-new-plan-suite]").Should().OnlyContain(e => e.GetAttribute("data-depth") == "0");
         cut.Find("[data-testid=mt-new-plan-structure]").Change(PlanStructureTemplates.LevelArea);
@@ -791,7 +791,7 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         // level filter in Finn og forstå (which mixed in E2E candidates of the selected module: 8 counted, 11 shown).
         cut.Find("[data-testid=mto-tile-open]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=mto-drill-count]").TextContent.Should().Be("(2)"));
-        cut.Find("[data-testid=mto-follow-why]").TextContent.Should().Contain("E2E-kandidater").And.Contain("telles ikke her");
+        cut.Find("[data-testid=mto-follow-why]").TextContent.Should().Contain("E2E-scenarioforslag").And.Contain("telles ikke her").And.NotContain("kandidat");
         cut.Find("[data-testid=mto-tile-breakdown]").TextContent.Should().StartWith("2 i alt");
         Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("manual-testing", "nothing is opened until the tester chooses a group or a scenario");
     }

@@ -39,7 +39,7 @@ public static class TestLevelClassifier
     /// </summary>
     public static TestLevelResult Of(ScenarioCandidateType? type) => type switch
     {
-        ScenarioCandidateType.BusinessE2E => new(ScenarioTestLevel.EndToEnd, true, "E2E-kandidat: en dokumentert forretningsflyt på tvers av komponenter. Testgrensen må gjennomgås."),
+        ScenarioCandidateType.BusinessE2E => new(ScenarioTestLevel.EndToEnd, true, "E2E-scenarioforslag: en dokumentert forretningsflyt på tvers av komponenter. Testgrensen må gjennomgås."),
         ScenarioCandidateType.Integration => new(ScenarioTestLevel.Integration, false, "En dokumentert integrasjon eller meldingsflyt mellom systemer."),
         ScenarioCandidateType.ApiContract => new(ScenarioTestLevel.Component, false, "En operasjon i én tjenestes API-kontrakt."),
         ScenarioCandidateType.UiFunctional or ScenarioCandidateType.UiSmoke => new(ScenarioTestLevel.Component, false, "En side eller funksjon i én applikasjon."),
@@ -218,12 +218,23 @@ public static class PlanStructure
 // scenario type and test method are separate dimensions and never merged. An unknown value has its own honest group; nothing is reclassified.
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ScenarioGroupAxis { None, Story, TestLevel, ScenarioType, Area, Module, Method }
+public enum ScenarioGroupAxis { None, Story, TestLevel, ScenarioType, Area, Module, Method, Specification }
 
 public static class ScenarioGroupAxes
 {
     public const string Prefix = "axes:";
-    public const string NoStory = "Scenarioer uten brukerhistorie", NoArea = "Uavklart område", NoModule = "Uten modultilknytning", NoType = "Ikke akseptansescenarioer";
+    public const string NoStory = "Scenarioer uten brukerhistorie", NoArea = "Uavklart område", NoModule = "Uten modultilknytning", NoType = "Ikke akseptansescenarioer",
+        NoSpecification = "Uten spesifikasjon";
+
+    /// <summary>V12 (2026-11-27, approved): the groupings Finn og forstå offers — Brukerhistorie, Spesifikasjon, Modul, Ingen gruppering. The
+    /// rail, the overview and the list follow this one choice.</summary>
+    public static readonly ScenarioGroupAxis[] PrimaryChoices =
+        [ScenarioGroupAxis.Story, ScenarioGroupAxis.Specification, ScenarioGroupAxis.Module, ScenarioGroupAxis.None];
+
+    /// <summary>Further breakdowns that stay available (as a second level, or under «Andre inndelinger»): they classify scenarios, they do not
+    /// organise them, so they are not among the approved groupings.</summary>
+    public static readonly ScenarioGroupAxis[] OtherChoices =
+        [ScenarioGroupAxis.TestLevel, ScenarioGroupAxis.ScenarioType, ScenarioGroupAxis.Area, ScenarioGroupAxis.Method];
 
     public static readonly ScenarioGroupAxis[] Choices =
         [ScenarioGroupAxis.Story, ScenarioGroupAxis.TestLevel, ScenarioGroupAxis.ScenarioType, ScenarioGroupAxis.Area, ScenarioGroupAxis.Module, ScenarioGroupAxis.Method, ScenarioGroupAxis.None];
@@ -236,6 +247,7 @@ public static class ScenarioGroupAxes
         ScenarioGroupAxis.Area => "Funksjonsområde",
         ScenarioGroupAxis.Module => "Modul",
         ScenarioGroupAxis.Method => "Testmetode",
+        ScenarioGroupAxis.Specification => "Spesifikasjon",
         _ => "Ingen gruppering",
     };
 
@@ -272,7 +284,8 @@ public static class ScenarioGroupAxes
 
     /// <summary>Whether a plan can use this grouping as its suites: test method is a decision about a scenario, not a fact a case carries.</summary>
     public static bool UsableForPlan(ScenarioGroupAxis primary, ScenarioGroupAxis secondary) =>
-        primary is not (ScenarioGroupAxis.None or ScenarioGroupAxis.Method) && secondary != ScenarioGroupAxis.Method && secondary != primary;
+        primary is not (ScenarioGroupAxis.None or ScenarioGroupAxis.Method or ScenarioGroupAxis.Specification)
+        && secondary is not (ScenarioGroupAxis.Method or ScenarioGroupAxis.Specification) && secondary != primary;
 
     public static string? StructureKey(ScenarioGroupAxis primary, ScenarioGroupAxis secondary) =>
         UsableForPlan(primary, secondary) ? Prefix + primary + (secondary == ScenarioGroupAxis.None ? "" : ">" + secondary) : null;

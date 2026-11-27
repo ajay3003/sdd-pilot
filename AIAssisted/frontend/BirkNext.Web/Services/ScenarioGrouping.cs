@@ -44,6 +44,10 @@ public static class ScenarioGrouping
                 return string.IsNullOrWhiteSpace(i.Area) ? new("~none", ScenarioGroupAxes.NoArea, 99) : new(i.Area, i.Area, 0);
             case ScenarioGroupAxis.Module:
                 return ModuleOf(i) is { } m ? new(m, m, 0) : new("~none", ScenarioGroupAxes.NoModule, 99);
+            case ScenarioGroupAxis.Specification:
+                // V12: the specification the scenario is documented in (its story's source path). Nothing is inferred: a scenario from code,
+                // contracts or flows has no specification and is listed under «Uten spesifikasjon».
+                return SpecificationOf(i) is { } spec ? new(spec.ToLowerInvariant(), SpecificationLabel(spec), 0) : new("~none", ScenarioGroupAxes.NoSpecification, 99);
             case ScenarioGroupAxis.Method:
                 // The kind a reviewer chose, else the suggestion; «Uavklart metode» only when the ownership itself is unclassified.
                 return i.Owner.NeedsReview && !i.KindDecided ? new("Unclassified", "Uavklart metode", 3)
@@ -64,6 +68,24 @@ public static class ScenarioGrouping
         : i.Candidate.CapabilityId == "test-specification" && i.Candidate.Area is { Length: > 0 } docModule ? docModule
         : i.Candidate.Evidence.Select(e => e.Reference).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p) && p!.Contains("/specs/", StringComparison.OrdinalIgnoreCase)) is { } path
             ? PlanStructure.ModuleOf(path) : null;
+
+    /// <summary>The specification a scenario's story is documented in (normalised path); null when it has none.</summary>
+    public static string? SpecificationOf(S.Item i) =>
+        i.Candidate.Story?.SpecificationPath is { Length: > 0 } spec ? spec.Replace('\\', '/').TrimStart('/') : null;
+
+    /// <summary>«001-skolenaervaer» for «specs/001-skolenaervaer/spec.md»; another file name is kept («001-x / annex.md»).</summary>
+    public static string SpecificationLabel(string path)
+    {
+        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2) return path;
+        var file = parts[^1];
+        return file.Equals("spec.md", StringComparison.OrdinalIgnoreCase) ? parts[^2] : $"{parts[^2]} / {file}";
+    }
+
+    /// <summary>A saved choice in the V12 model: a primary that is no longer offered (test level, type, area, method) becomes the second level
+    /// under Brukerhistorie, so the tester's breakdown is kept.</summary>
+    public static (ScenarioGroupAxis Primary, ScenarioGroupAxis Secondary) Normalise((ScenarioGroupAxis Primary, ScenarioGroupAxis Secondary) g) =>
+        ScenarioGroupAxes.PrimaryChoices.Contains(g.Primary) ? g : (ScenarioGroupAxis.Story, g.Primary);
 
     /// <summary>The group tree for the shown scenarios (list order is kept inside a group). Secondary = None or equal to primary gives one level.</summary>
     public static IReadOnlyList<Group> Build(IReadOnlyList<S.Item> shown, ScenarioGroupAxis primary, ScenarioGroupAxis secondary)

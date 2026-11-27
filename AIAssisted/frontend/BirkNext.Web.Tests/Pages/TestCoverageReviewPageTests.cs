@@ -96,6 +96,24 @@ public sealed class TestCoverageReviewPageTests : BunitContext
     }
 
     [Fact]
+    public void V12_a_long_list_of_unmatched_results_says_how_many_there_are_and_can_show_all()
+    {
+        // APP-3: the list was silently capped at 50 (.Take(50)): results 51-60 could not be seen at all.
+        Sources(Snap());
+        var many = Result() with { ExecutionOnly = [.. Enumerable.Range(1, 60).Select(i => new CoverageExecutionOnly($"Suite.Test{i:00}", "Passed", "CI", "TRX"))],
+            Dimensions = new BirkNext.TestEvidence.TestCoverageDimensions(3, 0, 0, 0, 0, 0, 0, 60, "CI") };
+        _api.Setup(x => x.RunAsync(It.IsAny<TestCoverageReviewRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync((many, (string?)null));
+        var cut = Render<TestCoverageReview>();
+        cut.Find("[data-testid=tco-run]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tco-execution-only-count]").TextContent.Should().Contain("Showing 50 of 60."));
+        cut.FindAll("[data-testid=tco-execution-only] li").Should().HaveCount(50);
+        cut.Find("[data-testid=tco-execution-only-all]").Click();
+        cut.FindAll("[data-testid=tco-execution-only] li").Should().HaveCount(60, "every result can be seen");
+        cut.Find("[data-testid=tco-execution-only] ul").TextContent.Should().Contain("Suite.Test60");
+        cut.Find("[data-testid=tco-execution-only-all]").TextContent.Should().Be("Show fewer");
+    }
+
+    [Fact]
     public void Results_default_to_simple_language_and_hide_internal_terms()
     {
         Sources(Snap());

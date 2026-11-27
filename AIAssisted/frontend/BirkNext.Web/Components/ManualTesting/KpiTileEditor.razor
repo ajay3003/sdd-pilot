@@ -4,9 +4,7 @@
    Used on Testoversikt (Norwegian) and in System Settings (English labels, per the settings rule). *@
 
 @* BUG-001 policy (2026-11-27): an edit dialog is never closed by a click beside it; «Avbryt» and Escape close it. *@
-<div class="mtp-preview-backdrop kte-backdrop" data-testid="kte">
-    <div class="mtp-preview kte" role="dialog" aria-modal="true" aria-labelledby="kte-title" tabindex="-1" @ref="_dialog"
-         @onclick:stopPropagation="true" @onkeydown="KeyAsync" data-testid="kte-dialog">
+<AccessibleDialog BackdropClass="mtp-preview-backdrop kte-backdrop" BackdropTestId="kte" PanelClass="mtp-preview kte" LabelledBy="kte-title" TestId="kte-dialog" OnClose="CancelAsync">
         <header class="mtp-preview-head">
             <h2 id="kte-title" class="mtp-preview-title">@(IsNew ? T("Legg til flis", "Add tile") : T("Tilpass flis", "Customize tile"))</h2>
         </header>
@@ -48,8 +46,7 @@
             <button type="button" class="btn btn-secondary" @onclick="CancelAsync" data-testid="kte-cancel">@T("Avbryt", "Cancel")</button>
             <button type="button" class="btn btn-primary" disabled="@Busy" @onclick="SaveAsync" data-testid="kte-save">@T("Lagre", "Save")</button>
         </footer>
-    </div>
-</div>
+</AccessibleDialog>
 
 @code {
     /// <summary>The tile to edit; null = a new tile (Testnivå / Ende til ende proposed).</summary>
@@ -64,8 +61,6 @@
     private string _title = "";
     private KpiTileDimension _dimension = KpiTileDimension.TestLevel;
     private string _metric = nameof(ScenarioTestLevel.EndToEnd);
-    private ElementReference _dialog;
-    private bool _focused;
     private bool IsNew => Tile is null;
 
     private string T(string nb, string en) => English ? en : nb;
@@ -82,13 +77,6 @@
     }
     private bool _initialised;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (_focused) return;
-        _focused = true;
-        try { await _dialog.FocusAsync(); } catch (Exception e) when (e is InvalidOperationException or Microsoft.JSInterop.JSException or TaskCanceledException) { }
-    }
-
     private void SetMetric(ChangeEventArgs e)
     {
         var parts = (e.Value?.ToString() ?? "").Split('|');
@@ -97,5 +85,4 @@
 
     private Task SaveAsync() => OnSave.InvokeAsync(Result);
     private Task CancelAsync() => OnCancel.InvokeAsync();
-    private Task KeyAsync(KeyboardEventArgs e) => e.Key == "Escape" ? CancelAsync() : Task.CompletedTask;
 }

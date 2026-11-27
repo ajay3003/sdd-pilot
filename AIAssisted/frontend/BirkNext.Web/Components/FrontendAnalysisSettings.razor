@@ -1542,8 +1542,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 @* ── Create Profile Modal ─────────────────────────────────────────────────── *@
 @if (_showCreateDialog)
 {
-    <div class="modal-backdrop" @onclick="() => _showCreateDialog = false" role="dialog" aria-modal="true" aria-labelledby="fa-create-title">
-        <div class="modal-panel" @onclick:stopPropagation="true">
+    <AccessibleDialog LabelledBy="fa-create-title" OnClose="() => _showCreateDialog = false" CloseOnBackdrop="true">
             <h2 id="fa-create-title" class="modal-title">Add Environment</h2>
             <div class="fa-form-grid">
                 <div class="form-field fa-field-full">
@@ -1578,15 +1577,13 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 <PrimaryButton OnClick="CreateProfileAsync"
                                Disabled="@(string.IsNullOrWhiteSpace(_newProfileName) || !IsNewProfileUrlValid)">Add Environment</PrimaryButton>
             </div>
-        </div>
-    </div>
+    </AccessibleDialog>
 }
 
 @* ── Delete Confirmation Modal ────────────────────────────────────────────── *@
 @if (_showDeleteConfirm)
 {
-    <div class="modal-backdrop" @onclick="() => _showDeleteConfirm = false" role="dialog" aria-modal="true" aria-labelledby="fa-delete-title">
-        <div class="modal-panel" @onclick:stopPropagation="true">
+    <AccessibleDialog LabelledBy="fa-delete-title" OnClose="() => _showDeleteConfirm = false" CanClose="!_isDeleting" CloseOnBackdrop="true">
             <h2 id="fa-delete-title" class="modal-title">Delete Environment</h2>
             <div class="notification notification-warning">
                 This will permanently delete the environment <strong>@SelectedProfile?.Name</strong> and all its settings.
@@ -1597,15 +1594,13 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                     @(_isDeleting ? "Deleting…" : "Delete Environment")
                 </DangerButton>
             </div>
-        </div>
-    </div>
+    </AccessibleDialog>
 }
 
 @* ── Reset Profile Confirmation Modal ────────────────────────────────────── *@
 @if (_showResetConfirm)
 {
-    <div class="modal-backdrop" @onclick="() => _showResetConfirm = false" role="dialog" aria-modal="true" aria-labelledby="fa-reset-title">
-        <div class="modal-panel" @onclick:stopPropagation="true">
+    <AccessibleDialog LabelledBy="fa-reset-title" OnClose="() => _showResetConfirm = false" CanClose="!_isResetting" CloseOnBackdrop="true">
             <h2 id="fa-reset-title" class="modal-title">Reset Profile</h2>
             <div class="notification notification-warning">
                 This resets Performance Thresholds, Core Web Vitals, and Feature Toggles to defaults.
@@ -1617,8 +1612,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                     @(_isResetting ? "Resetting…" : "Reset Profile")
                 </DangerButton>
             </div>
-        </div>
-    </div>
+    </AccessibleDialog>
 }
 
 @code {

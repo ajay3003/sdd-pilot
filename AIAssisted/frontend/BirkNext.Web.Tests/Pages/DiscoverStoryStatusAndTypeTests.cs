@@ -168,16 +168,19 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
         var cut = Open(View());
         // 2026-11-26: test level and type moved from the story sidebar's control to the list's own grouping («Grupper etter» above the results).
         cut.FindAll("[data-testid=mtd-group-mode] option").Select(o => o.TextContent).Should().StartWith(["Brukerhistorier"]).And.NotContain(["Testnivå", "Scenariotype"]);
-        cut.FindAll("[data-testid=mtd-list-group] option").Select(o => o.TextContent).Should().Equal("Brukerhistorie", "Testnivå", "Scenariotype", "Funksjonsområde", "Modul", "Testmetode", "Ingen gruppering");
+        // V12 (2026-11-27, approved): the groupings are Brukerhistorie, Spesifikasjon, Modul and Ingen gruppering; type, level, area and method
+        // are breakdowns under them («Deretter»).
+        cut.FindAll("[data-testid=mtd-list-group] option").Select(o => o.TextContent).Should().Equal("Brukerhistorie", "Spesifikasjon", "Modul", "Ingen gruppering");
         string? Label(DiscoveredScenario c) => cut.Find($"[data-testid=mtd-scenario][data-id='{c.CandidateId}']").QuerySelector("[data-testid=mtd-scenario-type]")?.TextContent;
         Label(Search).Should().BeNull("a functional scenario needs no label");
         Label(ErrorPanel).Should().Be("Blandet · Brukervennlighet");
         Label(Focus).Should().Be("Ikke-funksjonell · Universell utforming");
 
-        cut.Find("[data-testid=mtd-list-group]").Change("ScenarioType");
-        cut.Find("[data-testid=mtd-list-group2]").Change("None");
+        cut.Find("[data-testid=mtd-list-group]").Change("Story");
+        cut.FindAll("[data-testid=mtd-list-group2] option").Select(o => o.TextContent).Should().Contain(["Testnivå", "Scenariotype", "Funksjonsområde", "Testmetode"]);
+        cut.Find("[data-testid=mtd-list-group2]").Change("ScenarioType");   // Brukerhistorie → Scenariotype (the default)
         cut.Find("[data-testid=mtd-groups-expand]").Click(); // groups start collapsed (2026-11-26)
-        cut.FindAll("[data-testid=mtd-sgroup]").Select(g => (g.QuerySelector("[data-testid=mtd-sgroup-label]")!.TextContent, g.QuerySelector("[data-testid=mtd-sgroup-count]")!.TextContent))
+        cut.FindAll("[data-testid=mtd-sgroup][data-depth='1']").Select(g => (g.QuerySelector("[data-testid=mtd-sgroup-label]")!.TextContent, g.QuerySelector("[data-testid=mtd-sgroup-count]")!.TextContent))
             .Should().Equal(("Funksjonelle", "2"), ("Ikke-funksjonelle", "1"), ("Blandede", "1"));
         cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal("us1-1", "us1-4", "us2-6", "us2-5");
         cut.FindAll("[data-testid=mtd-scenario][data-id='us2-5']").Should().ContainSingle("a mixed scenario is listed once, under «Blandede»");
@@ -249,16 +252,17 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
     public void G04_nested_groups_start_collapsed_and_a_new_grouping_starts_collapsed_too()
     {
         FlatList = false;
-        JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("TestLevel>ScenarioType");
+        JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("ScenarioType>TestLevel");
         var cut = Open(View());
-        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("TestLevel"));
-        cut.FindAll("[data-testid=mtd-sgroup]").Should().ContainSingle("only the primary group is rendered while it is collapsed");
-        cut.Find("[data-testid=mtd-sgroup-toggle]").Click();
-        cut.FindAll("[data-testid=mtd-sgroup][data-depth='1'] > .mtg-head [data-testid=mtd-sgroup-toggle]").Should().HaveCount(3)
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("Story", "V12: a saved pre-V12 grouping keeps its breakdown under Brukerhistorie"));
+        cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-secondary").Should().Be("ScenarioType");
+        cut.FindAll("[data-testid=mtd-sgroup]").Should().HaveCount(2, "only the primary groups are rendered while they are collapsed");
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]")[1].Click();
+        cut.FindAll("[data-testid=mtd-sgroup][data-depth='1'] > .mtg-head [data-testid=mtd-sgroup-toggle]").Should().HaveCount(2)
             .And.OnlyContain(t => t.GetAttribute("aria-expanded") == "false", "secondary groups start collapsed");
         cut.FindAll("[data-testid=mtd-scenario]").Should().BeEmpty();
 
-        cut.Find("[data-testid=mtd-list-group]").Change("Method");
+        cut.Find("[data-testid=mtd-list-group]").Change("Module");
         cut.FindAll("[data-testid=mtd-sgroup-toggle]").Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "false", "another grouping is a new context: collapsed");
     }
 
@@ -282,17 +286,18 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
     public void G02_a_saved_preference_overrides_the_default_and_two_level_grouping_keeps_the_axes_independent()
     {
         FlatList = false;
-        JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("TestLevel>ScenarioType");
+        JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("Module>TestLevel");
         var cut = Open(View());
-        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("TestLevel"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("Module"));
         cut.Find("[data-testid=mtd-groups-expand]").Click();
-        Groups(cut).Should().Equal(("Uavklart testnivå", "4", "0"), ("Funksjonelle", "2", "1"), ("Ikke-funksjonelle", "1", "1"), ("Blandede", "1", "1"));
-        cut.FindAll("[data-testid=mtd-list-group2] option").Select(o => o.GetAttribute("value")).Should().NotContain("TestLevel", "the secondary axis cannot repeat the primary");
+        Groups(cut).Select(g => (g.Count, g.Depth)).Should().Equal(("4", "0"), ("4", "1"));
+        Groups(cut)[1].Label.Should().Be("Uavklart testnivå");
+        cut.FindAll("[data-testid=mtd-list-group2] option").Select(o => o.GetAttribute("value")).Should().NotContain("Module", "the secondary axis cannot repeat the primary");
         cut.FindAll("[data-testid=mtd-list-group2] option")[0].TextContent.Should().Be("Én gruppering");
 
-        cut.Find("[data-testid=mtd-list-group]").Change("Method");
-        cut.FindAll("[data-testid=mtd-sgroup][data-depth='0']").Select(g => g.GetAttribute("data-axis")).Should().OnlyContain(a => a == "Method");
-        JSInterop.VerifyInvoke("localStorage.setItem").Arguments.Should().Equal("birknext.manualTesting.scenarioGrouping", "Method>ScenarioType");
+        cut.Find("[data-testid=mtd-list-group]").Change("Specification");
+        cut.FindAll("[data-testid=mtd-sgroup][data-depth='0']").Select(g => g.GetAttribute("data-axis")).Should().OnlyContain(a => a == "Specification");
+        JSInterop.VerifyInvoke("localStorage.setItem").Arguments.Should().Equal("birknext.manualTesting.scenarioGrouping", "Specification>TestLevel");
 
         cut.Find("[data-testid=mtd-list-group]").Change("None");
         cut.FindAll("[data-testid=mtd-sgroup]").Should().BeEmpty();
@@ -317,6 +322,38 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
         cut.Find("[data-testid=mtd-search]").Input("");
         cut.FindAll("[data-testid=mtd-sgroup-clear]").Single().Click();
         cut.Find("[data-testid=mtd-selection-summary]").TextContent.Should().Contain("0 valgt totalt");
+    }
+
+    // ── V12 (2026-11-27, approved): one grouping state for the rail, the overview and the list ──────────────────────────────────────────
+
+    [Fact]
+    public void V12_grouping_by_specification_names_the_specification_and_never_invents_one()
+    {
+        FlatList = false;
+        var cut = Open(View());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]"));
+        cut.Find("[data-testid=mtd-list-group]").Change("Specification");
+        cut.Find("[data-testid=mtd-list-group2]").Change("None");
+        Groups(cut).Should().Equal([("002-child-search-profile", "4", "0")], "every scenario here is documented in one specification");
+        ScenarioGrouping.SpecificationLabel("specs/001-a/annex.md").Should().Be("001-a / annex.md");
+        ScenarioGroupAxes.UsableForPlan(ScenarioGroupAxis.Specification, ScenarioGroupAxis.None).Should().BeFalse("a case carries no specification fact, so a plan is never structured by it");
+    }
+
+    [Fact]
+    public void V12_no_grouping_is_one_state_for_the_rail_and_the_list()
+    {
+        FlatList = false;
+        var cut = Open(View());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]"));
+        cut.Find("[data-testid=mtd-list-group]").Change("None");
+        cut.FindAll("[data-testid=mtd-group-tree]").Should().BeEmpty();
+        foreach (var mode in cut.FindAll("[data-testid=mtd-group-mode] option[selected]")) mode.GetAttribute("value").Should().BeOneOf(["None", "Stories"], "the rail shows no area groups when the list is not grouped");
+        cut.FindAll("[data-testid=mtd-group-cards]").Should().BeEmpty("area cards never replace an ungrouped list");
+
+        cut.Find("[data-testid=mtd-list-group]").Change("Story");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("Story"));
+        foreach (var mode in cut.FindAll("[data-testid=mtd-group-mode] option[selected]")) mode.GetAttribute("value").Should().NotBe("None");
+        RailStories(cut).Should().Equal([Us1.Key, Us2.Key], "the stories stay reachable, and scenarios without a story stay in the list");
     }
 
     // ── Dashboard subset from Testoversikt (2026-11-26 blocker) ─────────────────────────────────────────────────────────────────────────
@@ -495,9 +532,9 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
     public void G06_Tilbakestill_gruppering_restores_Brukerhistorie_then_Scenariotype_collapsed()
     {
         FlatList = false;
-        JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("Method>ScenarioType");
+        JSInterop.Setup<string?>("localStorage.getItem", "birknext.manualTesting.scenarioGrouping").SetResult("Module>Method");
         var cut = Open(View());
-        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("Method"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("Module"));
         cut.Find("[data-testid=mtd-groups-reset]").Click();
         var tree = cut.Find("[data-testid=mtd-group-tree]");
         (tree.GetAttribute("data-primary"), tree.GetAttribute("data-secondary")).Should().Be(("Story", "ScenarioType"));

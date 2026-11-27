@@ -123,3 +123,37 @@ window.birknextWatchWidth = function (element, dotnet, minPx) {
     observer.observe(element);
     check();
 };
+
+// V12 (2026-11-27, APP-4): one accessible-dialog behaviour for every modal — keyboard focus stays inside the dialog (Tab and Shift+Tab wrap),
+// the first focusable control (or the dialog itself) receives focus when it opens, and focus returns to the control that opened it when it
+// closes. Escape is handled by the dialog component itself (it may ask first when there is unsaved work).
+window.birknextDialog = (function () {
+    const focusable = 'a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const open = new Map();
+    function items(dialog) { return Array.from(dialog.querySelectorAll(focusable)).filter(e => e.offsetParent !== null || e === document.activeElement); }
+    return {
+        trap: function (dialog, returnFocusId) {
+            if (!dialog || open.has(dialog)) return;
+            const previous = returnFocusId ? document.getElementById(returnFocusId) : document.activeElement;
+            const onKey = function (e) {
+                if (e.key !== 'Tab') return;
+                const list = items(dialog);
+                if (list.length === 0) { e.preventDefault(); dialog.focus(); return; }
+                const first = list[0], last = list[list.length - 1];
+                if (e.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+                else if (!e.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+            };
+            dialog.addEventListener('keydown', onKey);
+            open.set(dialog, { onKey: onKey, previous: previous });
+            if (!dialog.contains(document.activeElement)) { const list = items(dialog); (list[0] || dialog).focus(); }
+        },
+        release: function (dialog) {
+            const state = open.get(dialog);
+            if (!state) return;
+            dialog.removeEventListener('keydown', state.onKey);
+            open.delete(dialog);
+            if (state.previous && document.contains(state.previous) && typeof state.previous.focus === 'function') state.previous.focus();
+        },
+        releaseAll: function () { Array.from(open.keys()).forEach(d => window.birknextDialog.release(d)); }
+    };
+})();

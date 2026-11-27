@@ -273,11 +273,12 @@
                                     else
                                     {
                                         <ul>
-                                            @foreach (var test in selectedRequirement.LinkedTests.Take(5))
+                                            @foreach (var test in selectedRequirement.LinkedTests.Take(ShowsAll("tests") ? int.MaxValue : 5))
                                             {
                                                 <li>@test.Title</li>
                                             }
                                         </ul>
+                                        @if (selectedRequirement.LinkedTests.Count() > 5) { <button type="button" class="btn btn-link btn-sm p-0" @onclick='() => ToggleAll("tests")' data-testid="spec-tests-all">@(ShowsAll("tests") ? "Show fewer" : $"Show all {selectedRequirement.LinkedTests.Count()} linked tests")</button> }
                                     }
                                 </div>
                                 <div class="se-linked-block">
@@ -289,11 +290,12 @@
                                     else
                                     {
                                         <ul>
-                                            @foreach (var sc in selectedRequirement.LinkedSuccessCriteria.Take(5))
+                                            @foreach (var sc in selectedRequirement.LinkedSuccessCriteria.Take(ShowsAll("criteria") ? int.MaxValue : 5))
                                             {
                                                 <li>@sc.Title</li>
                                             }
                                         </ul>
+                                        @if (selectedRequirement.LinkedSuccessCriteria.Count() > 5) { <button type="button" class="btn btn-link btn-sm p-0" @onclick='() => ToggleAll("criteria")' data-testid="spec-criteria-all">@(ShowsAll("criteria") ? "Show fewer" : $"Show all {selectedRequirement.LinkedSuccessCriteria.Count()} success criteria")</button> }
                                     }
                                 </div>
                                 <details class="se-details-tech">
@@ -1009,4 +1011,9 @@
 
         return fullName is not null ? $"{fullName} {specItemId}" : null;
     }
+
+    // V12 (2026-11-27, APP-3): lists that were silently capped with .Take(n) say how many there are and can show all of them.
+    private readonly HashSet<string> _showAll = new(StringComparer.Ordinal);
+    private bool ShowsAll(string key) => _showAll.Contains(key);
+    private void ToggleAll(string key) { if (!_showAll.Remove(key)) _showAll.Add(key); }
 }

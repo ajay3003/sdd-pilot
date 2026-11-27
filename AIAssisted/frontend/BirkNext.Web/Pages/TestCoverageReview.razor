@@ -152,7 +152,13 @@
                             @if (r.ExecutionOnly.Count > 0)
                             {
                                 <details class="tco-details" data-testid="tco-execution-only"><summary>@r.ExecutionOnly.Count imported result(s) match no discovered test</summary>
-                                    <ul class="tco-list">@foreach (var e in r.ExecutionOnly.Take(50)) { <li>@e.TestName — @e.Result <span class="tco-muted">@(e.Environment ?? "context not recorded") · @e.Basis</span></li> }</ul></details>
+                                    @{ const int ExecutionOnlyLimit = 50; var executionOnly = ShowsAll("execution-only") ? r.ExecutionOnly : r.ExecutionOnly.Take(ExecutionOnlyLimit).ToList(); }
+                                    @if (r.ExecutionOnly.Count > ExecutionOnlyLimit)
+                                    {
+                                        <p class="tco-muted" data-testid="tco-execution-only-count">Showing @executionOnly.Count of @r.ExecutionOnly.Count.
+                                            <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick='() => ToggleAll("execution-only")' data-testid="tco-execution-only-all">@(ShowsAll("execution-only") ? "Show fewer" : $"Show all ({r.ExecutionOnly.Count})")</button></p>
+                                    }
+                                    <ul class="tco-list">@foreach (var e in executionOnly) { <li>@e.TestName — @e.Result <span class="tco-muted">@(e.Environment ?? "context not recorded") · @e.Basis</span></li> }</ul></details>
                             }
                             @if (r.DiscoveryLimitations.Count > 0) { <ul class="tco-list" data-testid="tco-discovery-limitations">@foreach (var l in r.DiscoveryLimitations) { <li>@l</li> }</ul> }
                         }
@@ -290,7 +296,12 @@
                                                 <details class="tco-details"><summary>Technical details</summary>
                                                     <p>Boundary: @TestCoverageReviewText.Boundary(s.Boundary). QA: @s.QaExplanation</p>
                                                     <ul>@foreach (var p in s.Provenance) { <li><code>@p</code></li> }</ul>
-                                                    @if (s.DeveloperTestIds.Count > 0) { <p>Tests: @string.Join(", ", s.DeveloperTestIds.Select(TestName).Take(8))</p> }
+                                                    @if (s.DeveloperTestIds.Count > 0)
+                                                    {
+                                                        var testsKey = "tests:" + s.GetHashCode(); var allTests = ShowsAll(testsKey);
+                                                        <p>Tests: @string.Join(", ", s.DeveloperTestIds.Select(TestName).Take(allTests ? int.MaxValue : 8))
+                                                            @if (s.DeveloperTestIds.Count > 8) { <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => ToggleAll(testsKey)" data-testid="tco-tests-all">@(allTests ? "Show fewer" : $"and {s.DeveloperTestIds.Count - 8} more")</button> }</p>
+                                                    }
                                                 </details>
                                             </li>
                                         }
@@ -758,4 +769,9 @@
     }
 
     public void Dispose() { _cts.Cancel(); _cts.Dispose(); }
+
+    // V12 (2026-11-27, APP-3): lists that were silently capped with .Take(n) say how many there are and can show all of them.
+    private readonly HashSet<string> _showAll = new(StringComparer.Ordinal);
+    private bool ShowsAll(string key) => _showAll.Contains(key);
+    private void ToggleAll(string key) { if (!_showAll.Remove(key)) _showAll.Add(key); }
 }

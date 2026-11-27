@@ -1,0 +1,54 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@* V12 (2026-11-27, APP-4): the one accessible modal for the application. It owns the dialog behaviour every modal needs and that several were
+   missing: role and aria-modal on the panel (not the backdrop), Escape closes it (unless the owner says it cannot close right now, e.g. while
+   saving), keyboard focus moves into it and stays inside it (Tab / Shift+Tab wrap), and focus returns to the control that opened it when it
+   closes. A click beside the dialog closes it only when CloseOnBackdrop is set — never for an edit dialog (BUG-001 policy). The content, its
+   headings and its buttons stay the owner's. *@
+<div class="@BackdropClass" role="presentation" data-testid="@BackdropTestId" @onclick="BackdropAsync">
+    <div @ref="_panel" class="@PanelClass" role="@Role" aria-modal="true" aria-labelledby="@LabelledBy" tabindex="-1" data-testid="@TestId"
+         data-dialog="accessible" @onclick:stopPropagation="true" @onkeydown="KeyAsync">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
+    /// <summary>Id of the dialog's visible title (aria-labelledby).</summary>
+    [Parameter, EditorRequired] public string LabelledBy { get; set; } = "";
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>False while the dialog must stay open (a save or a reset is running): Escape and the backdrop then do nothing.</summary>
+    [Parameter] public bool CanClose { get; set; } = true;
+    [Parameter] public bool CloseOnBackdrop { get; set; }
+    /// <summary>The control to focus when the dialog closes; by default the one that had focus when it opened.</summary>
+    [Parameter] public string? ReturnFocusId { get; set; }
+    [Parameter] public string Role { get; set; } = "dialog";
+    [Parameter] public string BackdropClass { get; set; } = "modal-backdrop";
+    [Parameter] public string PanelClass { get; set; } = "modal-panel";
+    [Parameter] public string? TestId { get; set; }
+    [Parameter] public string? BackdropTestId { get; set; }
+
+    private ElementReference _panel;
+    private bool _trapped;
+
+    private Task KeyAsync(KeyboardEventArgs e) => e.Key == "Escape" ? CloseAsync() : Task.CompletedTask;
+    private Task BackdropAsync() => CloseOnBackdrop ? CloseAsync() : Task.CompletedTask;
+    private Task CloseAsync() => CanClose && OnClose.HasDelegate ? OnClose.InvokeAsync() : Task.CompletedTask;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _trapped) return;
+        _trapped = true;
+        // Focus handling is an enhancement: a missing script (or a test host without one) must never break the dialog itself.
+        try { await JS.InvokeVoidAsync("birknextDialog.trap", _panel, ReturnFocusId); }
+        catch (Exception e) when (e is not OutOfMemoryException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_trapped) return;
+        try { await JS.InvokeVoidAsync("birknextDialog.release", _panel); }
+        catch (Exception e) when (e is not OutOfMemoryException) { }
+    }
+}
