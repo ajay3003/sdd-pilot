@@ -363,8 +363,13 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         drawer.GetAttribute("data-open").Should().Be("false", "closed on first load");
         drawer.HasAttribute("hidden").Should().BeTrue("no reserved third column");
 
+        // V12 (2026-11-27, MT-1): the whole row opens the scenario at every width (before, a click only highlighted it).
         cut.Find("[data-testid=mtd-scenario][data-id='US1-AS1']").Click();
-        cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("false", "selecting a scenario does not open the drawer");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true", "a row click opens its details"));
+        cut.Find("[data-testid=mtd-detail-title]").TextContent.Should().Contain("Valid report accepted");
+        cut.Find("[data-testid=mtd-drawer-close]").Click();
+        cut.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "msb-row-US1-AS1",
+            "closing returns focus to the scenario's row"));
 
         cut.Find("[data-testid=mtd-scenario][data-id='US1-AS2'] [data-testid=mtd-show-details]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true"));
@@ -379,7 +384,8 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         cut.Find("[data-testid=mtd-scenario][data-id='US1-AS1']").ClassList.Should().Contain("is-active", "closing keeps the selected scenario");
 
         cut.Find("[data-testid=mtd-scenario][data-id='US1-AS2']").Click();
-        cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("false", "while closed it stays closed");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true", "the row opens it again"));
+        cut.Find("[data-testid=mtd-drawer-close]").Click();
         cut.FindAll("[data-testid=mtd-show-details]")[0].Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true"));
         cut.Find("[data-testid=mtd-drawer-close]").Click();

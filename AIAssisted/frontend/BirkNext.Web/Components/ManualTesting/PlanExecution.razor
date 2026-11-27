@@ -23,7 +23,8 @@
                 <span class="mtx-bar" role="img" aria-label="@($"{v.Passed} bestått, {v.Failed} feilet, {v.Blocked} blokkert, {v.NotRun} ikke kjørt av {v.Total}")">
                     <span class="is-passed" style="width:@Pct(v.Passed, v.Total)%"></span><span class="is-failed" style="width:@Pct(v.Failed, v.Total)%"></span><span class="is-blocked" style="width:@Pct(v.Blocked, v.Total)%"></span>
                 </span>
-                <span class="mt-muted msb-small" data-testid="mtx-executed">Gjennomført: @Pct(v.Passed + v.Failed + v.Blocked, v.Total) %</span>
+                @* V12 (2026-11-27): «x av y behandlet» instead of «Gjennomført: z %» — a blocked scenario is handled, never verified. *@
+                <span class="mt-muted msb-small" data-testid="mtx-executed">@(v.Passed + v.Failed + v.Blocked) av @v.Total behandlet · @v.Passed bestått@(v.Blocked > 0 ? $" · {v.Blocked} blokkert (ikke verifisert)" : "")</span>
             }
             @if (v.Archived) { <span class="msb-status msb-tone-muted" data-testid="mtx-archived">Arkivert – kun visning</span> }
         </div>
@@ -36,7 +37,11 @@
         <ul class="mtx-list">
             @foreach (var group in v.Occurrences.Where(o => _statusFilter is null || o.Status == _statusFilter).GroupBy(o => o.SuitePath ?? "Uten testgruppe"))
             {
-                <li class="mtx-suite"><span class="mtp-ctx-label" data-testid="mtx-suite">@group.Key</span>
+                @* V12 (2026-11-27, MT-4): Plan → Testgruppe (nested, shown as its path) → Scenarioforekomst → valgfritt testtilfelle. *@
+                var segments = group.Key.Split(" / ", StringSplitOptions.RemoveEmptyEntries);
+                <li class="mtx-suite" style="--mtx-depth:@(Math.Max(0, segments.Length - 1))" data-depth="@(segments.Length - 1)">
+                    <span class="mtp-ctx-label mtx-suite-path" data-testid="mtx-suite">@string.Join(" › ", segments)</span>
+                    <span class="mt-muted msb-small" data-testid="mtx-suite-count">@group.Count() scenario@(group.Count() == 1 ? "" : "er")</span>
                     <ul>
                         @foreach (var o in group)
                         {
@@ -45,6 +50,7 @@
                             <li class="mtx-row is-@occ.Status.ToString().ToLowerInvariant()" data-testid="mtx-row" data-key="@occ.Key" data-status="@occ.Status">
                                 <button type="button" class="mtx-row-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => Toggle(occ)" data-testid="mtx-row-open">
                                     <span class="mtx-title">@(occ.StoryId is { } sid && occ.NumberInStory is { } n2 ? $"{sid} · AC {n2} — " : "")@occ.Title</span>
+                                    <span class="msb-tag mtx-cases-tag" data-testid="mtx-case-count">@(occ.CaseIds.Count switch { 0 => "uten testtilfelle", 1 => "1 testtilfelle", var c => $"{c} testtilfeller" })</span>
                                     <span class="msb-status msb-tone-@Tone(occ.Status)" data-testid="mtx-status">@Label(occ.Status)</span>@if (occ.Preparation is { } prep) { <span class="msb-tag mtx-prep" title="Klargjøring er veiledende og stopper ikke gjennomføring." data-testid="mtx-prep" data-prep="@prep">Klargjøring: @BirkNext.TestPlanning.ScenarioPreparationEngine.Label(prep)</span> }
                                     @if (occ.Latest is { } last) { <span class="mt-muted msb-small">@last.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · @last.By</span> }
                                 </button>

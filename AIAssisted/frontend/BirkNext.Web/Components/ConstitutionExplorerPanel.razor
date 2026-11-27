@@ -89,7 +89,7 @@
                     aria-label="Search constitution" />
                 @if (!string.IsNullOrWhiteSpace(_searchQuery))
                 {
-                    <span class="ce-search-clear" @onclick="ClearSearch" title="Clear search">×</span>
+                    <button type="button" class="ce-search-clear" @onclick="ClearSearch" title="Clear search" aria-label="Clear search">×</button>
                     <span class="ce-search-count">@SearchResultCount result@(SearchResultCount != 1 ? "s" : "")</span>
                 }
             </div>

@@ -363,8 +363,13 @@
                                 <button type="button" class="msb-link" @onclick="() => _pending = null" data-testid="mtp-unsaved-cancel">Avbryt</button>
                             </div>
                         }
+                        @* V12 (2026-11-27, MT-8): creating and editing are never shown together. While «Nytt testtilfelle» is open the editor below is
+                           hidden — its unsaved values are kept, not discarded — and it returns after «Opprett» or «Avbryt». *@
+                        @if (_newCase is not null)
+                        {
+                        }
                         @* «Klargjør AC» for a planned scenario WITHOUT a test case (2026-11-26): preparation needs no case, and none is created here. *@
-                        @if (_prepItem is { } prepId && _ws?.ProjectKey is { } prepKey && _ws.Discovery?.Candidates.FirstOrDefault(x => x.CandidateId == prepId) is { } prepScenario)
+                        else if (_prepItem is { } prepId && _ws?.ProjectKey is { } prepKey && _ws.Discovery?.Candidates.FirstOrDefault(x => x.CandidateId == prepId) is { } prepScenario)
                         {
                             <div class="mtp-prep-item" data-testid="mtp-prep-item">
                                 <button type="button" class="msb-link mtp-prep-close" @onclick="() => _prepItem = null" data-testid="mtp-prep-close">Lukk klargjøring</button>

@@ -345,6 +345,8 @@ public sealed class ScenarioWorkQueuePageTests : BunitContext
         cut.Find("[data-testid=mtd-plans-archived] summary").TextContent.Should().Contain("Arkiverte testplaner (1)");
 
         cut.Find("[data-testid=mtd-scenario][data-id='c-first'] [data-testid=mtd-show-details]").Click(); cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail-title]").Should().NotBeNull()); cut.WaitForState(() => cut.FindAll("[data-testid=mtd-plans]").Count == 1);
-        cut.Find("[data-testid=mtd-plans-primary]").TextContent.Should().Be("Forbered testtilfelle", "no case yet: prepare (nothing is created by opening)");
+        // V12 (MT-2): no case yet: the panel's one primary action («Forbered testtilfelle», at the top) prepares; the plan block repeats nothing.
+        cut.FindAll("[data-testid=mtd-plans-primary]").Should().BeEmpty();
+        cut.FindAll("[data-testid=mtd-detail] .btn-primary").Select(b => b.TextContent.Trim()).Should().Equal(["Forbered testtilfelle"], "exactly one primary action");
     }
 }

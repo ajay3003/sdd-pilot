@@ -1437,3 +1437,14 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .mtp-planned-view { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .1rem .5rem; border: 1px dashed var(--clr-border, #d0d7de); border-radius: .375rem; }
 .mtp-planned-view-label { font-size: .75rem; color: var(--clr-text-muted, #57606a); }
 .mtp-planned-create { display: inline-flex; align-items: center; gap: .4rem; padding-left: .75rem; border-left: 1px solid var(--clr-border, #d0d7de); }
+
+/* V12 (2026-11-27, MT-7): the three row states are independent and each visible on its own — opened (accent bar on the left), selected for a
+   bulk action (a dashed outline + the ticked checkbox), already in an active test plan (tinted background + the plan line's text). Before,
+   «selected» was bold text only. */
+.msb-row.is-selected { outline: 2px dashed color-mix(in srgb, var(--msb-accent) 55%, transparent); outline-offset: -2px; }
+.msb-row.is-selected .msb-row-title { font-weight: 600; }
+
+/* V12 (2026-11-27, MT-4): the plan's hierarchy is visible in execution — nested test groups are indented by depth, each with its scenario count. */
+.mtx-suite { margin-left: calc(var(--mtx-depth, 0) * 1rem); }
+.mtx-suite-path { margin-right: .5rem; }
+.mtx-cases-tag { white-space: nowrap; }

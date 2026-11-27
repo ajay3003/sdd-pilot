@@ -2228,9 +2228,22 @@
         try { await Task.Yield(); await _drawer.FocusAsync(); } catch (Exception e) when (e is InvalidOperationException or JSException or TaskCanceledException) { }
     }
 
-    private Task CloseDetailsAsync() { _drawerOpen = false; return Task.CompletedTask; }
+    /// <summary>V12 (2026-11-27, MT-1): the whole row opens the scenario. With three columns the detail column already shows it; below that width
+    /// the detail panel opens (before, a click only highlighted the row and the details needed «Vis detaljer»).</summary>
+    /// Synchronous and without moving focus: the list keeps the keyboard focus (arrows, Enter, Space); «Vis detaljer» moves focus into the panel.
+    private Task OpenRowAsync(string id)
+    {
+        Open(id);
+        if (!_threeColumns) _drawerOpen = true;
+        return Task.CompletedTask;
+    }
 
-    private Task DrawerKey(KeyboardEventArgs e) { if (e.Key == "Escape" && !_threeColumns) _drawerOpen = false; return Task.CompletedTask; }
+    /// <summary>Closing the detail panel returns focus to the scenario's row (V12, MT-13).</summary>
+    private Task CloseDetailsAsync() { _drawerOpen = false; _returnFocusTo = _active; return Task.CompletedTask; }
+
+    private Task DrawerKey(KeyboardEventArgs e) { if (e.Key == "Escape" && !_threeColumns) { _drawerOpen = false; _returnFocusTo = _active; } return Task.CompletedTask; }
+
+    private string? _returnFocusTo;
 
     // ── Three columns (2026-11-27) ──
     /// <summary>The page width (px) from which stories, scenarios and the open scenario stand side by side: 84rem leaves the scenario list about
@@ -2340,6 +2353,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_returnFocusTo is { } back)
+        {
+            _returnFocusTo = null;
+            try { await JS.InvokeVoidAsync("birknextFocusElement", $"msb-row-{back}"); } catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
+        }
         if (_focusPending is { } focus && !_loading && _items.Any(i => i.Id == focus))
         {
             _focusPending = null;
@@ -2580,16 +2598,13 @@
                 @if (active.Count == 1)
                 {
                     var only = active[0];
-                    <a class="btn btn-primary btn-sm" href="@($"{M.PlanRoute}?draft={only.PlanId}&case={Uri.EscapeDataString(only.CaseId)}")" data-testid="mtd-plans-primary">Åpne testtilfelle</a>
+                    <a class="btn btn-outline-secondary btn-sm" href="@($"{M.PlanRoute}?draft={only.PlanId}&case={Uri.EscapeDataString(only.CaseId)}")" data-testid="mtd-plans-primary">Åpne testtilfelle</a>
                 }
                 else if (active.Count > 1)
                 {
-                    <a class="btn btn-primary btn-sm" href="@($"{M.PlanRoute}?draft={active[0].PlanId}&case={Uri.EscapeDataString(active[0].CaseId)}")" data-testid="mtd-plans-primary">Åpne første testtilfelle</a>
+                    <a class="btn btn-outline-secondary btn-sm" href="@($"{M.PlanRoute}?draft={active[0].PlanId}&case={Uri.EscapeDataString(active[0].CaseId)}")" data-testid="mtd-plans-primary">Åpne første testtilfelle</a>
                 }
-                else
-                {
-                    <button type="button" class="btn btn-primary btn-sm" @onclick="() => PrepareOnlyAsync(i.Id)" data-testid="mtd-plans-primary">Forbered testtilfelle</button>
-                }
+                @* V12 (MT-2): no second «Forbered testtilfelle» here: the panel has one primary action, at the top. *@
             </div>
         </section>
     };
@@ -2658,7 +2673,7 @@
     {
         var selected = _selected.Contains(i.Id);
                         <li id="@($"msb-row-{i.Id}")" role="option" aria-selected="@(selected ? "true" : "false")" class="msb-row mtw-ac-row @(i.Id == _active ? "is-active" : null) @(selected ? "is-selected" : null) @(S.InActivePlan(i) ? "is-in-plan" : null)"
-                            data-testid="mtd-scenario" data-id="@i.Id" data-relevance="@i.Relevance" @onclick="() => Open(i.Id)">
+                            data-testid="mtd-scenario" data-id="@i.Id" data-relevance="@i.Relevance" @onclick="() => OpenRowAsync(i.Id)">
                             <input type="checkbox" class="msb-check" checked="@selected" aria-label="@($"Velg {i.Title}")" @onclick:stopPropagation="true"
                                    @onchange="() => ToggleAsync(i.Id)" data-testid="mtd-select" />
                             <span class="msb-row-main">
@@ -2721,6 +2736,7 @@
             case "Home": _active = page[0].Id; break;
             case "End": _active = page[^1].Id; break;
             case " ": if (_active is { } a) await ToggleAsync(a); break;
+            case "Enter": if (_active is { } open) await OpenRowAsync(open); break;
         }
     }
 

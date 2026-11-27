@@ -84,7 +84,7 @@
                     aria-label="Search plan" />
                 @if (!string.IsNullOrWhiteSpace(_search))
                 {
-                    <span class="pe-search-clear" @onclick="ClearSearch" title="Clear">×</span>
+                    <button type="button" class="pe-search-clear" @onclick="ClearSearch" title="Clear" aria-label="Clear search">×</button>
                     <span class="pe-search-count">@SearchResultCount result@(SearchResultCount != 1 ? "s" : "")</span>
                 }
             </div>

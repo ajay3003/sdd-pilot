@@ -140,7 +140,9 @@ public static partial class ScenarioPreparationEngine
         CriterionBasis.Proposed => "Foreslått",
         CriterionBasis.Source => "Basert på kilde",
         CriterionBasis.Case => "Fra testtilfelle",
-        _ => "Bekreftet av tester",
+        // V12 (2026-11-27): a tester's recorded assessment of a criterion. «Bekreftet» read as «fulfilled» even when the tester recorded it as
+        // missing or not relevant; the assessment itself is what was recorded.
+        _ => "Vurdert av tester",
     };
 
     public static string Label(PreparationStatus s) => s switch

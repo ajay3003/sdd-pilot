@@ -1522,3 +1522,7 @@
     background-size: contain;
     vertical-align: -0.1em;
 }
+
+/* V12 (2026-11-27, APP-8): the clear control is a real button (keyboard-reachable), styled as before. */
+button.ce-search-clear { background: none; border: 0; padding: 0 .25rem; line-height: 1; cursor: pointer; }
+button.ce-search-clear:focus-visible { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 1px; border-radius: 2px; }

@@ -1355,3 +1355,7 @@
 .pe-summary-text > :last-child { margin-bottom: 0; }
 .pe-summary-text p { margin: 0 0 .5rem; }
 .pe-summary-text ul, .pe-summary-text ol { margin: 0 0 .5rem 1.25rem; padding: 0; }
+
+/* V12 (2026-11-27, APP-8): the clear control is a real button (keyboard-reachable), styled as before. */
+button.pe-search-clear { background: none; border: 0; padding: 0 .25rem; line-height: 1; cursor: pointer; }
+button.pe-search-clear:focus-visible { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 1px; border-radius: 2px; }

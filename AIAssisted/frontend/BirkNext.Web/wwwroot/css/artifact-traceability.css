@@ -677,3 +677,7 @@
 .at-edge-explicit    { background: color-mix(in sRGB, var(--clr-success, #16a34a) 12%, transparent); color: var(--clr-success, #16a34a); }
 .at-edge-info        { background: color-mix(in sRGB, var(--clr-info, #2563eb) 10%, transparent); color: var(--clr-text-muted); }
 .at-edge-notassessed { background: color-mix(in sRGB, var(--clr-text-muted) 12%, transparent); color: var(--clr-text-muted); }
+
+/* V12 (2026-11-27, APP-8): the clear control is a real button (keyboard-reachable), styled as before. */
+button.at-search-clear { background: none; border: 0; padding: 0 .25rem; line-height: 1; cursor: pointer; }
+button.at-search-clear:focus-visible { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 1px; border-radius: 2px; }

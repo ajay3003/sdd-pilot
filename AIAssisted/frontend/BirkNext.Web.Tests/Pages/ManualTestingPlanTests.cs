@@ -635,6 +635,22 @@ public sealed partial class ManualTestingPlanTests : BunitContext
     }
 
     [Fact]
+    public void V12_creating_a_case_hides_the_editor_and_cancelling_brings_back_its_unsaved_value()
+    {
+        // V12 (2026-11-27, MT-8): the «Nytt testtilfelle» form and the case editor were shown together, one below the other.
+        Setup(Standard());
+        var cut = Open();
+        cut.Find("[data-testid=mtp-case][data-case=c1]").Click();
+        cut.Find("[data-testid=mtp-title]").Input("Uferdig endring");
+        cut.Find("[data-testid=mtp-new-case]").Click();
+        cut.FindAll("[data-testid=mtp-new]").Should().ContainSingle();
+        cut.FindAll("[data-testid=mtp-title]").Should().BeEmpty("the editor is hidden while a new case is created");
+        cut.Find("[data-testid=mtp-new-cancel]").Click();
+        cut.Find("[data-testid=mtp-title]").GetAttribute("value").Should().Be("Uferdig endring", "the editor's unsaved value is kept, not discarded");
+        _api.Verify(x => x.SaveAsync(It.IsAny<Guid>(), It.IsAny<SaveTestPlanDraftRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public void BUG003_the_testers_explicit_technical_setting_survives_F5()
     {
         // Manual E2E 2026-11-27: «Vis teknisk innhold» was off again after F5 while a technical case stayed open (and hidden in the list).

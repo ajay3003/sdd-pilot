@@ -211,7 +211,7 @@
                     aria-label="Search" />
                 @if (!string.IsNullOrWhiteSpace(_search))
                 {
-                    <span class="at-search-clear" @onclick='() => _search = string.Empty' title="Clear">×</span>
+                    <button type="button" class="at-search-clear" @onclick='() => _search = string.Empty' title="Clear" aria-label="Clear search">×</button>
                 }
             </div>
         }

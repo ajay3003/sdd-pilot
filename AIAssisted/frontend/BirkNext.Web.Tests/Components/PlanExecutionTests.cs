@@ -54,6 +54,26 @@ public sealed class PlanExecutionTests : BunitContext
     }
 
     [Fact]
+    public void V12_progress_says_how_many_are_handled_and_never_counts_blocked_as_verified()
+    {
+        var blocked = new ScenarioExecutionEvent(Guid.NewGuid(), ScenarioExecutionStatus.Blocked, "Miljøet mangler", null, "tester", DateTimeOffset.UtcNow);
+        var cut = Render(View(ScenarioExecutionStatus.Blocked, blocked));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtx-executed]").TextContent.Should().Be("1 av 2 behandlet · 0 bestått · 1 blokkert (ikke verifisert)"));
+        cut.Markup.Should().NotContain("Gjennomført:", "«50 % gjennomført» read as done when the only handled scenario was blocked");
+    }
+
+    [Fact]
+    public void V12_the_plan_hierarchy_is_visible_nested_groups_with_counts_and_each_occurrences_optional_case()
+    {
+        var cut = Render(View());
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtx-suite]").Select(e => e.TextContent).Should().Equal("Ende til ende › Rapportering", "Integrasjon"));
+        cut.Find("[data-testid=mtx-suite]").ParentElement!.GetAttribute("data-depth").Should().Be("1", "a nested group is indented by its depth");
+        cut.FindAll("[data-testid=mtx-suite-count]").Select(e => e.TextContent).Should().Equal("1 scenario", "1 scenario");
+        cut.Find("[data-testid=mtx-row][data-key='scenario:a1'] [data-testid=mtx-case-count]").TextContent.Should().Be("1 testtilfelle");
+        cut.Find("[data-testid=mtx-row][data-key='scenario:a3'] [data-testid=mtx-case-count]").TextContent.Should().Be("uten testtilfelle", "a case is optional");
+    }
+
+    [Fact]
     public void X02_a_case_is_an_instruction_link_and_a_conflict_keeps_the_comment()
     {
         var earlier = new ScenarioExecutionEvent(Guid.NewGuid(), ScenarioExecutionStatus.Failed, "Feil kvittering", "BUG-12", "anna", DateTimeOffset.UtcNow.AddHours(-1));
