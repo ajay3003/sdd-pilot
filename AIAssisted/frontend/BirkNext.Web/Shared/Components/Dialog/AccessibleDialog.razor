@@ -7,7 +7,7 @@
    closes. A click beside the dialog closes it only when CloseOnBackdrop is set — never for an edit dialog (BUG-001 policy). The content, its
    headings and its buttons stay the owner's. *@
 <div class="@BackdropClass" role="presentation" data-testid="@BackdropTestId" @onclick="BackdropAsync">
-    <div @ref="_panel" class="@PanelClass" role="@Role" aria-modal="true" aria-labelledby="@LabelledBy" tabindex="-1" data-testid="@TestId"
+    <div @ref="_panel" class="@PanelClass" role="@Role" aria-modal="true" aria-labelledby="@LabelledBy" aria-describedby="@DescribedBy" tabindex="-1" data-testid="@TestId"
          data-dialog="accessible" @onclick:stopPropagation="true" @onkeydown="KeyAsync">
         @ChildContent
     </div>
@@ -17,6 +17,8 @@
     [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
     /// <summary>Id of the dialog's visible title (aria-labelledby).</summary>
     [Parameter, EditorRequired] public string LabelledBy { get; set; } = "";
+    /// <summary>Optional id of concise descriptive text associated with the dialog.</summary>
+    [Parameter] public string? DescribedBy { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
     /// <summary>False while the dialog must stay open (a save or a reset is running): Escape and the backdrop then do nothing.</summary>
     [Parameter] public bool CanClose { get; set; } = true;

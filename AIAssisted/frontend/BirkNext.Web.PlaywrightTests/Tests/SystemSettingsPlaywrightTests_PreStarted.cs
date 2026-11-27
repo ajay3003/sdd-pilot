@@ -142,6 +142,68 @@ public sealed class SystemSettingsPlaywrightTests_PreStarted : IAsyncLifetime
         await page.CloseAsync();
     }
 
+    [BrowserFact]
+    public async Task Reset_everything_dialog_keeps_actions_visible_at_small_viewports_and_never_posts_reset_when_cancelled()
+    {
+        var page = await _fixture.Context.NewPageAsync();
+        var resetPosts = new List<string>();
+        page.Request += (_, request) =>
+        {
+            if (request.Method == "POST" && request.Url.Contains("api/admin/data-reset", StringComparison.OrdinalIgnoreCase))
+                resetPosts.Add(request.Url);
+        };
+
+        foreach (var (width, height) in new[] { (1920, 1080), (1366, 768), (1280, 720), (1024, 600), (390, 844), (960, 540), (780, 422), (640, 360) })
+        {
+            await page.SetViewportSizeAsync(width, height);
+            await page.GotoAsync($"{_fixture.FrontendUrl}/admin/system-settings?section=maintenance",
+                new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 60000 });
+            var opener = page.GetByTestId("reset-open");
+            await opener.WaitForAsync(new LocatorWaitForOptions { Timeout = 120000 });
+            await opener.ClickAsync();
+            var dialog = page.GetByTestId("reset-dialog");
+            await Assertions.Expect(dialog).ToBeVisibleAsync();
+            await Assertions.Expect(page.GetByTestId("reset-warning-summary")).ToBeVisibleAsync();
+            await page.GetByTestId("reset-scope-FullIncludingProtected").Locator("input").CheckAsync();
+            await page.GetByTestId("reset-plan").WaitForAsync();
+            await page.GetByTestId("reset-removed-details").Locator("summary").ClickAsync();
+            await page.GetByTestId("reset-preserved-details").Locator("summary").ClickAsync();
+            await page.GetByTestId("reset-confirm-text").FillAsync("RESET EVERYTHING");
+            var focusStayedInDialog = await dialog.EvaluateAsync<bool>("el => el.contains(document.activeElement)");
+            focusStayedInDialog.Should().BeTrue("opening the modal moves focus inside it");
+            var tabStops = new HashSet<string>();
+            for (var i = 0; i < 24; i++)
+            {
+                await page.Keyboard.PressAsync("Tab");
+                tabStops.Add(await page.EvaluateAsync<string>("document.activeElement?.getAttribute('data-testid') || ''"));
+            }
+            tabStops.Should().Contain("reset-cancel").And.Contain("reset-run", "both footer actions are reachable by keyboard");
+            (await dialog.EvaluateAsync<bool>("el => el.contains(document.activeElement)")).Should().BeTrue("Tab stays inside the modal");
+
+            var panel = await dialog.BoundingBoxAsync();
+            var content = await page.GetByTestId("reset-dialog-content").BoundingBoxAsync();
+            var cancel = await page.GetByTestId("reset-cancel").BoundingBoxAsync();
+            var destructive = await page.GetByTestId("reset-run").BoundingBoxAsync();
+            panel.Should().NotBeNull();
+            content.Should().NotBeNull();
+            cancel.Should().NotBeNull();
+            destructive.Should().NotBeNull();
+            panel!.Y.Should().BeGreaterThanOrEqualTo(0);
+            (panel.Y + panel.Height).Should().BeLessThanOrEqualTo(height + 1, $"dialog fits at {width}x{height}");
+            (cancel!.Y + cancel.Height).Should().BeLessThanOrEqualTo(panel.Y + panel.Height, "Cancel stays inside the dialog footer");
+            (destructive!.Y + destructive.Height).Should().BeLessThanOrEqualTo(panel.Y + panel.Height, "Reset stays inside the dialog footer");
+            (content!.Y + content.Height).Should().BeLessThanOrEqualTo(cancel.Y, "content ends before the persistent footer");
+            var scrollMetrics = await page.GetByTestId("reset-dialog-content").EvaluateAsync<int[]>("el => [el.scrollHeight, el.clientHeight]");
+            scrollMetrics[0].Should().BeGreaterThanOrEqualTo(scrollMetrics[1]);
+
+            await page.Keyboard.PressAsync("Escape");
+            await Assertions.Expect(dialog).ToHaveCountAsync(0);
+            resetPosts.Should().BeEmpty("opening, expanding, typing the phrase and cancelling only reads the reset plan");
+        }
+
+        await page.CloseAsync();
+    }
+
     /// <summary>Opens Frontend Testing Capabilities once its local status has loaded, then its Technical details (the engine switches).</summary>
     private static async Task OpenEngineSwitchesAsync(IPage page)
     {

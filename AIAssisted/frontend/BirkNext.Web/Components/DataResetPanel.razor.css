@@ -10,9 +10,14 @@
 .drp-open:hover:not(:disabled) { background: var(--clr-danger-bg); border-color: var(--clr-danger); }
 .drp-open:disabled { opacity: .5; cursor: not-allowed; }
 
-/* The dialog is wider than the generic modal: removed and preserved sit side by side, and it scrolls within the viewport. */
-.drp-modal { max-width: 46rem; max-height: calc(100vh - 2rem); overflow-y: auto; display: grid; gap: .75rem; padding: 1.25rem 1.5rem; }
+/* Keep actions in view: the plan, scopes and confirmation share the only scrollable region. */
+.drp-modal { box-sizing: border-box; width: min(100%, 48rem); max-width: 48rem; max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: .75rem; padding: 1rem 1.25rem; }
+.drp-dialog-header, .drp-dialog-footer { flex-shrink: 0; min-width: 0; }
+.drp-dialog-header { display: grid; gap: .35rem; }
 .drp-modal .modal-title { margin: 0; }
+.drp-warning-summary { margin: 0; padding: .55rem .7rem; border-left: 3px solid var(--clr-danger); border-radius: var(--radius-sm, 4px); color: var(--clr-text-heading); background: var(--clr-danger-bg-light); font-size: .85rem; line-height: 1.4; }
+.drp-dialog-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; align-content: start; gap: .75rem; padding: .1rem .15rem .25rem 0; }
+.drp-dialog-footer { padding-top: .65rem; border-top: 1px solid var(--clr-border); background: var(--clr-surface-white); }
 .drp-scopes { border: 0; padding: 0; margin: 0; display: grid; gap: .5rem; min-width: 0; }
 .drp-scopes legend { padding: 0; margin-bottom: .5rem; }
 .drp-scope { display: flex; gap: .6rem; align-items: flex-start; padding: .6rem .75rem; border: 1px solid var(--clr-border); border-left-width: 4px; border-radius: var(--radius-md); cursor: pointer; }
@@ -28,9 +33,11 @@
 .drp-plan { display: grid; gap: .5rem; padding: .75rem; border-radius: var(--radius-md); border: 1px solid var(--clr-warning-border); background: var(--clr-warning-bg-light); }
 .drp-plan[data-severity="critical"] { border-color: var(--clr-danger-border); background: var(--clr-danger-bg-light); }
 .drp-plan-summary { margin: 0; font-size: .85rem; font-weight: 600; color: var(--clr-text-heading); }
-.drp-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; }
-.drp-h { margin: 0 0 .25rem; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--clr-text-muted); }
 .drp-list { margin: 0; padding-left: 1.1rem; font-size: .8rem; color: var(--clr-text-body); display: grid; gap: .2rem; overflow-wrap: anywhere; }
+.drp-detail { min-width: 0; border-top: 1px solid color-mix(in srgb, var(--clr-warning-border) 70%, transparent); padding-top: .4rem; }
+.drp-detail summary { cursor: pointer; color: var(--clr-text-heading); font-size: .82rem; font-weight: 650; }
+.drp-detail summary:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; border-radius: 2px; }
+.drp-detail .drp-list, .drp-detail .drp-note { margin-top: .45rem; }
 .drp-counts, .drp-note { margin: 0; font-size: .78rem; color: var(--clr-text-body); }
 .drp-ack { display: flex; gap: .5rem; align-items: flex-start; font-size: .85rem; color: var(--clr-text-body); }
 .drp-ack input { margin-top: .2rem; }
@@ -52,7 +59,11 @@
 .drp-warning { margin: 0; font-size: .8rem; color: var(--clr-warning); }
 
 @media (max-width: 480px) {
-    .drp-modal { padding: 1rem; }
+    .drp-modal { gap: .55rem; padding: .75rem; }
     .drp-open { width: 100%; }
     .drp-modal .modal-actions > button { flex: 1 1 auto; }
+}
+
+@media (max-width: 360px) {
+    .drp-modal .modal-actions { display: grid; grid-template-columns: 1fr; }
 }

@@ -63,6 +63,42 @@ public sealed class DataResetPanelTests : BunitContext
     }
 
     [Fact]
+    public void Reset_dialog_keeps_warning_and_actions_outside_scrollable_details_and_cancel_never_resets()
+    {
+        var longPlan = Plan(DataResetMode.FullIncludingProtected) with
+        {
+            Removed = Enumerable.Range(1, 80).Select(i => $"Removed data category {i}: long descriptive content that must wrap inside the dialog.").ToList(),
+            Preserved = Enumerable.Range(1, 60).Select(i => $"Preserved data category {i}: long descriptive content that must wrap inside the dialog.").ToList(),
+            Notes = ["Important consequence one.", "Important consequence two."],
+        };
+        _api.Setup(a => a.GetDataResetPlanAsync(DataResetMode.FullIncludingProtected)).ReturnsAsync(longPlan);
+        var cut = RenderPanel();
+
+        cut.Find("[data-testid=reset-open]").Click();
+        var dialog = cut.Find("[data-testid=reset-dialog]");
+        dialog.GetAttribute("aria-labelledby").Should().Be("drp-title");
+        dialog.GetAttribute("aria-describedby").Should().Be("reset-warning-summary");
+        cut.Find("[data-testid=reset-warning-summary]").TextContent.Should().Contain("cannot be undone");
+        cut.Find("[data-testid=reset-dialog-content]").Should().NotBeNull();
+        cut.Find("[data-testid=reset-cancel]").Should().NotBeNull();
+        cut.Find("[data-testid=reset-scope-FullIncludingProtected] input").Change(true);
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid=reset-run]").TextContent.Should().Be("Tilbakestill alt");
+            cut.Find("[data-testid=reset-removed-details] summary").TextContent.Should().Contain("80");
+            cut.Find("[data-testid=reset-preserved-details] summary").TextContent.Should().Contain("60");
+            cut.Find("[data-testid=reset-consequences-details] summary").TextContent.Should().Contain("2");
+            cut.Find("[data-testid=reset-removed]").TextContent.Should().Contain("Removed data category 80");
+            cut.Find("[data-testid=reset-preserved]").TextContent.Should().Contain("Preserved data category 60");
+        });
+        cut.Find("[data-testid=reset-cancel]").Click();
+
+        cut.FindAll("[data-testid=reset-dialog]").Should().BeEmpty();
+        _api.Verify(a => a.ResetDataAsync(It.IsAny<DataResetMode>(), It.IsAny<string>()), Times.Never);
+        _api.Verify(a => a.ResetDataAsync(It.IsAny<DataResetRequest>()), Times.Never);
+    }
+
+    [Fact]
     public void Reset_everything_requires_the_exact_typed_phrase_and_lands_on_the_dashboard()
     {
         _api.Setup(a => a.ResetDataAsync(DataResetMode.FullIncludingProtected, "RESET EVERYTHING"))

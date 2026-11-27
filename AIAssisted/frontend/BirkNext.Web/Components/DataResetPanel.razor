@@ -22,8 +22,12 @@
 
 @if (_open)
 {
-    <AccessibleDialog PanelClass="modal-panel drp-modal" LabelledBy="drp-title" TestId="reset-dialog" OnClose="Close" CanClose="!_busy" CloseOnBackdrop="true" ReturnFocusId="drp-open">
-            <h2 id="drp-title" class="modal-title">Reset data</h2>
+    <AccessibleDialog PanelClass="modal-panel drp-modal" LabelledBy="drp-title" DescribedBy="reset-warning-summary" TestId="reset-dialog" OnClose="Close" CanClose="!_busy" CloseOnBackdrop="true" ReturnFocusId="drp-open">
+        <header class="drp-dialog-header">
+            <h2 id="drp-title" class="modal-title">@(_mode == DataResetMode.FullIncludingProtected ? "Tilbakestill alt" : "Tilbakestill data")</h2>
+            <p class="drp-warning-summary" data-testid="reset-warning-summary">Review what will be removed and preserved. Reset is permanent and cannot be undone.</p>
+        </header>
+        <div class="drp-dialog-content" data-testid="reset-dialog-content">
             @if (_result is { } result)
             {
                 <div class="drp-result" data-status="@result.Status" role="@(result.Status is "Completed" ? "status" : "alert")" data-testid="reset-result">
@@ -45,9 +49,6 @@
                         </ul>
                     }
                     @foreach (var w in result.Warnings) { <p class="drp-warning">@w</p> }
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn-secondary" data-testid="reset-close" @onclick="Close">Close</button>
                 </div>
             }
             else
@@ -81,21 +82,25 @@
                         var plan = _plan;
                         <div class="drp-plan" data-severity="@SeverityOf(mode)" data-testid="reset-plan">
                             <p class="drp-plan-summary">@plan.Summary</p>
-                            <div class="drp-columns">
-                                <div>
-                                    <h3 class="drp-h">Removed</h3>
-                                    <ul class="drp-list" data-testid="reset-removed">@foreach (var r in plan.Removed) { <li>@r</li> }</ul>
-                                </div>
-                                <div>
-                                    <h3 class="drp-h">Preserved</h3>
-                                    <ul class="drp-list" data-testid="reset-preserved">@foreach (var p in plan.Preserved) { <li>@p</li> }</ul>
-                                </div>
-                            </div>
+                            <details class="drp-detail" data-testid="reset-removed-details">
+                                <summary>Data som fjernes (@plan.Removed.Count)</summary>
+                                <ul class="drp-list" data-testid="reset-removed">@foreach (var r in plan.Removed) { <li>@r</li> }</ul>
+                            </details>
+                            <details class="drp-detail" data-testid="reset-preserved-details">
+                                <summary>Data som beholdes (@plan.Preserved.Count)</summary>
+                                <ul class="drp-list" data-testid="reset-preserved">@foreach (var p in plan.Preserved) { <li>@p</li> }</ul>
+                            </details>
                             @if (plan.Counts.Count > 0)
                             {
                                 <p class="drp-counts" data-testid="reset-counts">@string.Join(" · ", plan.Counts.Select(c => $"{c.Key}: {c.Value}"))</p>
                             }
-                            @foreach (var note in plan.Notes) { <p class="drp-note" data-testid="reset-note">@note</p> }
+                            @if (plan.Notes.Count > 0)
+                            {
+                                <details class="drp-detail" data-testid="reset-consequences-details">
+                                    <summary>Viktige konsekvenser (@plan.Notes.Count)</summary>
+                                    @foreach (var note in plan.Notes) { <p class="drp-note" data-testid="reset-note">@note</p> }
+                                </details>
+                            }
                             @if (!plan.Allowed) { <p class="drp-error" role="alert" data-testid="reset-plan-refused">@plan.NotAllowedReason</p> }
                             @if (mode != DataResetMode.DeliveryManagement)
                             {
@@ -134,12 +139,20 @@
                         }
                     }
                 }
-
-                <div class="modal-actions">
-                    <button type="button" class="btn-secondary" data-testid="reset-cancel" disabled="@_busy" @onclick="Close">Cancel</button>
-                    <button type="button" class="btn-danger" data-testid="reset-run" disabled="@(!CanRun)" @onclick="RunAsync">@(_busy ? "Resetting…" : RunLabel)</button>
-                </div>
             }
+
+        </div>
+        <footer class="modal-actions drp-dialog-footer">
+            @if (_result is not null)
+            {
+                <button type="button" class="btn-secondary" data-testid="reset-close" @onclick="Close">Lukk</button>
+            }
+            else
+            {
+                    <button type="button" class="btn-secondary" data-testid="reset-cancel" disabled="@_busy" @onclick="Close">Avbryt</button>
+                    <button type="button" class="btn-danger" data-testid="reset-run" disabled="@(!CanRun)" @onclick="RunAsync">@(_busy ? "Resetting…" : _mode == DataResetMode.FullIncludingProtected ? "Tilbakestill alt" : RunLabel)</button>
+            }
+        </footer>
     </AccessibleDialog>
 }
 
