@@ -411,13 +411,14 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
 
         var unavailable = () => service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(available: false), Settings, "anna", default);
         var refused = (await unavailable.Should().ThrowAsync<TestPlanException>()).Which;
-        refused.Code.Should().Be("translation-unavailable");
-        refused.Message.Should().StartWith("No translation service is available right now.").And.Contain("Azure AI Translator has no key")
-            .And.Contain("System Settings → Translation").And.Contain("write the Norwegian (bokmål) text by hand").And.NotContain("You can write the translated");
+        // V11 (2026-11-27): «not configured» is its own case with Norwegian wording; the original reason is kept as «Detalj».
+        refused.Code.Should().Be("translation-not-configured");
+        refused.Message.Should().StartWith("Ingen oversettelsestjeneste er satt opp.").And.Contain("Azure AI Translator has no key")
+            .And.Contain("Systeminnstillinger → Translation").And.Contain("for hånd").And.NotContain("You can write the translated");
 
         // Every choice fails when called: one clear message, nothing changed (no list of per-case failures).
         var down = () => service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(fail: true), Settings, "anna", default);
-        (await down.Should().ThrowAsync<TestPlanException>()).Which.Message.Should().Contain("The fake service is down").And.Contain("System Settings → Translation");
+        (await down.Should().ThrowAsync<TestPlanException>()).Which.Message.Should().Contain("The fake service is down").And.StartWith("Oversettelsen mislyktes.");
 
         plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Report for FR-027", null, null, ScenarioKey: s42), "anna", default);
         var lossy = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(losePlaceholders: true), Settings, "anna", default);
@@ -731,13 +732,38 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         (await service.DraftAsync(plan.Id, default)).Revision.Should().Be(saved.Revision);
     }
 
+    [Theory]
+    [InlineData(null, 503, "translation-not-configured", "Ingen oversettelsestjeneste er satt opp.")]
+    [InlineData(TranslationFailure.Unavailable, 503, "translation-unavailable", "Oversettelsestjenesten er midlertidig utilgjengelig. Prøv igjen om litt.")]
+    [InlineData(TranslationFailure.Timeout, 504, "translation-timeout", "Oversettelsen tok for lang tid og ble stoppet.")]
+    [InlineData(TranslationFailure.Failed, 502, "translation-failed", "Oversettelsen mislyktes.")]
+    public void V11_each_translation_problem_says_what_happened_and_keeps_the_original_cause(TranslationFailure? kind, int status, string code, string start)
+    {
+        // Before: one «No translation service is available right now» (503) for all four, also when a configured service was only temporarily down.
+        var problem = TestPlanSuggestionService.TranslationProblem(kind, "Azure AI Translator answered 503. Nothing was changed.", "norsk (bokmål)");
+        (problem.Status, problem.Code).Should().Be((status, code));
+        problem.Message.Should().StartWith(start).And.Contain("Ingenting ble endret").And.Contain("Detalj: Azure AI Translator answered 503.").And.NotContain("No translation service");
+    }
+
+    [Fact]
+    public void V11_HTTP_and_transport_errors_are_classified_without_guessing()
+    {
+        TestCaseTranslationException.KindOf(503).Should().Be(TranslationFailure.Unavailable);
+        TestCaseTranslationException.KindOf(429).Should().Be(TranslationFailure.Unavailable);
+        TestCaseTranslationException.KindOf(400).Should().Be(TranslationFailure.Failed);
+        TestCaseTranslationException.KindOf(new TaskCanceledException(), CancellationToken.None).Should().Be(TranslationFailure.Timeout);
+        TestCaseTranslationException.KindOf(new TaskCanceledException(), new CancellationToken(canceled: true)).Should().Be(TranslationFailure.Failed, "the caller's own cancellation is not a timeout");
+        TestCaseTranslationException.KindOf(new HttpRequestException("refused"), CancellationToken.None).Should().Be(TranslationFailure.Unavailable);
+        new TestCaseTranslationException("combined", new TestCaseTranslationException("inner", null, TranslationFailure.Timeout)).Kind.Should().Be(TranslationFailure.Timeout, "a wrapper keeps the cause's kind");
+    }
+
     [Fact]
     public async Task Only_missing_without_a_translation_service_says_so_and_changes_nothing()
     {
         await using var db = Context();
         var (service, plan, _, _) = await PlanAsync(db);
         var none = () => service.TranslatePlanAsync(plan.Id, new TranslatePlanRequest(plan.Revision, OnlyMissing: true), new FakeTranslator(available: false), Settings, "anna", default);
-        (await none.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("translation-unavailable");
+        (await none.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("translation-not-configured");
         (await service.DraftAsync(plan.Id, default)).Revision.Should().Be(plan.Revision);
     }
 

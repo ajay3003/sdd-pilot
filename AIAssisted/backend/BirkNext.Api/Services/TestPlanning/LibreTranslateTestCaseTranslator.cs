@@ -87,7 +87,7 @@ public sealed partial class LibreTranslateTestCaseTranslator : ITestCaseTranslat
             }
             catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException or System.Collections.Generic.KeyNotFoundException or InvalidOperationException)
             {
-                throw new TestCaseTranslationException($"The LibreTranslate server at {_translate.Authority} could not be reached or answered unexpectedly. Is it running? Nothing was changed.");
+                throw new TestCaseTranslationException($"The LibreTranslate server at {_translate.Authority} could not be reached or answered unexpectedly. Is it running? Nothing was changed.", e, TestCaseTranslationException.KindOf(e, ct));
             }
         }
         for (var i = 0; i < texts.Count; i++)

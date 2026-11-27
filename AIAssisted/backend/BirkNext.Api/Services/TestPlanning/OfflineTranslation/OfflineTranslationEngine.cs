@@ -168,7 +168,7 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
                 StopLocked("timeout");
-                throw new TestCaseTranslationException($"The offline translator did not answer within {timeout.TotalSeconds:0} seconds and was stopped. Nothing was changed. Try fewer test cases at a time.");
+                throw new TestCaseTranslationException($"The offline translator did not answer within {timeout.TotalSeconds:0} seconds and was stopped. Nothing was changed. Try fewer test cases at a time.", null, TranslationFailure.Timeout);
             }
             catch (OperationCanceledException)
             {
@@ -181,12 +181,12 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
             catch (IOException)
             {
                 StopLocked("pipe closed");
-                throw new TestCaseTranslationException("The offline translator stopped unexpectedly. Nothing was changed. Try again; if it keeps failing, see System Settings → Translation.");
+                throw new TestCaseTranslationException("The offline translator stopped unexpectedly. Nothing was changed. Try again; if it keeps failing, see System Settings → Translation.", null, TranslationFailure.Unavailable);
             }
             if (line is null)
             {
                 StopLocked("exited");
-                throw new TestCaseTranslationException("The offline translator stopped unexpectedly (for example, out of memory). Nothing was changed.");
+                throw new TestCaseTranslationException("The offline translator stopped unexpectedly (for example, out of memory). Nothing was changed.", null, TranslationFailure.Unavailable);
             }
             var answer = JsonNode.Parse(line) ?? throw new TestCaseTranslationException("The offline translator answered unexpectedly. Nothing was changed.");
             if (answer["ok"]?.GetValue<bool>() != true)
@@ -260,7 +260,7 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
             var error = ready?["error"]?.GetValue<string>() ?? StartFailure(process, first, started.Elapsed);
             _log.LogWarning("The offline translation helper did not start: {Reason} Last helper output: {Stderr}", error, string.Join(" | ", _stderrTail));
             StopLocked("start failed");
-            throw new TestCaseTranslationException(error + " You can write the translated text by hand.");
+            throw new TestCaseTranslationException(error + " You can write the translated text by hand.", null, TranslationFailure.Unavailable);
         }
         _log.LogInformation("Offline translation helper started (pid {Pid}, {Threads} threads, engine {Engine})", process.Id, threads, ready["engine"]?.ToJsonString());
         return process;

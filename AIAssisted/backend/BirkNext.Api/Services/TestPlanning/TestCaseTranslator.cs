@@ -21,7 +21,21 @@ public interface ITestCaseTranslator
 /// <summary>The translated texts and the service that produced them (recorded with the translation).</summary>
 public sealed record TranslatedTexts(List<string?> Texts, string Provider);
 
-public sealed class TestCaseTranslationException(string message, Exception? inner = null) : Exception(message, inner);
+/// <summary>Why a configured translator could not translate (V11, 2026-11-27): «midlertidig utilgjengelig» (HTTP 429/5xx, no connection, the offline
+/// helper stopped), «tidsavbrudd», or «mislyktes» (an unexpected answer). «Not configured» is the translator's availability, not an exception.</summary>
+public enum TranslationFailure { Failed, Unavailable, Timeout }
+
+public sealed class TestCaseTranslationException(string message, Exception? inner = null, TranslationFailure kind = TranslationFailure.Failed) : Exception(message, inner)
+{
+    public TranslationFailure Kind { get; } = inner is TestCaseTranslationException wrapped && kind == TranslationFailure.Failed ? wrapped.Kind : kind;
+
+    /// <summary>The kind of an HTTP status from a translation service: 429 and 5xx are temporary; anything else is a failure.</summary>
+    public static TranslationFailure KindOf(int status) => status is 429 or >= 500 ? TranslationFailure.Unavailable : TranslationFailure.Failed;
+
+    /// <summary>The kind of a transport exception: a timeout that the caller did not ask for, or no connection.</summary>
+    public static TranslationFailure KindOf(Exception e, CancellationToken ct) =>
+        e is TaskCanceledException && !ct.IsCancellationRequested ? TranslationFailure.Timeout : e is HttpRequestException ? TranslationFailure.Unavailable : TranslationFailure.Failed;
+}
 
 /// <summary>
 /// The chosen online service (Advanced) with an offline fallback: when the online service has no key or cannot be reached, the embedded offline
@@ -49,7 +63,7 @@ public sealed class FallbackTestCaseTranslator(ITestCaseTranslator primary, ITes
         try { return await offline.TranslateAsync(texts, source, target, ct); }
         catch (TestCaseTranslationException e)
         {
-            throw new TestCaseTranslationException($"{first?.Split(" Nothing was changed", 2)[0].Split(" You can", 2)[0]} The offline fallback failed too: {e.Message}");
+            throw new TestCaseTranslationException($"{first?.Split(" Nothing was changed", 2)[0].Split(" You can", 2)[0]} The offline fallback failed too: {e.Message}", e);
         }
     }
 }
@@ -176,7 +190,7 @@ public sealed class AnthropicTestCaseTranslator(IHttpClientFactory http, string 
                 model, max_tokens = 4000, tools = new[] { Tool }, tool_choice = new { type = "tool", name = "submit_translations" },
                 messages = new[] { new { role = "user", content = prompt } },
             }, ct);
-            if (!response.IsSuccessStatusCode) throw new TestCaseTranslationException($"The translation service answered {(int)response.StatusCode}. Nothing was changed.");
+            if (!response.IsSuccessStatusCode) throw new TestCaseTranslationException($"The translation service answered {(int)response.StatusCode}. Nothing was changed.", null, TestCaseTranslationException.KindOf((int)response.StatusCode));
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
             foreach (var block in doc.RootElement.GetProperty("content").EnumerateArray())
             {
@@ -190,7 +204,7 @@ public sealed class AnthropicTestCaseTranslator(IHttpClientFactory http, string 
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException or System.Collections.Generic.KeyNotFoundException or InvalidOperationException)
         {
-            throw new TestCaseTranslationException("The translation service could not be reached or answered unexpectedly. Nothing was changed.");
+            throw new TestCaseTranslationException("The translation service could not be reached or answered unexpectedly. Nothing was changed.", e, TestCaseTranslationException.KindOf(e, ct));
         }
     }
 }

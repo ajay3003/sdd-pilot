@@ -92,7 +92,7 @@ public sealed partial class AzureTranslatorTestCaseTranslator : ITestCaseTransla
                     400 => "Azure AI Translator refused the request (400): check that it supports this language pair. Nothing was changed.",
                     429 => "Azure AI Translator is rate limited (429). Try again shortly. Nothing was changed.",
                     var code => $"Azure AI Translator answered {code}. Nothing was changed.",
-                });
+                }, null, TestCaseTranslationException.KindOf((int)response.StatusCode));
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
             var items = doc.RootElement.EnumerateArray().ToList();
             if (items.Count != indexes.Count) throw new TestCaseTranslationException("Azure AI Translator returned a different number of texts. Nothing was changed.");
@@ -106,7 +106,7 @@ public sealed partial class AzureTranslatorTestCaseTranslator : ITestCaseTransla
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException or System.Collections.Generic.KeyNotFoundException or InvalidOperationException)
         {
-            throw new TestCaseTranslationException("Azure AI Translator could not be reached or answered unexpectedly. Nothing was changed.");
+            throw new TestCaseTranslationException("Azure AI Translator could not be reached or answered unexpectedly. Nothing was changed.", e, TestCaseTranslationException.KindOf(e, ct));
         }
     }
 }

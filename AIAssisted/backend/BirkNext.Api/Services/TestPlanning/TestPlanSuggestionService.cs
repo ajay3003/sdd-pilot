@@ -921,7 +921,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
                 + cases.Select(c => c.Generated.Story).OfType<BirkNext.TestCoverage.CoverageUserStory>().DistinctBy(st => st.Key).Count(st => !storiesHeld.Contains(st.Key));
             if (missing == 0) return new TranslateScenarioResult(null, [], [], [], "Nothing is missing a translation.", target, null);
         }
-        if (!translator.Availability.Available) throw NoTranslationService(translator.Availability.Reason, name);
+        if (!translator.Availability.Available) throw TranslationProblem(null, translator.Availability.Reason, name);
 
         var translated = new List<string>(); var kept = new List<string>(); var failed = new List<string>();
         var updated = new Dictionary<string, TestCaseDraft>(StringComparer.Ordinal);
@@ -944,7 +944,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             catch (TestCaseTranslationException e)
             {
                 // The service itself is unavailable: nothing more is sent; with nothing translated yet, one clear message instead of a list.
-                if (translated.Count == 0) throw NoTranslationService(e.Message, name);
+                if (translated.Count == 0) throw TranslationProblem(e.Kind, e.Message, name);
                 serviceDown = e.Message;
                 return (null, e.Message);
             }
@@ -1044,12 +1044,25 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
 
     public static string StoryFingerprint(BirkNext.TestCoverage.CoverageUserStory s) => ScenarioPlanning.StoryFingerprint(s);
 
-    /// <summary>No translation choice could translate: what was tried and why, where to set it up, and that the text can be written by hand.</summary>
-    private static TestPlanException NoTranslationService(string detail, string language)
+    /// <summary>
+    /// V11 (2026-11-27): why nothing could be translated, in four distinct cases instead of one «No translation service is available right now»
+    /// (which was also said when a configured service was only temporarily unavailable, or when the offline helper had answered wrongly).
+    /// The original cause is kept as «Detalj» (diagnostics); nothing is changed in any case, and the page's «Prøv igjen» still applies.
+    /// </summary>
+    internal static TestPlanException TranslationProblem(TranslationFailure? kind, string detail, string language)
     {
         var why = detail.Split(" You can write", 2)[0].Split(" Nothing was changed", 2)[0].Trim();
-        return new(503, "translation-unavailable",
-            $"No translation service is available right now. {why} Set up Azure AI Translator or start the local LibreTranslate server in System Settings → Translation. Nothing was changed; you can write the {language} text by hand meanwhile.");
+        return kind switch
+        {
+            null => new(503, "translation-not-configured",
+                $"Ingen oversettelsestjeneste er satt opp. Velg en oversetter i Systeminnstillinger → Translation. Ingenting ble endret; du kan skrive teksten på {language} for hånd. Detalj: {why}"),
+            TranslationFailure.Unavailable => new(503, "translation-unavailable",
+                $"Oversettelsestjenesten er midlertidig utilgjengelig. Prøv igjen om litt. Ingenting ble endret. Detalj: {why}"),
+            TranslationFailure.Timeout => new(504, "translation-timeout",
+                $"Oversettelsen tok for lang tid og ble stoppet. Prøv igjen, gjerne med færre testtilfeller om gangen. Ingenting ble endret. Detalj: {why}"),
+            _ => new(502, "translation-failed",
+                $"Oversettelsen mislyktes. Ingenting ble endret; du kan prøve igjen eller skrive teksten på {language} for hånd. Detalj: {why}"),
+        };
     }
 
     /// <summary>Scenarios of one user story are prepared in the specification's order (their number within the story), whatever order discovery
