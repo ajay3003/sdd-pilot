@@ -23,7 +23,7 @@
 <div class="mt msb-page @(IsHome ? "mto-page" : null) @(_draft is not null ? "is-customizing" : null)" data-testid="mt" aria-busy="@(_loading ? "true" : "false")">
     <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="@(IsHome ? null : "plans")" Title="@(IsHome ? "Testoversikt" : "Testplaner")"
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
-        Lead="@(IsHome ? "Testforberedelse, dekning og prioriteringer. Velg modul og spesifikasjon her; Finn og forstå viser det samme utvalget." : "Opprett, åpne og overfør testplanene for applikasjonen. Testtilfellene forberedes i Planlegg og klargjør.")">
+        Lead="@(IsHome ? "Status for testforberedelsen i valgt utvalg." : "Opprett, åpne og overfør testplanene for applikasjonen. Testtilfellene forberedes i Planlegg og klargjør.")">
         <Help><BirkNext.Web.Components.HelpLink Topic="manual-testing" Text="Slik fungerer det" /></Help>
     </BirkNext.Web.Components.TestingWorkspaceHeader>
 
@@ -168,7 +168,7 @@
                             }
                             @if (On("chart.scenarioReadiness"))
                             {
-                                @ReadinessCards(O.ScenarioReadiness(slice))
+                                @ReadinessCards(slice, O.ScenarioReadiness(slice))
                             }
                             @if (On("panel.recentChanges") && ov.RecentRevisions.Count > 0)
                             {
@@ -196,10 +196,15 @@
                         <div class="mto-grid mto-grid-3">
                             @if (On("panel.p1Attention") && attention.Count > 0)
                             {
-                                <section class="mto-card mto-attention" data-testid="mto-widget" data-widget="panel.p1Attention"><h3 class="mto-card-h">Viktig å følge opp</h3>
+                                @* V12 follow-up (2026-11-27): a scenario line opens Finn og forstå with exactly the scenarios it counts (same scope, P1); no inline
+                                   list of hundreds of scenarios here. The band heading already says «Viktig å følge opp». *@
+                                <section class="mto-card mto-attention" data-testid="mto-widget" data-widget="panel.p1Attention" aria-label="P1-oppfølging">
                                     <ul class="mto-action-list">@foreach (var (k, text) in attention)
-                                        { var key = k; <li data-key="@k"><button type="button" class="mto-action-item mto-attention-open" aria-pressed="@(IsDrill("panel.p1Attention", k) ? "true" : "false")"
-                                            @onclick="@(() => ToggleDrill("panel.p1Attention", key))" data-testid="mto-attention-open"><span>@text</span><span class="mto-action-go" aria-hidden="true">›</span></button></li> }</ul>
+                                        { var key = k; var opensScenarios = OpensScenarios("panel.p1Attention", key);
+                                          <li data-key="@k"><button type="button" class="mto-action-item mto-attention-open" disabled="@_drillBusy" aria-pressed="@(!opensScenarios && IsDrill("panel.p1Attention", k) ? "true" : "false")"
+                                            @onclick="@(() => opensScenarios ? OpenInDiscoverAsync(slice, "panel.p1Attention", key) : ToggleDrillAsync("panel.p1Attention", key))" data-testid="mto-attention-open"
+                                            data-destination="@(opensScenarios ? "discover" : "inline")"><span>@text</span><span class="mto-action-go" aria-hidden="true">›</span></button></li> }</ul>
+                                    @if (_drillError is { } navError && _drill is null) { <p class="mt-alert msb-small" role="alert" data-testid="mto-drill-error">@navError</p> }
                                     <p class="msb-small mto-card-links"><a href="@M.DiscoverRoute">Se scenarioer</a> · <a href="@M.PlanRoute">Se testtilfeller</a></p></section>
                             }
                             @ActionList("chart.blockers", "Testbarhet og blokkeringer", "blocker", blockers, $"{O.NotReady(slice)} av {fig.Cases} testtilfeller er ikke klare. Ett testtilfelle kan ha flere årsaker.")
@@ -207,7 +212,6 @@
                             @if (openPlans is { Count: > 0 } open)
                             {
                                 <section class="mto-card mto-actions-card" data-testid="mto-widget" data-widget="panel.planExecution"><h3 class="mto-card-h">Sprintplaner med gjenstående AC-er</h3>
-                                    <p class="mt-muted msb-small mto-card-note">Resultater registreres per scenario i hver testplan.</p>
                                     <ul class="mto-action-list">
                                         @foreach (var pl in open.Take(5))
                                         {
@@ -225,7 +229,7 @@
                 }
 
                 @* A follow-up list (UX-107) opens directly under «Viktig å følge opp», compact; a chart's list opens next to its chart further down. *@
-                @if (_drill is { } fk && IsFollowUpDrill(fk.Chart) && DrillFor(slice, fk.Chart, fk.Key) is { } followDrill)
+                @if (_drill is { } fk && IsFollowUpDrill(fk.Chart) && !OpensScenarios(fk.Chart, fk.Key) && DrillFor(slice, fk.Chart, fk.Key) is { } followDrill)
                 {
                     @DrillPanel(followDrill)
                 }
@@ -500,8 +504,6 @@
         _ => O.Scope.Project,
     };
 
-    private void SetLevel(O.Level level) { _level = level; _drill = null; _drillError = null; }
-
     // ── Drill-down (2026-11-26): a bar or follow-up line shows the exact records behind it; from there Finn og forstå or Planlegg og klargjør opens
     //    with that selection (module, specification and the scenarios), never a general page. ──
     private (string Chart, string Key)? _drill;
@@ -511,6 +513,39 @@
     private ElementReference _drillHeading;
 
     private bool IsDrill(string chart, string key) => _drill is { } d && d.Chart == chart && d.Key == key;
+
+    /// <summary>Follow-up lines, readiness states and KPI tiles count SCENARIOS: they open Finn og forstå (V12, 2026-11-27) instead of an inline list.
+    /// Case populations (approval, readiness of cases, blockers, source changes) keep their compact case list.</summary>
+    private static bool OpensScenarios(string chart, string key) => chart switch
+    {
+        "panel.p1Attention" => key == "p1-uncovered",
+        "chart.scenarioReadiness" or "tile" => true,
+        _ => false,
+    };
+
+    /// <summary>
+    /// One navigation contract for every scenario metric of Testoversikt: Finn og forstå opens in the SAME shared scope (nothing is re-selected) with
+    /// exactly the source identities the metric counted — never a broader filter — plus the priority when the metric is about P1. When an identity
+    /// is not in Finn og forstå's current result, that page says so (mtd-overview-selection-missing); it never shows other scenarios instead.
+    /// </summary>
+    private async Task OpenInDiscoverAsync(O.Slice slice, string chart, string key)
+    {
+        if (_drillBusy || _ws?.ProjectKey is not { } projectKey) return;
+        _drillError = null;
+        var drill = DrillFor(slice, chart, key);
+        var ids = drill?.Scenarios.Select(x => x.Scenario.Identity).Where(i => i.Length > 0).Distinct(StringComparer.Ordinal).ToList() ?? [];
+        if (drill is null || ids.Count == 0) { _drillError = "Ingen scenarioer i utvalget."; return; }
+        _drillBusy = true;
+        try
+        {
+            var filter = ScenarioBrowserPresentation.FromOverview(ids, drill.Title) with { Priority = chart == "panel.p1Attention" ? "P1" : null };
+            await ManualTestingDrillNavigation.OpenFilteredAsync(JS, Nav, projectKey, filter);
+        }
+        catch (Exception e) when (e is JSException or InvalidOperationException) { _drillError = "Finn og forstå kunne ikke åpnes: " + e.Message; }
+        finally { _drillBusy = false; }
+    }
+
+    private Task ToggleDrillAsync(string chart, string key) { ToggleDrill(chart, key); return Task.CompletedTask; }
 
     private void ToggleDrill(string chart, string key)
     {
@@ -576,10 +611,10 @@
     }
 
     /// <summary>«Klargjøring av scenarioer» (UX-109/110): one card per state with count, meaning and the next step, opening the exact scenarios.</summary>
-    private RenderFragment ReadinessCards(IReadOnlyList<DeliveryBar> bars) => __builder =>
+    private RenderFragment ReadinessCards(O.Slice slice, IReadOnlyList<DeliveryBar> bars) => __builder =>
     {
         <section class="mto-card mto-readiness-card" data-testid="mto-widget" data-widget="chart.scenarioReadiness">
-            <h3 class="mto-card-h">Klargjøring av scenarioer</h3>
+            <h3 class="mto-card-h" title="Hvert akseptansescenario og hver dokumenterte test telles én gang. «Klar til kjøring» er ikke et testresultat, og godkjente testtilfeller gjør ikke et scenario klart.">Klargjøring av scenarioer</h3>
             @if (bars.Count == 0) { <p class="mt-muted msb-small" data-testid="mto-readiness-none">Ingen akseptansescenarioer eller dokumenterte tester i utvalget.</p> }
             <ul class="mto-readiness-list">
                 @foreach (var bar in bars)
@@ -589,12 +624,13 @@
                         <span class="mto-readiness-label">@b.Label</span>
                         <span class="mto-readiness-value" data-testid="mto-readiness-count">@b.Value</span>
                         <span class="mt-muted msb-small mto-readiness-meaning">@O.ReadinessMeaning(status)</span>
-                        <button type="button" class="btn btn-sm btn-outline-primary" aria-pressed="@(IsDrill("chart.scenarioReadiness", b.Key) ? "true" : "false")"
-                                @onclick="@(() => { ToggleDrill("chart.scenarioReadiness", b.Key); _ = SaveFollowAsync(); })" data-testid="mto-readiness-open">@O.ReadinessAction(status)</button>
+                        @* V12 (2026-11-27): the assessment is done in Finn og forstå (the scenario's «Klargjøring» panel), not in Planlegg og klargjør (cases):
+                           the button opens exactly these scenarios there, in the same scope. *@
+                        <button type="button" class="btn btn-sm btn-outline-primary" disabled="@(_drillBusy || b.Value == 0)"
+                                @onclick="@(() => OpenInDiscoverAsync(slice, "chart.scenarioReadiness", b.Key))" data-testid="mto-readiness-open" data-destination="discover">@O.ReadinessAction(status)</button>
                     </li>
                 }
             </ul>
-            <p class="mt-muted msb-small">Hvert akseptansescenario og hver dokumenterte test telles én gang. «Klar til kjøring» er ikke et testresultat, og godkjente testtilfeller gjør ikke et scenario klart.</p>
         </section>
     };
 
@@ -763,7 +799,7 @@
         var declared = O.TileDeclared(slice, t);
         var metric = $"{DashboardKpiTiles.DimensionLabel(t.Dimension)} · {DashboardKpiTiles.MetricLabel(t.Dimension, t.Metric)}";
         <div class="mto-kpi is-core mto-tile" data-testid="mto-tile" data-tile="@t.Id" data-dimension="@t.Dimension" data-metric="@t.Metric">
-            <button type="button" class="mto-tile-open" disabled="@(_draft is not null)" @onclick="() => OpenTileAsync(t)" title="@title" aria-label="@($"{title}: {(count?.ToString() ?? "ikke tilgjengelig")} ({metric}). Åpne i Finn og forstå")" data-testid="mto-tile-open">
+            <button type="button" class="mto-tile-open" disabled="@(_draft is not null || count is null or 0)" @onclick="() => OpenTileAsync(slice, t)" title="@title" aria-label="@($"{title}: {(count?.ToString() ?? "ikke tilgjengelig")} ({metric}). Åpne i Finn og forstå")" data-testid="mto-tile-open">
                 <span class="mto-kpi-k"><span class="mto-kpi-icon is-scenarios" aria-hidden="true"></span><span class="mto-tile-title" data-testid="mto-tile-title">@title</span></span>
                 <span class="mto-kpi-v" data-testid="mto-tile-count">@(count?.ToString("N0", Nb) ?? "—")</span>
                 <span class="msb-tag mto-tile-badge" data-testid="mto-tile-metric">@metric</span>
@@ -1030,11 +1066,7 @@
     };
 
     /// <summary>FUN-014 (2026-11-27): a tile opens exactly the scenarios it counts (the follow-up workspace), never a broader filter elsewhere.</summary>
-    private Task OpenTileAsync(DashboardKpiTile t)
-    {
-        ToggleDrill("tile", t.Id);
-        return Task.CompletedTask;
-    }
+    private Task OpenTileAsync(O.Slice slice, DashboardKpiTile t) => OpenInDiscoverAsync(slice, "tile", t.Id);
 
     /// <summary>The records behind a drill-down: a tile's exact population, or a chart's / follow-up line's.</summary>
     private O.Drill? DrillFor(O.Slice slice, string chart, string key) => chart == "tile"
@@ -1071,8 +1103,8 @@
                 catch (Exception e) when (e is not OperationCanceledException) { refused = "Modulen kunne ikke velges: " + e.Message; }
             if (refused is not null) { _drillError = refused; return; }
             await ReadScopeAsync();
-            _level = narrow.Level;
-            if (_level == O.Level.Specification && _specPath is null || _level == O.Level.Module && _module is null) { _drillError = "Utvalget kunne ikke brukes."; return; }
+            // The figures follow the shared choice now in force (ReadScopeAsync); a narrowing the explorers did not apply is reported, not faked.
+            if (narrow.Level == O.Level.Specification && _specPath is null || narrow.Level == O.Level.Module && _module is null) { _drillError = "Utvalget kunne ikke brukes."; return; }
             _drill = null;
             _pickerKey++;
         }
@@ -1223,15 +1255,17 @@
             _modules = [.. (state.Modules ?? []).Select(m => m.Module).Where(m => m.Length > 0)];
         }
         catch (Exception e) when (e is not OperationCanceledException) { _scopeError = e.Message; }
-        if (_level == O.Level.Specification && _specPath is null) _level = _module is null ? O.Level.Project : O.Level.Module;
-        if (_level == O.Level.Module && _module is null) _level = O.Level.Project;
+        // V12 scope audit (2026-11-27): the level is the shared choice just read — never a second state. Before, this read could only LOWER the
+        // level (it started at Project): opening Testoversikt (load, reload, back) with a saved module or specification showed it in the picker while
+        // every figure, chart and follow-up list was the whole project's; and a chosen specification pack with no single document (_specPath null,
+        // _pack set) dropped to the module's figures on the next read.
+        _level = _specPath is not null || _pack is not null ? O.Level.Specification : _module is not null ? O.Level.Module : O.Level.Project;
     }
 
     private async Task OnScopeChangedAsync()
     {
         _drill = null; _drillError = null;
         await ReadScopeAsync();
-        _level = _specPath is not null || _pack is not null ? O.Level.Specification : _module is not null ? O.Level.Module : O.Level.Project;
         _follow = _follow with { Module = null, Specification = null };
         _followToggled.Clear(); _followLimit.Clear(); _followGroupPage = 0;
         _ = SaveFollowAsync();

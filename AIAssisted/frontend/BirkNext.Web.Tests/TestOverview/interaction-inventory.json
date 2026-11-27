@@ -20,7 +20,7 @@
       "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S11"],
       "destinationOrTransition": "Oppdater valgt modul i delt artefaktkontekst; ved tømming gå til prosjektomfang.",
       "requiredParameters": ["application", "moduleIdentity"],
-      "automatedTestIds": ["SpecificationScopePickerTests", "Dropdown_selection_alone_scopes_every_dashboard_section_and_clear_restores_project_population"]
+      "automatedTestIds": ["SpecificationScopePickerTests", "Dropdown_selection_alone_scopes_every_dashboard_section_and_clear_restores_project_population", "B02_project_and_module", "B09_clear_module_restores_the_project", "B13_rapid_scope_changes_settle_on_the_last_choice"]
     },
     {
       "controlId": "ssp-feature",
@@ -30,7 +30,7 @@
       "applicableScopes": ["S01", "S02", "S03", "S04", "S09"],
       "destinationOrTransition": "Oppdater pakke innenfor valgt modul.",
       "requiredParameters": ["application", "moduleIdentity", "specificationPackIdentity"],
-      "automatedTestIds": ["SpecificationScopePickerTests", "MultipleDocumentsPerFeatureTests"]
+      "automatedTestIds": ["SpecificationScopePickerTests", "MultipleDocumentsPerFeatureTests", "B03_project_module_and_specification", "B10_clear_specification_keeps_the_module"]
     },
     {
       "controlId": "ssp-specification",
@@ -40,7 +40,7 @@
       "applicableScopes": ["S01", "S02", "S03", "S04", "S06", "S07", "S08", "S09", "S10"],
       "destinationOrTransition": "Oppdater dokumentidentitet innenfor valgt applikasjon, modul og pakke.",
       "requiredParameters": ["application", "sourceRegistration", "baseline", "documentIdentity"],
-      "automatedTestIds": ["SpecificationScopePickerTests", "MultipleDocumentsPerFeatureTests", "Dropdown_selection_alone_scopes_every_dashboard_section_and_clear_restores_project_population"]
+      "automatedTestIds": ["SpecificationScopePickerTests", "MultipleDocumentsPerFeatureTests", "Dropdown_selection_alone_scopes_every_dashboard_section_and_clear_restores_project_population", "B04_full_hierarchy_with_document", "B11_clear_document_keeps_module_and_specification"]
     },
     {
       "controlId": "mto-kpi",
@@ -50,17 +50,17 @@
       "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S12"],
       "destinationOrTransition": "Naviger til scenario- eller testplanvisning med scope og måltallsfilter.",
       "requiredParameters": ["application", "scope", "metric", "sourceBaseline"],
-      "automatedTestIds": ["Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows", "ManualTestingWorkspaceTests"]
+      "automatedTestIds": ["Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows", "ManualTestingWorkspaceTests", "B17_KPI_tile_and_scenario_KPI_navigation", "B23_back_and_forward_keep_the_scope", "B16_test_plan_navigation_with_no_plan"]
     },
     {
       "controlId": "mto-attention-open",
       "component": "ManualTestingOverview",
       "type": "button",
-      "behavior": "Åpne eller lukke den konkrete oppfølgingsdrillen.",
-      "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S12"],
-      "destinationOrTransition": "Vis eksakt oppfølgingspopulasjon under kortet.",
-      "requiredParameters": ["application", "scope", "followUpKey"],
-      "automatedTestIds": ["Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows", "ManualTestingWorkspaceTests"]
+      "behavior": "P1-linjen («N P1-scenarioer mangler testtilfeller») åpner Finn og forstå med nøyaktig de tellede scenarioidentitetene og prioritet P1, i samme delte scope. Saksbaserte linjer (godkjenning/klar) viser fortsatt en kompakt sakliste.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S07", "S08", "S09", "S10", "S11", "S12", "S13", "S14"],
+      "destinationOrTransition": "Naviger til manual-testing/discover; filter Identities = tellede P1-identiteter uten testtilfelle, Priority = P1; scope uendret (data-destination=discover).",
+      "requiredParameters": ["application", "scope", "identities", "priority"],
+      "automatedTestIds": ["UX107_the_P1_follow_up_opens_Finn_og_forsta_with_exactly_the_counted_scenarios_and_no_inline_list", "P1_SCOPE_01_project_only", "P1_SCOPE_02_module", "P1_SCOPE_03_specification", "P1_SCOPE_04_document", "P1_SCOPE_05_06_07_clearing_restores_the_wider_population", "P1_SCOPE_08_switching_applications", "P1_SCOPE_10_duplicate_display_ids_in_different_documents", "P1_SCOPE_12_back_forward_and_reload_keep_scope_and_filter", "P1_SCOPE_13_zero_matching_scenarios", "P1_SCOPE_14_scope_changed_while_a_request_is_pending", "P1_SCOPE_15_no_inline_P1_or_readiness_list_remains"]
     },
     {
       "controlId": "mto-sort",
@@ -70,7 +70,7 @@
       "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S12"],
       "destinationOrTransition": "Samme tabellpopulasjon med ny sortering.",
       "requiredParameters": ["scope", "column", "direction"],
-      "automatedTestIds": ["ManualTestingWorkspaceTests"]
+      "automatedTestIds": ["ManualTestingWorkspaceTests", "B18_table_links_and_sorting"]
     },
     {
       "controlId": "mto-row-open",
@@ -80,7 +80,7 @@
       "applicableScopes": ["S01", "S09", "S10"],
       "destinationOrTransition": "Naviger til Discover med valgt modulidentitet.",
       "requiredParameters": ["application", "moduleIdentity", "sourceBaseline"],
-      "automatedTestIds": ["ManualTestingWorkspaceTests"]
+      "automatedTestIds": ["ManualTestingWorkspaceTests", "B18_table_links_and_sorting"]
     },
     {
       "controlId": "mto-follow-prev",
@@ -90,7 +90,7 @@
       "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10"],
       "destinationOrTransition": "Oppdater gruppeside uten å endre valgt foreldrescope.",
       "requiredParameters": ["scope", "filters", "sort", "page"],
-      "automatedTestIds": ["ManualTestingWorkspaceTests"]
+      "automatedTestIds": ["ManualTestingWorkspaceTests", "B20_pagination_and_show_more"]
     },
     {
       "controlId": "mto-follow-next",
@@ -100,17 +100,17 @@
       "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10"],
       "destinationOrTransition": "Oppdater gruppeside uten å endre valgt foreldrescope.",
       "requiredParameters": ["scope", "filters", "sort", "page"],
-      "automatedTestIds": ["ManualTestingWorkspaceTests"]
+      "automatedTestIds": ["ManualTestingWorkspaceTests", "B20_pagination_and_show_more"]
     },
     {
       "controlId": "mto-readiness-open",
       "component": "ManualTestingOverview.Readiness",
       "type": "button",
-      "behavior": "Vis testtilfellene bak beredskapskategorien.",
-      "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S12"],
-      "destinationOrTransition": "Åpne eksakt testtilfellepopulasjon for statusnøkkelen.",
-      "requiredParameters": ["application", "scope", "readinessKey"],
-      "automatedTestIds": ["ManualTestingWorkspaceTests"]
+      "behavior": "«Start vurdering»/neste steg åpner Finn og forstå (klargjøringspanelet per scenario) med nøyaktig scenarioene i klargjøringsstatusen.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S07", "S08", "S09", "S10", "S11", "S12", "S13", "S14"],
+      "destinationOrTransition": "Naviger til manual-testing/discover; filter Identities = scenarioene i statusen; scope uendret.",
+      "requiredParameters": ["application", "scope", "identities", "readinessKey"],
+      "automatedTestIds": ["UX109_readiness_cards_name_each_state_and_open_exactly_that_population_in_Finn_og_forsta", "READY_01_start_assessment_opens_exactly_the_review_needed_scenarios"]
     },
     {
       "controlId": "mto-bar-open",
@@ -120,11 +120,22 @@
       "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S12"],
       "destinationOrTransition": "Vis nøyaktig kategoriens records i gjeldende scope.",
       "requiredParameters": ["application", "scope", "chartId", "barKey", "sourceBaseline"],
-      "automatedTestIds": ["Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows"]
+      "automatedTestIds": ["Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows", "B19_chart_bars_open_exactly_their_records", "B12_application_switching_replaces_every_figure", "B24_duplicate_display_ids_stay_separate"]
+    },
+    {
+      "controlId": "mto-tile-open",
+      "component": "ManualTestingOverview.Tile",
+      "type": "button",
+      "behavior": "En KPI-flis åpner Finn og forstå med nøyaktig scenarioene den teller; tom flis åpner ingenting og sier det.",
+      "destinationOrTransition": "Naviger til manual-testing/discover; filter Identities = flisens populasjon; scope uendret.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S07", "S08", "S09", "S10", "S11", "S12", "S13", "S14"],
+      "requiredParameters": ["application", "scope", "tileId", "identities"],
+      "automatedTestIds": ["T03_the_normal_view_has_no_tile_menus_and_the_default_tile_shows_its_count_and_meaning", "B17_KPI_tile_and_scenario_KPI_navigation"]
     }
   ],
   "notes": [
     "The guard compares the exact stable-ID sets, rejects duplicates in the registry, and validates required behavior-contract fields.",
-    "Only controls listed in controls have contracts in this first incremental update. Remaining controls/scope pairs are NOT VERIFIED and are enumerated as gaps in the Norwegian report."
+    "V12 2026-11-27: scenario metrics (P1 follow-up, readiness, KPI tiles) navigate to Finn og forstå with the exact counted identities; isolated browser journeys (BirkNext.Api.Tests/BrowserVerification, Category=IsolatedBrowser) check destination identities against an independent fixture oracle.",
+    "Controls without a contract entry here are listed as gaps in the Norwegian report; the browser journeys cover more controls than the contracts list."
   ]
 }

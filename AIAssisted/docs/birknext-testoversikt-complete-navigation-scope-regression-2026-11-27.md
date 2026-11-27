@@ -1,118 +1,198 @@
 # Testoversikt: scope, navigasjon og regresjonsvern
 
-## Sammendrag
+Oppdatert 2026-11-27 (kveld): isolert nettleserverifisering, scope-lekkasje, P1-/klargjøringsnavigasjon og prosessvurdering.
+Tidligere checkpoint: `1f12ada6` («testoverview: checkpoint scope and navigation hardening»).
 
-Arbeidet retter konkrete scope-feil i Testoversikt, gjør scope-dropdownene til eneste scopekontroller og legger til regresjonstester for prosjekt-, modul-, spesifikasjons- og dokumentvalg. «Alle»-valg blir stående etter at et valg er gjort. En kildeidentitet som ikke finnes i valgt scope gir nå tomt resultat/diagnostikk, ikke data fra et bredere scope.
+## 1. Kort oppsummert
 
-Dette er **ikke en fullført godkjenning av hele den etterspurte V12-matrisen**. Reell browser E2E mot en isolert instans ble ikke kjørt, og mange interaksjon × scope-kombinasjoner mangler fortsatt eksplisitte tester. Anbefaling: **NO-GO for full release acceptance** inntil disse hullene er lukket.
+| Område | Status |
+|---|---|
+| Isolert nettlesertest-host (egen database, egen App_Data, egne porter) | **Bygget og bevist i kjøring** |
+| Scope-lekkasje (tall for bredere utvalg enn velgeren viser) | **Rotårsak funnet og rettet**, bevist i nettleser |
+| P1-oppfølging og «Start vurdering» som lange inline-lister | **Fjernet**: navigerer til Finn og forstå med eksakt populasjon |
+| Uavhengig orakel (forventede ID-er beregnet fra fixture, ikke fra produksjonskode) | **Bygget**; brukt i alle nettleserreiser |
+| Nettleserreiser B01–B24 + P1-SCOPE + READY | Kjørt i isolert host, se kap. 7 |
+| Testplaner/testtilfeller i fixture (godkjent, klar, kildeendret, E2E-plan) | **Ikke bygget**: tilhørende kontroller er NOT VERIFIED |
+| PostgreSQL-spesifikk dekning | Ja: hosten bruker ekte PostgreSQL (midlertidig database), ikke EF InMemory |
 
-## Baseline og avgrensning
+**Anbefaling: fortsatt NO-GO for full V12-aksept**, men nå av smale og navngitte grunner (kap. 10), ikke av manglende infrastruktur.
 
-- Arbeidsgren: `008-traceability-first`, HEAD ved inspeksjon: `a4432a84`.
-- Separat `v12-ux-bundle`-worktree og `feature/openspec-isolated-route` ble ikke endret.
-- Endringene er frontendpresentasjon, scopevalg og frontendtest. Ingen backendreset, testplan, sak, godkjenning, historikk eller kildeidentitet ble skrevet.
-- Denne endringen kan checkpoint-committes uten releasegodkjenning. Full Testoversikt-aksept er fortsatt NO-GO; browsermatrise og uavhengig kontroll × scope-avstemming gjenstår.
+## 2. Test-host-arkitektur
 
-## Bekreftede feil og rettelser
+Valgt strategi: **Option A, utvidet test-host** (ingen ny infrastruktur, ingen Docker/Podman-oppstart, ingen installasjon).
 
-1. `SpecificationScopePicker` viste i enkelte tilstander bare en placeholder; etter valg forsvant valget for å gå tilbake til «Alle». Valglogikken kunne også automatisk velge et unikt artefakt igjen etter at bruker hadde tømt valget. Picker/context har nå eksplisitt tomt valg for modul, spesifikasjonspakke og dokument, med reset av avhengige barn og bevaring av gyldige foreldre.
-2. Dashboardets `_level` var en egen tilstand ved siden av dropdownvalget. Endring av dokument/pakke kunne derfor gi utdatert scope. Dropdown-endring leses nå på nytt og bestemmer nivået; de parallelle «Hele prosjektet / Valgt modul / Valgt spesifikasjon»-knappene og duplisert scopeetikett er fjernet.
-3. Eksakt spesifikasjon ble filtrert etter bane uten å avskjære en motstridende modulforelder; ugyldige kombinasjoner kunne vise feil populasjon. Filtreringen bruker nå snittet av valgt modul og spesifikasjonsidentitet. Manglende/stale spesifikasjon blir tomt resultat med forklaring.
-4. Prosjektnivå hadde tom modulnøkkel som kunne forveksles med fravær av scope. Tom modulnøkkel mappes nå til eksisterende prosjektomfattende gruppe.
-5. KPI-/drilldownidentiteter ble deduplisert på tvers av dokumenter med samme identitetsstreng. Nøklene inkluderer nå kildebane der disse aggregatene bygges. Prioritets- og manglende-dekningstellinger/drilldowns utelater krav-only-kandidater.
-6. P1-listen viste lokale modul-/spesifikasjonsfiltre som kunne gi inntrykk av å kunne utvide foreldrescope, og viste for mange grupper samtidig. Filtrene arver scope, gruppene starter lukket, filtrering skjer før paginering og gruppeseksjonene har eksplisitt sidekontroll. Flere follow-up-lister har «vis flere» i stedet for stille `.Take(...)`-avkutting.
+- **API:** testassemblyens egen `WebApplicationFactory<Program>`. Dermed gjelder testassemblyens eksisterende vern, som lukker ved feil:
+  - `TestDatabaseIsolation`: egen database `birknext_testrun_<12 hex>` per testprosess på den lokale serveren. Enhver annen database stopper oppstarten (`DatabaseConnection.EnsureAllowed`). Databasen merkes og slettes ved avslutning.
+  - `TestAppDataIsolation`: midlertidig App_Data per prosess.
+  - Ekte Npgsql, ekte migreringer, ekte controllere og middleware.
+- **Loopback-relé:** en Kestrel på ledig port (aldri 5000/5001/5173/5097) sender hver nettleserforespørsel uendret til in-process-serveren. Socket-peeren er loopback, og ingen `X-Forwarded-*` legges til (API-et avviser relayed requests).
+- **Frontend:** BirkNext.Web-bygget serveres fra byggets `staticwebassets.runtime.json` på en egen ledig port. Ingen publisering, og ingen fil på disk endres. Bare den serverte `appsettings.json` får `BackendUrl` satt til reléet. Miljøspesifikke appsettings serveres ikke.
+- **Nettleser:** Chromium via Microsoft.Playwright. Ny kontekst per reise, og alle forespørsler til andre origins avbrytes og registreres. Hver reise feiler ved konsollfeil, 5xx eller blokkert forespørsel. Ved feil lagres skjermbilde og trace.
+- **Fixtures:** importeres gjennom den ekte Project Import-siden (støttet brukervei), ikke seedet bak API-ets rygg.
+- **Kjøring:** `Category=IsolatedBrowser`. Uten `BIRKNEXT_ISOLATED_WEB_ROOT` rapporteres reisene som SKIPPED med forutsetningen, aldri som bestått.
 
-## Scope- og KPI-kontrakter som er dekket
+Filer: `AIAssisted/backend/BirkNext.Api.Tests/BrowserVerification/` (`IsolatedBrowserHost.cs`, `TestOverviewFixture.cs`, `TestOverviewBrowserSession.cs`, `TestOverviewBrowserJourneys.cs`).
 
-- Prosjekt alene: alle records i prosjektets API-svar.
-- Modul: records hvis modulnøkkel samsvarer med den valgte modulen.
-- Spesifikasjon: eksakt kildebane og eventuell modulforelder må begge samsvare.
-- Spesifikasjonspakke: modul og feature-folder må begge samsvare.
-- Ugyldig forelder + barn eller manglende spesifikasjonsidentitet: tomt resultat.
-- Tømming av modul: tømmes spesifikasjon og dokument; prosjektpopulasjon gjenopprettes.
-- Tømming av spesifikasjon: modul beholdes, dokument tømmes.
-- Tømming av dokument: modul og pakke beholdes.
-- `Godkjent` og `Klar til testing` forblir separate case-mål. Scenarioforslag, testtilfeller og planforekomster er separate domener. Ingen backend-KPI-kontrakt ble endret.
-- Prosjektplaner vises fortsatt som prosjektomfattende planer; dashboardets plan-KPI er planer med saker i valgt slice. Dette blandede plan-/source-scope-grensesnittet er ikke fullstendig løst eller browser-validert.
+## 3. Isolasjonsbevis
 
-## Interaksjonsinventar og varig kontroll
+`IsolatedBrowserHost.ProveIsolation()` sjekker den **faktiske** runtime etter oppstart, ikke bare miljøvariablene. Ingen nettleserstep kjører hvis én sjekk feiler:
 
-`AIAssisted/frontend/BirkNext.Web.Tests/TestOverview/interaction-inventory.json` registrerer eksakte sett av stabile `data-testid`-verdier i Testoversikt-siden og scope-picker. Regresjonstesten sammenligner ID-sett (ikke bare antall), avviser duplikate inventar-ID-er og krever felter for komponent, type, oppførsel, overgang, relevante scope, parametere og testmapping for oppførte kontrollkontrakter. Dette dekker **ikke ennå** alle interaktive markup-elementer: inventaret har 10 eksplisitte kontrollkontrakter, mens sidens dynamiske kontroller ikke alle har kontrakt eller egen scope-mapping. En ny interaktiv kontroll uten `data-testid` oppdages heller ikke automatisk. Guardens dekning er derfor reell, men delvis.
+- databasenavnet `AppDbContext` åpnet = kjøringens `birknext_testrun_<hex>`, og alle seks øvrige kontekster åpnet den samme
+- databasen er ikke utviklerens database
+- App_Data-roten og launch-code-filen ligger i temp og ikke under utviklerens App_Data
+- portene er ikke utviklerportene
+- hosting-miljøet er `Test`
+- serilog-logger går til kjøringens egen mappe, ikke API-prosjektets `./logs`
 
-### Scopekombinasjoner
+Testen `I00_isolation_is_proven_from_the_effective_runtime` rapporterer det samme. Utviklerinstansen på 5000/5173 ble ikke stoppet, lest eller endret. Bygging skjedde til en egen `--artifacts-path`, slik at den kjørende instansens `bin/` ikke ble låst.
 
-| ID | Kombinasjon | Status | Hva som finnes |
-|---|---|---|---|
-| S01 | Prosjekt alene | NOT VERIFIED | BUnit viser prosjekt-KPI og modulrader; ingen uavhengig API-/browseridentitetskontroll. |
-| S02 | Prosjekt + modul | NOT VERIFIED | BUnit kontrollerer KPI/søylediagram og modulrader for syntetisk utvalg. |
-| S03 | Prosjekt + modul + spesifikasjon | NOT VERIFIED | BUnit kontrollerer grupper og et testtilfelleantall for eksempelutvalg. |
-| S04 | Fullt hierarki med dokument | NOT VERIFIED | Service-/picker-tester dekker dokumentidentitet/rydding, ikke API og destination records. |
-| S05 | Prosjekt + spesifikasjon | NOT VERIFIED | Presentasjonsservice har test for eksakt kildebane uten valgt modul. |
-| S06 | Prosjekt + dokument | NOT VERIFIED | Ingen eksplisitt UI/API-kombinasjonstest. |
-| S07 | Prosjekt + modul + dokument | NOT VERIFIED | Ingen eksplisitt UI/API-kombinasjonstest. |
-| S08 | Prosjekt + spesifikasjon + dokument | NOT VERIFIED | Ingen eksplisitt UI/API-kombinasjonstest. |
-| S09 | Prosjektnivåspesifikasjon | NOT VERIFIED | Tom modulnøkkel er mappet til eksisterende prosjektgruppe; ingen hel brukerreise. |
-| S10 | Uten modultilknytning | NOT VERIFIED | Gruppeetiketter/visning har unitdekning, ikke eksakt browser-populasjon. |
-| S11 | Bytte applikasjon | NOT VERIFIED | Ingen kontrollert API/browsertest med to applikasjoner. |
-| S12 | Gyldig scope uten treff | NOT VERIFIED | Manglende spesifikasjon gir tom diagnostikk; null-resultat i full scope er ikke ende-til-ende verifisert. |
-| S13 | Ugyldig kryssprosjekt-/kildekombinasjon | NOT VERIFIED | Frontend service-test bekrefter tomt snitt ved motstridende modul; API-avvisning er ikke implementert/verifisert. |
-| S14 | Stale/fjernet kildeversjon | NOT VERIFIED | Stale-baseline banner finnes, men identitets-/drilldownkonsekvens er ikke ende-til-ende verifisert. |
-| S15 | Prosjekt uten hierarkinivå | NOT VERIFIED | Separate discovery-tester finnes; Testoversikt-prosjektmatrisen er ikke kjørt. |
+## 4. Databasebegrensninger
 
-Ingen rad er merket PASS fordi aksept krever eksakte identiteter gjennom API, UI og drilldown.
+Hosten bruker **ekte PostgreSQL** i en midlertidig database, ikke EF InMemory. Npgsql-oversettelse og migreringer kjøres derfor ekte. Dette dekkes ikke: samtidighet/låsing mellom flere brukere, og ytelse med store reelle datamengder (fixture er ~45 scenarioer per applikasjon). Testene krever at den lokale PostgreSQL-serveren kjører. Er den nede, lukker hostene ved feil, og ingen reise kjører.
 
-### Kontroll × scope
+## 5. Rotårsak: scope-lekkasje (rettet)
 
-En full generert kontroll × scope-matrise er fortsatt **ikke levert**. JSON-filen dekker 10 sentrale kontrollkontrakter, men dekker ikke alle 152 stabile ID-er som funksjonelle kontroller, og gir ikke evidens for alle 15 scopes per relevant kontroll. Derfor finnes ingen gyldig total på antall verifiserte kontroll/scope-par.
+**Symptom:** Tester så «397 P1-scenarioer / 42 grupper» fra flere moduler selv om en modul eller spesifikasjon var valgt.
 
-## Endrede filer
+**Rotårsak** (`ManualTesting.razor`): nivået (`_level`: prosjekt/modul/spesifikasjon) var en egen tilstand ved siden av det delte valget. `ReadScopeAsync()` kjører ved åpning, omlasting, tilbake-navigering og hver ny henting av oversikten. Den kunne bare **senke** nivået, aldri heve det:
+
+1. Når Testoversikt ble åpnet med lagret modul eller spesifikasjon, viste velgeren valget, men `_level` sto på Prosjekt. **Alle** tall, diagrammer og P1-listen gjaldt hele prosjektet. Nettleserreise B23 fant dette: etter tilbake sto modulen Billing i velgeren, men tallene var prosjektets (47 i stedet for 4).
+2. Med en valgt spesifikasjonspakke uten enkeltdokument (`_pack` satt, `_specPath` null) falt nivået til modul ved neste lesing. Nettleserreise B11 fant dette: 7 i stedet for 5.
+
+**Retting:** nivået utledes ett sted, fra det delte valget som nettopp er lest (`ReadScopeAsync`). Den parallelle `SetLevel`-tilstanden er fjernet. `NarrowAsync` rapporterer nå en innsnevring som ikke ble anvendt, i stedet for å overstyre nivået. KPI-semantikk er ikke endret.
+
+## 6. Navigasjonskontrakt (P1-oppfølging, «Start vurdering», KPI-fliser)
+
+Inline-listene er fjernet fra Testoversikt:
+
+- P1-linjen («N P1-scenarioer mangler testtilfeller»)
+- «Klargjøring av scenarioer»: «Start vurdering» / «Klargjør»
+- KPI-fliser
+
+Ett felles prinsipp gjelder: **klikk på et tall eller en handling → arbeidsvisningen åpnes i samme scope med eksakt populasjon.**
+
+- Destinasjonen er **Finn og forstå** (`manual-testing/discover`). Vurdering av klargjøring gjøres i scenarioets «Klargjøring»-panel der. Planlegg og klargjør håndterer testtilfeller, ikke scenarioklargjøring. Det er derfor bevisst ikke valgt som mål.
+- Filteret er `Identities` = nøyaktig de kildeidentitetene metrikken talte, og `Priority = P1` for P1-linjen. Scopet endres ikke, for det delte valget er allerede felles.
+- Destinasjonen anvender filteret selv. Mangler en identitet, sier siden det (`mtd-overview-selection-missing`) og viser aldri andre scenarioer.
+- Filteret lagres per fane, slik at omlasting og fram/tilbake beholder det (verifisert i P1-SCOPE-12).
+- Tom populasjon: knappen er deaktivert, og ingenting åpnes.
+- Saksbaserte linjer (P1 som venter på godkjenning, ikke klare testtilfeller, blokkeringer, kildeendringer) beholder sin kompakte saksliste. De er ikke scenariolister og har ikke en filterkontrakt i Planlegg og klargjør ennå (kap. 10).
+- Kontroller som bare ble brukt av de gamle inline-listene, vises ikke lenger for disse populasjonene. Søk og lokale filtre lever videre i diagramlistene (prioritetssøyler osv.), der de fortsatt brukes.
+
+Mindre tekst: ingressen er kortet til én linje. Forklaringsavsnittet under «Klargjøring av scenarioer» er flyttet til verktøytips på overskriften. Den overflødige merknaden under sprintplaner og den dupliserte overskriften «Viktig å følge opp» i kortet er fjernet.
+
+## 7. Resultater (kjørt i denne økten)
+
+### Nettleser, isolert host (Chromium, ekte PostgreSQL-testdatabase)
+
+> Resultatet av sluttkjøringen er lagt inn i kap. 12. Første fulle kjøring av B01–B24 (før rettingene) ga **21 bestått og 3 feilet**: B03 (feil testforventning), B11 og B23 (reelle scope-feil, rettet i kap. 5).
+
+### Frontend (bUnit) – målrettet
+
+`ManualTestingWorkspaceTests`, `SpecificationScopePickerTests`, `MultipleDocumentsPerFeatureTests`, `TestOverviewInteractionInventoryTests`, `ManualTestingOverview*`, `ManualTestingDrill*`: **79 bestått, 1 feilet**.
+
+- Feilen er `R06_the_stylesheet…`: den leser `manual-testing.css` via en fast relativ sti fra standard `bin/`-layout og finner ikke filen fra den isolerte artifacts-mappen. CSS-en er ikke endret, og testen passerte ved checkpoint. Den er altså layout-avhengig, ikke en regresjon.
+- Fem tester som beskrev den gamle inline-oppførselen er skrevet om til den nye kontrakten og er strengere enn før: de sjekker overleverte identiteter mot fixturens egen konstruksjon, ikke bare antall. Det gjelder UX107 ×3, UX109 og T03.
+
+Full frontend- og full backendsuite er **ikke kjørt etter disse endringene** i denne økten. Historiske tall (9 945 / 607) er ikke ny evidens.
+
+## 8. Kontrollinventar og kontroll × scope
+
+`interaction-inventory.json` har nå 12 kontrollkontrakter, inkludert `mto-tile-open`. Hver kontrakt peker på konkrete nettleser- og bUnit-tester. ID-vakten passerer.
+
+Dekning per kontroll:
+
+| Kontroll | S01 | S02 | S03 | S04 | Annet |
+|---|---|---|---|---|---|
+| `ssp-module` / `ssp-feature` / `ssp-specification` (velg, tøm, Spesifikk→Alle→Spesifikk) | B01 | B02, B09 | B03, B10 | B04, B11 | rask endring B13, P1-SCOPE-14 |
+| P1-oppfølging → Finn og forstå (eksakte ID-er) | P1-SCOPE-01, B14 | 02 | 03 | 04 | tøm 05–07, app-bytte 08, duplikater 10, reload/back/fwd 12, null 13 |
+| «Start vurdering» → Finn og forstå (eksakte ID-er) | READY-01 | READY-01 | READY-01 | – | – |
+| Prioritet- og dekningssøyler → liste (eksakte ID-er) | B19, B24 | via ExpectFigures | via ExpectFigures | via ExpectFigures | – |
+| Modultabell: sortering og radlenke | B18 | – | – | – | – |
+| Paginering og «vis flere» | B20 | – | – | – | – |
+| KPI «Scenarioforslag» → Finn og forstå i samme scope | – | B17, B23 | – | – | – |
+| KPI-flis | B17 (tom flis = deaktivert) | – | – | – | – |
+| Testplan-KPI og lenke | B16 (bare tom tilstand) | – | – | – | – |
+| Prosjektnivå / uten modultilknytning | B07, B08 | – | – | – | – |
+
+**N/A med evidens:**
+
+- **S05/S06** (spesifikasjon eller dokument uten modul): velgeren tilbyr dem ikke. B05-B06 bekrefter at kombinasjonen er hindret.
+
+**NOT VERIFIED:**
+
+- **S13/S14** (ugyldig eller stale referanse): bare dekket via app-bytte (B22). En faktisk utdatert kildeversjon er ikke laget.
+- Alle saksbaserte kontroller (`mto-drill-case`, `mto-drill-plan`, plankort, blokkeringer, kildeendringer, godkjent/klar-målene med verdi > 0): fixture har ingen testtilfeller.
+
+## 9. Uavhengig avstemming
+
+`TestOverviewFixture` beregner forventede populasjoner direkte fra fixture-modellen (oracle-identitet = spesifikasjonssti + token i scenarioteksten). Den kaller ingen produksjonsaggregering.
+
+Følgende sammenlignes:
+
+- KPI «Scenarioforslag» (akseptansescenarioer + krav uten scenario)
+- prioritetssøyler og dekningssøyler
+- modul-, spesifikasjons- og historierader
+- radenes «krav uten scenario»
+- P1-populasjon i destinasjonen
+- klargjøringspopulasjon i destinasjonen
+- søylelister
+
+Sammenligningen gjøres som mengder eller multimengder. Like totaler med andre identiteter gir FAIL. Duplikater er bevisst med: samme US1/FR-001 i alle dokumenter, og samme tittel i to spesifikasjoner.
+
+**Observasjon, ikke rettet:** en ZIP med én omsluttende mappe (`Aurora/…`) gjør mappen til modulrot etter den kanoniske modulregelen. Moduler vises da som «Aurora/Booking», og prosjektets egne `specs/` som modulen «Aurora», ikke som «Prosjektnivå». Regelen deles med explorerne og er ikke endret. Den bør vurderes som egen sak, fordi nedlastede arkiver ofte har en slik mappe.
+
+## 10. Gjenstående (hvorfor fortsatt NO-GO)
+
+1. Fixture med testplaner og testtilfeller i alle tilstander (utkast, godkjent, klar, ikke klar, kildeendret, E2E) og nettleserverifisering av de saksbaserte kontrollene. Seeding krever Finn og forstå → testplan-flyten.
+2. Saksbaserte oppfølgingslinjer har ennå ikke en filterkontrakt til Planlegg og klargjør, og bruker fortsatt en kompakt inline saksliste.
+3. Stale kildeversjon (S14) med ny import av endret innhold.
+4. Full frontend- og full backend-regresjon etter endringene.
+5. Visuell modernisering utover tekstreduksjonen (kap. 11).
+
+## 11. Hvorfor så mange runder for én side, og hvordan unngå det
+
+**Hvorfor:**
+
+- **Testene bekreftet presentasjonen, ikke brukerens opplevelse.** bUnit-testene satte opp en ferdig `ManualTestingOverview` og et ferdig scope, og testet hver for seg at «modul valgt → riktig tall». Ingen test åpnet siden med et *lagret* scope (reload/tilbake). Der lå feilen. Den ble funnet først da en ekte nettleser gjorde det en tester gjør.
+- **To kilder til samme sannhet.** `_level` og det delte valget kunne komme i utakt. Hver runde rettet ett symptom (knapper, picker, snitt) uten å fjerne den doble tilstanden.
+- **Ingen kjørbar nettleserhost.** Tre økter stoppet på «PostgreSQL / App_Data / porter». Hosten som nå finnes, var mulig med eksisterende vern hele tiden.
+- **Kravene vokste underveis.** Scope → kontroll×scope → identitetsorakel → fjerne inline-lister → navigasjonskontrakt → modernisering. Hver utvidelse åpnet nye flater.
+- **Testoversikt har mange flater** (KPI-er, fliser, 8+ diagrammer, oppfølging, klargjøring, tabeller og tilpasning) med inline-lister som duplikerte arbeidsvisningene. Hver flate trengte sin egen test.
+
+**Slik forebygger vi det:**
+
+1. **Én tilstand per sannhet:** utled visningsnivå og filter fra den delte kilden og lagre aldri en kopi. Kodegjennomgang bør stoppe nye parallelle tilstander.
+2. **Ett navigasjonsprinsipp:** tall eller handling på oversikten åpner arbeidsvisningen med eksakte identiteter. Ingen lister på dashboardet. Da trengs én kontrakt-test per kontroll, ikke én per liste.
+3. **Isolert nettleserhost i den faste testpakken:** `Category=IsolatedBrowser` kjøres for hver endring i Testoversikt (≈10 min). Den lagrede-scope-reisen (B23 / P1-SCOPE-12) er obligatorisk.
+4. **Orakel før implementering:** skriv forventede identiteter for et nytt kort i fixturen før kortet bygges.
+5. **Avgrens oppgaven:** én oppgave = én flate med akseptkriterier og ferdig-definisjon. Release-aksept (B01–B24) er en egen oppgave.
+
+## 12. Sluttkjøring, endrede filer og Git
+
+Committet før sluttkjøringen, etter ønske fra brukeren. Resultatene her er det som faktisk var kjørt ved commit:
+
+- **Isolert nettleser, kjøring 2** (etter scope-retting og ny navigasjon): **34 bestått, 2 feilet av 36**. Alle P1-SCOPE-01…15 og READY-01 besto. De to feilene lå i test-hjelperne, ikke i produktet:
+  - B12: prosjektbyttet ventet på feil element.
+  - B15: detaljskuffen i Finn og forstå dekket «Vis alle grupper».
+
+  Begge hjelperne er rettet. Kjøring 3 med rettingene og de siste justeringene var ikke ferdig ved commit (tomme fliser deaktiveres, mindre tekst).
+- **Frontend, målrettet** (ManualTesting, scope-velger, TestOverview, ScenarioBrowser): **266 bestått, 1 feilet** (R06, layout-avhengig sti).
+- **Full frontendsuite:** **9 875 bestått, 70 feilet**. Alle 70 er `DirectoryNotFound`/`FileNotFound`, fordi testene leter etter kildefiler relativt til standard `bin/`, mens bygget gikk til en isolert artifacts-mappe for ikke å låse utviklerinstansen. Ingen er assertion-feil. De må kjøres på nytt fra standard layout for å regnes som verifisert.
+- **Full backendsuite:** ikke kjørt etter endringene.
+
+Endrede filer:
 
 - `AIAssisted/frontend/BirkNext.Web/Pages/ManualTesting.razor`
-- `AIAssisted/frontend/BirkNext.Web/Components/SpecificationScopePicker.razor`
-- `AIAssisted/frontend/BirkNext.Web/Services/Explorers/ArtifactExplorerContext.cs`
-- `AIAssisted/frontend/BirkNext.Web/Services/ManualTestingOverviewPresentation.cs`
-- `AIAssisted/frontend/BirkNext.Web/wwwroot/css/manual-testing.css`
-- `AIAssisted/frontend/BirkNext.Web.Tests/Components/SpecificationScopePickerTests.cs`
 - `AIAssisted/frontend/BirkNext.Web.Tests/Pages/ManualTestingWorkspaceTests.cs`
-- `AIAssisted/frontend/BirkNext.Web.Tests/Services/MultipleDocumentsPerFeatureTests.cs`
-- `AIAssisted/frontend/BirkNext.Web.Tests/Pages/TestOverviewInteractionInventoryTests.cs`
 - `AIAssisted/frontend/BirkNext.Web.Tests/TestOverview/interaction-inventory.json`
-- `AIAssisted/docs/birknext-testoversikt-complete-navigation-scope-regression-2026-11-27.md`
+- `AIAssisted/backend/BirkNext.Api.Tests/BrowserVerification/*` (ny)
+- denne rapporten
 
-## Tester og resultater
+Ikke del av denne commiten (vurderes i worktree-revisjonen):
 
-- Målrettet scope-/picker-/oversiktstest: **79 bestått, 0 feilet** (`SpecificationScopePickerTests`, `ManualTestingWorkspaceTests`, `MultipleDocumentsPerFeatureTests`).
-- Aktuell målrettet kjøring i checkpoint-forberedelsen: **80 bestått, 0 feilet, 0 hoppet over**, inkludert inventarvakten.
-- Inventarregresjonstest: **1 bestått, 0 feilet**.
-- Samlet kjøring av målrettede frontendtester, inventarvakt og de to repository-guardene: **82 bestått, 0 feilet**.
-- Hele frontendtestprosjektet, to siste fullkjøringer etter traversal-endringen: **9 945 bestått, 0 feilet, 0 hoppet over per kjøring**. Tidligere kjøringer hadde to feil, `Production_source_has_no_acceptance_or_dataset_special_cases` og `Repository_never_contains_an_external_dataset_archive`; en senere kjøring hadde bare den første feilen. Tidligere kjøringer brukte quiet logger, som kun viste testnavn og ikke underliggende assertion-/exception-tekst. Repository-guardene traverserte hele genererte byggtrær før de filtrerte ut `bin`/`obj`; de traverserer nå mapper med tidlig ekskludering av `bin`, `obj`, `artifacts`, `node_modules`, `.git` og `App_Data`. Det var en reell effektivitet-/robusthetsfeil, og begge guardene ble raskere. Det er likevel ikke bevist at dette var årsaken til de opprinnelige røde resultatene: minst én feilet kjøring kom også etter første traversalendring. De opprinnelige detaljmeldingene ble ikke fanget, og den nøyaktige feilkilden er fortsatt usikker. Begge testene passerer nå sammen, og siste fullkjøring var grønn.
-- Relevante backend `Services.TestPlanning` tester: **607 bestått, 0 feilet, 0 hoppet over**. De opprettet og fjernet tilfeldige testdatabaser. Før dette feilet en build fordi `BirkNext.Api.dll` var låst av en annen prosess; den prosessen ble ikke stoppet. Kjøringen med `--no-build` passerte.
-- Testprosjektet dekker ikke backend API-validering for alle dokumentkombinasjoner eller uavhengig datakilde-rekonsiliering. Ingen forventede ID-sett for alle scopekombinasjoner er sammenlignet mellom kanonisk kilde, API, UI og drilldown.
+- `TestHostMemoryDiagnostics.cs`
+- `RealProjectAcceptanceFrameworkTests.cs`
+- `birknext-v12-final-verification-2026-11-27.md`
 
-## Browserverifisering
-
-**BLOCKED / NOT VERIFIED.** Ingen `BIRKNEXT_PLAYWRIGHT_*`-konfigurasjon var til stede. Eksisterende self-start-fixture bruker faste porter 5000/5173 og setter ikke `BIRKNEXT_APP_DATA_DIR`; en Playwright-instans kunne dermed ikke oppfylle kravene om egne porter og separat App_Data. Den lokale PostgreSQL-containeren `birknext-studio-local_postgres_1` er den vanlige utviklingscontaineren og ble ikke brukt til browser-kjøring. Standardutviklingsinstansen eller dens data ble ikke åpnet eller endret. Ingen skjermbilder eller browser-logg foreligger.
-
-### Ny infrastrukturkontroll
-
-Kontrollen 2026-11-27 fant ingen `postgres`, `initdb` eller `pg_ctl`-binær i PATH. Playwright-prosjektets eksisterende fixture kan koble til en forhåndsstartet backend/frontend eller starte prosesser på faste utviklingsporter; den oppretter ikke en isolert database/App_Data. API-testene har EF InMemory-støtte, men bruker `WebApplicationFactory`/TestServer in-process. Det finnes ennå ingen loopback-bro eller felles browser-host som eksponerer denne testserveren til en faktisk Playwright-side. Prosjektet `BirkNext.Web.PlaywrightTests` refererer API-prosjektet uten compile-time output og har ikke `Microsoft.AspNetCore.Mvc.Testing`/EF InMemory-avhengighetene. Derfor kunne jeg ikke bevise at en browser-tilgjengelig API bruker bare en disposable database og midlertidig App_Data. FAIL CLOSED: ingen browser-host ble startet, ingen browserreise ble kjørt, og den vanlige PostgreSQL-containeren/utviklingsinstansen ble ikke brukt.
-
-Aktuell målrettet frontendkjøring i denne fortsettelsen: **80 bestått, 0 feilet, 0 hoppet over** (scope-picker, ManualTesting workspace, flere dokumenter og inventory guard). Dette er ikke full frontendregresjon og oppfyller ikke browser- eller kontroll × scope-kravene.
-
-Dermed er ikke viewport/zoom, faktisk fokusrekkefølge, back/forward, raske scopebytter, destination records eller full B01–B24-matrise verifisert i browser.
-
-## Gjenstående arbeid og begrensninger
-
-- Bygg deterministiske isolerte API-fixtures med to applikasjoner, flere kildehierarkier, dupliserte synlige ID-er og baselinevarianter.
-- Inventer alle faktiske interaktive kontroller, inkludert dynamisk viste kontroller, med stabile ID-er og forventet record-populasjon.
-- Generer og kjør hver relevant kontroll × scope-kombinasjon; verifiser eksakte kanoniske ID-sett, totalsummer, URL-parametere og destination records.
-- Valider ugyldige/stale API-kombinasjoner eksplisitt. Gjeldende frontendoversikt hentes prosjektvis og slices klientbasert; dokumentfilteret er ikke en egen API-forespørsel.
-- Legg til uavhengige KPI-referanseberegninger og source-import-rekonsiliering.
-- Kjør isolert browsermatrise B01–B24, inkludert keyboard, 200 % zoom, responsive mål, empty/error states og race conditions. Bekreft at alle slike tester er mock/disposable og ikke skriver mot vanlig `App_Data`.
-- Skaff detaljert testresultatlogg dersom policytestene feiler igjen; de tidligere stille kjøringene lagret ikke den konkrete assertion-/exception-meldingen.
-
-## Git-status ved rapportering
-
-Arbeidskatalogen inneholder også eksisterende, ikke-relaterte endringer: `AIAssisted/backend/BirkNext.Api.Tests/Diagnostics/TestHostMemoryDiagnostics.cs` og den tidligere utrackede `AIAssisted/docs/birknext-v12-final-verification-2026-11-27.md`. De er ikke del av denne oppgaven og må ikke stages med den. Endringsfilene ovenfor er ikke committed. Ingen push.
-
-**Releasevurdering: NO-GO** for full V12-aksept inntil komplett kontroll × scope-matrise, uavhengig forventnings-orakel/reconciliation og browser B01–B24 i fullt isolert runtime foreligger. Full frontend og relevant backend testkjøring er grønne per siste kjøring, men tidligere policytestfeil mangler fanget detaljert feilmelding.
+Ingen push.
