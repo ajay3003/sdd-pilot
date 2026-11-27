@@ -244,6 +244,15 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
         string? first;
         try { first = await process.StandardOutput.ReadLineAsync(timer.Token); }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested) { first = null; }
+        catch (OperationCanceledException)
+        {
+            // V10 (2026-11-27, the «503» in the isolated browser run): the caller gave up (the tester reloaded the page) while the new helper was
+            // still loading. The helper was already registered as running, with its «ready» line unread; the NEXT request reused it and read that
+            // line as its translation («returned a different number of texts» → 503 «No translation service is available»). A helper whose start
+            // was not confirmed is never kept: it is stopped, and the next request starts it again.
+            StopLocked("start cancelled");
+            throw;
+        }
         JsonNode? ready = null;
         try { ready = first is null ? null : JsonNode.Parse(first); } catch (JsonException) { }
         if (ready?["ready"]?.GetValue<bool>() != true)

@@ -566,7 +566,15 @@
                             var found = _items.Count(i => wantedIds.Contains(i.Candidate.SourceIdentity, StringComparer.Ordinal));
                             <p class="msb-spec-note mtd-overview-selection" role="status" data-testid="mtd-overview-selection">
                                 <b>Utvalg fra Testoversikt:</b> @(_filter.Selection ?? "valgte scenarioer") · @found av @wantedIds.Length scenario@(wantedIds.Length == 1 ? "" : "er")
-                                @if (found < wantedIds.Length) { <span data-testid="mtd-overview-selection-missing"> (@(wantedIds.Length - found) finnes ikke i forslagene for denne spesifikasjonen nå)</span> }
+                                @if (found < wantedIds.Length)
+                                {
+                                    <span data-testid="mtd-overview-selection-missing"> (@(wantedIds.Length - found) finnes ikke i gjeldende kildeversjon for valgt spesifikasjon: scenarioet kan være fjernet eller endret i kilden, eller høre til en annen spesifikasjon)</span>
+                                }
+                                @if (SelectionHiddenByFilters(wantedIds) is var hiddenBySelection and > 0)
+                                {
+                                    <span data-testid="mtd-overview-selection-hidden"> · @hiddenBySelection skjules av andre aktive filtre</span>
+                                    <button type="button" class="msb-link" @onclick="ShowSelectionOnly" data-testid="mtd-overview-selection-show">Vis likevel</button>
+                                }
                                 <button type="button" class="msb-link" @onclick="() => Set(DefaultFilter)" data-testid="mtd-overview-selection-clear">Fjern utvalget</button>
                             </p>
                         }
@@ -716,6 +724,7 @@
                                 @if (_gPrimary != ScenarioGroupAxis.None)
                                 {
                                     var tree = ScenarioGrouping.Build(shown, _gPrimary, _gSecondary);
+                                    EnsureRevealed(tree);
                                     <div class="mtg-tree" data-testid="mtd-group-tree" data-primary="@_gPrimary" data-secondary="@_gSecondary">
                                         @foreach (var g in tree) { @GroupNode(g, shown.Count) }
                                     </div>
@@ -1439,6 +1448,8 @@
             // A scenario that no longer exists (another specification, a new discovery) is reported, never silently replaced by another one.
             if (_active is not null && _items.All(i => i.Id != _active)) { _missingScenario = _activeTitle ?? "ukjent scenario"; _active = null; }
             if (_active is null && _missingScenario is null) _active = S.Apply(_items, _filter).Shown.FirstOrDefault()?.Id;
+            // V10 P1: a Testoversikt selection focuses its (first) scenario once the list has rendered it.
+            if (_filter.Identities is { Length: > 0 } && _active is not null && S.Apply(_items, _filter).Shown.Any(i => i.Id == _active)) _focusPending = _active;
             _activeTitle = _items.FirstOrDefault(i => i.Id == _active)?.Title ?? _activeTitle;
             // No discovery for this exact selection yet: fetch it now, once per selection (the tester never has to press «Oppdag»).
             if (_ws.Discovery is null && _ws.DiscoveryScope is { } scopeKey && api is not null && _autoDiscovered.Add($"{_ws.ProjectKey}|{scopeKey}"))
@@ -1503,8 +1514,10 @@
     private string? _drillGroup;
 
     /// <summary>The drill-down instead of the full list: nothing chosen, no search, grouping available (else the page is as before).</summary>
-    private bool ShowOverview => _filter.Story is null && string.IsNullOrWhiteSpace(_filter.Query) && !_showAll && _groupError is null && _groupInputs.Count > 0
-        && _groupMode is G.Mode.Functional or G.Mode.Business;
+    /// <summary>The area overview cards replace the list only without a story, a search or a Testoversikt selection. V10 P1 (2026-11-27): an exact
+    /// selection from Testoversikt was hidden behind these cards when functional or business grouping was chosen.</summary>
+    private bool ShowOverview => _filter.Story is null && string.IsNullOrWhiteSpace(_filter.Query) && _filter.Identities is null && !_showAll && _groupError is null
+        && _groupInputs.Count > 0 && _groupMode is G.Mode.Functional or G.Mode.Business;
 
     private void BackToGroup(string groupKey) { _drillGroup = groupKey; _showAll = false; SelectStory(null); }
     private string? _groupNotice, _groupSpecPath, _groupError;
@@ -2327,6 +2340,12 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusPending is { } focus && !_loading && _items.Any(i => i.Id == focus))
+        {
+            _focusPending = null;
+            try { await JS.InvokeVoidAsync("birknextFocusElement", $"msb-row-{focus}"); } catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
+            if (_filter.Identities is { Length: 1 }) await OpenDetails(focus);
+        }
         if (_ws?.ProjectKey is { } loadedKey && loadedKey != _gOpenProject) { await LoadOpenGroupsAsync(); StateHasChanged(); }
         if (firstRender) await WatchWidthAsync();
         if (_gLoaded) return;
@@ -2376,9 +2395,37 @@
     /// (it survives re-renders, the drawer, and going to Planlegg og klargjør and back); group paths include the grouping axis, so a new project or
     /// a new grouping starts collapsed unless that exact context was opened before.
     /// </summary>
-    private bool IsOpen(string path, int shownCount) => _gOpen.TryGetValue(path, out var open) && open;
+    private bool IsOpen(string path, int shownCount) => _revealed.Contains(path) || _gOpen.TryGetValue(path, out var open) && open;
 
-    private Task ToggleGroup(string path, int shownCount) { _gOpen[path] = !IsOpen(path, shownCount); return SaveOpenGroupsAsync(); }
+    private Task ToggleGroup(string path, int shownCount) { var now = IsOpen(path, shownCount); _revealed.Remove(path); _gOpen[path] = !now; return SaveOpenGroupsAsync(); }
+
+    // ── V10 P1 (2026-11-27): an exact selection from Testoversikt is shown, opened and focused ──
+    // Root cause of «Utvalg fra Testoversikt · 0 rows»: the selected scenario WAS in the discovery and passed every filter, but the list groups
+    // (Brukerhistorie → Scenariotype by default) start collapsed, so its row was never rendered; with functional/business grouping chosen, the
+    // area overview cards replaced the list altogether. Now every group holding the selection opens (an older saved «closed» does not hide it;
+    // a click during this selection is respected), and a single selected scenario is opened and focused.
+    private readonly HashSet<string> _revealed = new(StringComparer.Ordinal);
+    private string? _revealKey, _focusPending;
+
+    private void EnsureRevealed(IReadOnlyList<ScenarioGrouping.Group> tree)
+    {
+        var key = _filter.Identities is { Length: > 0 } ids ? $"{string.Join(",", ids)}|{_gPrimary}|{_gSecondary}" : null;
+        if (key == _revealKey) return;
+        _revealKey = key; _revealed.Clear();
+        if (key is null) return;
+        void Add(IEnumerable<ScenarioGrouping.Group> groups) { foreach (var g in groups) { _revealed.Add(g.Path); Add(g.Children); } }
+        Add(tree);
+    }
+
+    /// <summary>The selection's scenarios that the other filters (added after the drill-down) hide: shown as a conflict, never as an empty result.</summary>
+    private int SelectionHiddenByFilters(string[] wanted)
+    {
+        var inDiscovery = _items.Where(i => wanted.Contains(i.Candidate.SourceIdentity, StringComparer.Ordinal)).Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+        return inDiscovery.Count - S.Apply(_items, _filter).Shown.Count(i => inDiscovery.Contains(i.Id));
+    }
+
+    /// <summary>«Vis likevel»: only the Testoversikt selection, the other filters removed (the selection itself is kept).</summary>
+    private void ShowSelectionOnly() => Set(S.FromOverview(_filter.Identities ?? [], _filter.Selection ?? "valgte scenarioer"));
 
     private Task SetAllGroups(IEnumerable<string> paths, bool open) { foreach (var p in paths) _gOpen[p] = open; return SaveOpenGroupsAsync(); }
 

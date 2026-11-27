@@ -325,6 +325,57 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
     private static string[] RailStories(IRenderedComponent<ManualTestingDiscover> cut) =>
         [.. cut.FindAll("[data-testid=mtd-story]").Select(e => e.GetAttribute("data-story")!).Where(k => k.Length > 0)];
 
+    // ── V10 P1 (2026-11-27): «Åpne» on one scenario in Testoversikt showed «Utvalg fra Testoversikt» and 0 rows in a real browser ──
+    // Root cause: the scenario passed every filter, but the DEFAULT list grouping (Brukerhistorie → Scenariotype) starts collapsed, so its row was
+    // never rendered. These tests use that default (not the flat list the other tests choose).
+
+    [Fact]
+    public void P1_an_exact_scenario_from_Testoversikt_is_listed_in_its_opened_group_active_focused_and_open_with_the_default_grouping()
+    {
+        FlatList = false;
+        var cut = Open(View(), filter: Subset(Search));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal(["us1-1"],
+            "the selected scenario is rendered: before the fix the list showed 0 rows because its group was collapsed"));
+        cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("Story", "the default grouping, not a flat list");
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]").Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "true", "every group holding the selection is opened");
+        cut.Find("[data-testid=mtd-scenario][data-id='us1-1']").ClassList.Should().Contain("is-active");
+        cut.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "msb-row-us1-1"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true", "one selected scenario opens its details"));
+        cut.Find("[data-testid=mtd-overview-selection]").TextContent.Should().Contain("1 av 1 scenario");
+    }
+
+    [Fact]
+    public void P1_a_group_the_tester_closes_during_the_selection_stays_closed_and_a_multi_selection_opens_no_details()
+    {
+        FlatList = false;
+        var cut = Open(View(), filter: Subset(Search, NoMatch));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Should().HaveCount(2));
+        cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().NotBe("true", "two scenarios: the list is shown, the tester chooses");
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]").First().Click();
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]").First().GetAttribute("aria-expanded").Should().Be("false", "an explicit close is respected");
+    }
+
+    [Fact]
+    public void P1_a_selection_that_other_filters_hide_is_explained_with_Vis_likevel_never_an_unexplained_empty_list()
+    {
+        var cut = Open(View(), filter: Subset(Search) with { Status = "approved" });
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-overview-selection-hidden]").TextContent.Should().Contain("1 skjules av andre aktive filtre"));
+        cut.FindAll("[data-testid=mtd-scenario]").Should().BeEmpty();
+        cut.Find("[data-testid=mtd-overview-selection-show]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Select(e => e.GetAttribute("data-id")).Should().Equal(["us1-1"]));
+        cut.FindAll("[data-testid=mtd-overview-selection-hidden]").Should().BeEmpty();
+        cut.Find("[data-testid=mtd-overview-selection]").Should().NotBeNull("the selection itself is kept");
+    }
+
+    [Fact]
+    public void P1_a_selected_scenario_that_is_not_in_the_current_source_version_is_explained()
+    {
+        var gone = Search with { CandidateId = "gone", SourceIdentity = "tss-gone-000000000" };
+        var cut = Open(View(), filter: ScenarioBrowserPresentation.FromOverview([gone.SourceIdentity], "P1 uten testtilfeller"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-overview-selection-missing]").TextContent.Should().Contain("finnes ikke i gjeldende kildeversjon"));
+        cut.Find("[data-testid=mtd-overview-selection]").TextContent.Should().Contain("0 av 1 scenario");
+    }
+
     [Fact]
     public void S01_the_story_list_and_the_scenario_list_show_the_same_dashboard_subset()
     {

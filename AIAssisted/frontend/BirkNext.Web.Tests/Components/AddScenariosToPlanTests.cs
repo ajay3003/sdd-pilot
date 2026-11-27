@@ -133,8 +133,9 @@ public sealed class AddScenariosToPlanTests : BunitContext
     {
         var (cut, closed) = OpenTracked();
         cut.Find("[data-testid=asp-dialog]").KeyDown(new KeyboardEventArgs { Key = "Escape" });
-        closed.Should().ContainSingle("nothing was chosen: Escape closes at once");
-        JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "mtp-add-scenarios", "focus returns to the button that opened it");
+        // Closing and returning focus are asynchronous (the focus is a JS call after the close): wait for them, never assert before they ran.
+        cut.WaitForAssertion(() => closed.Should().ContainSingle("nothing was chosen: Escape closes at once"));
+        cut.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "mtp-add-scenarios", "focus returns to the button that opened it"));
 
         (cut, closed) = OpenTracked();
         cut.Find("[data-testid=asp-row][data-id=a1] input").Change(true);
@@ -152,7 +153,7 @@ public sealed class AddScenariosToPlanTests : BunitContext
 
         cut.Find("[data-testid=asp-close]").Click();
         cut.Find("[data-testid=asp-confirm-discard]").Click();
-        closed.Should().ContainSingle("closing without adding is an explicit choice");
+        cut.WaitForAssertion(() => closed.Should().ContainSingle("closing without adding is an explicit choice"));
     }
 
     // -- «Legg til scenarioer» beyond the loaded window (2026-11-27, P1). Before: only Discovery.Candidates (the first 2,000) could be found. --

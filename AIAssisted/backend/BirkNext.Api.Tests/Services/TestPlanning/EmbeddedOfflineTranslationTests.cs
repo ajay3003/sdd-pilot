@@ -250,6 +250,28 @@ public sealed class RealModelTests(Xunit.Abstractions.ITestOutputHelper output)
         next[1].Should().ContainEquivalentOf("fosterhjem");
     }
 
+    /// <summary>
+    /// V10 (2026-11-27, isolated browser run): the tester reloaded Planlegg og klargjør while a NEW helper was still loading. The half-started helper
+    /// stayed registered with its «ready» line unread, and the next translation read that line as its answer: «returned a different number of
+    /// texts» → HTTP 503 «No translation service is available». A cancelled start now stops the helper; the next translation gets its own answer.
+    /// </summary>
+    [Fact]
+    public async Task A_translation_cancelled_while_the_helper_starts_never_hands_the_ready_line_to_the_next_one()
+    {
+        if (Dir is not { } dir) return;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { [OfflineTranslationBundle.DirectoryKey] = dir }).Build();
+        await using var engine = new OfflineTranslationEngine(config, NullLogger<OfflineTranslationEngine>.Instance);
+        engine.RunningProcessId.Should().BeNull("nothing is started yet");
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        var abandoned = () => engine.TranslateAsync(["Select Save."], cancel.Token);
+        await abandoned.Should().ThrowAsync<OperationCanceledException>("the caller gave up while the helper was loading");
+        engine.RunningProcessId.Should().BeNull("a helper whose start was not confirmed is stopped, not kept");
+
+        var next = await engine.TranslateAsync(["Select Save.", "The child lives in a foster home."], default);
+        next.Should().HaveCount(2, "the next request reads its own answer, not the abandoned helper's «ready» line");
+        next[1].Should().ContainEquivalentOf("fosterhjem");
+    }
+
     [Fact]
     public async Task The_packaged_model_translates_test_text_keeping_identifiers_and_terms()
     {

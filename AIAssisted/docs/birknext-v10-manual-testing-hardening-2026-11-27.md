@@ -108,11 +108,12 @@ The earlier commits of the day (`b44c98d5` … `add3ea3e`) are in `birknext-manu
 
 | Suite | Result |
 |---|---|
-| Frontend, full | **9,895 / 9,895** passed (2026-11-27, after every V10 change) |
+| Frontend, full | **9,895 / 9,895** passed (2026-11-27, after every V10 change); **9,900 / 9,900** after the decision 2026-11-27 changes (commit `73b1327e`) |
 | Backend TestPlanning (V10 changes) | **607 / 607** |
 | Backend launcher + offline translation (BUG-005) | **97 / 97** |
-| Backend, complete, partitioned (committed `test-backend-partitioned.sh`, 4 threads, per-partition peak memory) | **PENDING** (running; result below) |
-| Browser, isolated v1env33 | **PENDING** (running; result below) |
+| Backend, complete, partitioned (committed `test-backend-partitioned.sh`, 4 threads, per-partition peak memory) | 7,659: 7,637 passed, **2 failed**, 20 skipped. The 2 DPAPI launcher tests fail only in the flattened OutDir build: the platform-neutral `ProtectedData` stub is copied over the Windows implementation. They pass from a correct build. This is a test-infrastructure caveat, not a product defect. |
+| Backend, affected classes after the decision changes (TestPlanning, ModuleStructure, overview, SourceDriven, ArtifactExplorer; fresh build) | **628 / 628** |
+| Browser, isolated v1env36 (after `73b1327e`) | Dashboard **23 / 24**, V10 regression **62 / 62**, V10 fixes **28 / 29**. See below. |
 
 ### Backend memory (measured today; V11 continues the investigation)
 - One test host per **folder**: 68 units, 7,651 tests, **0 failed**, 20 skipped. Peaks:
@@ -137,7 +138,24 @@ The earlier commits of the day (`b44c98d5` … `add3ea3e`) are in `birknext-manu
 - **A single-process full run is still not shown to fit** on this machine; the partitioned run is the verified strategy.
 
 ## Browser verification (isolated)
-PENDING: filled in from `v1env33` below.
+Instance: v1env36 (ports 5097/5197, disposable database, M2LB imported, 20 plans seeded), build `73b1327e`.
+
+| Script | Result | Not passing |
+|---|---|---|
+| `v1_dashboard.py` (UX-107–111, project level) | **23 / 24** | **P1-opens-exact-scenario.** Fixed in the stabilization pass below. |
+| `v1_v10_regression.py` | **62 / 62** | — |
+| `v1_v10_fixes.py m2lb` | **28 / 29** | Z-console: one «503 (Service Unavailable)». Root cause found and fixed in the stabilization pass below. |
+
+Passed in the browser, among others:
+- the «Testplaner og mer innsikt» band precedes «Viktig å følge opp»;
+- the P1 list count equals its KPI (319), in 35 groups that reconcile, opened in 0.07 s;
+- the page stays compact;
+- search finds one exact scenario, and back restores the list and the search;
+- «Utenfor modulene» shows «Prosjektnivå» (root specs) and «Uten modultilknytning» (docs/), and module documents stay in their module;
+- the project-level row opens the explorers' project level;
+- no horizontal overflow at 1920 / 1440 / 1280 / 1024 / 390;
+- no plan writes;
+- FUN-011, FUN-015, FUN-016, FUN-017, FUN-018, BUG-001 … BUG-004 as listed in the scripts.
 
 ## Mapping to the test guide (MT-01 … MT-44)
 Covered by automated tests and/or the isolated browser run. «Browser» rows are filled in from the results.
@@ -180,3 +198,74 @@ Covered by automated tests and/or the isolated browser run. «Browser» rows are
 5. Backend: a single-process full run is not shown to fit in memory; the cause of the accumulation is not proven.
 6. Export file content (MT-39/40) and archive/restore (MT-44) were not re-verified in this pass.
 7. Requirement identities shared across documents (66 in M2LB): a migration proposal awaits a decision; nothing persistent was changed.
+
+## V10 stabilization pass (2026-11-27)
+The brief: fix the P1 drill-down, investigate the 503, verify again, and keep every other decision unchanged.
+
+### 1. P1: open an exact scenario from Testoversikt: **IMPLEMENTED + VERIFIED** (bUnit; browser rerun below)
+
+**Trace.** Every layer was checked in order:
+- canonical identity: `OverviewScenario.Identity` = the discovery's `SourceIdentity`;
+- module and specification: `SelectSpecificationAsync` chooses the scenario's specification;
+- navigation: `TabDraftStore.DiscoverFilterKey` holds `FromOverview(identities)`, with `All = true` and no work queue;
+- loading: a selection beyond the 2,000-candidate window is fetched by id;
+- server filtering and active filters: `ScenarioBrowserPresentation.Apply` keeps the scenario;
+- the active scenario: the first of the selection.
+
+**Root cause:** rendering, not data. The scenario was loaded and passed every filter, but:
+1. **The default list grouping (Brukerhistorie → Scenariotype) starts collapsed** (`IsOpen` was true only after a click). The selected scenario's row was never rendered, so the browser counted 0 `mtd-scenario` rows. This matches the browser diagnostic: the identity was in the 582-candidate response.
+2. **A second, latent cause:** with functional or business grouping chosen in the rail, `ShowOverview` replaced the list with area cards whenever no story or query was chosen. The selection was ignored there too.
+
+**Fix** (`Pages/ManualTestingDiscover.razor`):
+- `ShowOverview` is false while a Testoversikt selection is active.
+- Every group holding the selection opens (`EnsureRevealed`). An older saved «closed» state does not hide it; a group the tester closes during the selection stays closed.
+- The selected scenario is the active one, its row is focused and scrolled into view (`birknextFocusElement`), and a single selected scenario opens its details.
+- **Conflict:** when other filters hide the selection, the banner says «N skjules av andre aktive filtre» with «Vis likevel» (only the selection, other filters removed).
+- **Unavailable:** «finnes ikke i gjeldende kildeversjon for valgt spesifikasjon: scenarioet kan være fjernet eller endret i kilden, eller høre til en annen spesifikasjon».
+
+**Regression tests** (`DiscoverStoryStatusAndTypeTests`, with the **default** grouping, not the flat list the other tests choose):
+- `P1_an_exact_scenario_from_Testoversikt_is_listed_in_its_opened_group_active_focused_and_open_with_the_default_grouping`: **failed with the reveal removed** («found empty collection», the browser symptom) and passes with the fix.
+- Explicit close respected, multi-selection opens no details; hidden-by-filters conflict with «Vis likevel»; a scenario not in the current source version is explained.
+- Discover class: **21 / 21**.
+
+### 2. The HTTP 503: **root cause found, IMPLEMENTED (fix + test)**
+
+**Evidence**
+- The original run (v1env36 `api.log`) had exactly one 503: `POST /api/test-plan-suggestions/drafts/{id}/translate-all` at 13:34:48.461, 30.7 ms.
+- Reproduced on v1env37 with the same journey plus a 5xx capture: 14:23:56, 44 ms. The body was `translation-unavailable` «No translation service is available right now. **The offline translator returned a different number of texts.**».
+- The same call afterwards, with nothing in flight: 200 «Nothing is missing a translation». So the content translates and the service was available.
+
+**Sequence** (server log):
+1. 14:23:42: automatic translation A is cancelled by the test's F5 (HTTP 499). The existing guard stops the helper («helper stopped (cancelled)»).
+2. 14:23:46: request B starts a **new** helper and is cancelled **while that helper is still loading** (499 after 143 ms). In `EnsureStartedAsync`, the process was registered **before** its «ready» line was read, and that cancellation was re-thrown without stopping it.
+3. 14:23:56: request C reused the half-started helper and read its unread «ready» line as the translation answer (no `texts`). That gives «returned a different number of texts», which `TranslatePlanAsync` labels «No translation service is available» → **503**.
+4. 14:24:01: request D gets the real answer: 200.
+
+**Classification:** an application defect (a race between cancellation and helper start). It is not startup readiness, a dependency, a timeout or the test environment.
+
+**Fix** (`OfflineTranslationEngine.EnsureStartedAsync`): a cancellation while the helper is loading stops the half-started helper, and the next request starts a fresh one. Not hidden, not retried.
+
+**Test:** `A_translation_cancelled_while_the_helper_starts_never_hands_the_ready_line_to_the_next_one` (real packaged model):
+- cancel at 50 ms during start;
+- no helper is left running;
+- the next translation returns its own 2 texts («fosterhjem»).
+
+**Remaining (not changed):** a failure of an *available* translator is still worded «No translation service is available right now» (503). That wording is misleading for a transient failure; changing the status and wording is a separate decision.
+
+### 3. Verification
+| Suite | Result |
+|---|---|
+| Backend: TestPlanning + Data Quality + offline translation (real model, `BIRKNEXT_OFFLINE_TRANSLATION_DIR` set) | **651 / 651** |
+| Frontend: Discover class | **21 / 21** |
+| Frontend: full suite | **PENDING** at commit time (the user asked not to wait) |
+| Browser: isolated v1env38, dashboard + V10 regression + V10 fixes (with 5xx capture) | **PENDING** at commit time |
+
+### 4. Unchanged decisions
+- BUG-005 stays **PARTIALLY VERIFIED**.
+- No persistent requirement-identity migration (the dry run only).
+- The test-method filter and the Finn og forstå redesign stay in V12.
+- V11 and V12 were not started.
+- No normal database, App_Data, plan, execution history or source identity was touched.
+
+### 5. Not part of this commit (uncommitted, other tasks)
+System Settings → Data Quality, the twin-scenario fix in Testoversikt (found by Data Quality), SRC-001 (source baseline line), and the `M2LB (9)` response. Those tasks said «no commits».
