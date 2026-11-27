@@ -112,27 +112,56 @@ public sealed partial class ManualTestingPlanTests
     }
 
     [Fact]
-    public void A06_unsaved_edits_survive_an_arriving_translation_and_the_save_waits_for_it_and_uses_the_new_revision()
+    public void A06_a_save_during_the_translation_is_sent_at_once_and_the_translation_then_retries_on_the_new_revision()
+    {
+        // 2026-11-27: before, the save waited for the translation (about 11 s in the browser) and was lost when the tester left meanwhile.
+        var plan = Plan(Case("c1", "Submit a valid report"));
+        Setup(plan);
+        var pending = PendingTranslation();
+        var sent = new List<SaveTestPlanDraftRequest>();
+        _api.Setup(x => x.SaveAsync(PlanId, It.IsAny<SaveTestPlanDraftRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((Guid _, SaveTestPlanDraftRequest r, CancellationToken _) => sent.Add(r)).ReturnsAsync((plan with { Revision = plan.Revision + 1 }, (string?)null));
+        var cut = Open();
+
+        cut.Find("[data-testid=mtp-preconditions]").Input("Skrevet av testeren");
+        cut.Find("[data-testid=mtp-save]").Click();
+        cut.WaitForAssertion(() => sent.Should().ContainSingle("the save does not wait for the translation"));
+        sent[0].BaseRevision.Should().Be(plan.Revision);
+        sent[0].Cases.Single().Edits.Preconditions.Should().Be("Skrevet av testeren");
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Lagret."));
+
+        // The server refuses the translation on the old revision: it is asked again (on the saved revision), nothing of the tester's is lost.
+        var before = _api.Invocations.Count(i => i.Method.Name == nameof(ITestPlanSuggestionsApiService.TranslateAllAsync));
+        pending.SetResult((null, "The proposal was changed by someone else at the same time (another save or an automatic translation). Reload it; your change was not saved."));
+        cut.WaitForAssertion(() => _api.Invocations.Count(i => i.Method.Name == nameof(ITestPlanSuggestionsApiService.TranslateAllAsync)).Should().BeGreaterThan(before));
+    }
+
+    [Fact]
+    public void A06b_when_the_translation_was_saved_first_the_same_change_is_sent_again_on_its_revision_with_its_translations()
     {
         var plan = Plan(Case("c1", "Submit a valid report"));
         Setup(plan);
         var pending = PendingTranslation();
-        SaveTestPlanDraftRequest? sent = null;
+        var sent = new List<SaveTestPlanDraftRequest>();
         _api.Setup(x => x.SaveAsync(PlanId, It.IsAny<SaveTestPlanDraftRequest>(), It.IsAny<CancellationToken>()))
-            .Callback((Guid _, SaveTestPlanDraftRequest r, CancellationToken _) => sent = r).ReturnsAsync((plan with { Revision = 5 }, (string?)null));
+            .Callback((Guid _, SaveTestPlanDraftRequest r, CancellationToken _) => sent.Add(r))
+            .ReturnsAsync((Guid _, SaveTestPlanDraftRequest r, CancellationToken _) => r.BaseRevision < 4
+                ? ((TestPlanDraft?)null, (string?)"The proposal is at revision 4; your copy is revision 3.")
+                : (plan with { Revision = 5 }, (string?)null));
         var cut = Open();
 
         cut.Find("[data-testid=mtp-preconditions]").Input("Skrevet av testeren");
-        cut.Find("[data-testid=mtp-save]").Click();       // saving while the translation runs: it waits
-        sent.Should().BeNull("the save is sent after the translation, on its revision");
+        cut.Find("[data-testid=mtp-save]").Click();
+        cut.WaitForAssertion(() => sent.Should().ContainSingle());
         var translated = AutoTranslated(plan.Cases[0]);
         pending.SetResult((new TranslateScenarioResult(plan with { Revision = 4, Cases = [translated] }, ["Submit a valid report"], [], [], "ok"), null));
 
-        cut.WaitForAssertion(() => sent.Should().NotBeNull());
-        sent!.BaseRevision.Should().Be(4);
-        var savedCase = sent.Cases.Single();
+        cut.WaitForAssertion(() => sent.Should().HaveCount(2));
+        sent[1].BaseRevision.Should().Be(4);
+        var savedCase = sent[1].Cases.Single();
         savedCase.Edits.Preconditions.Should().Be("Skrevet av testeren", "the tester's edit is not lost");
         savedCase.Translations.Should().ContainKey(ScenarioPlanning.Norwegian, "and the new translation is not wiped by the save");
+        cut.FindAll("[data-testid=mtp-error]").Should().BeEmpty();
     }
 
     [Fact]

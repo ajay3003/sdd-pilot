@@ -1290,7 +1290,7 @@
         if (chosen is { } keep) _lang = keep;
     }
 
-    /// <summary>A change the tester saves waits for an automatic translation still running, so it is sent on the newest revision.</summary>
+    /// <summary>Waits for an automatic translation still running (only after the server refused a save as stale: the translation was saved first).</summary>
     private async Task SettleAutoTranslationAsync()
     {
         if (_autoTask is { IsCompleted: false } running) { try { await running; } catch (Exception e) when (e is not OperationCanceledException) { } }
@@ -1762,8 +1762,16 @@
         _busy = true; _error = null;
         try
         {
-            await SettleAutoTranslationAsync();
+            // 2026-11-27: sent at once. Before, a save waited for a running automatic translation (about 11 s on M2LB, the page only saying
+            // «Oversetter …»), and a tester who left in that time lost the change without a word. Now: the save goes first; the translation is then
+            // refused on the old revision and retries on the new one (FinishAutoTranslationAsync). If the translation was saved first, the server
+            // refuses this save as stale: the page waits for the translation, takes its revision and sends the same change once more.
             var (draft, error) = await api.SaveAsync(_plan.Id, P.SaveWith(_plan, _form));
+            if (draft is null && error is not null && P.IsStale(error) && _autoTask is not null)
+            {
+                await SettleAutoTranslationAsync();
+                (draft, error) = await api.SaveAsync(_plan.Id, P.SaveWith(_plan, _form));
+            }
             if (draft is null) { _error = P.Friendly(error, "Testtilfellet kunne ikke lagres."); return false; }
             _plan = draft;
             Open(_form.CaseId);
