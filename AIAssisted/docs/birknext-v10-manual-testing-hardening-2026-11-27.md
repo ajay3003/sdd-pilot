@@ -257,8 +257,13 @@ The brief: fix the P1 drill-down, investigate the 503, verify again, and keep ev
 |---|---|
 | Backend: TestPlanning + Data Quality + offline translation (real model, `BIRKNEXT_OFFLINE_TRANSLATION_DIR` set) | **651 / 651** |
 | Frontend: Discover class | **21 / 21** |
-| Frontend: full suite | **PENDING** at commit time (the user asked not to wait) |
-| Browser: isolated v1env38, dashboard + V10 regression + V10 fixes (with 5xx capture) | **PENDING** at commit time |
+| Frontend: full suite | **9,916 / 9,916** |
+| Browser: isolated v1env38 (build `9af21c93`), M2LB imported, 20 plans seeded | dashboard **24 / 24** (P1-opens-exact-scenario passes), V10 regression **62 / 62**, V10 fixes **29 / 29** (no 5xx captured; the translation 503 no longer occurs), Data Quality **20 / 20** with 0 FAIL |
+
+**Release readiness of V10:**
+- No open P1 in the verified journeys.
+- BUG-005 stays PARTIALLY VERIFIED: a launcher change, which needs the CI package on an authorized tester PC.
+- Data consistency: the Data Quality audit of the same instance reports no FAIL. The WARNINGs are documented parser-rule differences, shared v1 identities and the archive SOURCE UNAVAILABLE.
 
 ### 4. Unchanged decisions
 - BUG-005 stays **PARTIALLY VERIFIED**.
