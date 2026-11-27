@@ -82,8 +82,9 @@
             </div>
             <footer class="mtp-preview-foot asp-foot">
                 <label class="asp-suite">Testgruppe
-                    <select class="msb-select" @onchange="e => _suite = Blank(e.Value)" data-testid="asp-suite">
+                    <select class="msb-select" @onchange="e => { _suite = Blank(e.Value); _suiteChosen = true; }" data-testid="asp-suite">
                         @if (_plan.Suites.Count == 0) { <option value="">Ny testgruppe «Planlagte scenarioer»</option> }
+                        else if (PreSelected is not null && !_suiteChosen) { <option value="" selected>Velg testgruppe …</option> }
                         @foreach (var (suite, depth) in PlanStructure.Flatten(_plan.Suites))
                         {
                             <option value="@suite.Id" selected="@(_suite == suite.Id)">@(new string(' ', depth * 2))@PlanStructure.PathOf(_plan.Suites, suite.Id)</option>
@@ -91,7 +92,8 @@
                     </select></label>
                 <span class="mt-muted msb-small">Scenarioene planlegges uten testtilfelle; testtilfeller er valgfrie og kan forberedes senere.</span>
                 @if (_notice is { } n) { <span class="msb-status msb-tone-ok" role="status" data-testid="asp-notice">@n</span> }
-                <button type="button" class="btn btn-primary" disabled="@(_busy || _selected.Count == 0)" @onclick="AddAsync" data-testid="asp-add">Legg til @_selected.Count scenario@(_selected.Count == 1 ? "" : "er")</button>
+                @if (NeedsSuiteChoice) { <span class="msb-small" role="status" data-testid="asp-suite-required">Velg testgruppen scenarioene skal legges i.</span> }
+                <button type="button" class="btn btn-primary" disabled="@(_busy || _selected.Count == 0 || NeedsSuiteChoice)" @onclick="AddAsync" data-testid="asp-add">Legg til @_selected.Count scenario@(_selected.Count == 1 ? "" : "er")</button>
             </footer>
         }
     </div>
@@ -109,6 +111,14 @@
     [Parameter] public EventCallback OnClose { get; set; }
     /// <summary>The plan after an addition (the dialog stays open so more scenarios can go to another testgruppe).</summary>
     [Parameter] public EventCallback<TestPlanDraft> OnAdded { get; set; }
+    /// <summary>
+    /// V12 (2026-11-27, MT-9): scenarios chosen in Finn og forstå (candidate ids), selected when the dialog opens. The destination test group is then
+    /// never chosen silently: the tester picks it (brief §14). Ids that cannot be planned here (not an acceptance scenario or documented test,
+    /// or not loaded) are counted, never dropped silently.
+    /// </summary>
+    [Parameter] public IReadOnlyCollection<string>? PreSelected { get; set; }
+    private bool _suiteChosen;
+    private bool NeedsSuiteChoice => PreSelected is not null && !_suiteChosen && _plan is { Suites.Count: > 0 };
 
     private const int Page = 100;
     private TestPlanDraft? _plan;
@@ -135,6 +145,19 @@
                 .Distinct().OrderBy(p => int.TryParse(p.AsSpan(1), out var n) ? n : 99)];
         }
         await LoadPlanAsync();
+        if (PreSelected is { Count: > 0 } wanted)
+        {
+            var offered = _all.Where(c => !InPlan(c)).Select(c => c.CandidateId).ToHashSet(StringComparer.Ordinal);
+            foreach (var id in wanted.Where(offered.Contains)) _selected.Add(id);
+            var inPlan = wanted.Count(id => _all.Any(c => c.CandidateId == id && InPlan(c)));
+            var other = wanted.Count - _selected.Count - inPlan;
+            _notice = string.Join(" ", new[]
+            {
+                $"{_selected.Count} valgt fra Finn og forstå.",
+                inPlan > 0 ? $"{inPlan} er allerede i testplanen." : null,
+                other > 0 ? $"{other} kan ikke planlegges her (ikke et akseptansescenario eller en dokumentert test, eller ikke tilgjengelig i denne oppdagelsen)." : null,
+            }.Where(x => x is not null));
+        }
     }
 
     private async Task LoadPlanAsync()
@@ -142,7 +165,7 @@
         var (plan, error) = await Api.DraftAsync(PlanId);
         if (plan is null) { _error = $"Testplanen kunne ikke hentes. {error}"; return; }
         _plan = plan;
-        _suite ??= plan.Suites.FirstOrDefault()?.Id;
+        if (PreSelected is null || _suiteChosen) _suite ??= plan.Suites.FirstOrDefault()?.Id;
     }
 
     private static string? Blank(object? v) => v?.ToString() is { Length: > 0 } s ? s : null;

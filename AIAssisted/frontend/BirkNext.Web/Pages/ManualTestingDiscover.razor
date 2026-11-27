@@ -1146,8 +1146,24 @@
                     <strong>@_selected.Count valgt</strong>
                     <span class="mt-muted">Ingenting er forberedt eller godkjent ennå.</span>
                     <button type="button" class="msb-link" @onclick="ClearSelection">Fjern valg</button>
+                    @* V12 (MT-9): the chosen scenarios go straight into a test plan's test group, as scenarios (no case is created); the tester picks
+                       the plan here and the test group in the dialog. «Forbered testtilfeller» stays for preparing cases. *@
+                    @if (ActivePlans is { Count: > 0 } addPlans && _ws?.ProjectKey is { } addKey && Api is { } addApi)
+                    {
+                        <label class="msb-small mtd-add-plan">Testplan
+                            <select class="msb-select" @onchange="e => _addPlanId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null" data-testid="mtd-add-plan">
+                                <option value="">Velg testplan …</option>
+                                @foreach (var p in addPlans) { <option value="@p.Id" selected="@(_addPlanId == p.Id)">@p.PlanName</option> }
+                            </select></label>
+                        <button type="button" class="btn btn-secondary btn-sm" id="mtd-add-to-plan" disabled="@(_addPlanId is null)" @onclick="() => _addOpen = true" data-testid="mtd-add-to-plan">Legg til i testplan …</button>
+                    }
                     <button type="button" class="btn btn-primary btn-sm" @onclick="PrepareAsync" data-testid="mtd-prepare">Forbered testtilfeller →</button>
                 </div>
+                @if (_addOpen && _addPlanId is { } addPlanId && _ws?.ProjectKey is { } dialogKey && Api is { } dialogApi)
+                {
+                    <BirkNext.Web.Components.ManualTesting.AddScenariosToPlan Api="dialogApi" ProjectKey="@dialogKey" PlanId="addPlanId" Discovery="_ws.Discovery"
+                        PreSelected="@_selected.ToList()" OnClose="() => _addOpen = false" OnAdded="AddedToPlanAsync" ReturnFocusId="mtd-add-to-plan" />
+                }
             }
         }
 
@@ -2723,6 +2739,24 @@
     }
 
     private async Task PrepareAsync() { await KeepAsync(); Nav.NavigateTo(M.PlanRoute); }
+
+    // ── V12 (MT-9): add the selection to a chosen plan and test group, here ──
+    private Guid? _addPlanId;
+    private bool _addOpen;
+    private List<TestPlanDraftSummary>? ActivePlans => _ws?.Plans?.Drafts.Where(d => d.Lifecycle == TestPlanLifecycle.Active).OrderByDescending(d => d.UpdatedAt).ToList();
+    private ITestPlanSuggestionsApiService? Api => ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
+
+    private async Task AddedToPlanAsync(TestPlanDraft plan)
+    {
+        // The scenarios are now planned; the selection is kept (the tester may add them to another test group too) and the rows' plan line refreshes.
+        if (Api is not { } api || _ws?.ProjectKey is not { } key || _ws.Discovery is not { } found) return;
+        var (view, error) = await api.WorkQueuesAsync(key, found.DiscoveryId);
+        if (view is null || view.DiscoveryId != found.DiscoveryId) { _workError = error ?? _workError; return; }
+        _workView = view;
+        _items = S.Items(found.Candidates, view.Items.ToDictionary(w => w.CandidateId, StringComparer.Ordinal));
+        (_queueCounts, _allCount) = S.QueueCounts(_items, _filter);
+        StateHasChanged();
+    }
 
     /// <summary>«Forbered testtilfelle» for ONE scenario (cross-page context hardening, 2026-11-26). The intent travels explicitly in the address —
     /// the scenario's candidate id and, when it is already in an active plan, that plan — instead of through the multi-selection and Planlegg's

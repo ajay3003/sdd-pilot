@@ -64,6 +64,33 @@ public sealed class AddScenariosToPlanTests : BunitContext
     private static string[] Rows(IRenderedComponent<AddScenariosToPlan> cut) => [.. cut.FindAll("[data-testid=asp-row]").Select(r => r.GetAttribute("data-id")!)];
 
     [Fact]
+    public void V12_a_selection_from_Finn_og_forsta_arrives_selected_and_the_test_group_is_never_chosen_silently()
+    {
+        // MT-9 / brief §14: a1 and e1 can be planned, a2 is already in the plan, r1 is a requirement without a scenario (not offered).
+        var cut = Render<AddScenariosToPlan>(p => p.Add(x => x.Api, _api.Object).Add(x => x.ProjectKey, "m2lb").Add(x => x.PlanId, PlanId).Add(x => x.Discovery, Discovery)
+            .Add(x => x.PreSelected, new[] { "a1", "e1", "a2", "r1" }));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=asp-notice]").TextContent.Should().Be(
+            "2 valgt fra Finn og forstå. 1 er allerede i testplanen. 1 kan ikke planlegges her (ikke et akseptansescenario eller en dokumentert test, eller ikke tilgjengelig i denne oppdagelsen)."));
+        cut.Find("[data-testid=asp-add]").TextContent.Should().Contain("Legg til 2 scenarioer");
+        cut.Find("[data-testid=asp-add]").HasAttribute("disabled").Should().BeTrue("no test group is chosen for the tester");
+        cut.Find("[data-testid=asp-suite-required]").TextContent.Should().Be("Velg testgruppen scenarioene skal legges i.");
+
+        cut.Find("[data-testid=asp-suite]").Change("s-int");
+        cut.Find("[data-testid=asp-add]").Click();
+        _sent.Should().ContainSingle();
+        _sent[0].CandidateIds.Should().BeEquivalentTo(["a1", "e1"]);
+        (_sent[0].SuiteId, _sent[0].ScenarioOnly).Should().Be(("s-int", true), "scenario occurrences in the chosen group; no test case is created");
+    }
+
+    [Fact]
+    public void V12_without_a_handed_over_selection_the_first_test_group_stays_the_default_as_before()
+    {
+        var cut = Open();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=asp-list]"));
+        cut.FindAll("[data-testid=asp-suite-required]").Should().BeEmpty();
+    }
+
+    [Fact]
     public void Offers_acceptance_scenarios_and_documented_tests_marks_planned_ones_and_filters()
     {
         var cut = Open();

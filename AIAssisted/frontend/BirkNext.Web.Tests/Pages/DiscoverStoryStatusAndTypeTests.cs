@@ -25,6 +25,7 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
     private IReadOnlyList<ArtifactModuleRoleState>? TestModules { get; set; }
     /// <summary>More specifications of the module (S04 gives one so a specification change can be made).</summary>
     private List<ExplorerArtifact> ExtraSpecs { get; } = [];
+    private List<TestPlanDraftSummary> Drafts { get; } = [];
 
     private const string Spec = "Frontend/specs/002-child-search-profile/spec.md";
     private readonly Mock<ITestPlanSuggestionsApiService> _api = new();
@@ -78,7 +79,7 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
             ExplorerArtifactStatus.Loaded, "m2lb", "M2LB", [spec, .. ExtraSpecs], spec, ExplorerSelectionReason.Explicit, "# spec", Module: "Frontend", Modules: TestModules));
         Services.AddSingleton(explorer.Object);
         _api.Setup(x => x.ProjectAsync("m2lb", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((new TestPlanWorkspace { ProjectKey = "m2lb", GuideKey = "project:m2lb", CanWrite = true }, (string?)null));
+            .ReturnsAsync((new TestPlanWorkspace { ProjectKey = "m2lb", GuideKey = "project:m2lb", CanWrite = true, Drafts = Drafts }, (string?)null));
         _api.Setup(x => x.LastDiscoveryAsync("m2lb", It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync((new ScenarioDiscoveryResult
         {
             DiscoveryId = "d1", ProjectKey = "m2lb", DiscoveredAt = DateTimeOffset.UtcNow, Candidates = [Search, NoMatch, ErrorPanel, Focus],
@@ -397,6 +398,28 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-sgroup-toggle]").Should().NotBeEmpty());
         cut.FindAll("[data-testid=mtd-sgroup-toggle]").Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "false");
         cut.FindAll("[data-testid=mtd-scenario]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void V12_selected_scenarios_go_to_a_chosen_test_plan_from_Finn_og_forsta_without_preparing_cases()
+    {
+        // MT-9: the bulk bar offers «Legg til i testplan …» after a plan is chosen; the dialog opens with the selection and asks for the test group.
+        var planId = Guid.NewGuid();
+        Drafts.Add(new TestPlanDraftSummary(planId, "project:m2lb", "Sprint 12", null, 3, 0, 0, 0, 0, 0, 0, "anna", DateTimeOffset.UtcNow));
+        _api.Setup(x => x.DraftAsync(planId, It.IsAny<CancellationToken>())).ReturnsAsync((new TestPlanDraft
+        {
+            Id = planId, ProjectKey = "m2lb", PlanName = "Sprint 12", Revision = 3, Suites = [new("s1", "Regresjon", "template", null), new("s2", "Ende til ende", "template", null)],
+        }, (string?)null));
+        var cut = Open(View());
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Should().NotBeEmpty());
+        cut.Find("[data-testid=mtd-scenario][data-id='us1-1'] [data-testid=mtd-select]").Change(true);
+
+        cut.Find("[data-testid=mtd-add-to-plan]").HasAttribute("disabled").Should().BeTrue("a plan must be chosen first");
+        cut.Find("[data-testid=mtd-add-plan]").Change(planId.ToString());
+        cut.Find("[data-testid=mtd-add-to-plan]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=asp-notice]").TextContent.Should().StartWith("1 valgt fra Finn og forstå."));
+        cut.Find("[data-testid=asp-suite-required]").Should().NotBeNull("the destination test group is the tester's choice");
+        _api.Verify(x => x.CreateProjectAsync(It.IsAny<CreateProjectTestPlanRequest>(), It.IsAny<CancellationToken>()), Times.Never, "nothing is added before «Legg til»");
     }
 
     [Fact]
