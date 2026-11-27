@@ -807,6 +807,17 @@
     margin: -0.9rem -1.1rem 0.6rem; padding: 0.6rem 1.1rem; background: var(--msb-surface, #fff); border-bottom: 1px solid var(--msb-border); }
 .mtw-drawer-title { font-weight: 600; }
 .mtw-details-btn { flex: 0 0 auto; white-space: nowrap; }
+/* Three columns (2026-11-27; the page tells the component when it is at least 84rem wide): user stories | scenarios | the open scenario.
+   The detail is a sticky column of its own, no overlay; everything in it is unchanged. */
+.mtw.is-three { grid-template-columns: 15rem minmax(0, 1fr) minmax(22rem, 30rem); }
+.mtw.is-three .mtw-stories { grid-column: auto; position: sticky; top: 3.4rem; max-height: calc(100vh - 4.5rem); overflow: auto; }
+.mtw.is-three .mtw-story-select { display: none; }
+.mtw.is-three .mtw-story-list { display: grid; overflow: visible; }
+.mtw.is-three .mtw-story-list > li { flex: none; }
+.mtw-drawer.is-docked { position: sticky; top: 3.4rem; z-index: auto; width: auto; height: auto; max-height: calc(100vh - 4.5rem); min-width: 0;
+    box-shadow: none; border: 1px solid var(--msb-border); border-radius: var(--msb-radius); }
+.mtw-drawer.is-docked[hidden] { display: block; }
+.mtw.is-three .mtw-ac-row.is-active { box-shadow: inset 3px 0 0 var(--msb-accent); }
 
 /* Planlegg left list (2026-11-25): prominent purple AC (the detail heading's accent), the selected scenario group softly purple, no repeated titles. */
 .mtp-ac { font-size: 0.78rem; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--clr-accent-bg, #ede9fe); border: 1px solid var(--clr-accent, #7c3aed);

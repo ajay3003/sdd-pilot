@@ -24,7 +24,7 @@
    hands them to Plan & prepare (the same per-tab selection that page restores). Read only: nothing is prepared, approved or changed here. *@
 <PageTitle>Finn og forstå — Manuell testing</PageTitle>
 
-<div class="mt msb-page mtd-page" data-testid="mtd" aria-busy="@(_loading ? "true" : "false")">
+<div class="mt msb-page mtd-page" data-testid="mtd" aria-busy="@(_loading ? "true" : "false")" @ref="_page">
     <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="discover" Title="Finn og forstå"
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
         Lead="Hvilke scenarioer må testes? Søk, filtrer og velg scenarioer, og gå videre til å forberede testtilfeller." />
@@ -111,7 +111,7 @@
             var (railStories, hiddenStories) = (view.Rail, view.HiddenStories);
             var allView = view.All;
             var scope = view.Scope;
-            <div class="mtw" data-testid="mtd-workspace">
+            <div class="mtw @(_threeColumns ? "is-three" : null)" data-testid="mtd-workspace" data-layout="@(_threeColumns ? "three" : "two")">
                 @* 1. User stories: a grouping and business context, never a compulsory step («Alle scenarioer» is always one click away). *@
                 <nav class="mtw-stories" aria-label="Brukerhistorier" data-testid="mtd-stories">
                     <span class="mtw-h">Brukerhistorier</span>
@@ -724,13 +724,19 @@
                 </div>
 
                 @* 4. The open scenario: source, requirements, readiness, test cases — then design advice and everything else on demand. *@
-                @* On-demand detail drawer (2026-11-25): closed by default; «Vis detaljer» opens it for that scenario; selecting another scenario while it is
-                   open updates it, while closed it stays closed; Escape or «Lukk» closes it and keeps the selection. It takes no column in the grid. *@
-                <aside id="mtd-drawer" class="msb-detail mtw-detail mtw-drawer @(_drawerOpen ? "is-open" : null)" hidden="@(!_drawerOpen)" role="dialog" aria-modal="false"
-                       aria-label="Scenariodetaljer" data-testid="mtd-detail" data-open="@(_drawerOpen ? "true" : "false")" @onkeydown="DrawerKey" tabindex="-1" @ref="_drawer">
+                @* Narrower than three columns: an on-demand drawer (2026-11-25) — closed by default; «Vis detaljer» opens it for that scenario; selecting
+                   another scenario while it is open updates it; Escape or «Lukk» closes it and keeps the selection.
+                   Three columns (2026-11-27, page at least ThreeColumnsMinPx wide): user stories | scenarios | the open scenario, always shown and
+                   following the selection (a row click), no overlay and nothing to close. *@
+                <aside id="mtd-drawer" class="msb-detail mtw-detail mtw-drawer @(_drawerOpen ? "is-open" : null) @(_threeColumns ? "is-docked" : null)" hidden="@(!_drawerOpen && !_threeColumns)"
+                       role="@(_threeColumns ? "region" : "dialog")" aria-modal="@(_threeColumns ? null : "false")"
+                       aria-label="Scenariodetaljer" data-testid="mtd-detail" data-open="@(_drawerOpen || _threeColumns ? "true" : "false")" @onkeydown="DrawerKey" tabindex="-1" @ref="_drawer">
                     <div class="mtw-drawer-head">
                         <span class="mtw-drawer-title">Scenariodetaljer</span>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CloseDetailsAsync" data-testid="mtd-drawer-close" aria-label="Lukk detaljer">Lukk</button>
+                        @if (!_threeColumns)
+                        {
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CloseDetailsAsync" data-testid="mtd-drawer-close" aria-label="Lukk detaljer">Lukk</button>
+                        }
                     </div>
                     @if (active is null)
                     {
@@ -2191,7 +2197,31 @@
 
     private Task CloseDetailsAsync() { _drawerOpen = false; return Task.CompletedTask; }
 
-    private Task DrawerKey(KeyboardEventArgs e) { if (e.Key == "Escape") _drawerOpen = false; return Task.CompletedTask; }
+    private Task DrawerKey(KeyboardEventArgs e) { if (e.Key == "Escape" && !_threeColumns) _drawerOpen = false; return Task.CompletedTask; }
+
+    // ── Three columns (2026-11-27) ──
+    /// <summary>The page width (px) from which stories, scenarios and the open scenario stand side by side: 84rem leaves the scenario list about
+    /// 36rem next to a 15rem story column and a 30rem detail column.</summary>
+    public const int ThreeColumnsMinPx = 1344;
+    private bool _threeColumns;
+    private ElementReference _page;
+    private DotNetObjectReference<ManualTestingDiscover>? _widthRef;
+
+    /// <summary>Called by the page's width watcher (js/pageFocus.js birknextWatchWidth) when the page crosses <see cref="ThreeColumnsMinPx"/>.</summary>
+    [JSInvokable]
+    public Task OnLayoutWidth(bool wide)
+    {
+        if (wide == _threeColumns) return Task.CompletedTask;
+        _threeColumns = wide;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task WatchWidthAsync()
+    {
+        _widthRef ??= DotNetObjectReference.Create(this);
+        try { await JS.InvokeVoidAsync("birknextWatchWidth", _page, _widthRef, ThreeColumnsMinPx); }
+        catch (Exception e) when (e is JSException or InvalidOperationException or TaskCanceledException) { }
+    }
 
     private void Open(string id)
     {
@@ -2278,6 +2308,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_ws?.ProjectKey is { } loadedKey && loadedKey != _gOpenProject) { await LoadOpenGroupsAsync(); StateHasChanged(); }
+        if (firstRender) await WatchWidthAsync();
         if (_gLoaded) return;
         _gLoaded = true;
         if (await ManualTestingLanguage.ReadAsync(JS) is { } language) _language = language;
@@ -2583,7 +2614,7 @@
                             @if (i.Prepared is { Cases: > 0 } prep) { <span class="msb-count" title="Testtilfeller i lagrede planer">@prep.Cases</span> }
                             <span class="msb-status msb-tone-@i.Status.Tone" data-testid="mtd-scenario-status">@i.Status.Text</span>
                             <button type="button" class="btn btn-outline-secondary btn-sm mtw-details-btn" @onclick:stopPropagation="true" @onclick="() => OpenDetails(i.Id)"
-                                    aria-controls="mtd-drawer" aria-expanded="@(_drawerOpen && i.Id == _active ? "true" : "false")" data-testid="mtd-show-details">Vis detaljer</button>
+                                    aria-controls="mtd-drawer" aria-expanded="@(_threeColumns ? null : _drawerOpen && i.Id == _active ? "true" : "false")" data-testid="mtd-show-details">Vis detaljer</button>
                         </li>
     };
 
@@ -2658,5 +2689,5 @@
         StateHasChanged();
     });
 
-    public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; }
+    public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; _widthRef?.Dispose(); }
 }

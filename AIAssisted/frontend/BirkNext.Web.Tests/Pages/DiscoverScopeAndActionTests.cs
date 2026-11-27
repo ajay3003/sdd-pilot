@@ -473,4 +473,34 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
         if (cut.FindAll("[data-testid=mtd-group-mode]").Count > 0) cut.Find("[data-testid=mtd-group-mode] option[selected]").TextContent.Should().Be("Brukerhistorier");
         cut.FindAll("[data-testid=mtd-story]").Should().Contain(s => s.GetAttribute("data-story") == MainStory.Key);
     }
+
+    [Fact]
+    public void A_wide_page_shows_stories_scenarios_and_the_open_scenario_as_three_columns_that_follow_the_selection()
+    {
+        // 2026-11-27: at 84rem or more the page reports «wide» (js birknextWatchWidth) and the detail is a column, not a drawer.
+        var cut = Open(MainPath, Spec1, Spec2);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-workspace]"));
+        cut.Find("[data-testid=mtd-workspace]").GetAttribute("data-layout").Should().Be("two");
+        cut.Find("[data-testid=mtd-detail]").HasAttribute("hidden").Should().BeTrue("narrower: the drawer is closed until «Vis detaljer»");
+        JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextWatchWidth" && (int)i.Arguments[2]! == ManualTestingDiscover.ThreeColumnsMinPx);
+
+        cut.InvokeAsync(() => cut.Instance.OnLayoutWidth(true));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-workspace]").GetAttribute("data-layout").Should().Be("three"));
+        var detail = cut.Find("[data-testid=mtd-detail]");
+        detail.HasAttribute("hidden").Should().BeFalse("the open scenario is always shown in its column");
+        detail.GetAttribute("role").Should().Be("region");
+        detail.ClassList.Should().Contain("is-docked");
+        cut.FindAll("[data-testid=mtd-drawer-close]").Should().BeEmpty("a column has nothing to close");
+
+        // A row click is enough: the column follows the selection.
+        cut.Find("[data-testid=mtd-queue][data-queue=All]").Click(); // c-2 is in «Må avklares», not the default queue
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Count.Should().BeGreaterThan(1));
+        var second = cut.FindAll("[data-testid=mtd-scenario]").First(r => !r.ClassList.Contains("is-active"));
+        var title = second.QuerySelector("[data-testid=mtd-scenario-title]")!.TextContent.Trim();
+        second.Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail-title]").TextContent.Should().Contain(title));
+
+        cut.InvokeAsync(() => cut.Instance.OnLayoutWidth(false));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").HasAttribute("hidden").Should().BeTrue("back to a closed drawer when narrow"));
+    }
 }

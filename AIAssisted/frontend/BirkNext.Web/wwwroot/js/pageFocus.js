@@ -107,3 +107,19 @@ document.addEventListener('dragover', function (e) {
 }, true);
 document.addEventListener('drop', function (e) { if (birknextReorderDrag) e.preventDefault(); }, true);
 document.addEventListener('dragend', function () { birknextReorderDrag = false; }, true);
+
+// Tells a component whether an element is at least minPx wide, now and whenever that changes (2026-11-27: Finn og forstå's three columns
+// follow the page's own width, so a collapsed sidebar or a narrow window is measured, not guessed from the viewport).
+window.birknextWatchWidth = function (element, dotnet, minPx) {
+    if (!element || typeof ResizeObserver === "undefined") return;
+    let last = null;
+    const check = () => {
+        const wide = element.getBoundingClientRect().width >= minPx;
+        if (wide === last) return;
+        last = wide;
+        dotnet.invokeMethodAsync("OnLayoutWidth", wide).catch(() => observer.disconnect());
+    };
+    const observer = new ResizeObserver(check);
+    observer.observe(element);
+    check();
+};
