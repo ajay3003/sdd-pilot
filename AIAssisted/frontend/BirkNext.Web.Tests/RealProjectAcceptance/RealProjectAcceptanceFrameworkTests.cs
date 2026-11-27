@@ -317,9 +317,8 @@ public sealed class RealProjectAcceptanceFrameworkTests : IDisposable
         string[] productionDirs = [Path.Combine(root, "frontend", "BirkNext.Web"), Path.Combine(root, "backend", "BirkNext.Api"), Path.Combine(root, "shared")];
         string[] forbidden = ["BirkNext.RealProjectAcceptance", "M2lbDatasetProvider", "RealProjectDataset", "BIRKNEXT_REAL_PROJECT_"];
         var offenders = productionDirs.Where(Directory.Exists)
-            .SelectMany(d => Directory.EnumerateFiles(d, "*.*", SearchOption.AllDirectories))
+            .SelectMany(d => EnumerateFilesPruned(d, ["bin", "obj", "node_modules", "artifacts", ".git", "App_Data"], "*.*"))
             .Where(f => f.EndsWith(".cs", StringComparison.Ordinal) || f.EndsWith(".razor", StringComparison.Ordinal))
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
             .Where(f => forbidden.Any(File.ReadAllText(f).Contains))
             .Select(f => Path.GetRelativePath(root, f)).ToList();
 
@@ -330,9 +329,7 @@ public sealed class RealProjectAcceptanceFrameworkTests : IDisposable
     public void Repository_never_contains_an_external_dataset_archive()
     {
         var root = RepoRoot();
-        var archives = Directory.EnumerateFiles(root, "*.zip", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
-                        && !f.Contains($"{Path.DirectorySeparatorChar}artifacts{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}node_modules{Path.DirectorySeparatorChar}"))
+        var archives = EnumerateFilesPruned(root, ["bin", "obj", "artifacts", "node_modules", ".git", "App_Data"], "*.zip")
             .Where(f => new FileInfo(f).Length == M2lbArchiveBytes && Sha(f) == M2lbDatasetProvider.Sha256)
             .ToList();
 
@@ -340,6 +337,27 @@ public sealed class RealProjectAcceptanceFrameworkTests : IDisposable
     }
 
     private const long M2lbArchiveBytes = 4_734_868;
+
+    /// <summary>
+    /// Walk only repository-controlled source/data folders. The former recursive scan traversed copied test outputs and generated build trees
+    /// before filtering bin/obj, making the guard slow and exposing it to unrelated filesystem churn during full test runs.
+    /// </summary>
+    private static IEnumerable<string> EnumerateFilesPruned(string root, IReadOnlyCollection<string> excludedDirectoryNames, string pattern)
+    {
+        var excluded = excludedDirectoryNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var pending = new Stack<string>();
+        pending.Push(root);
+        while (pending.TryPop(out var current))
+        {
+            foreach (var file in Directory.EnumerateFiles(current, pattern, SearchOption.TopDirectoryOnly)) yield return file;
+            foreach (var directory in Directory.EnumerateDirectories(current, "*", SearchOption.TopDirectoryOnly))
+            {
+                if (excluded.Contains(Path.GetFileName(directory))) continue;
+                if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) continue;
+                pending.Push(directory);
+            }
+        }
+    }
 
     private static string RepoRoot()
     {

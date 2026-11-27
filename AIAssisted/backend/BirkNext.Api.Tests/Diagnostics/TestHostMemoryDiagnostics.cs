@@ -19,6 +19,7 @@ namespace BirkNext.Api.Tests.Diagnostics;
 /// <c>ServiceProviderCache</c>. A diagnostic, not a product test: it only fails when a cycle is clearly retained (see the threshold).
 /// </summary>
 [Trait("Category", "Diagnostics")]
+[Collection(TestHostMemoryDiagnosticsCollection.Name)]
 public sealed class TestHostMemoryDiagnostics(ITestOutputHelper output) : IAsyncLifetime
 {
     private readonly string _database = TestPostgres.TemporaryName("birknext_hostmem");
@@ -225,3 +226,9 @@ public sealed class TestHostMemoryDiagnostics(ITestOutputHelper output) : IAsync
         perCycle.Should().BeLessThan(20, "a disposed API host must not retain its memory");
     }
 }
+
+/// <summary>V11 final verification (2026-11-27): the measurement reads the PROCESS's managed heap (GC.GetTotalMemory), so it must not run beside
+/// other tests. In a partition at 4 threads it measured 83.7 MB/cycle (other tests' allocations); alone it passes. xUnit runs a collection with
+/// parallelization disabled on its own, after the parallel ones — the threshold is unchanged.</summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class TestHostMemoryDiagnosticsCollection { public const string Name = "Test host memory diagnostics (runs alone)"; }
