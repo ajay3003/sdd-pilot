@@ -596,6 +596,45 @@ public sealed partial class ManualTestingPlanTests : BunitContext
     }
 
     [Fact]
+    public void BUG002_looking_and_creating_are_separate_groups_and_only_the_explicit_action_creates_a_case()
+    {
+        // Decision 2026-11-27: a UX separation, not a confirmation dialog. «Forhåndsvis»/«Klargjør AC» are marked read-only; «Forbered testtilfelle»
+        // is a distinct button in its own group that says it creates a case, and creates it on the first click without asking.
+        var plan = Standard() with { PlannedScenarios = [new PlannedScenario { ScenarioId = "ac4", Title = "AC4 uten testtilfelle", StoryId = "US1", NumberInStory = 4, SuiteId = "" }] };
+        Setup(plan);
+        CreateProjectTestPlanRequest? sent = null;
+        _api.Setup(x => x.CreateProjectAsync(It.IsAny<CreateProjectTestPlanRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<CreateProjectTestPlanRequest, CancellationToken>((r, _) => sent = r)
+            .ReturnsAsync(((TestPlanDraft?)null, (string?)"stopp"));
+        var cut = Open();
+        var item = cut.Find("[data-testid=mtp-planned-item][data-scenario=ac4]");
+
+        var view = item.QuerySelector("[data-testid=mtp-planned-view]")!;
+        view.GetAttribute("role").Should().Be("group");
+        view.GetAttribute("aria-label").Should().Contain("lagrer ingenting");
+        view.QuerySelectorAll("button").Select(x => x.GetAttribute("data-testid")).Should().Equal("mtp-planned-preview", "mtp-planned-ready");
+        view.QuerySelector("[data-testid=mtp-planned-preview]")!.GetAttribute("title").Should().Contain("Lagrer ingenting").And.Contain("oppretter ikke testtilfelle");
+        view.QuerySelector("[data-testid=mtp-planned-prepare]").Should().BeNull("the creating action is never inside the read-only group");
+
+        var create = item.QuerySelector("[data-testid=mtp-planned-create]")!;
+        var prepare = create.QuerySelector("[data-testid=mtp-planned-prepare]")!;
+        prepare.ClassList.Should().Contain("btn", "a button, visibly different from the read-only links");
+        prepare.ClassList.Should().NotContain("msb-link");
+        create.QuerySelector("[data-testid=mtp-planned-create-hint]")!.TextContent.Should().Be("Oppretter et testtilfelle");
+        prepare.GetAttribute("aria-describedby").Should().Be("mtp-planned-create-hint-ac4");
+
+        item.QuerySelector("[data-testid=mtp-planned-preview]")!.Click();
+        cut.Find("[data-testid=mtp-preview-close]").Click();
+        sent.Should().BeNull("previewing creates nothing");
+
+        cut.Find("[data-testid=mtp-planned-item][data-scenario=ac4] [data-testid=mtp-planned-prepare]").Click();
+        cut.FindAll("[data-testid=mtp-planned-confirm], [role=alertdialog]").Should().BeEmpty("no confirmation dialog for a non-destructive action");
+        sent.Should().NotBeNull("the explicit action creates the case");
+        sent!.CandidateIds.Should().Equal("ac4");
+        _api.Verify(x => x.CreateProjectAsync(It.IsAny<CreateProjectTestPlanRequest>(), It.IsAny<CancellationToken>()), Times.Once());
+    }
+
+    [Fact]
     public void BUG003_the_testers_explicit_technical_setting_survives_F5()
     {
         // Manual E2E 2026-11-27: «Vis teknisk innhold» was off again after F5 while a technical case stayed open (and hidden in the list).

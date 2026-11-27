@@ -1396,3 +1396,44 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .mtw-ac-row .msb-row-main { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 0.5rem; row-gap: 0.1rem; }
 .mtw-ac-row .msb-row-main > .mtw-row-label, .mtw-ac-row .msb-row-main > .msb-row-title { flex: 1 1 100%; min-width: 0; }
 .mtw-ac-row .msb-row-main > .msb-row-meta { flex: 0 1 auto; max-width: 100%; }
+
+/* UX-107–111 (2026-11-27): «Testplaner og mer innsikt» near the top as two balanced panels; readiness as cards; a compact follow-up workspace. */
+.mto-grid.mto-grid-insight { display: grid; grid-template-columns: minmax(0, 1fr); gap: .9rem; align-items: start; }
+@media (min-width: 1100px) { .mto-grid.mto-grid-insight { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } }
+.mto-grid.mto-grid-insight > .mto-card.is-wide { grid-column: auto; }
+.mto-plan-open { justify-self: start; }
+.mto-plan-exec-h { font-weight: 600; }
+.mto-readiness-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+.mto-readiness-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .15rem .8rem; align-items: center; padding: .6rem .75rem;
+    border: 1px solid var(--msb-border); border-radius: 10px; background: var(--msb-subtle); border-left-width: 4px; }
+.mto-readiness-item.is-ready { border-left-color: var(--clr-success, #16a34a); }
+.mto-readiness-item.is-needspreparation { border-left-color: var(--clr-danger, #dc2626); }
+.mto-readiness-item.is-needsassessment { border-left-color: var(--clr-warning, #d97706); }
+.mto-readiness-label { font-weight: 600; }
+.mto-readiness-value { font-size: 1.35rem; font-weight: 700; text-align: right; }
+.mto-readiness-meaning { grid-column: 1 / -1; }
+.mto-readiness-item > .btn { grid-column: 1 / -1; justify-self: start; }
+.mto-follow-why { margin: .2rem 0 .6rem; max-width: 70rem; }
+.mto-follow-tools { display: flex; flex-wrap: wrap; gap: .5rem .7rem; align-items: center; margin-bottom: .6rem; }
+.mto-follow-tools .msb-search { flex: 1 1 16rem; min-width: 0; }
+.mto-follow-tools .msb-select { flex: 0 1 14rem; min-width: 0; max-width: 100%; }
+.mto-follow-groups { list-style: none; margin: 0; padding: 0; }
+.mto-follow-group { border-top: 1px solid var(--msb-border); }
+.mto-follow-group-h { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .3rem .8rem; padding: .35rem 0; }
+.mto-follow-toggle { display: flex; align-items: center; gap: .5rem; flex: 1 1 18rem; min-width: 0; text-align: left; font: inherit; color: inherit;
+    background: transparent; border: 0; border-radius: 6px; padding: .3rem .35rem; cursor: pointer; }
+.mto-follow-toggle:hover { background: var(--msb-subtle); }
+.mto-follow-toggle:focus-visible { outline: 2px solid var(--clr-primary-focus, var(--msb-accent)); outline-offset: 1px; }
+.mto-follow-name { min-width: 0; overflow-wrap: anywhere; }
+.mto-follow-n { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; padding: 0 .45rem; border-radius: 999px; background: var(--msb-subtle); border: 1px solid var(--msb-border); }
+.mto-follow-rows { list-style: none; margin: 0 0 .4rem; padding: 0 0 0 1.6rem; display: grid; gap: .1rem; }
+.mto-follow-row { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; padding: .3rem 0; border-bottom: 1px dashed var(--msb-border); }
+.mto-follow-main { display: grid; min-width: 0; }
+.mto-follow-title { overflow-wrap: anywhere; }
+@media (max-width: 560px) { .mto-follow-rows { padding-left: .4rem; } .mto-follow-row { flex-wrap: wrap; } }
+
+/* BUG-002 (2026-11-27): planned scenario actions — read-only group vs. the one action that creates a case. */
+.mtp-planned-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.mtp-planned-view { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .1rem .5rem; border: 1px dashed var(--clr-border, #d0d7de); border-radius: .375rem; }
+.mtp-planned-view-label { font-size: .75rem; color: var(--clr-text-muted, #57606a); }
+.mtp-planned-create { display: inline-flex; align-items: center; gap: .4rem; padding-left: .75rem; border-left: 1px solid var(--clr-border, #d0d7de); }

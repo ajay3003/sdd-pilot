@@ -24,7 +24,13 @@ public static class ManualTestingOverviewPresentation
 
     public sealed record Figures(int? Scenarios, int? Covered, int Cases, int Approved, int Ready, int NeedsClarification, int Plans);
 
-    public sealed record Row(string Key, string Label, int? Scenarios, int? Covered, int Cases, int Approved, int FollowUp, string? Module, string? SpecificationPath);
+    /// <summary>One row of the overview table. <see cref="Scenarios"/> and <see cref="Covered"/> count acceptance scenarios and documented tests only
+    /// (decision 2026-11-27); requirements without an acceptance scenario are kept in the data and shown separately in <see cref="Requirements"/>.</summary>
+    public sealed record Row(string Key, string Label, int? Scenarios, int? Covered, int Cases, int Approved, int FollowUp, string? Module, string? SpecificationPath)
+    {
+        /// <summary>Requirements without an acceptance scenario in the row's documents (null when not available).</summary>
+        public int? Requirements { get; init; }
+    }
 
     public sealed record Slice(IReadOnlyList<OverviewSpecification> Specifications, IReadOnlyList<OverviewCase> Cases, bool ScenariosAvailable)
     {
@@ -115,9 +121,11 @@ public static class ManualTestingOverviewPresentation
         var covered = CoveredKeys(s.Cases);
         IEnumerable<(string Key, string Label, int Total, int Covered)> groups = level switch
         {
-            Level.Project => s.Specifications.GroupBy(x => x.Module).Select(g => (g.Key, g.Key, g.Sum(x => x.Scenarios.Count), g.Sum(x => x.Scenarios.Count(sc => IsCovered(x, sc, covered))))),
-            Level.Module => s.Specifications.Select(x => (x.Path, x.Title, x.Scenarios.Count, x.Scenarios.Count(sc => IsCovered(x, sc, covered)))),
-            _ => s.Specifications.SelectMany(x => x.Scenarios.Select(sc => (Spec: x, Sc: sc))).GroupBy(t => t.Sc.StoryId ?? "Uten brukerhistorie")
+            // Acceptance scenarios and documented tests only (decision 2026-11-27): requirements without a scenario are not scenarios.
+            Level.Project => s.Specifications.GroupBy(x => x.Module).Select(g => (g.Key, g.Key, g.Sum(x => x.Scenarios.Count(sc => sc.IsAcceptanceScenario)),
+                g.Sum(x => x.Scenarios.Count(sc => sc.IsAcceptanceScenario && IsCovered(x, sc, covered))))),
+            Level.Module => s.Specifications.Select(x => (x.Path, x.Title, x.Scenarios.Count(sc => sc.IsAcceptanceScenario), x.Scenarios.Count(sc => sc.IsAcceptanceScenario && IsCovered(x, sc, covered)))),
+            _ => s.Specifications.SelectMany(x => x.Scenarios.Where(sc => sc.IsAcceptanceScenario).Select(sc => (Spec: x, Sc: sc))).GroupBy(t => t.Sc.StoryId ?? "Uten brukerhistorie")
                 .Select(g => (g.Key, g.Key, g.Count(), g.Count(t => IsCovered(t.Spec, t.Sc, covered)))),
         };
         return [.. groups.Where(g => g.Total > 0).OrderBy(g => g.Label, StringComparer.CurrentCultureIgnoreCase)
@@ -193,6 +201,18 @@ public static class ManualTestingOverviewPresentation
             DeliveryDashboardTone.Ready, $"{g.Count(c => c.Review == TestCaseReviewState.Accepted)} av {g.Count()} godkjent"))];
 
     /// <summary>The breakdown table: modules (project), specifications (module) or user stories (specification). Cases without a module get their own row.</summary>
+    /// <summary>0 for a real module; 1 for the project's own specifications (<see cref="ModuleStructure.ProjectWide"/>); 2 for documents outside every
+    /// module (<see cref="ModuleStructure.Unassigned"/>).</summary>
+    public static int OutsideModulesRank(string? module) => module switch { ModuleStructure.ProjectWide => 1, ModuleStructure.Unassigned => 2, _ => 0 };
+
+    /// <summary>Why the scenarios of a group outside the modules are there, in the tester's words (null for a real module).</summary>
+    public static string? OutsideModulesWhy(string? module) => module switch
+    {
+        ModuleStructure.ProjectWide => "Prosjektets egne spesifikasjoner (specs/ på rotnivå). De gjelder hele prosjektet, ikke én modul.",
+        ModuleStructure.Unassigned => "Dokumenter som ligger utenfor alle modulmappene (for eksempel docs/analysis). De har ingen modultilknytning i kilden.",
+        _ => null,
+    };
+
     public static IReadOnlyList<Row> Rows(Slice s, Level level)
     {
         var covered = CoveredKeys(s.Cases);
@@ -201,19 +221,23 @@ public static class ManualTestingOverviewPresentation
         switch (level)
         {
             case Level.Project:
+                // Project-level audit (2026-11-27): real modules first; then the two groups outside every module, never mixed in as a module.
                 var modules = s.Specifications.Select(x => x.Module).Concat(s.Cases.Select(c => c.Module)).Distinct(StringComparer.Ordinal)
-                    .OrderBy(m => m == "Uten modultilknytning" ? 1 : 0).ThenBy(m => m, StringComparer.CurrentCultureIgnoreCase);
+                    .OrderBy(OutsideModulesRank).ThenBy(m => m, StringComparer.CurrentCultureIgnoreCase);
                 return [.. modules.Select(m =>
                 {
                     var specs = s.Specifications.Where(x => x.Module == m).ToList(); var cs = s.Cases.Where(c => c.Module == m).ToList();
-                    return new Row(m, m, s.ScenariosAvailable ? specs.Sum(x => x.Scenarios.Count) : null, s.ScenariosAvailable ? specs.Sum(x => x.Scenarios.Count(sc => IsCovered(x, sc, covered))) : null,
-                        cs.Count, cs.Count(c => c.Review == TestCaseReviewState.Accepted), FollowUp(cs), m, null);
+                    return new Row(m, m, s.ScenariosAvailable ? specs.Sum(x => x.Scenarios.Count(sc => sc.IsAcceptanceScenario)) : null,
+                        s.ScenariosAvailable ? specs.Sum(x => x.Scenarios.Count(sc => sc.IsAcceptanceScenario && IsCovered(x, sc, covered))) : null,
+                        cs.Count, cs.Count(c => c.Review == TestCaseReviewState.Accepted), FollowUp(cs), m, null)
+                        { Requirements = s.ScenariosAvailable ? specs.Sum(x => x.Scenarios.Count(sc => sc.RequirementOnly)) : null };
                 })];
             case Level.Module:
                 return [.. s.Specifications.OrderBy(x => x.Title, StringComparer.CurrentCultureIgnoreCase).Select(x =>
                 {
                     var cs = s.Cases.Where(c => SamePath(c.SpecificationPath, x.Path)).ToList();
-                    return new Row(x.Path, x.Title, x.Scenarios.Count, x.Scenarios.Count(sc => IsCovered(x, sc, covered)), cs.Count, cs.Count(c => c.Review == TestCaseReviewState.Accepted), FollowUp(cs), x.Module, x.Path);
+                    return new Row(x.Path, x.Title, x.Scenarios.Count(sc => sc.IsAcceptanceScenario), x.Scenarios.Count(sc => sc.IsAcceptanceScenario && IsCovered(x, sc, covered)), cs.Count,
+                        cs.Count(c => c.Review == TestCaseReviewState.Accepted), FollowUp(cs), x.Module, x.Path) { Requirements = x.Scenarios.Count(sc => sc.RequirementOnly) };
                 })];
             default:
                 var scenarios = s.Specifications.SelectMany(x => x.Scenarios.Select(sc => (Spec: x, Sc: sc))).ToList();
@@ -250,6 +274,53 @@ public static class ManualTestingOverviewPresentation
 
     /// <summary>One scenario of a drill-down, with the specification it belongs to.</summary>
     public sealed record DrillScenario(OverviewSpecification Specification, OverviewScenario Scenario, bool Covered);
+
+    // ── Follow-up workspace (UX-107, 2026-11-27) ──
+
+    /// <summary>The tester's search and filters in a follow-up list (kept per tab and project; restored on return).</summary>
+    public sealed record FollowUpFilter(string Query = "", string? Module = null, string? Specification = null)
+    {
+        public bool Active => Query.Trim().Length > 0 || Module is not null || Specification is not null;
+    }
+
+    /// <summary>How a scenario is named in a follow-up row: «US3 · AC 2» for an acceptance scenario; a documented test carries its id in its title.</summary>
+    public static string ScenarioLabel(OverviewScenario sc) => sc.StoryId is { } st ? $"{st}{(sc.Number is { } n ? $" · AC {n}" : "")}" : sc.Standalone ? "Dokumentert test" : "Uten brukerhistorie";
+
+    /// <summary>The scenarios of a drill-down that match the follow-up filter: every word in the title, the label, the story title or the source identity.
+    /// The overview holds the complete population (computed on the server), so nothing beyond a loaded batch is missed.</summary>
+    public static List<DrillScenario> FilterDrill(IEnumerable<DrillScenario> all, FollowUpFilter f)
+    {
+        var words = f.Query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return [.. all.Where(d => (f.Module is null || d.Specification.Module == f.Module)
+            && (f.Specification is null || SamePath(d.Specification.Path, f.Specification))
+            && words.All(w => $"{d.Scenario.Title} {ScenarioLabel(d.Scenario)} {d.Scenario.StoryTitle} {d.Scenario.Identity}".Contains(w, StringComparison.CurrentCultureIgnoreCase)))];
+    }
+
+    /// <summary>What a follow-up list means, in the tester's words (null when the title says it all).</summary>
+    public static string? DrillMeaning(string chart, string key) => (chart, key) switch
+    {
+        ("panel.p1Attention", "p1-uncovered") => "Akseptansescenarioer og dokumenterte tester med prioritet P1 som ikke har noe lagret testtilfelle i en aktiv testplan. "
+            + "Et scenario som er lagt i en testplan uten testtilfelle, er med. Ikke alle trenger et manuelt testtilfelle: noen dekkes best av automatiske tester.",
+        ("chart.scenarioReadiness", nameof(PreparationStatus.NeedsPreparation)) => ReadinessMeaning(PreparationStatus.NeedsPreparation),
+        ("chart.scenarioReadiness", nameof(PreparationStatus.NeedsAssessment)) => ReadinessMeaning(PreparationStatus.NeedsAssessment),
+        ("chart.scenarioReadiness", nameof(PreparationStatus.Ready)) => ReadinessMeaning(PreparationStatus.Ready),
+        _ => null,
+    };
+
+    /// <summary>«Klargjøring av scenarioer» (UX-109/110): what each state means and the next step.</summary>
+    public static string ReadinessMeaning(PreparationStatus status) => status switch
+    {
+        PreparationStatus.Ready => "Alle påkrevde klargjøringspunkter er oppfylt. Det er ikke et testresultat.",
+        PreparationStatus.NeedsPreparation => "Minst ett påkrevd klargjøringspunkt mangler (for eksempel testdata, tilgang eller kjøremåte).",
+        _ => "Klargjøringspunktene er ikke vurdert ennå, eller må vurderes på nytt etter en endring. Det betyr ikke at noe mangler.",
+    };
+
+    public static string ReadinessAction(PreparationStatus status) => status switch
+    {
+        PreparationStatus.NeedsPreparation => "Åpne scenarioer",
+        PreparationStatus.NeedsAssessment => "Start vurdering",
+        _ => "Se scenarioene",
+    };
 
     /// <summary>
     /// The exact records behind one bar or follow-up line: the scenarios (by identity, per specification) or the saved cases it counts. Built from the
@@ -288,10 +359,10 @@ public static class ManualTestingOverviewPresentation
             ("chart.preparation", "ready") => Cases("Testtilfeller klare til testing", x => x.Ready),
             ("chart.moduleCoverage", _) => level switch
             {
-                Level.Project => Scenarios($"{key}: scenarioer uten testtilfeller", d => d.Specification.Module == key && !d.Covered, new Scope(Level.Module, key, null)),
+                Level.Project => Scenarios($"{key}: scenarioer uten testtilfeller", d => d.Specification.Module == key && d.Scenario.IsAcceptanceScenario && !d.Covered, new Scope(Level.Module, key, null)),
                 Level.Module => s.Specifications.FirstOrDefault(x => x.Path == key) is { } spec
-                    ? Scenarios($"{spec.Title}: scenarioer uten testtilfeller", d => d.Specification.Path == key && !d.Covered, new Scope(Level.Specification, spec.Module, spec.Path)) : null,
-                _ => Scenarios($"{key}: scenarioer uten testtilfeller", d => (d.Scenario.StoryId ?? "Uten brukerhistorie") == key && !d.Covered),
+                    ? Scenarios($"{spec.Title}: scenarioer uten testtilfeller", d => d.Specification.Path == key && d.Scenario.IsAcceptanceScenario && !d.Covered, new Scope(Level.Specification, spec.Module, spec.Path)) : null,
+                _ => Scenarios($"{key}: scenarioer uten testtilfeller", d => (d.Scenario.StoryId ?? "Uten brukerhistorie") == key && d.Scenario.IsAcceptanceScenario && !d.Covered),
             },
             ("chart.priority", _) => Scenarios($"Scenarioer {PriorityTitle(key)}", d => HasPriority(d.Scenario, key)),
             ("chart.coverageGaps", _) => Scenarios(key == "Ikke prioritert" ? "Scenarioer uten oppgitt prioritet og uten testtilfeller" : $"{key} uten testtilfeller", d => HasPriority(d.Scenario, key) && !d.Covered),
@@ -368,6 +439,27 @@ public static class ManualTestingOverviewPresentation
 
     /// <summary>How many of the counted scenarios have their level only DECLARED by a document («Dokumentert E2E», not verified).</summary>
     public static int TileDeclared(Slice s, DashboardKpiTile t) => s.ScenariosAvailable ? TileScenarios(s).Count(sc => Matches(sc, t) && sc.LevelDeclared) : 0;
+
+    /// <summary>
+    /// FUN-014 (2026-11-27): the exact scenarios a tile counts — the same population and rule as <see cref="TileCount"/> (unique identities of
+    /// acceptance scenarios and documented tests, across the project). Before, a tile opened Finn og forstå with only a level filter, which there
+    /// applies to the selected module/specification and to every suggestion of that level: «8 E2E» opened 11 (8 documented tests + 3 suggestions).
+    /// </summary>
+    public static Drill TileDrill(Slice s, DashboardKpiTile t, string title)
+    {
+        var covered = CoveredKeys(s.Cases);
+        var counted = TileScenarios(s).Where(sc => Matches(sc, t)).Select(sc => sc.Identity).ToHashSet(StringComparer.Ordinal);
+        var rows = s.ScenariosAvailable
+            ? AllScenarios(s, covered).Where(d => counted.Contains(d.Scenario.Identity)).DistinctBy(d => d.Scenario.Identity, StringComparer.Ordinal).ToList()
+            : [];
+        return new Drill("tile", t.Id, title, rows, []);
+    }
+
+    /// <summary>What an E2E tile counts and what it does not (FUN-014).</summary>
+    public static string? TileMeaning(DashboardKpiTile t) => t.Dimension == KpiTileDimension.TestLevel && t.Metric == nameof(ScenarioTestLevel.EndToEnd)
+        ? "Dokumenterte E2E-tester: tester i kildens testspesifikasjoner som selv sier at de er ende til ende (for eksempel TEST-E). Nivået er oppgitt i dokumentet, "
+          + "ikke verifisert. E2E-kandidater (forslag fra andre kilder, som integrasjonsflyter) telles ikke her. «Har testtilfelle» betyr forberedt, ikke kjørt eller bestått."
+        : null;
 
     /// <summary>Finn og forstå's filter for a tile: exactly the tile's dimension and value; nothing else is changed.</summary>
     public static ScenarioBrowserPresentation.Filter TileFilter(DashboardKpiTile t) => t.Dimension == KpiTileDimension.TestLevel

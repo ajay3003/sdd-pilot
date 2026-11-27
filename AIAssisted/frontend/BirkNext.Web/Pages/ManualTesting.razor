@@ -124,6 +124,58 @@
                     @Kpi("metric.nonFunctionalScenarios", "Ikke-funksjonelle scenarioer", O.ScenariosOfType(slice, ScenarioRequirementType.NonFunctional), "Blandede scenarioer telles ikke her", explain)
                 </section>
 
+                @* UX-107–111 (2026-11-27): «Testplaner og mer innsikt» directly after the key figures — the plans and the scenarios' readiness are
+                   visible without scrolling past follow-up lists. Order: key figures → this → «Viktig å følge opp» → modules and detailed analysis. *@
+                @if (On("panel.testPlans") && ov.Plans.Count > 0 || On("chart.scenarioReadiness") || On("panel.recentChanges") && ov.RecentRevisions.Count > 0)
+                {
+                    <section class="mto-band mto-band-insight" aria-labelledby="mto-band-insight-h" data-testid="mto-band" data-band="insight">
+                        <h2 class="mto-band-h" id="mto-band-insight-h">Testplaner og mer innsikt</h2>
+                        <div class="mto-grid mto-grid-insight">
+                            @if (On("panel.testPlans") && ov.Plans.Count > 0)
+                            {
+                                <section class="mto-card mto-plans-card is-wide" data-testid="mto-widget" data-widget="panel.testPlans"><h3 class="mto-card-h">Testplaner <span class="mt-muted msb-small">(hele prosjektet)</span></h3>
+                                    <ul class="mto-plan-cards">@foreach (var pl in ov.Plans.OrderByDescending(x => x.UpdatedAt).Take(6))
+                                        {
+                                            <li class="mto-plan-card" data-testid="mto-plan-card" data-plan="@pl.Id">
+                                                <div class="mto-plan-card-head">
+                                                    <a class="mto-plan-name" href="@($"{M.PlanRoute}?draft={pl.Id}")" title="@pl.Name">@pl.Name</a>
+                                                    @if (pl.SprintLabel is { Length: > 0 } sprint) { <span class="mto-plan-sprint">@sprint</span> }
+                                                </div>
+                                                @* UX-108 (2026-11-27): preparation and execution in two labelled lines; approval is never mixed with execution. *@
+                                                <span class="mto-plan-facts mt-muted msb-small" data-testid="mto-plan-prep">Forberedelse: @pl.Cases testtilfeller · @pl.Approved godkjent@(pl.SourceAttention > 0 ? $" · {pl.SourceAttention} med kildeendring" : "") · endret @pl.UpdatedAt.ToLocalTime().ToString("dd.MM.yyyy")</span>
+                                                @if (pl.Execution is { Scenarios: > 0 } ex)
+                                                {
+                                                    <span class="mto-plan-exec-h msb-small" data-testid="mto-plan-exec-h">Gjennomføring:</span>
+                                                    @ExecutionBar(ex)
+                                                }
+                                                else if (pl.Execution is null)
+                                                {
+                                                    @* An API that predates scenario-level execution sends no counts: never shown as an empty plan (2026-11-26). *@
+                                                    <span class="mt-muted msb-small" data-testid="mto-plan-no-exec" data-reason="unavailable">Gjennomføringsstatus er ikke tilgjengelig fra serveren — åpne planen for å se scenarioene.</span>
+                                                }
+                                                else { <span class="mt-muted msb-small" data-testid="mto-plan-no-exec" data-reason="empty">Gjennomføring: ingen scenarioer i planen ennå</span> }
+                                                @if (pl.Suites is { } suites && pl.Execution is { } exs)
+                                                {
+                                                    <span class="mt-muted msb-small" data-testid="mto-plan-structure">@suites testgrupper · @exs.Scenarios planlagte scenarioer@(pl.PlannedOnly is > 0 ? $" ({pl.PlannedOnly} uten testtilfelle)" : "") · @pl.Cases testtilfeller</span>
+                                                }
+                                                <a class="btn btn-sm btn-outline-primary mto-plan-open" href="@($"{M.PlanRoute}?draft={pl.Id}")" data-testid="mto-plan-open">Åpne testplan</a>
+                                            </li>
+                                        }</ul>
+                                    <p class="msb-small mto-card-links"><a href="@M.PlansRoute">Se alle testplaner</a></p></section>
+                            }
+                            @if (On("chart.scenarioReadiness"))
+                            {
+                                @ReadinessCards(O.ScenarioReadiness(slice))
+                            }
+                            @if (On("panel.recentChanges") && ov.RecentRevisions.Count > 0)
+                            {
+                                <section class="mto-card" data-testid="mto-widget" data-widget="panel.recentChanges"><h3 class="mto-card-h">Siste endringer</h3>
+                                    <ul class="mto-plans">@foreach (var r in ov.RecentRevisions.Take(8)) { <li>@r.SavedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · <a href="@($"{M.PlanRoute}?draft={r.PlanId}")">@r.PlanName</a> <span class="mt-muted msb-small">versjon @r.Revision · @r.Reason · @r.SavedBy</span></li> }</ul></section>
+                            }
+                        </div>
+                    </section>
+                }
+
                 @* «Dette bør følges opp»: only follow-up computed from stored data; a short empty state when nothing in the scope needs it. *@
                 var actionWidgets = new[] { "panel.p1Attention", "chart.blockers", "chart.sourceChanges" }.Where(On).ToList();
                 @if (actionWidgets.Count > 0)
@@ -133,7 +185,7 @@
                     var anyAction = (On("panel.p1Attention") && attention.Count > 0) || (On("chart.blockers") && blockers.Any(b => b.Value > 0)) || (On("chart.sourceChanges") && changes.Any(b => b.Value > 0))
                         || openPlans.Count > 0;
                     <section class="mto-band mto-band-action" aria-labelledby="mto-band-action-h" data-testid="mto-band" data-band="action">
-                        <h2 class="mto-band-h" id="mto-band-action-h">Dette bør følges opp</h2>
+                        <h2 class="mto-band-h" id="mto-band-action-h">Viktig å følge opp</h2>
                         @if (!anyAction)
                         {
                             <p class="mto-band-empty" data-testid="mto-action-empty">Ingenting i utvalget krever oppfølging nå: ingen P1-scenarioer mangler testtilfeller, og ingen testtilfeller er blokkert eller har endret kilde.</p>
@@ -169,6 +221,12 @@
                     </section>
                 }
 
+                @* A follow-up list (UX-107) opens directly under «Viktig å følge opp», compact; a chart's list opens next to its chart further down. *@
+                @if (_drill is { } fk && IsFollowUpDrill(fk.Chart) && DrillFor(slice, fk.Chart, fk.Key) is { } followDrill)
+                {
+                    @DrillPanel(followDrill)
+                }
+
                 <section class="mto-band" aria-labelledby="mto-band-ready-h" data-testid="mto-band" data-band="readiness">
                     <h2 class="mto-band-h" id="mto-band-ready-h">Testberedskap</h2>
                     <div class="mto-grid mto-grid-3">
@@ -192,7 +250,7 @@
                             <div class="mto-table-scroll" tabindex="0" role="region" aria-label="Tabell med tall per rad">
                             <table class="mto-table">
                                 <thead><tr>
-                                    @foreach (var (col, head) in new[] { ("name", _level switch { O.Level.Project => "Modul", O.Level.Module => "Spesifikasjon", _ => "Brukerhistorie" }), ("scenarios", "Scenarioer"), ("covered", "Med testtilfeller"), ("share", "Dekning"), ("cases", "Testtilfeller"), ("approved", "Godkjent"), ("followup", "Trenger oppfølging") })
+                                    @foreach (var (col, head) in new[] { ("name", _level switch { O.Level.Project => "Modul", O.Level.Module => "Spesifikasjon", _ => "Brukerhistorie" }), ("scenarios", "Scenarioer"), ("requirements", "Krav uten scenario"), ("covered", "Med testtilfeller"), ("share", "Dekning"), ("cases", "Testtilfeller"), ("approved", "Godkjent"), ("followup", "Trenger oppfølging") })
                                     {
                                         var c = col;
                                         <th scope="col" aria-sort="@(_sortCol == c ? (_sortDesc ? "descending" : "ascending") : "none")">
@@ -200,14 +258,23 @@
                                     }
                                 </tr></thead>
                                 <tbody>
-                                    @foreach (var row in SortRows(rows))
+                                    @{ var sorted = SortRows(rows).ToList(); if (_level == O.Level.Project) sorted = [.. sorted.OrderBy(x => O.OutsideModulesRank(x.Module))]; var outsideShown = false; }
+                                    @foreach (var row in sorted)
                                     {
                                         var r = row;
-                                        <tr data-testid="mto-row" data-key="@row.Key">
-                                            <td>@if (_level == O.Level.Project && row.Module is { } mod && mod != "Uten modultilknytning" && _modules.Contains(mod))
+                                        var outside = _level == O.Level.Project && O.OutsideModulesRank(row.Module) > 0;
+                                        if (outside && !outsideShown)
+                                        {
+                                            outsideShown = true;
+                                            @* Project-level audit (2026-11-27): the groups outside every module are not shown as ordinary modules. *@
+                                            <tr class="mto-group-row" data-testid="mto-outside-modules"><th colspan="12" scope="rowgroup">Utenfor modulene</th></tr>
+                                        }
+                                        <tr data-testid="mto-row" data-key="@row.Key" data-outside="@(outside ? "true" : "false")">
+                                            <td>@if (_level == O.Level.Project && row.Module is { } mod && (outside || _modules.Contains(mod)))
                                                 { <button type="button" class="msb-link" @onclick="() => OpenModuleAsync(mod)" data-testid="mto-row-open">@row.Label</button> }
-                                                else { @row.Label }</td>
-                                            <td>@(row.Scenarios?.ToString() ?? "—")</td><td>@(row.Covered?.ToString() ?? "—")</td><td data-testid="mto-row-share" title="@(row.Scenarios is { } rs && row.Covered is { } rc ? $"{rc} av {rs} scenarioer har manuelle testtilfeller" : null)">@(row.Scenarios is { } ts && row.Covered is { } tc ? O.Share(tc, ts) : "—")</td><td>@row.Cases</td><td>@row.Approved</td><td class="@(row.FollowUp > 0 ? "mto-num-attention" : null)">@row.FollowUp</td>
+                                                else { @row.Label }
+                                                @if (outside && O.OutsideModulesWhy(row.Module) is { } why) { <span class="mt-muted msb-small mto-row-why" data-testid="mto-row-why">@why</span> }</td>
+                                            <td data-testid="mto-row-scenarios">@(row.Scenarios?.ToString() ?? "—")</td><td data-testid="mto-row-requirements" title="Krav som ikke har noe akseptansescenario ennå. De er med i sporbarheten, men telles ikke som scenarioer.">@(row.Requirements?.ToString() ?? "—")</td><td>@(row.Covered?.ToString() ?? "—")</td><td data-testid="mto-row-share" title="@(row.Scenarios is { } rs && row.Covered is { } rc ? $"{rc} av {rs} scenarioer har manuelle testtilfeller" : null)">@(row.Scenarios is { } ts && row.Covered is { } tc ? O.Share(tc, ts) : "—")</td><td>@row.Cases</td><td>@row.Approved</td><td class="@(row.FollowUp > 0 ? "mto-num-attention" : null)">@row.FollowUp</td>
                                         </tr>
                                     }
                                 </tbody>
@@ -217,50 +284,20 @@
                     }
                 </section>
 
-                @if (_drill is { } dk && O.DrillDown(slice, _level, dk.Chart, dk.Key) is { } drill)
+                @if (_drill is { } dk && !IsFollowUpDrill(dk.Chart) && DrillFor(slice, dk.Chart, dk.Key) is { } drill)
                 {
                     @DrillPanel(drill)
                 }
 
-                var moreWidgets = new[] { "chart.scenarioReadiness", "chart.manualTechnical", "chart.usImplementation", "chart.scenarioTypes", "chart.nfrCategories", "chart.gapsByType", "chart.history", "panel.testPlans", "panel.recentChanges", "panel.translationReview" };
+                var moreWidgets = new[] { "chart.manualTechnical", "chart.usImplementation", "chart.scenarioTypes", "chart.nfrCategories", "chart.gapsByType", "chart.history", "panel.translationReview" };
                 @if (moreWidgets.Any(On))
                 {
                     <section class="mto-band" aria-labelledby="mto-band-more-h" data-testid="mto-band" data-band="more">
-                        <h2 class="mto-band-h" id="mto-band-more-h">Testplaner og mer innsikt</h2>
+                        <h2 class="mto-band-h" id="mto-band-more-h">Detaljert analyse</h2>
                         <div class="mto-grid mto-grid-3">
-                            @if (On("panel.testPlans") && ov.Plans.Count > 0)
-                            {
-                                <section class="mto-card mto-plans-card is-wide" data-testid="mto-widget" data-widget="panel.testPlans"><h3 class="mto-card-h">Testplaner <span class="mt-muted msb-small">(hele prosjektet)</span></h3>
-                                    <ul class="mto-plan-cards">@foreach (var pl in ov.Plans.OrderByDescending(x => x.UpdatedAt).Take(6))
-                                        {
-                                            <li class="mto-plan-card" data-testid="mto-plan-card" data-plan="@pl.Id">
-                                                <div class="mto-plan-card-head">
-                                                    <a class="mto-plan-name" href="@($"{M.PlanRoute}?draft={pl.Id}")" title="@pl.Name">@pl.Name</a>
-                                                    @if (pl.SprintLabel is { Length: > 0 } sprint) { <span class="mto-plan-sprint">@sprint</span> }
-                                                </div>
-                                                <span class="mto-plan-facts mt-muted msb-small">Forberedelse: @pl.Cases testtilfeller · @pl.Approved godkjent@(pl.SourceAttention > 0 ? $" · {pl.SourceAttention} med kildeendring" : "") · endret @pl.UpdatedAt.ToLocalTime().ToString("dd.MM.yyyy")</span>
-                                                @if (pl.Execution is { Scenarios: > 0 } ex)
-                                                {
-                                                    @ExecutionBar(ex)
-                                                }
-                                                else if (pl.Execution is null)
-                                                {
-                                                    @* An API that predates scenario-level execution sends no counts: never shown as an empty plan (2026-11-26). *@
-                                                    <span class="mt-muted msb-small" data-testid="mto-plan-no-exec" data-reason="unavailable">Gjennomføringsstatus er ikke tilgjengelig fra serveren — åpne planen for å se scenarioene.</span>
-                                                }
-                                                else { <span class="mt-muted msb-small" data-testid="mto-plan-no-exec" data-reason="empty">Gjennomføring: ingen scenarioer i planen ennå</span> }
-                                                @if (pl.Suites is { } suites && pl.Execution is { } exs)
-                                                {
-                                                    <span class="mt-muted msb-small" data-testid="mto-plan-structure">@suites testgrupper · @exs.Scenarios planlagte scenarioer@(pl.PlannedOnly is > 0 ? $" ({pl.PlannedOnly} uten testtilfelle)" : "") · @pl.Cases testtilfeller</span>
-                                                }
-                                            </li>
-                                        }</ul>
-                                    <p class="msb-small mto-card-links"><a href="@M.PlansRoute">Se alle testplaner</a></p></section>
-                            }
                             @Chart("chart.manualTechnical", "Manuelle og tekniske testtilfeller", O.ManualTechnical(slice), "Testtypen som er valgt for testtilfellet.", false)
                             @Chart("chart.usImplementation", "Implementeringsframdrift for brukerhistorier", O.StoryImplementation(slice),
                                 slice.StoriesAvailable ? "Fra oppgavene i tasks.md; hver brukerhistorie telles én gang. «US-oppgaver fullført» er ikke det samme som implementert." : "Ikke tilgjengelig: oppgavene i tasks.md er ikke lest for denne importen.", false)
-                            @Chart("chart.scenarioReadiness", "Klargjøring av scenarioer", O.ScenarioReadiness(slice), "Hvert akseptansescenario og hver dokumenterte test telles én gang. Klar til kjøring er ikke et testresultat; valgfrie punkter teller aldri som mangler.", false)
                             @Chart("chart.scenarioTypes", "Scenarioer etter type", O.ScenarioTypes(slice), "Akseptansescenarioer; et blandet scenario telles bare som blandet.", false)
                             @Chart("chart.nfrCategories", "Ikke-funksjonelle scenarioer per kategori", O.NonFunctionalCategories(slice), "Ikke-funksjonelle og blandede scenarioer; et scenario med flere kvalitetsegenskaper står i flere søyler.", false)
                             @Chart("chart.gapsByType", "Manglende dekning etter type", O.GapsByType(slice), "Akseptansescenarioer uten lagret testtilfelle.", false)
@@ -268,11 +305,6 @@
                             {
                                 <section class="mto-card" data-testid="mto-widget" data-widget="chart.history"><h3 class="mto-card-h">Utvikling i testforberedelse</h3>
                                     <p class="mt-muted msb-small" data-testid="mto-history-unavailable">Historiske tall er ikke tilgjengelige: tilstanden på tidligere tidspunkter lagres ikke, og tall beregnes aldri bakover.</p></section>
-                            }
-                            @if (On("panel.recentChanges") && ov.RecentRevisions.Count > 0)
-                            {
-                                <section class="mto-card" data-testid="mto-widget" data-widget="panel.recentChanges"><h3 class="mto-card-h">Siste endringer</h3>
-                                    <ul class="mto-plans">@foreach (var r in ov.RecentRevisions.Take(8)) { <li>@r.SavedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · <a href="@($"{M.PlanRoute}?draft={r.PlanId}")">@r.PlanName</a> <span class="mt-muted msb-small">versjon @r.Revision · @r.Reason · @r.SavedBy</span></li> }</ul></section>
                             }
                             @Chart("panel.translationReview", "Oversettelser til gjennomgang", O.Translations(slice), "Fra lagret oversettelsesstatus; ingenting oversettes for å vise dette.", false)
                         </div>
@@ -447,9 +479,11 @@
     private void ToggleDrill(string chart, string key)
     {
         _drillError = null;
-        if (IsDrill(chart, key)) { _drill = null; return; }
+        if (IsDrill(chart, key)) { _drill = null; _ = SaveFollowAsync(); return; }
+        if (_drill is { } was && (was.Chart, was.Key) != (chart, key)) { _follow = new(); _followToggled.Clear(); _followLimit.Clear(); }
         _drill = (chart, key);
         _drillFocus = true;
+        _ = SaveFollowAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -460,6 +494,66 @@
     }
 
     private const int DrillItemsPerGroup = 5;
+
+    // ── Follow-up workspace (UX-107, 2026-11-27) ──
+    private O.FollowUpFilter _follow = new();
+    private readonly HashSet<string> _followToggled = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _followLimit = new(StringComparer.OrdinalIgnoreCase);
+    private bool _followRestored;
+
+    /// <summary>Follow-up lists open right under «Viktig å følge opp»; a chart's own list opens next to its chart.</summary>
+    private static bool IsFollowUpDrill(string chart) => chart is "panel.p1Attention" or "chart.blockers" or "chart.sourceChanges" or "chart.scenarioReadiness" or "tile";
+
+    private static string? Blank(object? v) => v?.ToString() is { Length: > 0 } t ? t : null;
+
+    private void SetFollow(O.FollowUpFilter filter) { _follow = filter; _followLimit.Clear(); _ = SaveFollowAsync(); }
+
+    private void ToggleFollowGroup(string path) { if (!_followToggled.Remove(path)) _followToggled.Add(path); _ = SaveFollowAsync(); }
+
+    private void MoreInFollowGroup(string path, int shown) => _followLimit[path] = shown + 20;
+
+    private sealed record FollowState(string? Chart, string? Key, O.FollowUpFilter Filter, string[] Toggled);
+
+    /// <summary>The open follow-up list, its filters and open groups, kept for this tab and project (restored when the tester comes back).</summary>
+    private async Task SaveFollowAsync()
+    {
+        if (_ws?.ProjectKey is not { } key) return;
+        await TabDraftStore.WriteAsync(JS, TabDraftStore.OverviewFollowUpKey(key),
+            new FollowState(_drill is { } d && IsFollowUpDrill(d.Chart) ? d.Chart : null, _drill is { } d2 && IsFollowUpDrill(d2.Chart) ? d2.Key : null, _follow, [.. _followToggled]));
+    }
+
+    private async Task RestoreFollowAsync()
+    {
+        if (_followRestored || _ws?.ProjectKey is not { } key) return;
+        _followRestored = true;
+        if (await TabDraftStore.ReadAsync<FollowState>(JS, TabDraftStore.OverviewFollowUpKey(key)) is not { } kept) return;
+        _follow = kept.Filter ?? new();
+        foreach (var t in kept.Toggled ?? []) _followToggled.Add(t);
+        if (kept.Chart is { } c && kept.Key is { } k && _drill is null) _drill = (c, k);
+    }
+
+    /// <summary>«Klargjøring av scenarioer» (UX-109/110): one card per state with count, meaning and the next step, opening the exact scenarios.</summary>
+    private RenderFragment ReadinessCards(IReadOnlyList<DeliveryBar> bars) => __builder =>
+    {
+        <section class="mto-card mto-readiness-card" data-testid="mto-widget" data-widget="chart.scenarioReadiness">
+            <h3 class="mto-card-h">Klargjøring av scenarioer</h3>
+            @if (bars.Count == 0) { <p class="mt-muted msb-small" data-testid="mto-readiness-none">Ingen akseptansescenarioer eller dokumenterte tester i utvalget.</p> }
+            <ul class="mto-readiness-list">
+                @foreach (var bar in bars)
+                {
+                    var b = bar; var status = Enum.Parse<PreparationStatus>(b.Key);
+                    <li class="mto-readiness-item is-@b.Key.ToLowerInvariant()" data-testid="mto-readiness" data-key="@b.Key">
+                        <span class="mto-readiness-label">@b.Label</span>
+                        <span class="mto-readiness-value" data-testid="mto-readiness-count">@b.Value</span>
+                        <span class="mt-muted msb-small mto-readiness-meaning">@O.ReadinessMeaning(status)</span>
+                        <button type="button" class="btn btn-sm btn-outline-primary" aria-pressed="@(IsDrill("chart.scenarioReadiness", b.Key) ? "true" : "false")"
+                                @onclick="@(() => { ToggleDrill("chart.scenarioReadiness", b.Key); _ = SaveFollowAsync(); })" data-testid="mto-readiness-open">@O.ReadinessAction(status)</button>
+                    </li>
+                }
+            </ul>
+            <p class="mt-muted msb-small">Hvert akseptansescenario og hver dokumenterte test telles én gang. «Klar til kjøring» er ikke et testresultat, og godkjente testtilfeller gjør ikke et scenario klart.</p>
+        </section>
+    };
 
     private RenderFragment DrillPanel(O.Drill d) => @<section class="mto-card mto-drill" aria-labelledby="mto-drill-title" data-testid="mto-drill" data-chart="@d.Chart" data-key="@d.Key">
         <div class="mto-drill-h">
@@ -473,24 +567,78 @@
         </div>
         @if (_drillError is { } de) { <p class="mt-alert" role="alert" data-testid="mto-drill-error">@de</p> }
         @if (d.Count == 0) { <p class="mt-muted" data-testid="mto-drill-empty">Ingen i utvalget.</p> }
-        @foreach (var g in d.Scenarios.GroupBy(x => x.Specification.Path))
+        @if (d.Scenarios.Count > 0)
         {
-            var spec = g.First().Specification; var ids = g.Select(x => x.Scenario.Identity).ToList(); var count = ids.Count;
-            <div class="mto-drill-group" data-testid="mto-drill-group" data-spec="@spec.Path">
-                <div class="mto-drill-group-h"><span><b>@spec.Module</b> / @spec.Title · @count scenario@(count == 1 ? "" : "er")</span>
-                    <button type="button" class="btn btn-sm btn-outline-primary" disabled="@_drillBusy" @onclick="() => OpenScenariosAsync(spec, ids, d.Title)" data-testid="mto-drill-open">
-                        Åpne @(count == 1 ? "det" : $"alle {count}") i Finn og forstå</button></div>
-                <ul class="mto-drill-list">
-                    @foreach (var x in g.Take(DrillItemsPerGroup))
-                    {
-                        var one = x;
-                        <li><button type="button" class="msb-link" disabled="@_drillBusy" @onclick="() => OpenScenariosAsync(spec, new[] { one.Scenario.Identity }, one.Scenario.Title)" data-testid="mto-drill-scenario">
-                            @(one.Scenario.StoryId is { } sid ? $"{sid} · " : "")@one.Scenario.Title</button>
-                            <span class="mt-muted msb-small">@(one.Scenario.Priority ?? "Prioritet ikke oppgitt")@(one.Covered ? " · har testtilfeller" : "")</span></li>
-                    }
-                    @if (count > DrillItemsPerGroup) { <li class="mt-muted msb-small">… og @(count - DrillItemsPerGroup) til — alle vises når du åpner dem i Finn og forstå.</li> }
-                </ul>
+            @* UX-107 (2026-11-27): a compact follow-up workspace instead of a long expanded report — the meaning, search and filters, collapsed groups
+               when the list is large, compact rows, one «Åpne i Finn og forstå» per group (for exactly the matching scenarios). *@
+            var all = d.Scenarios; var filtered = O.FilterDrill(all, _follow);
+            var groups = filtered.GroupBy(x => x.Specification.Path).ToList();
+            var collapsed = groups.Count > 3 || filtered.Count > 30;
+            var samePriority = all.Select(x => x.Scenario.Priority).Distinct().Count() == 1;
+            var moduleOptions = all.Select(x => x.Specification.Module).Distinct().Order(StringComparer.CurrentCultureIgnoreCase).ToList();
+            var specOptions = all.Where(x => _follow.Module is null || x.Specification.Module == _follow.Module).Select(x => x.Specification).DistinctBy(x => x.Path).OrderBy(x => x.Module).ThenBy(x => x.Title).ToList();
+            @if ((d.Chart == "tile" ? _dashboard.EffectiveTiles.FirstOrDefault(x => x.Id == d.Key) is { } dt ? O.TileMeaning(dt) : null : O.DrillMeaning(d.Chart, d.Key)) is { } meaning)
+            {
+                <p class="mt-muted msb-small mto-follow-why" data-testid="mto-follow-why">@meaning</p>
+            }
+            @if (d.Chart == "tile")
+            {
+                @* FUN-014: the tile's breakdown — prepared (a saved case) is not run or passed; execution per scenario is in Testplaner. *@
+                <p class="msb-small" data-testid="mto-tile-breakdown">@d.Scenarios.Count i alt · @d.Scenarios.Count(x => x.Covered) med testtilfelle · @d.Scenarios.Count(x => !x.Covered) uten testtilfelle.
+                    Gjennomføringen vises per testplan i Testplaner.</p>
+            }
+            <div class="mto-follow-tools" role="search" aria-label="Søk og filtrer i listen">
+                <input type="search" class="msb-search" placeholder="Søk i tittel, US/AC eller id" aria-label="Søk i scenarioene" value="@_follow.Query"
+                       @oninput="e => SetFollow(_follow with { Query = e.Value?.ToString() ?? string.Empty })" data-testid="mto-follow-search" />
+                <select class="msb-select" aria-label="Modul" @onchange="e => SetFollow(_follow with { Module = Blank(e.Value), Specification = null })" data-testid="mto-follow-module">
+                    <option value="">Alle moduler</option>
+                    @foreach (var m in moduleOptions) { <option value="@m" selected="@(_follow.Module == m)">@m</option> }
+                </select>
+                <select class="msb-select" aria-label="Spesifikasjon" @onchange="e => SetFollow(_follow with { Specification = Blank(e.Value) })" data-testid="mto-follow-spec">
+                    <option value="">Alle spesifikasjoner</option>
+                    @foreach (var sp in specOptions) { <option value="@sp.Path" selected="@(_follow.Specification == sp.Path)">@sp.Module · @O.SpecName(sp.Path)</option> }
+                </select>
+                @if (_follow.Active) { <button type="button" class="msb-link" @onclick="() => SetFollow(new O.FollowUpFilter())" data-testid="mto-follow-reset">Nullstill filtre</button> }
+                <span class="mt-muted msb-small" role="status" aria-live="polite" data-testid="mto-follow-count">Viser @filtered.Count av @all.Count scenario@(all.Count == 1 ? "" : "er") i @groups.Count gruppe@(groups.Count == 1 ? "" : "r")</span>
             </div>
+            @if (filtered.Count == 0) { <p class="mt-muted" data-testid="mto-follow-none">Ingen scenarioer passer søket og filtrene. <button type="button" class="msb-link" @onclick="() => SetFollow(new O.FollowUpFilter())">Nullstill filtre</button></p> }
+            <ul class="mto-follow-groups" aria-label="Grupper">
+                @foreach (var g in groups)
+                {
+                    var spec = g.First().Specification; var ids = g.Select(x => x.Scenario.Identity).ToList(); var count = ids.Count;
+                    var open = collapsed == _followToggled.Contains(spec.Path) ? true : false;
+                    var groupId = "mto-follow-g-" + Math.Abs(spec.Path.GetHashCode());
+                    var limit = _followLimit.GetValueOrDefault(spec.Path, 10);
+                    <li class="mto-follow-group" data-testid="mto-drill-group" data-spec="@spec.Path" data-open="@(open ? "true" : "false")">
+                        <div class="mto-follow-group-h">
+                            <button type="button" class="mto-follow-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@groupId" @onclick="() => ToggleFollowGroup(spec.Path)" data-testid="mto-follow-toggle">
+                                <span class="mtw-caret" aria-hidden="true">@(open ? "▾" : "▸")</span>
+                                <span class="mto-follow-name"><b>@spec.Module</b> · @O.SpecName(spec.Path)</span>
+                                <span class="mto-follow-n" data-testid="mto-follow-n">@count</span>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-primary" disabled="@_drillBusy" @onclick="() => OpenScenariosAsync(spec, ids, d.Title)" data-testid="mto-drill-open">Åpne i Finn og forstå</button>
+                        </div>
+                        @if (open)
+                        {
+                            <ul class="mto-follow-rows" id="@groupId">
+                                @foreach (var x in g.Take(limit))
+                                {
+                                    var one = x;
+                                    <li class="mto-follow-row" data-testid="mto-drill-row" data-identity="@one.Scenario.Identity">
+                                        <span class="mto-follow-main">
+                                            <span class="mto-follow-title">@one.Scenario.Title</span>
+                                            <span class="mt-muted msb-small">@O.ScenarioLabel(one.Scenario)@(samePriority ? "" : $" · {one.Scenario.Priority ?? "prioritet ikke oppgitt"}")@(one.Scenario.Preparation is { } prep ? $" · {ScenarioPreparationEngine.Label(prep)}" : "")@(one.Covered ? " · har testtilfelle" : "")</span>
+                                        </span>
+                                        <button type="button" class="msb-link" disabled="@_drillBusy" @onclick="() => OpenScenariosAsync(spec, new[] { one.Scenario.Identity }, one.Scenario.Title)" data-testid="mto-drill-scenario"
+                                                aria-label="@($"Åpne «{one.Scenario.Title}» i Finn og forstå")">Åpne</button>
+                                    </li>
+                                }
+                            </ul>
+                            <ShowMore Shown="@Math.Min(limit, count)" Total="@count" Step="20" Noun="scenarioer" OnMore="() => MoreInFollowGroup(spec.Path, limit)" TestId="mto-follow-more" />
+                        }
+                    </li>
+                }
+            </ul>
         }
         @foreach (var g in d.Stories.GroupBy(x => x.SpecificationPath))
         {
@@ -529,7 +677,7 @@
         }
     </section>;
 
-    private void CloseDrill() { _drill = null; _drillError = null; }
+    private void CloseDrill() { _drill = null; _drillError = null; _ = SaveFollowAsync(); }
 
     private async Task OpenStoriesAsync(string module, string specificationPath, string? storyKey, UserStoryTaskStatus? status)
     {
@@ -819,11 +967,17 @@
         }
     };
 
-    private async Task OpenTileAsync(DashboardKpiTile t)
+    /// <summary>FUN-014 (2026-11-27): a tile opens exactly the scenarios it counts (the follow-up workspace), never a broader filter elsewhere.</summary>
+    private Task OpenTileAsync(DashboardKpiTile t)
     {
-        if (_ws?.ProjectKey is not { } key) return;
-        await ManualTestingDrillNavigation.OpenFilteredAsync(JS, Nav, key, O.TileFilter(t));
+        ToggleDrill("tile", t.Id);
+        return Task.CompletedTask;
     }
+
+    /// <summary>The records behind a drill-down: a tile's exact population, or a chart's / follow-up line's.</summary>
+    private O.Drill? DrillFor(O.Slice slice, string chart, string key) => chart == "tile"
+        ? _dashboard.EffectiveTiles.FirstOrDefault(x => x.Id == key) is { } tile ? O.TileDrill(slice, tile, DashboardKpiTiles.DisplayTitle(tile)) : null
+        : O.DrillDown(slice, _level, chart, key);
 
     private RenderFragment Kpi(string id, string title, int? value, string explanation, bool explain) => __builder =>
     {
@@ -851,7 +1005,7 @@
             if (narrow.Level == O.Level.Specification && narrow.Module is { } m && narrow.SpecificationPath is { } path)
                 refused = await ManualTestingDrillNavigation.SelectSpecificationAsync(ServiceProvider, m, path);
             else if (narrow.Module is { } module && ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) is BirkNext.Web.Services.Explorers.IArtifactExplorerContext explorer)
-                try { await explorer.SelectModuleAsync(module == ManualTestingDrillNavigation.ProjectLevelModule ? BirkNext.Web.Services.Explorers.ArtifactModules.ProjectLevel : module); }
+                try { await explorer.SelectModuleAsync(ManualTestingDrillNavigation.ExplorerModule(module)); }
                 catch (Exception e) when (e is not OperationCanceledException) { refused = "Modulen kunne ikke velges: " + e.Message; }
             if (refused is not null) { _drillError = refused; return; }
             await ReadScopeAsync();
@@ -941,7 +1095,7 @@
         if (_sortCol == "name" && !_sortDesc) return rows; // the presentation's own order
         Func<O.Row, IComparable> key = _sortCol switch
         {
-            "scenarios" => r => r.Scenarios ?? -1, "covered" => r => r.Covered ?? -1, "share" => r => r.Scenarios is > 0 and { } n && r.Covered is { } c ? (int)Math.Round(100000.0 * c / n) : -1, "cases" => r => r.Cases, "approved" => r => r.Approved, "followup" => r => r.FollowUp,
+            "scenarios" => r => r.Scenarios ?? -1, "requirements" => r => r.Requirements ?? -1, "covered" => r => r.Covered ?? -1, "share" => r => r.Scenarios is > 0 and { } n && r.Covered is { } c ? (int)Math.Round(100000.0 * c / n) : -1, "cases" => r => r.Cases, "approved" => r => r.Approved, "followup" => r => r.FollowUp,
             _ => r => r.Label,
         };
         return _sortDesc ? rows.OrderByDescending(key) : rows.OrderBy(key);
@@ -980,6 +1134,8 @@
             if (generation != _overviewGeneration) return;
             _overview = overview; _overviewError = overview is null ? error ?? "Ukjent feil." : null;
             _dashboard = settings ?? new();
+            // UX-107: coming back from Finn og forstå restores the open follow-up list, its filters and open groups.
+            if (overview is not null) await RestoreFollowAsync();
         }
         finally { if (generation == _overviewGeneration) _overviewLoading = false; }
     }
@@ -1011,7 +1167,8 @@
     private async Task OpenModuleAsync(string module)
     {
         if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) is BirkNext.Web.Services.Explorers.IArtifactExplorerContext explorer)
-            try { await explorer.SelectModuleAsync(module); } catch (Exception e) when (e is not OperationCanceledException) { }
+            // Project-level audit (2026-11-27): «Prosjektnivå» and «Uten modultilknytning» are the explorers' project level (key ""), never a module name.
+            try { await explorer.SelectModuleAsync(ManualTestingDrillNavigation.ExplorerModule(module)); } catch (Exception e) when (e is not OperationCanceledException) { }
         Nav.NavigateTo(M.DiscoverRoute);
     }
 

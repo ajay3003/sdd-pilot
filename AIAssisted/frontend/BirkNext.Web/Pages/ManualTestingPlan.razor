@@ -216,12 +216,24 @@
                                             <span class="mtp-planned-title">@(it.StoryId is { } sid && it.NumberInStory is { } n ? $"{sid} · AC {n} — " : "")@it.Title</span>
                                             <span class="msb-status msb-tone-muted" data-testid="mtp-planned-state">Scenario – ikke klargjort</span>
                                             @if (plan.Suites.Any(s => s.Id == it.SuiteId)) { <span class="mt-muted msb-small">@PlanStructure.PathOf(plan.Suites, it.SuiteId)</span> }
-                                            <button type="button" class="msb-link" @onclick="() => OpenPreview(new(null, it))" data-testid="mtp-planned-preview">Forhåndsvis</button>
-                                            <button type="button" class="msb-link" @onclick="() => _prepItem = it.ScenarioId" data-testid="mtp-planned-ready">@(it.StoryId is null ? "Klargjør scenario" : "Klargjør AC")</button>
-                                            @if (CanWrite && !ReadOnlyPlan)
-                                            {
-                                                <button type="button" class="msb-link" disabled="@(_busy || Dirty)" @onclick="() => PrepareItemAsync(it)" data-testid="mtp-planned-prepare">Forbered testtilfelle</button>
-                                            }
+                                            @* BUG-002 (decision 2026-11-27): looking and creating are two visibly separate groups. «Forhåndsvis» and «Klargjør AC» only
+                                               show (nothing is saved); «Forbered testtilfelle» is the one explicit action that creates a test case. No confirmation dialog:
+                                               creating a case is not destructive and can be undone by removing it. *@
+                                            <span class="mtp-planned-actions" data-testid="mtp-planned-actions">
+                                                <span class="mtp-planned-view" role="group" aria-label="Se uten å endre (lagrer ingenting)" data-testid="mtp-planned-view">
+                                                    <span class="mtp-planned-view-label" aria-hidden="true">Kun visning:</span>
+                                                    <button type="button" class="msb-link" title="Viser scenarioet slik det vil se ut. Lagrer ingenting og oppretter ikke testtilfelle." @onclick="() => OpenPreview(new(null, it))" data-testid="mtp-planned-preview">Forhåndsvis</button>
+                                                    <button type="button" class="msb-link" title="Viser hva som mangler før scenarioet kan testes. Lagrer ingenting." @onclick="() => _prepItem = it.ScenarioId" data-testid="mtp-planned-ready">@(it.StoryId is null ? "Klargjør scenario" : "Klargjør AC")</button>
+                                                </span>
+                                                @if (CanWrite && !ReadOnlyPlan)
+                                                {
+                                                    <span class="mtp-planned-create" role="group" aria-label="Opprett" data-testid="mtp-planned-create">
+                                                        <button type="button" class="btn btn-sm btn-outline-primary" disabled="@(_busy || Dirty)" title="Oppretter et testtilfelle for scenarioet i denne testplanen."
+                                                                aria-describedby="mtp-planned-create-hint-@it.ScenarioId" @onclick="() => PrepareItemAsync(it)" data-testid="mtp-planned-prepare">+ Forbered testtilfelle</button>
+                                                        <span id="mtp-planned-create-hint-@it.ScenarioId" class="mt-muted msb-small" data-testid="mtp-planned-create-hint">Oppretter et testtilfelle</span>
+                                                    </span>
+                                                }
+                                            </span>
                                         </li>
                                     }
                                 </ul>
@@ -1360,6 +1372,17 @@
         {
             var (draft, error) = await api.CreateProjectAsync(new CreateProjectTestPlanRequest
                 { ProjectKey = key, DiscoveryId = disc.DiscoveryId, CandidateIds = [id], DraftId = plan.Id, BaseRevision = plan.Revision, ScenarioOnly = true });
+            // V10 browser run (2026-11-27): refused as stale while the automatic translation saved the plan meanwhile. Adding a scenario is
+            // idempotent on the server (a scenario is never planned twice), so after the translation settles it is sent once more on the newest
+            // revision; a genuine conflict still shows the message.
+            if (draft is null && error is not null && P.IsStale(error))
+            {
+                await SettleAutoTranslationAsync();
+                var (fresh, _) = await api.DraftAsync(plan.Id);
+                if (fresh is not null)
+                    (draft, error) = await api.CreateProjectAsync(new CreateProjectTestPlanRequest
+                        { ProjectKey = key, DiscoveryId = disc.DiscoveryId, CandidateIds = [id], DraftId = fresh.Id, BaseRevision = fresh.Revision, ScenarioOnly = true });
+            }
             if (draft is null) { _error = P.Friendly(error, "Scenarioet ble ikke lagt til."); return; }
             _plan = draft;
             ApplyIntent(draft);

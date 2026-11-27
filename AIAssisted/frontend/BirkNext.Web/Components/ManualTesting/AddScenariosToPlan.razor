@@ -6,8 +6,8 @@
 
 @* BUG-001 (manual E2E 2026-11-27): a click on the backdrop closed the dialog and lost search, filters, selected scenarios and the chosen testgruppe.
    Now the backdrop never closes it; «Lukk» and Escape close at once when nothing is chosen, and ask first when there is unsaved work. *@
-<div class="mtp-preview-backdrop asp-backdrop" data-testid="asp">
-    <div class="mtp-preview asp" role="dialog" aria-modal="true" aria-labelledby="asp-title" tabindex="-1" @ref="_dialog" @onkeydown="KeyAsync" data-testid="asp-dialog">
+<div class="mtp-preview-backdrop asp-backdrop" @onclick="KeepFocusAsync" data-testid="asp">
+    <div class="mtp-preview asp" role="dialog" aria-modal="true" aria-labelledby="asp-title" tabindex="-1" @ref="_dialog" @onclick:stopPropagation="true" @onkeydown="KeyAsync" data-testid="asp-dialog">
         <header class="mtp-preview-head">
             <h2 id="asp-title" class="mtp-preview-title">Legg til scenarioer@(_plan is { } p ? $" i «{p.PlanName}»" : "")</h2>
             <button type="button" class="btn btn-secondary btn-sm" @onclick="CloseAsync" data-testid="asp-close">Lukk</button>
@@ -259,6 +259,10 @@
         await OnClose.InvokeAsync();
         if (ReturnFocusId is { } id) try { await JS.InvokeVoidAsync("birknextFocusElement", id); } catch (Exception e) when (e is Microsoft.JSInterop.JSException or InvalidOperationException or TaskCanceledException) { }
     }
+
+    /// <summary>A click beside the dialog never closes it; focus goes back into the dialog, so Escape and the keyboard keep working (found in the
+    /// browser: after a click on the backdrop, Escape no longer reached the dialog).</summary>
+    private async Task KeepFocusAsync() { try { await _dialog.FocusAsync(); } catch (Exception e) when (e is InvalidOperationException or Microsoft.JSInterop.JSException) { } }
 
     private async Task KeepOpenAsync() { _confirmClose = false; try { await _dialog.FocusAsync(); } catch (Exception e) when (e is InvalidOperationException or Microsoft.JSInterop.JSException) { } }
 

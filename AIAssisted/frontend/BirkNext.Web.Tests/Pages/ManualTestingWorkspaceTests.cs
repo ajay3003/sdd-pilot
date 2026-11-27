@@ -208,7 +208,7 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.Markup.Should().NotContain("Gjennomført").And.NotContain("Bestått").And.NotContain("Feilet");
         cut.FindAll("[data-testid=mto-row]").Select(r => r.GetAttribute("data-key")).Should().Equal("Frontend", "SkoleService", "Uten modultilknytning");
         var skole = cut.Find("[data-testid=mto-row][data-key=SkoleService]").QuerySelectorAll("td").Select(td => td.TextContent).ToList();
-        skole.Should().Equal("SkoleService", "3", "1", "33 %", "5", "1", "4"); // v3: «Dekning» uses the one share policy
+        skole.Should().Equal("SkoleService", "3", "0", "1", "33 %", "5", "1", "4"); // v3: «Dekning» uses the one share policy; 2026-11-27: «Krav uten scenario» (0) after «Scenarioer»
         cut.FindAll("[data-testid=mto-widget][data-widget='chart.history']").Should().BeEmpty("optional charts are off by default");
     }
 
@@ -330,7 +330,9 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.Find("[data-widget='chart.coverageGaps'] [data-testid=mto-bar][data-key=P1] [data-testid=mto-bar-open]").Click();
         var drill = cut.Find("[data-testid=mto-drill]");
         drill.QuerySelector("[data-testid=mto-drill-count]")!.TextContent.Should().Be("(1)");
-        drill.QuerySelectorAll("[data-testid=mto-drill-scenario]").Select(e => e.TextContent.Trim()).Should().Equal("US1 · B");
+        // UX-107 (2026-11-27): a compact row — the title, its label (US · AC) below it, and one «Åpne» per scenario.
+        drill.QuerySelectorAll("[data-testid=mto-drill-row] .mto-follow-title").Select(e => e.TextContent.Trim()).Should().Equal("B");
+        drill.QuerySelectorAll("[data-testid=mto-drill-scenario]").Should().ContainSingle().Which.GetAttribute("aria-label").Should().Be("Åpne «B» i Finn og forstå");
 
         cut.Find("[data-testid=mto-drill-open]").Click();
         cut.WaitForAssertion(() => Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("manual-testing/discover"));
@@ -485,8 +487,11 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.Find("[data-testid=mt]").ClassList.Should().Contain("mto-page", "Testoversikt uses the full content width");
         cut.FindAll("[data-testid=mto-kpis] [data-testid=mto-kpi]").Select(k => k.GetAttribute("data-widget")).Should().Equal(
             "metric.scenarios", "metric.testCases", "metric.approved", "metric.ready");
-        cut.FindAll("[data-testid=mto-band]").Select(b => b.GetAttribute("data-band")).Should().Equal("action", "readiness", "modules", "more");
-        cut.Find("[data-testid=mto-band][data-band=action] h2").TextContent.Should().Be("Dette bør følges opp");
+        // UX-107–111 (2026-11-27): «Testplaner og mer innsikt» right after the key figures and BEFORE the follow-up; detailed analysis last.
+        cut.FindAll("[data-testid=mto-band]").Select(b => b.GetAttribute("data-band")).Should().Equal("insight", "action", "readiness", "modules");
+        cut.Find("[data-testid=mto-band][data-band=insight] h2").TextContent.Should().Be("Testplaner og mer innsikt");
+        cut.Find("[data-testid=mto-band][data-band=action] h2").TextContent.Should().Be("Viktig å følge opp");
+        // «Detaljert analyse» (the optional charts) appears last, only when one of its charts is switched on.
         cut.FindAll("[data-testid=mto-band][data-band=readiness] [data-testid=mto-widget]").Select(w => w.GetAttribute("data-widget")).Should().Equal("chart.preparation", "chart.priority", "chart.coverageGaps");
         cut.Find("[data-testid=mto-band][data-band=modules] [data-testid=mto-widget][data-widget='display.moduleOverview']").Should().NotBeNull();
     }
@@ -571,6 +576,35 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
     }
 
     [Fact]
+    public void DEC3_requirements_without_a_scenario_stay_in_the_data_but_are_not_counted_as_scenarios()
+    {
+        // Decision 2026-11-27: «Scenarioer» and «Dekning» count acceptance scenarios only; requirements without one are a separate column.
+        var o = Overview() with
+        {
+            Specifications = [new OverviewSpecification("M01/specs/001-x/spec.md", "M01", "001-x",
+                [new("tss-a", "a", "US1", "S", 1, "P1", "Scenario A"), new("tss-b", "b", "US1", "S", 2, "P1", "Scenario B"),
+                 new("req-1", "r", null, null, null, "P1", "FR-001: Krav", RequirementOnly: true), new("req-2", "r", null, null, null, null, "FR-002: Krav", RequirementOnly: true),
+                 new("req-3", "r", null, null, null, null, "FR-003: Krav", RequirementOnly: true)])],
+            Cases = [],
+        };
+        var slice = O.Of(o, new O.Scope(O.Level.Project, null, null));
+        var row = O.Rows(slice, O.Level.Project).Single(r => r.Key == "M01");
+        row.Scenarios.Should().Be(2, "requirements without an acceptance scenario are not scenarios");
+        row.Requirements.Should().Be(3, "they are kept and shown as their own figure");
+        row.Covered.Should().Be(0);
+        O.Coverage(slice, O.Level.Project).Single(c => c.Key == "M01").Info.Should().Be("0 av 2 scenarioer har testtilfeller");
+        var drill = O.DrillDown(slice, O.Level.Project, "chart.moduleCoverage", "M01");
+        drill!.Scenarios.Select(d => d.Scenario.Identity).Should().BeEquivalentTo(["tss-a", "tss-b"], "the chart's drill opens what the chart counts");
+
+        Setup([Summary()], Discovery(3));
+        _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((o, (string?)null));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-row][data-key=M01]"));
+        cut.Find("[data-testid=mto-row][data-key=M01] [data-testid=mto-row-scenarios]").TextContent.Should().Be("2");
+        cut.Find("[data-testid=mto-row][data-key=M01] [data-testid=mto-row-requirements]").TextContent.Should().Be("3");
+    }
+
+    [Fact]
     public void R06_the_stylesheet_lifts_the_width_cap_for_Testoversikt_only_and_uses_container_aware_columns()
     {
         var css = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "BirkNext.Web", "wwwroot", "css", "manual-testing.css"));
@@ -639,7 +673,9 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.Find("[data-testid=mto-sort][data-col=cases]").Click();
         cut.FindAll("[data-testid=mto-row]").Select(r => r.GetAttribute("data-key")).First().Should().Be("SkoleService", "most test cases first");
         cut.Find("[data-testid=mto-sort][data-col=cases]").Click();
-        cut.FindAll("[data-testid=mto-row]").Select(r => r.GetAttribute("data-key")).Last().Should().Be("SkoleService");
+        // Project-level audit (2026-11-27): sorting orders the real modules; the groups outside the modules stay in their own section below.
+        cut.FindAll("[data-testid=mto-row][data-outside=false]").Select(r => r.GetAttribute("data-key")).Last().Should().Be("SkoleService");
+        cut.FindAll("[data-testid=mto-row]").Select(r => r.GetAttribute("data-outside")).Should().BeInAscendingOrder(StringComparer.Ordinal, "«false» rows before «true» rows");
         cut.Find("th[aria-sort=ascending] [data-testid=mto-sort]").GetAttribute("data-col").Should().Be("cases");
     }
 
@@ -751,8 +787,13 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.Find("[data-testid=mto-tile-title]").TextContent.Should().Be("Ende-til-ende-tester");
         cut.Find("[data-testid=mto-tile-count]").TextContent.Should().Be("2");
         cut.Find("[data-testid=mto-tile-explain]").TextContent.Should().Contain("dokumentert som E2E i kilden – ikke verifisert");
+        // FUN-014 (2026-11-27): a tile opens EXACTLY the scenarios it counts (here 2), with what it does and does not count — never a broader
+        // level filter in Finn og forstå (which mixed in E2E candidates of the selected module: 8 counted, 11 shown).
         cut.Find("[data-testid=mto-tile-open]").Click();
-        cut.WaitForAssertion(() => Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("manual-testing/discover"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-drill-count]").TextContent.Should().Be("(2)"));
+        cut.Find("[data-testid=mto-follow-why]").TextContent.Should().Contain("E2E-kandidater").And.Contain("telles ikke her");
+        cut.Find("[data-testid=mto-tile-breakdown]").TextContent.Should().StartWith("2 i alt");
+        Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("manual-testing", "nothing is opened until the tester chooses a group or a scenario");
     }
 
     [Fact]
@@ -924,5 +965,116 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cards[1].QuerySelector("[data-testid=mto-plan-no-exec]")!.GetAttribute("data-reason").Should().Be("unavailable", "missing counts are not an empty plan");
         cards[2].QuerySelector("[data-testid=mto-plan-no-exec]")!.GetAttribute("data-reason").Should().Be("empty");
         cut.FindAll("[data-testid=mto-plan-exec]").Single().GetAttribute("data-passed").Should().Be("1", "execution comes only from the plan's recorded events");
+    }
+
+    // ── UX-107–111 (2026-11-27): the P1 follow-up workspace and readiness cards ──
+
+    /// <summary>260 P1 acceptance scenarios over six specifications (four modules and the project level), one covered, with readiness states.</summary>
+    private static ManualTestingOverview LargeOverview()
+    {
+        var specs = new[] { ("Alpha/specs/001-a/spec.md", "Alpha"), ("Alpha/specs/002-b/spec.md", "Alpha"), ("Beta/specs/001-c/spec.md", "Beta"),
+            ("Gamma/specs/001-d/spec.md", "Gamma"), ("Delta/specs/001-e/spec.md", "Delta"), ("specs/001-platform/spec.md", "Prosjektnivå") };
+        var n = 0;
+        return new()
+        {
+            ProjectKey = "library", ScenariosAvailable = true,
+            Specifications = [.. specs.Select((sp, i) => new OverviewSpecification(sp.Item1, sp.Item2, sp.Item1.Split('/')[^2],
+                [.. Enumerable.Range(1, i == 0 ? 60 : 40).Select(k => new OverviewScenario($"tss-{i}-{k}", $"k{i}", $"US{k % 7 + 1}", "Story", k, "P1", $"Scenario {++n} i {sp.Item2}")
+                    { Preparation = k % 10 == 0 ? BirkNext.TestPlanning.PreparationStatus.NeedsPreparation : BirkNext.TestPlanning.PreparationStatus.NeedsAssessment })]))],
+            Cases = [new OverviewCase { PlanId = PlanId, CaseId = "c1", Title = "x", SpecificationPath = specs[0].Item1, Module = "Alpha", ScenarioIdentity = "tss-0-1", StoryKey = "k0", Priority = "P1" }],
+            Plans = [new(PlanId, "Library – test plan", 7, 2, 1, 0, ["Alpha"], DateTimeOffset.UtcNow)],
+        };
+    }
+
+    private IRenderedComponent<ManualTesting> OpenLarge()
+    {
+        Setup([Summary()], Discovery(3));
+        _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((LargeOverview(), (string?)null));
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ManualTestingDashboardSettings(), (string?)null));
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-attention-open]"));
+        return cut;
+    }
+
+    [Fact]
+    public void UX107_the_P1_follow_up_opens_compact_its_count_matches_the_list_and_groups_reconcile()
+    {
+        var cut = OpenLarge();
+        var line = cut.FindAll("[data-testid=mto-attention-open]").Single(b => b.TextContent.Contains("P1-scenario"));
+        line.TextContent.Should().Contain("259 P1-scenarioer mangler testtilfeller", "260 P1 scenarios, one has a case");
+        line.Click();
+        var drill = cut.Find("[data-testid=mto-drill]");
+        drill.QuerySelector("[data-testid=mto-drill-count]")!.TextContent.Should().Be("(259)", "the KPI and its list are the same set");
+        cut.Find("[data-testid=mto-follow-why]").TextContent.Should().Contain("Ikke alle trenger et manuelt testtilfelle");
+        var groups = cut.FindAll("[data-testid=mto-drill-group]");
+        groups.Should().HaveCount(6);
+        groups.Sum(g => int.Parse(g.QuerySelector("[data-testid=mto-follow-n]")!.TextContent)).Should().Be(259, "group counts add up to the total");
+        groups.Should().OnlyContain(g => g.GetAttribute("data-open") == "false", "a large list starts collapsed");
+        cut.FindAll("[data-testid=mto-drill-row]").Should().BeEmpty("no scenario rows until a group is opened");
+
+        // The follow-up opens under «Viktig å følge opp», after «Testplaner og mer innsikt» — never pushing it down.
+        var html = cut.Markup;
+        html.IndexOf("data-band=\"insight\"", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf("data-testid=\"mto-drill\"", StringComparison.Ordinal));
+
+        // Opening one group: compact rows, the shared «Vis flere», no repeated P1 label (every row is P1).
+        cut.FindAll("[data-testid=mto-follow-toggle]")[0].Click();
+        cut.FindAll("[data-testid=mto-drill-row]").Should().HaveCount(10);
+        cut.FindAll("[data-testid=mto-drill-row]").Should().OnlyContain(r => !r.TextContent.Contains("P1"));
+        cut.Find("[data-testid=mto-follow-more]").Click();
+        cut.FindAll("[data-testid=mto-drill-row]").Should().HaveCount(30);
+        cut.FindAll("[data-testid=mto-drill-row]").Select(r => r.GetAttribute("data-identity")).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void UX107_search_and_filters_cover_the_whole_population_and_a_group_opens_exactly_its_matching_scenarios()
+    {
+        var cut = OpenLarge();
+        cut.FindAll("[data-testid=mto-attention-open]").Single(b => b.TextContent.Contains("P1-scenario")).Click();
+        cut.Find("[data-testid=mto-follow-search]").Input("Scenario 259");
+        cut.Find("[data-testid=mto-follow-count]").TextContent.Should().Be("Viser 1 av 259 scenarioer i 1 gruppe");
+        cut.Find("[data-testid=mto-follow-search]").Input("");
+        cut.Find("[data-testid=mto-follow-module]").Change("Alpha");
+        cut.Find("[data-testid=mto-follow-count]").TextContent.Should().Be("Viser 99 av 259 scenarioer i 2 grupper");
+        cut.FindAll("[data-testid=mto-follow-spec] option").Should().HaveCount(3, "«Alle» and Alpha's two specifications");
+        cut.Find("[data-testid=mto-follow-spec]").Change("Alpha/specs/002-b/spec.md");
+        cut.Find("[data-testid=mto-follow-count]").TextContent.Should().Be("Viser 40 av 259 scenarioer i 1 gruppe");
+        cut.Find("[data-testid=mto-follow-reset]").Click();
+        cut.Find("[data-testid=mto-follow-count]").TextContent.Should().Be("Viser 259 av 259 scenarioer i 6 grupper");
+        // The project's own specifications stay their own group, never forced into a module.
+        cut.FindAll("[data-testid=mto-drill-group]").Should().Contain(g => g.GetAttribute("data-spec") == "specs/001-platform/spec.md");
+        JSInterop.Invocations.Should().Contain(i => i.Identifier == "sessionStorage.setItem" && i.Arguments[0]!.ToString() == TabDraftStore.OverviewFollowUpKey("library"),
+            "the filters are kept for the tab");
+    }
+
+    [Fact]
+    public void UX109_readiness_cards_name_each_state_its_meaning_and_next_step_and_open_exactly_that_population()
+    {
+        var cut = OpenLarge();
+        var cards = cut.FindAll("[data-testid=mto-readiness]");
+        cards.Select(c => c.GetAttribute("data-key")).Should().Equal("NeedsPreparation", "NeedsAssessment");
+        var prep = int.Parse(cut.Find("[data-testid=mto-readiness][data-key=NeedsPreparation] [data-testid=mto-readiness-count]").TextContent);
+        var assess = int.Parse(cut.Find("[data-testid=mto-readiness][data-key=NeedsAssessment] [data-testid=mto-readiness-count]").TextContent);
+        (prep + assess).Should().Be(260);
+        cut.Find("[data-testid=mto-readiness][data-key=NeedsAssessment] [data-testid=mto-readiness-open]").TextContent.Should().Be("Start vurdering");
+        cut.Find("[data-testid=mto-readiness][data-key=NeedsAssessment]").TextContent.Should().Contain("Det betyr ikke at noe mangler");
+
+        cut.Find("[data-testid=mto-readiness][data-key=NeedsPreparation] [data-testid=mto-readiness-open]").Click();
+        cut.Find("[data-testid=mto-drill-count]").TextContent.Should().Be($"({prep})", "the card's count is the list's count");
+        cut.Find("[data-testid=mto-readiness][data-key=NeedsAssessment] [data-testid=mto-readiness-open]").Click();
+        cut.Find("[data-testid=mto-drill-count]").TextContent.Should().Be($"({assess})");
+    }
+
+    [Fact]
+    public void UX107_coming_back_restores_the_open_follow_up_list_its_filter_and_open_groups()
+    {
+        Setup([Summary()], Discovery(3));
+        _plans.Setup(x => x.OverviewAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync((LargeOverview(), (string?)null));
+        _plans.Setup(x => x.DashboardSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ManualTestingDashboardSettings(), (string?)null));
+        JSInterop.Setup<string?>("sessionStorage.getItem", TabDraftStore.OverviewFollowUpKey("library")).SetResult(
+            "{\"Chart\":\"panel.p1Attention\",\"Key\":\"p1-uncovered\",\"Filter\":{\"Query\":\"\",\"Module\":\"Beta\",\"Specification\":null},\"Toggled\":[\"Beta/specs/001-c/spec.md\"]}");
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-drill]"));
+        cut.Find("[data-testid=mto-follow-count]").TextContent.Should().Be("Viser 40 av 259 scenarioer i 1 gruppe");
+        cut.Find("[data-testid=mto-drill-group]").GetAttribute("data-open").Should().Be("true");
     }
 }

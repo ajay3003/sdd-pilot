@@ -121,10 +121,9 @@ public sealed class AddScenariosToPlanTests : BunitContext
         var (cut, closed) = OpenTracked();
         cut.Find("[data-testid=asp-search]").Input("Scenario");
         cut.Find("[data-testid=asp-row][data-id=a1] input").Change(true);
-        var backdrop = cut.Find("[data-testid=asp]");
-        if (backdrop.HasAttribute("blazor:onclick")) backdrop.Click(); // before the fix: the backdrop closed the dialog
-        else FluentActions.Invoking(() => backdrop.Click()).Should().Throw<MissingEventHandlerException>("the backdrop has no close action at all");
+        cut.Find("[data-testid=asp]").Click();
         closed.Should().BeEmpty("a click beside the dialog is not a decision to close");
+        JSInterop.Invocations.Should().Contain(i => i.Identifier.Contains("focus", StringComparison.OrdinalIgnoreCase), "focus goes back into the dialog, so Escape keeps working");
         cut.Find("[data-testid=asp-row][data-id=a1] input").HasAttribute("checked").Should().BeTrue();
         cut.Find("[data-testid=asp-search]").GetAttribute("value").Should().Be("Scenario");
     }

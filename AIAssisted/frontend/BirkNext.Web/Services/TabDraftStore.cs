@@ -26,6 +26,9 @@ public static class TabDraftStore
     /// <summary>Planlegg og klargjør's «Vis teknisk innhold» for this tab and project: the tester's explicit choice survives F5 (BUG-003, 2026-11-27).</summary>
     public static string PlanTechnicalKey(string projectKey) => $"{Prefix}mtp-technical.{projectKey}";
 
+    /// <summary>Testoversikt's open follow-up list, its search, filters and open groups for this tab and project (UX-107: restored on return).</summary>
+    public static string OverviewFollowUpKey(string projectKey) => $"{Prefix}mto-followup.{projectKey}";
+
     public static async Task<T?> ReadAsync<T>(IJSRuntime js, string key)
     {
         try

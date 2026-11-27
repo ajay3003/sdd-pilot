@@ -64,7 +64,7 @@ public sealed partial class TestPlanSuggestionService
             .DistinctBy(c => c.SourceIdentity, StringComparer.Ordinal)
             .GroupBy(c => c.CanonicalKey["testspec:".Length..].Split('#')[0], StringComparer.Ordinal)
             .OrderBy(g => g.Key, StringComparer.Ordinal)
-            .Select(g => new OverviewSpecification(g.Key, ModuleOf(g.Key), System.IO.Path.GetFileNameWithoutExtension(g.Key), [.. g.Select(c =>
+            .Select(g => new OverviewSpecification(g.Key, "", System.IO.Path.GetFileNameWithoutExtension(g.Key), [.. g.Select(c =>
             {
                 var type = ScenarioTypeClassifier.Classify(c, DecisionFor(typeDecisions, c));
                 var level = TestLevelClassifier.Of(c.Type);
@@ -100,9 +100,17 @@ public sealed partial class TestPlanSuggestionService
                 })
                 .ToList();
             var folder = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(spec.Path.Replace('\\', '/')) ?? "");
-            specifications.Add(new OverviewSpecification(spec.Path, ModuleOf(spec.Path), folder.Length > 0 ? folder : spec.Path, scenarios));
+            specifications.Add(new OverviewSpecification(spec.Path, "", folder.Length > 0 ? folder : spec.Path, scenarios));
         }
         specifications.AddRange(await DocumentedTestSpecificationsAsync(key, typeDecisions, preparationDecisions, ct));
+        // Project-level audit (2026-11-27): the canonical module rule (ModuleStructure, the explorers' rule) over every document of the project.
+        // Before, a simpler rule («second folder is specs») put a module's own documents (HendelseService/docs/…Testspesifikasjon.md, a module's
+        // requirements documents) under «Prosjektnivå», together with the project's own specs/ and loose project documents.
+        var roots = new HashSet<string>(ModuleStructure.RootsOf(specifications.Select(s => (string?)s.Path)
+            .Concat(discoveries?.Latest(key)?.Candidates.Select(c => c.Story?.SpecificationPath) ?? [])), StringComparer.Ordinal);
+        // A document's own Spec-Kit structure is module evidence too (a case's specification the catalog does not hold).
+        string ModuleFor(string path) { if (ModuleStructure.StrongRoot(path) is { } own) roots.Add(own); return ModuleStructure.OverviewModule(path, roots); }
+        specifications = [.. specifications.Select(s => s with { Module = ModuleFor(s.Path) })];
 
         // Every case of the active plans, flagged against its own source (the same per-case resolution as Planlegg og klargjør).
         var cases = new List<OverviewCase>();
@@ -128,7 +136,7 @@ public sealed partial class TestPlanSuggestionService
                 cases.Add(new OverviewCase
                 {
                     PlanId = plan.Id, PlanName = plan.PlanName, CaseId = c.Source.ScenarioId, Title = c.EffectiveTitle,
-                    SpecificationPath = path, Module = path is null ? NoModule : ModuleOf(path),
+                    SpecificationPath = path, Module = path is null ? NoModule : ModuleFor(path),
                     ScenarioIdentity = own.Generated.SourceIdentity, StoryKey = own.Generated.Story?.Key, StoryId = own.Generated.Story?.StoryId,
                     Priority = NormalPriority(c.Edits.Priority ?? own.Generated.Story?.Priority),
                     Review = c.Review, Ready = c.Testability.Ready,

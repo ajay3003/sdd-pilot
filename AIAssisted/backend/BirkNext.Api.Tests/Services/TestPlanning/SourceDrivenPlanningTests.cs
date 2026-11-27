@@ -561,6 +561,24 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task PLA_a_modules_documented_tests_are_that_modules_not_project_level_and_each_scenario_is_counted_once()
+    {
+        // Project-level audit (2026-11-27), M2LB: HendelseService/docs/…Testspesifikasjon.md (TEST-E without a user story) was «Prosjektnivå».
+        await using var db = Context();
+        var x = Services(db);
+        const string hendelseSpec = "HendelseService/specs/001-hendelsestjenesten/spec.md", testDoc = "HendelseService/docs/Hendelsestjenesten-—-Testspesifikasjon.md";
+        var e2e = new DiscoveredScenario { CandidateId = "te1", ProjectKey = "import:m", CapabilityId = "test-specification", CanonicalKey = $"testspec:{testDoc}#TEST-E-01",
+            SourceIdentity = "tss-te1", Title = "TEST-E-01: Inngrep-hendelse fra adapter til GraphQL", Type = ScenarioCandidateType.BusinessE2E, Area = "HendelseService" };
+        _discoveries.Store(Selected("d-hendelse", DateTimeOffset.UtcNow, hendelseSpec, InSpec("h1", hendelseSpec, "US1", "f1"), e2e));
+
+        var overview = await x.Plans.OverviewAsync("import:m", default);
+        var doc = overview.Specifications.Single(s => s.Path == testDoc);
+        doc.Module.Should().Be("HendelseService", "a module's own documented tests belong to the module");
+        doc.Scenarios.Should().ContainSingle(s => s.Identity == "tss-te1" && s.Standalone, "the source identity is kept; no user story is invented");
+        overview.Specifications.SelectMany(s => s.Scenarios).Count(s => s.Identity == "tss-te1").Should().Be(1, "counted once");
+    }
+
+    [Fact]
     public async Task The_overview_attributes_each_case_to_its_own_specification_and_module_and_writes_nothing()
     {
         await using var db = Context();

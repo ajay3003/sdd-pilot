@@ -25,39 +25,14 @@ public static class ArtifactModules
         "spec", "specification", "plan", "tasks", "data-model", "research", "quickstart",
     };
 
-    /// <summary>The module roots evidenced by <paramref name="paths"/> (relative, '/' or '\' separated): strong Spec-Kit structure only. The
-    /// project root is "".</summary>
-    public static IReadOnlySet<string> RootsOf(IEnumerable<string?> paths)
-    {
-        var roots = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var path in paths)
-            if (StrongRoot(path) is { } root) roots.Add(root);
-        return roots;
-    }
+    /// <summary>The module roots evidenced by <paramref name="paths"/> (strong Spec-Kit structure only; <see cref="BirkNext.TestPlanning.ModuleStructure"/>).</summary>
+    public static IReadOnlySet<string> RootsOf(IEnumerable<string?> paths) => BirkNext.TestPlanning.ModuleStructure.RootsOf(paths);
 
     /// <summary>The module root this one path proves on its own (strong evidence), or null.</summary>
-    public static string? StrongRoot(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return null;
-        var segments = Segments(path);
-        var folders = segments[..^1];
-        var specify = Array.FindIndex(folders, f => f.Equals(".specify", StringComparison.OrdinalIgnoreCase));
-        if (specify >= 0) return string.Join('/', folders[..specify]);
-        // specs/<feature>/<Spec-Kit document>: the file sits in a feature folder directly under specs/.
-        var specs = Array.FindLastIndex(folders, f => f.Equals("specs", StringComparison.OrdinalIgnoreCase));
-        if (specs >= 0 && specs == folders.Length - 2 && SpecKitDocuments.Contains(System.IO.Path.GetFileNameWithoutExtension(segments[^1])))
-            return string.Join('/', folders[..specs]);
-        return null;
-    }
+    public static string? StrongRoot(string? path) => BirkNext.TestPlanning.ModuleStructure.StrongRoot(path);
 
     /// <summary>The module key of a document: its deepest non-project root, else <see cref="ProjectLevel"/>.</summary>
-    public static string ModuleOf(string? path, IReadOnlySet<string> roots)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return ProjectLevel;
-        var normalized = string.Join('/', Segments(path));
-        return roots.Where(r => r.Length > 0 && normalized.StartsWith(r + "/", StringComparison.Ordinal))
-            .OrderByDescending(r => r.Length).FirstOrDefault() ?? ProjectLevel;
-    }
+    public static string ModuleOf(string? path, IReadOnlySet<string> roots) => BirkNext.TestPlanning.ModuleStructure.ModuleOf(path, roots);
 
     /// <summary>The Spec-Kit feature folder of a document (<c>specs/001-name</c> → <c>001-name</c>), or null. Grouping metadata only, never authority.</summary>
     public static string? FeatureOf(string? path)
@@ -123,6 +98,5 @@ public static class ArtifactModules
 
     public static string Label(string? module) => string.IsNullOrEmpty(module) ? ProjectLevelLabel : module;
 
-    private static string[] Segments(string path) =>
-        path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    private static string[] Segments(string path) => BirkNext.TestPlanning.ModuleStructure.Segments(path);
 }

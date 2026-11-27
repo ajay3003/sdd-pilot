@@ -185,6 +185,7 @@
     <Compile Include="../../shared/AzureDevOpsTestPlanContracts.cs" Link="Models/AzureDevOpsTestPlanContracts.cs" />
     <Compile Include="../../shared/TestScenarioDiscoveryContracts.cs" Link="Models/TestScenarioDiscoveryContracts.cs" />
     <Compile Include="../../shared/ScenarioSearchFilter.cs" Link="Models/ScenarioSearchFilter.cs" />
+    <Compile Include="../../shared/ModuleStructure.cs" Link="Models/ModuleStructure.cs" />
     <Compile Include="../../shared/ScenarioDiscoveryWire.cs" Link="Models/ScenarioDiscoveryWire.cs" />
     <Compile Include="../../shared/ScenarioOwnershipContracts.cs" Link="Models/ScenarioOwnershipContracts.cs" />
     <Compile Include="../../shared/ContractTestDataContracts.cs" Link="Models/ContractTestDataContracts.cs" />

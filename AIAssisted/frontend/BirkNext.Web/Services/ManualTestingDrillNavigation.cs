@@ -12,7 +12,12 @@ namespace BirkNext.Web.Services;
 public static class ManualTestingDrillNavigation
 {
     /// <summary>The overview's name for a specification at the root of the project; the explorers call that module <see cref="ArtifactModules.ProjectLevel"/>.</summary>
-    public const string ProjectLevelModule = "Prosjektnivå";
+    public const string ProjectLevelModule = BirkNext.TestPlanning.ModuleStructure.ProjectWide;
+
+    /// <summary>The explorers' module key for a Testoversikt module: both groups outside the modules (the project's own specifications and
+    /// documents outside every module folder) are the explorers' project level.</summary>
+    public static string ExplorerModule(string module) =>
+        module is BirkNext.TestPlanning.ModuleStructure.ProjectWide or BirkNext.TestPlanning.ModuleStructure.Unassigned ? ArtifactModules.ProjectLevel : module;
 
     public static bool SamePath(string? a, string? b) =>
         a is not null && b is not null && string.Equals(a.Replace('\\', '/').Trim('/'), b.Replace('\\', '/').Trim('/'), StringComparison.OrdinalIgnoreCase);
@@ -24,7 +29,7 @@ public static class ManualTestingDrillNavigation
         if (services.GetService(typeof(IArtifactExplorerContext)) is not IArtifactExplorerContext explorer) return "Valget av modul og spesifikasjon er ikke tilgjengelig her.";
         try
         {
-            var moduleKey = module == ProjectLevelModule ? ArtifactModules.ProjectLevel : module;
+            var moduleKey = ExplorerModule(module);
             var state = await explorer.GetStateAsync(WorkspaceArtifactType.Specification);
             if (!string.Equals(state.Module ?? "", moduleKey, StringComparison.Ordinal))
             {

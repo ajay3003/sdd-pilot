@@ -1,6 +1,6 @@
 # BirkNext — launcher / package integrity, BUG-005 (2026-11-27)
 
-The user's brief says no commits and no pushes; all changes are uncommitted in the working tree. Everything was tested on temporary package copies under `%TEMP%\bnlx` with their own `--data-dir`. Nothing touched `%LOCALAPPDATA%\BirkNext`, the repository's `App_Data` or any reset backup.
+The original brief said no commits; the user later asked for commits, and the changes are in `7d08f3a3` (not pushed). Everything was tested on temporary package copies under `%TEMP%\bnlx` with their own `--data-dir`. Nothing touched `%LOCALAPPDATA%\BirkNext`, the repository's `App_Data` or any reset backup.
 
 ## Observed
 - **Error:** «This BirkNext package has been changed after it was built: 6 file(s) differ», for example `runtime/translation/lib/.../__pycache__/__init__.cpython-312.pyc`.
@@ -62,7 +62,7 @@ Two caveats about the measurements:
 - An earlier comparison (47.4 s → 10.2 s) used two copies with the **same** content. Defender caches its verdict per content, so the second copy was always fast (in the package run below: 97.5 s, then 0.6 s for an identical copy). Only the alternating unique-content measurement above counts.
 - For the tester's 811 MB, 4 readers should give roughly a quarter of the 530 s. This is not measured on the tester's PC.
 
-## Changes (uncommitted)
+## Changes (committed in `7d08f3a3`)
 | File | Change |
 |---|---|
 | `AIAssisted/backend/.../OfflineTranslation/OfflineTranslationEngine.cs` | The translator starts with `-I -B -X pycache_prefix=%TEMP%\BirkNext\python-cache`: Python neither writes nor reads `__pycache__` inside the package. `PythonArguments(...)` is pure and tested. |
@@ -146,6 +146,7 @@ Two caveats about the measurements:
 - **Fix:** IMPLEMENTED and verified at code and package level.
 - **Full launcher round trip:** NOT VERIFIED (blocked by Defender ASR here).
 - **A new package build is required.**
+- **Overall: PARTIALLY VERIFIED, OPEN** (decision 1 of 2026-11-27): it stays open until a CI package passes the steps below on an authorized tester PC.
 
 ## CI package verification (required before BUG-005 can be called fixed)
 
