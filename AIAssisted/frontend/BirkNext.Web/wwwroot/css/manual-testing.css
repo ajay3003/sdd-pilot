@@ -1460,3 +1460,16 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .mt-plan-tree-name { font-weight: 600; margin-right: .5rem; }
 .mt-plan-tree-items { margin: .15rem 0 .25rem 1rem; font-size: .88rem; }
 .mt-plan-tree-items .msb-tag { margin-left: .4rem; }
+
+/* V12 (2026-11-27, APP-2): one status badge and one empty state across Manual Testing. The two badge families (.mt-chip/.mt-tone-* and
+   .msb-status/.msb-tone-*) carried the same meanings with two looks; they now share one shape and one palette per tone. Tones and texts are
+   unchanged — only the presentation is common. */
+.mt-chip, .msb-status { display: inline-flex; align-items: center; font-size: 0.75rem; font-weight: 600; line-height: 1.4; padding: 0.1rem 0.55rem; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
+.mt-tone-ok, .msb-tone-ok { background: color-mix(in srgb, var(--clr-success, #1a7f37) 12%, var(--msb-surface, #fff)); color: var(--clr-success, #1a7f37); border-color: color-mix(in srgb, var(--clr-success, #1a7f37) 30%, transparent); }
+.mt-tone-warn, .msb-tone-warn { background: color-mix(in srgb, var(--clr-warning, #9a6700) 14%, var(--msb-surface, #fff)); color: var(--clr-warning, #9a6700); border-color: color-mix(in srgb, var(--clr-warning, #9a6700) 30%, transparent); }
+.mt-tone-bad, .msb-tone-bad { background: color-mix(in srgb, var(--clr-danger, #cf222e) 12%, var(--msb-surface, #fff)); color: var(--clr-danger, #cf222e); border-color: color-mix(in srgb, var(--clr-danger, #cf222e) 30%, transparent); }
+.mt-tone-info, .msb-tone-info, .msb-tone-progress { background: color-mix(in srgb, var(--msb-accent, #0969da) 10%, var(--msb-surface, #fff)); color: var(--msb-accent, #0969da); border-color: color-mix(in srgb, var(--msb-accent, #0969da) 25%, transparent); }
+.mt-tone-muted, .msb-tone-muted, .msb-tone-neutral { background: var(--msb-subtle, #eef2f6); color: var(--clr-text-muted, #57606a); border-color: var(--clr-border, #d0d7de); }
+.mtp-req-levels .msb-status, .mtw-impl-compact .msb-status { font-size: 0.72rem; }
+/* Empty states: one dashed, muted box wherever a list or panel has nothing to show. */
+.msb-empty, .mto-band-empty, .mtp-lang-empty { margin: 0.5rem 0; padding: 0.6rem 0.85rem; border: 1px dashed var(--msb-border, #d0d7de); border-radius: var(--msb-radius, 6px); color: var(--clr-text-muted, #57606a); }

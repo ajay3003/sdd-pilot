@@ -264,7 +264,7 @@
     [Parameter] public string? ReturnFocusId { get; set; }
     [Inject] private Microsoft.JSInterop.IJSRuntime JS { get; set; } = default!;
     private ElementReference _dialog, _keepButton;
-    private bool _confirmClose, _focused;
+    private bool _confirmClose, _focused, _focusKeep;
 
     /// <summary>Unsaved work: chosen scenarios, or a search or filter the tester set (the chosen testgruppe alone is not work to lose).</summary>
     private bool Dirty => _selected.Count > 0 || _query.Length > 0 || _module is not null || _level is not null || _priority is not null;
@@ -272,7 +272,9 @@
 
     private async Task CloseAsync()
     {
-        if (Dirty && !_confirmClose) { _confirmClose = true; StateHasChanged(); await Task.Yield(); try { await _keepButton.FocusAsync(); } catch (Exception e) when (e is InvalidOperationException or Microsoft.JSInterop.JSException) { } return; }
+        // V12 fix (2026-11-27): the question is shown and its «Behold» button focused after the render (OnAfterRenderAsync), not after a
+        // Task.Yield inside this handler — the yield left the handler running, so a second Escape could interleave with the first (flaky test).
+        if (Dirty && !_confirmClose) { _confirmClose = true; _focusKeep = true; return; }
         await DiscardAsync();
     }
 
@@ -294,6 +296,13 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusKeep && _confirmClose)
+        {
+            _focusKeep = false;
+            try { await _keepButton.FocusAsync(); } catch (Exception e) when (e is InvalidOperationException or Microsoft.JSInterop.JSException) { }
+            return;
+        }
+        _focusKeep = false;
         if (_focused) return;
         _focused = true;
         try { await _dialog.FocusAsync(); } catch (Exception e) when (e is InvalidOperationException or Microsoft.JSInterop.JSException) { }
