@@ -40,6 +40,31 @@ public sealed class ManualTestingHardeningTests : BunitContext
     // ── Saved plans ──────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public void V12_a_plans_structure_shows_nested_test_groups_scenario_occurrences_and_their_optional_cases_on_demand()
+    {
+        // MT-4: Plan → Testgruppe (nested) → Scenarioforekomst → valgfritt Testtilfelle, read only when the tester opens it.
+        var api = new Mock<ITestPlanSuggestionsApiService>();
+        var plan = new TestPlanDraft
+        {
+            Id = A, ProjectKey = "m2lb", PlanName = "Regresjon M2LB", Revision = 3,
+            Suites = [new("e2e", "Ende til ende", "template", null), new("rap", "Rapportering", "manual", null) { ParentId = "e2e" }],
+            PlannedScenarios = [new PlannedScenario { ScenarioId = "s1", Title = "Rapport leveres", SuiteId = "rap", StoryId = "US1", NumberInStory = 2 },
+                                new PlannedScenario { ScenarioId = "s2", Title = "Periodelås", SuiteId = "e2e" }],
+        };
+        api.Setup(x => x.DraftAsync(A, It.IsAny<CancellationToken>())).ReturnsAsync((plan, (string?)null));
+        var cut = Render<SavedPlans>(p => p.Add(x => x.Workspace, Workspace()).Add(x => x.Api, api.Object));
+        api.Verify(x => x.DraftAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never, "the list stays light: nothing is read before the tester asks");
+
+        cut.Find("[data-testid=mt-plan][data-plan='" + A + "'] [data-testid=mt-plan-structure-toggle]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mt-plan-structure]"));
+        cut.FindAll("[data-testid=mt-plan-structure-group]").Select(g => g.GetAttribute("data-depth")).Should().Equal("0", "1");
+        cut.FindAll("[data-testid=mt-plan-structure-count]").Select(c => c.TextContent).Should().Equal("1 scenario (+1 i undergrupper)", "1 scenario");
+        cut.FindAll("[data-testid=mt-plan-structure-item]").Select(i => System.Text.RegularExpressions.Regex.Replace(i.TextContent, @"\s+", " ").Trim())
+            .Should().Equal("Periodelås uten testtilfelle", "US1 · AC 2 — Rapport leveres uten testtilfelle");
+        cut.Find("[data-testid=mt-plan-structure-toggle]").TextContent.Should().Be("Skjul struktur");
+    }
+
+    [Fact]
     public void Saved_plans_show_what_a_tester_needs_and_archived_plans_are_apart()
     {
         var cut = Render<SavedPlans>(p => p.Add(x => x.Workspace, Workspace()).Add(x => x.Api, new Mock<ITestPlanSuggestionsApiService>().Object));

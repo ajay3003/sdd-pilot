@@ -1452,3 +1452,11 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .mtx-suite { margin-left: calc(var(--mtx-depth, 0) * 1rem); }
 .mtx-suite-path { margin-right: .5rem; }
 .mtx-cases-tag { white-space: nowrap; }
+
+/* V12 bundle (2026-11-27, MT-4): the plan's structure in the Testplaner list — nested test groups indented by depth, occurrences with their case tag. */
+.mt-plan-tree { flex-basis: 100%; margin: .35rem 0 .15rem; padding: .5rem .75rem; border-left: 2px solid var(--clr-border, #d0d7de); }
+.mt-plan-tree-groups, .mt-plan-tree-items { list-style: none; margin: 0; padding: 0; }
+.mt-plan-tree-group { margin: .2rem 0 .2rem calc(var(--mt-tree-depth, 0) * 1rem); }
+.mt-plan-tree-name { font-weight: 600; margin-right: .5rem; }
+.mt-plan-tree-items { margin: .15rem 0 .25rem 1rem; font-size: .88rem; }
+.mt-plan-tree-items .msb-tag { margin-left: .4rem; }

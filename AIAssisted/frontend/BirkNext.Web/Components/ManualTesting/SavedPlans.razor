@@ -48,12 +48,18 @@
                                 <span class="msb-small">@status.Message Åpne testplanen for å se hvilke scenarioer og testtilfeller som er berørt; ingenting er endret automatisk.</span></details>
                         }
                     }
+                    @if (_structureOpen.Contains(p.Id)) { @Structure(p.Id) }
                     @if (_archivedView) { <span class="msb-status msb-tone-muted">Arkivert</span> }
                     @if (!_archivedView && p.Scenarios == 0 && p.Cases == 0)
                     {
                         <span class="mt-muted msb-small" data-testid="mt-plan-empty">Ingen scenarioer i testplanen ennå.</span>
                     }
                     <a class="btn btn-secondary btn-sm" href="@($"{M.PlanRoute}?draft={p.Id}")" data-testid="mt-plan-open">@(_archivedView ? "Vis" : "Åpne testplan")</a>
+                    @if (Api is not null && (p.Scenarios > 0 || p.Cases > 0))
+                    {
+                        var planId = p.Id; var shown = _structureOpen.Contains(planId);
+                        <button type="button" class="msb-link msb-small" aria-expanded="@(shown ? "true" : "false")" @onclick="() => ToggleStructureAsync(planId)" data-testid="mt-plan-structure-toggle">@(shown ? "Skjul struktur" : "Vis struktur")</button>
+                    }
                     @if (!_archivedView && CanWrite && Api is not null)
                     {
                         <button type="button" class="btn @(p.Scenarios == 0 && p.Cases == 0 ? "btn-primary" : "btn-outline-secondary") btn-sm" disabled="@_busy"
@@ -124,6 +130,66 @@
     [Parameter] public bool ShowArchived { get; set; }
     /// <summary>A plan was archived, restored or deleted: the owner reloads the workspace.</summary>
     [Parameter] public EventCallback Changed { get; set; }
+
+    // ── V12 (2026-11-27, MT-4): the plan's hierarchy on demand — Plan → Testgruppe (nested) → Scenarioforekomst → valgfritt Testtilfelle. ──
+    // One plan is read when its structure is opened (the list itself stays light); occurrences follow the shared PlanOccurrences rule.
+    private readonly HashSet<Guid> _structureOpen = [];
+    private readonly Dictionary<Guid, (TestPlanDraft? Plan, string? Error)> _structures = [];
+    private const int StructureRows = 15;
+
+    private async Task ToggleStructureAsync(Guid planId)
+    {
+        if (!_structureOpen.Add(planId)) { _structureOpen.Remove(planId); return; }
+        if (_structures.ContainsKey(planId) || Api is null) return;
+        var (plan, error) = await Api.DraftAsync(planId);
+        _structures[planId] = (plan, plan is null ? error ?? "Strukturen kunne ikke hentes." : null);
+    }
+
+    private RenderFragment Structure(Guid planId) => __builder =>
+    {
+        if (!_structures.TryGetValue(planId, out var loaded))
+        {
+            <p class="mt-muted msb-small" role="status" data-testid="mt-plan-structure-loading">Henter strukturen …</p>
+            return;
+        }
+        if (loaded.Plan is not { } plan)
+        {
+            <p class="mt-alert msb-small" role="alert" data-testid="mt-plan-structure-error">@loaded.Error</p>
+            return;
+        }
+        var occurrences = PlanOccurrences.Of(plan);
+        var known = plan.Suites.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
+        <div class="mt-plan-tree" data-testid="mt-plan-structure">
+            <p class="mt-muted msb-small">@occurrences.Count scenarioforekomst@(occurrences.Count == 1 ? "" : "er") · @occurrences.Count(o => o.CaseIds.Count == 0) uten testtilfelle · @plan.Suites.Count testgruppe@(plan.Suites.Count == 1 ? "" : "r")</p>
+            <ul class="mt-plan-tree-groups">
+                @foreach (var (suite, depth) in PlanStructure.Flatten(plan.Suites))
+                {
+                    var inSuite = occurrences.Where(o => o.SuiteId == suite.Id).ToList();
+                    var below = occurrences.Count(o => o.SuiteId is { } sid && sid != suite.Id && PlanStructure.PathOf(plan.Suites, sid).StartsWith(PlanStructure.PathOf(plan.Suites, suite.Id) + " / ", StringComparison.Ordinal));
+                    <li class="mt-plan-tree-group" style="--mt-tree-depth:@depth" data-testid="mt-plan-structure-group" data-depth="@depth">
+                        <span class="mt-plan-tree-name">@suite.Name</span>
+                        <span class="mt-muted msb-small" data-testid="mt-plan-structure-count">@inSuite.Count scenario@(inSuite.Count == 1 ? "" : "er")@(below > 0 ? $" (+{below} i undergrupper)" : "")</span>
+                        @if (inSuite.Count > 0)
+                        {
+                            <ul class="mt-plan-tree-items">
+                                @foreach (var o in inSuite.Take(StructureRows))
+                                {
+                                    <li data-testid="mt-plan-structure-item">@(o.StoryId is { } st && o.NumberInStory is { } n ? $"{st} · AC {n} — " : "")@o.Title
+                                        <span class="msb-tag">@(o.CaseIds.Count switch { 0 => "uten testtilfelle", 1 => "1 testtilfelle", var c => $"{c} testtilfeller" })</span></li>
+                                }
+                                @if (inSuite.Count > StructureRows) { <li class="mt-muted msb-small">… og @(inSuite.Count - StructureRows) til i testplanen</li> }
+                            </ul>
+                        }
+                    </li>
+                }
+                @if (occurrences.Where(o => o.SuiteId is null || !known.Contains(o.SuiteId)).ToList() is { Count: > 0 } loose)
+                {
+                    <li class="mt-plan-tree-group" data-testid="mt-plan-structure-group" data-depth="0"><span class="mt-plan-tree-name">Uten testgruppe</span>
+                        <span class="mt-muted msb-small" data-testid="mt-plan-structure-count">@loose.Count scenario@(loose.Count == 1 ? "" : "er")</span></li>
+                }
+            </ul>
+        </div>
+    };
 
     private bool _archivedView, _busy;
     /// <summary>The plan whose «Legg til scenarioer» dialog is open (Testplaner v4).</summary>
