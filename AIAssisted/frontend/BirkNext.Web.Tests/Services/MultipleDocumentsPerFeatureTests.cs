@@ -233,6 +233,57 @@ public sealed class MultipleDocumentsPerFeatureTests
     }
 
     [Fact]
+    public async Task Clearing_module_selection_keeps_no_specification_and_all_modules_restores_application_scope()
+    {
+        ImportServices();
+        await _explorers.SelectModuleAsync("school");
+        var candidates = await State(WorkspaceArtifactType.Specification);
+        var selected = candidates.Artifacts.Single(a => a.SourcePath!.EndsWith("annex-spec.md", StringComparison.Ordinal));
+        _explorers.Select(WorkspaceArtifactType.Specification, selected.Id);
+        (await State(WorkspaceArtifactType.Specification)).Selected!.SourcePath.Should().EndWith("annex-spec.md");
+
+        await _explorers.ClearSelectionAsync(WorkspaceArtifactType.Specification, "school");
+        var cleared = await State(WorkspaceArtifactType.Specification);
+        cleared.Module.Should().Be("school", "clearing the child specification preserves its parent module");
+        cleared.Status.Should().Be(ExplorerArtifactStatus.SelectionRequired);
+        cleared.Selected.Should().BeNull("the explicit empty choice prevents unique/previous selection fallback");
+
+        await _explorers.ClearSelectionAsync(WorkspaceArtifactType.Specification, keepEmptyChoice: false);
+        await _explorers.SelectModuleAsync(null);
+        var project = await State(WorkspaceArtifactType.Specification);
+        project.Module.Should().BeNull("Alle moduler returns to the project-level aggregate");
+        project.Selected.Should().BeNull();
+        project.Artifacts.Should().Contain(a => a.SourcePath == "events/specs/001-intake/spec.md");
+        project.Artifacts.Should().Contain(a => a.SourcePath == "school/docs/annex-spec.md");
+    }
+
+    [Fact]
+    public async Task Clearing_document_preserves_selected_pack_but_clearing_pack_returns_to_module_scope()
+    {
+        ImportServices();
+        await _explorers.SelectModuleAsync("events");
+        await _explorers.SelectPackAsync("003-rename", "events");
+        var docs = await State(WorkspaceArtifactType.Specification);
+        docs.Status.Should().Be(ExplorerArtifactStatus.SelectionRequired);
+        docs.Artifacts.Should().HaveCount(2);
+        _explorers.Select(WorkspaceArtifactType.Specification, docs.Artifacts[0].Id);
+
+        await _explorers.ClearSelectionAsync(WorkspaceArtifactType.Specification, "events", "003-rename");
+        var documentCleared = await State(WorkspaceArtifactType.Specification);
+        documentCleared.Module.Should().Be("events");
+        documentCleared.Pack.Should().Be("003-rename", "clearing the document keeps the specification pack");
+        documentCleared.Selected.Should().BeNull();
+        documentCleared.Artifacts.Should().HaveCount(2);
+
+        await _explorers.ClearSelectionAsync(WorkspaceArtifactType.Specification, "events", keepEmptyChoice: false);
+        await _explorers.SelectPackAsync(null, "events");
+        var specificationCleared = await State(WorkspaceArtifactType.Specification);
+        specificationCleared.Module.Should().Be("events");
+        specificationCleared.Pack.Should().BeNull();
+        specificationCleared.PackRequired.Should().BeTrue("clearing the specification keeps only its parent module in scope");
+    }
+
+    [Fact]
     public async Task The_chosen_module_document_survives_other_modules_and_a_rerender()
     {
         ImportServices();

@@ -17,7 +17,7 @@ public static class ManualTestingOverviewPresentation
 {
     public enum Level { Project, Module, Specification }
 
-    public sealed record Scope(Level Level, string? Module, string? SpecificationPath)
+    public sealed record Scope(Level Level, string? Module, string? SpecificationPath, string? SpecificationPack = null)
     {
         public static readonly Scope Project = new(Level.Project, null, null);
     }
@@ -42,8 +42,9 @@ public static class ManualTestingOverviewPresentation
 
     public static string ScopeLabel(Scope s) => s.Level switch
     {
-        Level.Module => $"Valgt modul: {s.Module}",
-        Level.Specification => $"Valgt spesifikasjon: {SpecName(s.SpecificationPath)}",
+        Level.Module => $"Valgt modul: {(string.IsNullOrWhiteSpace(s.Module) ? "Prosjektnivå" : s.Module)}",
+        Level.Specification => s.SpecificationPath is { } path ? $"Valgt dokument: {SpecName(path)}"
+            : s.SpecificationPack is { } pack ? $"Valgt spesifikasjon: {pack}" : "Valgte spesifikasjoner",
         _ => "Hele prosjektet",
     };
 
@@ -56,13 +57,23 @@ public static class ManualTestingOverviewPresentation
     private static bool SamePath(string? a, string? b) =>
         a is not null && b is not null && string.Equals(a.Replace('\\', '/').Trim('/'), b.Replace('\\', '/').Trim('/'), StringComparison.OrdinalIgnoreCase);
 
+    private static string ScopeModuleName(string? module) => string.IsNullOrEmpty(module) ? ModuleStructure.ProjectWide : module;
+
     /// <summary>The specifications and cases of a scope. A case outside every stored specification still counts in the project and its module.</summary>
     public static Slice Of(ManualTestingOverview o, Scope s) => s.Level switch
     {
-        Level.Module => new([.. o.Specifications.Where(x => x.Module == s.Module)], [.. o.Cases.Where(c => c.Module == s.Module)], o.ScenariosAvailable)
-            { Stories = [.. o.Stories.Where(x => x.Module == s.Module)], StoriesAvailable = o.StoryStatusAvailable },
-        Level.Specification => new([.. o.Specifications.Where(x => SamePath(x.Path, s.SpecificationPath))], [.. o.Cases.Where(c => SamePath(c.SpecificationPath, s.SpecificationPath))], o.ScenariosAvailable)
-            { Stories = [.. o.Stories.Where(x => SamePath(x.SpecificationPath, s.SpecificationPath))], StoriesAvailable = o.StoryStatusAvailable },
+        Level.Module => new([.. o.Specifications.Where(x => x.Module == (string.IsNullOrEmpty(s.Module) ? ModuleStructure.ProjectWide : s.Module))],
+                [.. o.Cases.Where(c => c.Module == (string.IsNullOrEmpty(s.Module) ? ModuleStructure.ProjectWide : s.Module))], o.ScenariosAvailable)
+            { Stories = [.. o.Stories.Where(x => x.Module == (string.IsNullOrEmpty(s.Module) ? ModuleStructure.ProjectWide : s.Module))], StoriesAvailable = o.StoryStatusAvailable },
+        Level.Specification when s.SpecificationPath is not null => new(
+            [.. o.Specifications.Where(x => SamePath(x.Path, s.SpecificationPath) && (s.Module is null || x.Module == ScopeModuleName(s.Module)))],
+            [.. o.Cases.Where(c => SamePath(c.SpecificationPath, s.SpecificationPath) && (s.Module is null || c.Module == ScopeModuleName(s.Module)))], o.ScenariosAvailable)
+            { Stories = [.. o.Stories.Where(x => SamePath(x.SpecificationPath, s.SpecificationPath) && (s.Module is null || x.Module == ScopeModuleName(s.Module)))], StoriesAvailable = o.StoryStatusAvailable },
+        Level.Specification when s.SpecificationPack is not null => new(
+            [.. o.Specifications.Where(x => x.Module == ScopeModuleName(s.Module) && string.Equals(Explorers.ArtifactModules.FeatureOf(x.Path), s.SpecificationPack, StringComparison.OrdinalIgnoreCase))],
+            [.. o.Cases.Where(c => c.Module == ScopeModuleName(s.Module) && string.Equals(Explorers.ArtifactModules.FeatureOf(c.SpecificationPath), s.SpecificationPack, StringComparison.OrdinalIgnoreCase))], o.ScenariosAvailable)
+            { Stories = [.. o.Stories.Where(x => x.Module == ScopeModuleName(s.Module) && string.Equals(Explorers.ArtifactModules.FeatureOf(x.SpecificationPath), s.SpecificationPack, StringComparison.OrdinalIgnoreCase))], StoriesAvailable = o.StoryStatusAvailable },
+        Level.Specification => new([], [], o.ScenariosAvailable) { StoriesAvailable = o.StoryStatusAvailable },
         _ => new(o.Specifications, o.Cases, o.ScenariosAvailable) { Stories = o.Stories, StoriesAvailable = o.StoryStatusAvailable },
     };
 
@@ -145,7 +156,7 @@ public static class ManualTestingOverviewPresentation
     public static IReadOnlyList<DeliveryBar> Priority(Slice s)
     {
         if (!s.ScenariosAvailable) return [];
-        var all = s.Specifications.SelectMany(x => x.Scenarios).ToList();
+        var all = s.Specifications.SelectMany(x => x.Scenarios).Where(sc => !sc.RequirementOnly).ToList();
         return [.. PriorityKeys(all).Select(p => (p, all.Count(sc => sc.Priority == p))).Append(("Ikke prioritert", all.Count(sc => sc.Priority is null)))
             .Where(x => x.Item2 > 0).Select(x => Bar(x.Item1, x.Item1, x.Item2, x.Item1 == "P1" ? DeliveryDashboardTone.Change : DeliveryDashboardTone.Neutral, $"{x.Item2} scenarioer"))];
     }
@@ -155,7 +166,7 @@ public static class ManualTestingOverviewPresentation
     {
         if (!s.ScenariosAvailable) return [];
         var covered = CoveredKeys(s.Cases);
-        var open = s.Specifications.SelectMany(x => x.Scenarios.Where(sc => !IsCovered(x, sc, covered))).ToList();
+        var open = s.Specifications.SelectMany(x => x.Scenarios.Where(sc => !sc.RequirementOnly && !IsCovered(x, sc, covered))).ToList();
         return [.. PriorityKeys(open).Select(p => (p, open.Count(sc => sc.Priority == p))).Append(("Ikke prioritert", open.Count(sc => sc.Priority is null)))
             .Where(x => x.Item2 > 0).Select(x => Bar(x.Item1, $"{x.Item1} uten testtilfeller", x.Item2, x.Item1 == "P1" ? DeliveryDashboardTone.Blocker : DeliveryDashboardTone.Review, $"{x.Item2} scenarioer uten lagret testtilfelle"))];
     }
@@ -208,8 +219,8 @@ public static class ManualTestingOverviewPresentation
     /// <summary>Why the scenarios of a group outside the modules are there, in the tester's words (null for a real module).</summary>
     public static string? OutsideModulesWhy(string? module) => module switch
     {
-        ModuleStructure.ProjectWide => "Prosjektets egne spesifikasjoner (specs/ på rotnivå). De gjelder hele prosjektet, ikke én modul.",
-        ModuleStructure.Unassigned => "Dokumenter som ligger utenfor alle modulmappene (for eksempel docs/analysis). De har ingen modultilknytning i kilden.",
+        ModuleStructure.ProjectWide => "Spesifikasjoner på rotnivå som gjelder hele prosjektet.",
+        ModuleStructure.Unassigned => "Kilder uten registrert eller identifisert modultilknytning.",
         _ => null,
     };
 
@@ -241,11 +252,12 @@ public static class ManualTestingOverviewPresentation
                 })];
             default:
                 var scenarios = s.Specifications.SelectMany(x => x.Scenarios.Select(sc => (Spec: x, Sc: sc))).ToList();
-                return [.. scenarios.GroupBy(t => t.Sc.StoryKey ?? "").OrderBy(g => g.First().Sc.StoryId ?? "~", StringComparer.Ordinal).Select(g =>
+                return [.. scenarios.GroupBy(t => (Path: t.Spec.Path, StoryKey: t.Sc.StoryKey ?? ""))
+                    .OrderBy(g => g.First().Sc.StoryId ?? "~", StringComparer.Ordinal).ThenBy(g => g.Key.Path, StringComparer.Ordinal).Select(g =>
                 {
-                    var cs = s.Cases.Where(c => (c.StoryKey ?? "") == g.Key).ToList();
-                    var label = g.Key.Length == 0 ? "Uten brukerhistorie" : $"{g.First().Sc.StoryId} {g.First().Sc.StoryTitle}";
-                    return new Row(g.Key, label, g.Count(), g.Count(t => IsCovered(t.Spec, t.Sc, covered)), cs.Count, cs.Count(c => c.Review == TestCaseReviewState.Accepted), FollowUp(cs), null, null);
+                    var cs = s.Cases.Where(c => SamePath(c.SpecificationPath, g.Key.Path) && (c.StoryKey ?? "") == g.Key.StoryKey).ToList();
+                    var label = g.Key.StoryKey.Length == 0 ? "Uten brukerhistorie" : $"{g.First().Sc.StoryId} {g.First().Sc.StoryTitle}";
+                    return new Row($"{g.Key.Path}|{g.Key.StoryKey}", label, g.Count(), g.Count(t => IsCovered(t.Spec, t.Sc, covered)), cs.Count, cs.Count(c => c.Review == TestCaseReviewState.Accepted), FollowUp(cs), null, g.Key.Path);
                 })];
         }
     }
@@ -257,7 +269,7 @@ public static class ManualTestingOverviewPresentation
         var list = new List<(string, string)>();
         if (s.ScenariosAvailable)
         {
-            var open = s.Specifications.Sum(x => x.Scenarios.Count(sc => sc.Priority == "P1" && !IsCovered(x, sc, covered)));
+            var open = s.Specifications.Sum(x => x.Scenarios.Count(sc => !sc.RequirementOnly && sc.Priority == "P1" && !IsCovered(x, sc, covered)));
             if (open > 0) list.Add(("p1-uncovered", $"{open} P1-scenario{(open == 1 ? "" : "er")} mangler testtilfeller"));
         }
         var p1 = s.Cases.Where(c => c.Priority == "P1").ToList();
@@ -293,7 +305,10 @@ public static class ManualTestingOverviewPresentation
         var words = f.Query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return [.. all.Where(d => (f.Module is null || d.Specification.Module == f.Module)
             && (f.Specification is null || SamePath(d.Specification.Path, f.Specification))
-            && words.All(w => $"{d.Scenario.Title} {ScenarioLabel(d.Scenario)} {d.Scenario.StoryTitle} {d.Scenario.Identity}".Contains(w, StringComparison.CurrentCultureIgnoreCase)))];
+            && words.All(w => $"{d.Scenario.Title} {ScenarioLabel(d.Scenario)} {d.Scenario.StoryTitle} {d.Scenario.Identity}".Contains(w, StringComparison.CurrentCultureIgnoreCase)))
+            .OrderBy(d => d.Specification.Path, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(d => d.Scenario.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(d => d.Scenario.Identity, StringComparer.Ordinal)];
     }
 
     /// <summary>What a follow-up list means, in the tester's words (null when the title says it all).</summary>
@@ -364,8 +379,8 @@ public static class ManualTestingOverviewPresentation
                     ? Scenarios($"{spec.Title}: scenarioer uten testtilfeller", d => d.Specification.Path == key && d.Scenario.IsAcceptanceScenario && !d.Covered, new Scope(Level.Specification, spec.Module, spec.Path)) : null,
                 _ => Scenarios($"{key}: scenarioer uten testtilfeller", d => (d.Scenario.StoryId ?? "Uten brukerhistorie") == key && d.Scenario.IsAcceptanceScenario && !d.Covered),
             },
-            ("chart.priority", _) => Scenarios($"Scenarioer {PriorityTitle(key)}", d => HasPriority(d.Scenario, key)),
-            ("chart.coverageGaps", _) => Scenarios(key == "Ikke prioritert" ? "Scenarioer uten oppgitt prioritet og uten testtilfeller" : $"{key} uten testtilfeller", d => HasPriority(d.Scenario, key) && !d.Covered),
+            ("chart.priority", _) => Scenarios($"Scenarioer {PriorityTitle(key)}", d => !d.Scenario.RequirementOnly && HasPriority(d.Scenario, key)),
+            ("chart.coverageGaps", _) => Scenarios(key == "Ikke prioritert" ? "Scenarioer uten oppgitt prioritet og uten testtilfeller" : $"{key} uten testtilfeller", d => !d.Scenario.RequirementOnly && HasPriority(d.Scenario, key) && !d.Covered),
             ("chart.blockers", "hindrance") => Cases("Testtilfeller med registrert hindring", x => x.Hindrance),
             ("chart.blockers", "clarify") => Cases("Testtilfeller som trenger avklaring", x => x.Review == TestCaseReviewState.NeedsClarification),
             ("chart.blockers", "expected") => Cases("Testtilfeller der forventet resultat må avklares", x => x.MissingExpected),
@@ -405,7 +420,8 @@ public static class ManualTestingOverviewPresentation
     private static IEnumerable<OverviewScenario> Acceptance(Slice s) => s.Specifications.SelectMany(x => x.Scenarios).Where(sc => sc.IsAcceptanceScenario);
 
     /// <summary>Unique user stories per figure (a story counts once; each has exactly one task status). Null when the status is unavailable.</summary>
-    public static int? StoryCount(Slice s, Func<OverviewStoryStatus, bool> match) => s.StoriesAvailable ? s.Stories.DistinctBy(x => x.StoryKey).Count(match) : null;
+    public static int? StoryCount(Slice s, Func<OverviewStoryStatus, bool> match) => s.StoriesAvailable
+        ? s.Stories.DistinctBy(x => Key(x.SpecificationPath, x.StoryKey)).Count(match) : null;
 
     public static int? StoriesInProgress(Slice s) => StoryCount(s, x => x.Status == UserStoryTaskStatus.InProgress);
     public static int? StoriesWithOpenTasks(Slice s) => StoryCount(s, x => x.Eligible > 0 && x.Remaining > 0);
@@ -425,7 +441,9 @@ public static class ManualTestingOverviewPresentation
     /// <summary>The unique scenarios a tile can count: acceptance scenarios and standalone documented tests (requirements without a scenario,
     /// user stories, cases and plan occurrences are never counted), one per identity even when it appears in several places.</summary>
     public static IReadOnlyList<OverviewScenario> TileScenarios(Slice s) =>
-        [.. s.Specifications.SelectMany(x => x.Scenarios).Where(sc => sc.IsAcceptanceScenario).DistinctBy(sc => sc.Identity, StringComparer.Ordinal)];
+        [.. s.Specifications.SelectMany(x => x.Scenarios.Select(sc => (Path: x.Path, Scenario: sc)))
+            .Where(x => x.Scenario.IsAcceptanceScenario || x.Scenario.Standalone)
+            .DistinctBy(x => Key(x.Path, x.Scenario.Identity), StringComparer.Ordinal).Select(x => x.Scenario)];
 
     public static bool Matches(OverviewScenario sc, DashboardKpiTile t) => t.Dimension switch
     {
@@ -448,9 +466,11 @@ public static class ManualTestingOverviewPresentation
     public static Drill TileDrill(Slice s, DashboardKpiTile t, string title)
     {
         var covered = CoveredKeys(s.Cases);
-        var counted = TileScenarios(s).Where(sc => Matches(sc, t)).Select(sc => sc.Identity).ToHashSet(StringComparer.Ordinal);
+        var counted = s.Specifications.SelectMany(spec => spec.Scenarios.Where(sc => (sc.IsAcceptanceScenario || sc.Standalone) && Matches(sc, t)
+            ).Select(sc => Key(spec.Path, sc.Identity))).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var rows = s.ScenariosAvailable
-            ? AllScenarios(s, covered).Where(d => counted.Contains(d.Scenario.Identity)).DistinctBy(d => d.Scenario.Identity, StringComparer.Ordinal).ToList()
+            ? AllScenarios(s, covered).Where(d => !d.Scenario.RequirementOnly && counted.Contains(Key(d.Specification.Path, d.Scenario.Identity)))
+                .DistinctBy(d => Key(d.Specification.Path, d.Scenario.Identity), StringComparer.Ordinal).ToList()
             : [];
         return new Drill("tile", t.Id, title, rows, []);
     }
@@ -471,7 +491,7 @@ public static class ManualTestingOverviewPresentation
 
     /// <summary>Implementeringsframdrift: user stories per task status — mutually exclusive, so the bars add up to the stories in scope.</summary>
     public static IReadOnlyList<DeliveryBar> StoryImplementation(Slice s) => !s.StoriesAvailable ? [] :
-        [.. UserStoryStatusText.FilterOrder.Select(st => (st, s.Stories.DistinctBy(x => x.StoryKey).Count(x => x.Status == st))).Where(x => x.Item2 > 0)
+        [.. UserStoryStatusText.FilterOrder.Select(st => (st, s.Stories.DistinctBy(x => Key(x.SpecificationPath, x.StoryKey)).Count(x => x.Status == st))).Where(x => x.Item2 > 0)
             .Select(x => Bar(x.st.ToString(), UserStoryStatusText.Label(x.st), x.Item2, x.st switch
             {
                 UserStoryTaskStatus.TasksCompleted => DeliveryDashboardTone.Ready, UserStoryTaskStatus.InProgress => DeliveryDashboardTone.Progress,

@@ -17,8 +17,8 @@
             @if (s.HasModules)
             {
                 <label class="ssp-field"><span class="ssp-k">Modul</span>
-                    <select class="ssp-select" data-testid="ssp-module" disabled="@_busy" value="@(s.Module is { } current ? ModuleValue(current) : "")" @onchange="OnModule">
-                        @if (s.Module is null) { <option value="">Velg modul …</option> }
+                    <select class="ssp-select" data-testid="ssp-module" disabled="@_busy" value="@(s.Module is { } current ? ModuleValue(current) : AllModulesValue)" @onchange="OnModule">
+                        <option value="@AllModulesValue">Alle moduler</option>
                         @foreach (var m in s.Modules!.Where(m => m.Candidates > 0))
                         {
                             <option value="@ModuleValue(m.Module)">@ModuleText(m)</option>
@@ -30,7 +30,7 @@
             {
                 <label class="ssp-field"><span class="ssp-k">Spesifikasjon</span>
                     <select class="ssp-select" data-testid="ssp-feature" disabled="@_busy" value="@(s.PackRequired ? "" : s.Pack ?? "")" @onchange="OnFeature">
-                        @if (s.PackRequired || s.Pack is null) { <option value="">Velg spesifikasjon …</option> }
+                        <option value="">Alle spesifikasjoner</option>
                         @foreach (var p in s.Packs!)
                         {
                             <option value="@p.Pack">@(p.DisplayName == p.Pack ? p.Pack : $"{p.DisplayName} ({p.Pack})")</option>
@@ -39,12 +39,12 @@
             }
             @* A choice is offered whenever one is needed: several documents, or one that is not chosen yet (V8: never chosen by itself). Without
                packs the documents ARE the specifications («Spesifikasjon»); inside a chosen pack they are its documents («Dokument»). *@
-            @if (!s.ModuleRequired && !s.PackRequired && SpecificationChoices(s) is { Count: > 0 } choices && (choices.Count > 1 || s.Selected is null))
+            @if (!s.ModuleRequired && !s.PackRequired && SpecificationChoices(s) is { Count: > 0 } choices)
             {
                 var documentsAreSpecs = s.Packs is not { Count: > 0 };
                 <label class="ssp-field"><span class="ssp-k">@(documentsAreSpecs ? "Spesifikasjon" : "Dokument")</span>
                     <select @key="_renderKey" class="ssp-select" data-testid="ssp-specification" disabled="@_busy" value="@(s.Selected?.Id ?? "")" @onchange="OnSpecification">
-                        @if (s.Selected is null) { <option value="">@(documentsAreSpecs ? "Velg spesifikasjon …" : "Velg dokument …")</option> }
+                        <option value="">@(documentsAreSpecs ? "Alle spesifikasjoner" : "Alle dokumenter")</option>
                         @foreach (var a in choices)
                         {
                             <option value="@a.Id">@(a.DisplayName == a.FileName ? a.FileName : $"{a.DisplayName} ({a.SourcePath ?? a.FileName})")</option>
@@ -163,26 +163,51 @@ else if (Actions is not null)
 
     /// <summary>The project-level module's key is "" — the same as "nothing chosen" — so it has its own option value.</summary>
     private const string ProjectLevelValue = "(project-level)";
+    private const string AllModulesValue = "(all-modules)";
 
     private static string ModuleValue(string module) => module.Length == 0 ? ProjectLevelValue : module;
 
     private Task OnModule(ChangeEventArgs e) => e.Value?.ToString() switch
     {
-        ProjectLevelValue => ApplyAsync(() => _explorer!.SelectModuleAsync(ArtifactModules.ProjectLevel)),
-        { Length: > 0 } module => ApplyAsync(() => _explorer!.SelectModuleAsync(module)),
+        AllModulesValue => ApplyAsync(async () =>
+        {
+            await _explorer!.ClearSelectionAsync(WorkspaceArtifactType.Specification, keepEmptyChoice: false);
+            await _explorer.SelectModuleAsync(null);
+        }),
+        ProjectLevelValue => ApplyAsync(async () =>
+        {
+            await _explorer!.ClearSelectionAsync(WorkspaceArtifactType.Specification, ArtifactModules.ProjectLevel);
+            await _explorer.SelectModuleAsync(ArtifactModules.ProjectLevel);
+        }),
+        { Length: > 0 } module => ApplyAsync(async () =>
+        {
+            await _explorer!.ClearSelectionAsync(WorkspaceArtifactType.Specification, module);
+            await _explorer.SelectModuleAsync(module);
+        }),
         _ => Task.CompletedTask,
     };
 
-    private Task OnFeature(ChangeEventArgs e) =>
-        e.Value?.ToString() is { Length: > 0 } pack ? ApplyAsync(() => _explorer!.SelectPackAsync(pack, _state?.Module)) : Task.CompletedTask;
+    private Task OnFeature(ChangeEventArgs e) => e.Value?.ToString() is { } value
+        ? ApplyAsync(async () =>
+        {
+            if (value.Length == 0)
+            {
+                await _explorer!.ClearSelectionAsync(WorkspaceArtifactType.Specification, _state?.Module, keepEmptyChoice: false);
+                await _explorer.SelectPackAsync(null, _state?.Module);
+            }
+            else await _explorer!.SelectPackAsync(value, _state?.Module);
+        }) : Task.CompletedTask;
 
     private async Task OnSpecification(ChangeEventArgs e)
     {
-        if (e.Value?.ToString() is not { Length: > 0 } id) return;
+        if (e.Value?.ToString() is not { } id) return;
         _refused = null;
-        await ApplyAsync(() => { _explorer!.Select(WorkspaceArtifactType.Specification, id); return Task.CompletedTask; });
+        if (id.Length == 0)
+            await ApplyAsync(() => _explorer!.ClearSelectionAsync(WorkspaceArtifactType.Specification, _state?.Module, _state?.Pack));
+        else
+            await ApplyAsync(() => { _explorer!.Select(WorkspaceArtifactType.Specification, id); return Task.CompletedTask; });
         // Never show a choice that is not in use: when the explorers resolve another document, say so and redraw the dropdown from the real state.
-        if (_state is { } now && now.Selected?.Id != id)
+        if (id.Length > 0 && _state is { } now && now.Selected?.Id != id)
         {
             var wanted = now.Artifacts.FirstOrDefault(a => a.Id == id)?.DisplayName ?? "Den valgte spesifikasjonen";
             _refused = now.Selected is { } used

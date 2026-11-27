@@ -265,6 +265,9 @@ public interface IArtifactExplorerContext
     /// </summary>
     void Select(WorkspaceArtifactType role, string artifactId, string? module = null);
 
+    /// <summary>Clears the explicit choice of one role in a module (or all modules when module is null), without changing its source.</summary>
+    Task ClearSelectionAsync(WorkspaceArtifactType role, string? module = null, string? pack = null, bool keepEmptyChoice = true, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
     /// <summary>The module that explorers and reviews focus on when the scope has several modules; null clears the focus.</summary>
     Task SelectModuleAsync(string? module, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
@@ -700,6 +703,20 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         await MirrorFocusAsync(scope, cancellationToken);
     }
 
+    public async Task ClearSelectionAsync(WorkspaceArtifactType role, string? module = null, string? pack = null, bool keepEmptyChoice = true, CancellationToken cancellationToken = default)
+    {
+        var scope = CurrentScope;
+        var selections = _workspace.SddLifecycle.ExplorerSelections;
+        selections.RemoveAll(s => s.WorkspaceScope == scope && s.Role == role.ToString()
+            && (module is null || (s.Module ?? ArtifactModules.ProjectLevel) == module)
+            && (pack is null || s.Pack is null || s.Pack == pack));
+        if (role == WorkspaceArtifactType.Specification && (!keepEmptyChoice || pack is null))
+            _workspace.SddLifecycle.PackFocus.RemoveAll(f => f.WorkspaceScope == scope && (module is null || f.Module == module) && (pack is null || f.Pack == pack));
+        if (keepEmptyChoice && module is not null)
+            selections.Add(new SddExplorerSelection { WorkspaceScope = scope, Role = role.ToString(), Module = module, Pack = pack, ArtifactId = "", SelectedAt = DateTimeOffset.UtcNow });
+        await MirrorFocusAsync(scope, cancellationToken);
+    }
+
     public async Task SelectPackAsync(string? pack, string? module = null, CancellationToken cancellationToken = default)
     {
         var scope = CurrentScope;
@@ -875,6 +892,9 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         // pack-scoped role they are neither listed as the feature's alternatives nor used for it unless the tester opens one for this feature.
         var borrowedOnly = ArtifactPacks.IsPackScoped(role) && fromProject && !sharedOnly;
         var listed = (borrowedOnly && local.Count > 0 ? local : local.Concat(shared)).Select(e => e.Artifact).ToList();
+        if (_workspace.SddLifecycle.ExplorerSelections.Any(s => s.WorkspaceScope == model.Scope && s.Role == role.ToString()
+            && (s.Module ?? ArtifactModules.ProjectLevel) == module && s.Pack == viewing && s.ArtifactId.Length == 0))
+            return State(ExplorerArtifactStatus.SelectionRequired, listed, ambiguous: true);
         ScopeEntry? Stored(IEnumerable<ScopeEntry> candidates) => _workspace.SddLifecycle.ExplorerSelections
             .Where(s => s.WorkspaceScope == model.Scope && s.Role == role.ToString() && (s.Module ?? ArtifactModules.ProjectLevel) == module)
             .Select(s => candidates.FirstOrDefault(c => c.Artifact.Id == s.ArtifactId)).LastOrDefault(c => c is not null);
@@ -1170,6 +1190,11 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         WorkspaceArtifactType role, ScopeModel model, IReadOnlyList<ScopeEntry> entries, string module, bool anyModule)
     {
         bool Exists(string? id) => id is not null && entries.Any(a => a.Artifact.Id == id);
+
+        // An empty id is an explicit "all documents" choice. Without it, a one-document module is auto-selected again after clearing.
+        if (_workspace.SddLifecycle.ExplorerSelections.LastOrDefault(s => s.WorkspaceScope == model.Scope && s.Role == role.ToString()
+            && (s.Module ?? ArtifactModules.ProjectLevel) == module && s.ArtifactId.Length == 0) is not null)
+            return (null, null);
 
         // Without modules every stored selection of the role counts (older selections have no module).
         var stored = _workspace.SddLifecycle.ExplorerSelections

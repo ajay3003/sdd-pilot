@@ -1025,8 +1025,30 @@ a.mto-kpi:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 
 .mto-table-scroll:focus-visible { outline: 2px solid var(--msb-accent); outline-offset: 2px; }
 .mto-table { font-size: .9rem; font-variant-numeric: tabular-nums; }
 .mto-table th, .mto-table td { padding: .5rem .7rem; }
+.mto-table th:not(:first-child), .mto-table td.mto-num { text-align: right; white-space: nowrap; }
+.mto-table th:first-child, .mto-table td:first-child { min-width: 14rem; }
 .mto-table thead th { position: sticky; top: 0; background: var(--msb-surface); z-index: 1; }
 .mto-table tbody tr:hover { background: color-mix(in srgb, var(--msb-accent) 5%, transparent); }
+.mto-row-name { display: grid; justify-items: start; gap: .2rem; min-width: 0; }
+.mto-row-open, .mto-row-title { font-weight: 650; text-align: left; overflow-wrap: anywhere; }
+.mto-row-why { display: block; max-width: 28rem; line-height: 1.4; overflow-wrap: anywhere; }
+.mto-row-details { margin-top: .3rem; font-size: .78rem; }
+.mto-row-details summary { cursor: pointer; color: var(--clr-text-muted, #57606a); }
+.mto-row-details dl { display: flex; flex-wrap: wrap; gap: .2rem .8rem; margin: .25rem 0 0; }
+.mto-row-details dl div { display: flex; gap: .25rem; }
+.mto-row-details dt { color: var(--clr-text-muted, #57606a); }
+.mto-row-details dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+.mto-sort-secondary { margin: 0 0 .5rem; font-size: .85rem; }
+.mto-sort-secondary summary { cursor: pointer; }
+.mto-sort-secondary-options { display: flex; flex-wrap: wrap; gap: .35rem; padding-top: .4rem; }
+.mto-follow-pagination { display: flex; justify-content: flex-end; gap: .5rem; padding-top: .5rem; }
+.mto-follow-pagination button { min-height: 2.25rem; }
+@media (max-width: 700px) {
+    .mto-table th, .mto-table td { padding: .4rem .45rem; }
+    .mto-table { font-size: .82rem; }
+    .mto-table th:first-child, .mto-table td:first-child { min-width: 11rem; }
+    .mto-row-why { max-width: 15rem; }
+}
 .mto-num-attention { font-weight: 700; color: var(--clr-warning-text, #9a6700); }
 
 /* Cards fill each row (2026-11-26, after the browser check): a wrapping flex row instead of fixed columns, so two cards — or one —

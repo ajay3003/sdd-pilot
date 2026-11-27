@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "purpose": "Testoversikt data-testid census. Adding a stable UI hook requires updating this registry and the applicable interaction tests.",
+  "guardedSources": [
+    {
+      "path": "AIAssisted/frontend/BirkNext.Web/Pages/ManualTesting.razor",
+      "testIds": ["mt", "mt-error", "mt-new-plan", "mt-new-plan-cancel", "mt-new-plan-create", "mt-new-plan-done", "mt-new-plan-e2e-candidates", "mt-new-plan-empty", "mt-new-plan-error", "mt-new-plan-form", "mt-new-plan-from-template", "mt-new-plan-methods", "mt-new-plan-name", "mt-new-plan-open", "mt-new-plan-preview", "mt-new-plan-scenario-only", "mt-new-plan-scenario-only-label", "mt-new-plan-selection", "mt-new-plan-structure", "mt-new-plan-structure-grouping", "mt-new-plan-suite", "mt-new-plan-template", "mt-new-plan-template-note", "mt-new-plan-template-preview", "mt-new-plan-template-suite", "mt-new-plan-why", "mt-no-project", "mt-no-project-link", "mto-action-empty", "mto-attention-open", "mto-band", "mto-bar", "mto-bar-empty", "mto-bar-open", "mto-custom", "mto-custom-cancel", "mto-custom-catalog", "mto-custom-group", "mto-customize", "mto-custom-leave", "mto-custom-leave-discard", "mto-custom-leave-save", "mto-custom-leave-stay", "mto-custom-reset", "mto-custom-reset-confirm", "mto-custom-reset-yes", "mto-custom-save", "mto-custom-state", "mto-custom-tile", "mto-custom-tile-add", "mto-custom-tile-edit", "mto-custom-tile-remove", "mto-custom-widget", "mto-drill", "mto-drill-case", "mto-drill-close", "mto-drill-count", "mto-drill-empty", "mto-drill-error", "mto-drill-group", "mto-drill-narrow", "mto-drill-open", "mto-drill-plan", "mto-drill-row", "mto-drill-scenario", "mto-drill-story", "mto-error", "mto-follow-count", "mto-follow-module", "mto-follow-n", "mto-follow-next", "mto-follow-none", "mto-follow-page-status", "mto-follow-prev", "mto-follow-reset", "mto-follow-search", "mto-follow-spec", "mto-follow-toggle", "mto-follow-why", "mto-history-unavailable", "mto-kpi", "mto-kpis", "mto-kpis-secondary", "mto-meter", "mto-module-overview-empty", "mto-outside-modules", "mto-plan-card", "mto-plan-exec", "mto-plan-exec-h", "mto-plan-no-exec", "mto-plan-open", "mto-plan-open-items", "mto-plan-prep", "mto-plan-structure", "mto-readiness", "mto-readiness-count", "mto-readiness-none", "mto-readiness-open", "mto-retry", "mto-row", "mto-row-approved", "mto-row-cases", "mto-row-covered", "mto-row-details", "mto-row-followup", "mto-row-open", "mto-row-requirements", "mto-row-scenarios", "mto-row-share", "mto-row-why", "mto-scope-error", "mto-scope-invalid", "mto-scope-retry", "mto-show-all", "mto-slot-down", "mto-slot-hide", "mto-slot-tools", "mto-slot-up", "mto-sort", "mto-source", "mto-source-stale", "mto-source-text", "mto-tile", "mto-tile-breakdown", "mto-tile-count", "mto-tile-error", "mto-tile-explain", "mto-tile-metric", "mto-tile-notice", "mto-tile-open", "mto-tile-title", "mto-toolbar", "mto-widget", "mt-plan-actions", "mt-retry", "mt-transfer", "mt-transfer-close", "mt-transfer-error", "mt-transfer-panel", "mt-transfer-plan"]
+    },
+    {
+      "path": "AIAssisted/frontend/BirkNext.Web/Components/SpecificationScopePicker.razor",
+      "testIds": ["ssp", "ssp-actions", "ssp-changed", "ssp-choose", "ssp-current", "ssp-discover", "ssp-feature", "ssp-module", "ssp-open-explorer", "ssp-refused", "ssp-save-warning", "ssp-specification"]
+    }
+  ],
+  "controls": [
+    {
+      "controlId": "ssp-module",
+      "component": "SpecificationScopePicker",
+      "type": "select",
+      "behavior": "Velg modul eller rydd modul og alle underordnede valg.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S11"],
+      "destinationOrTransition": "Oppdater valgt modul i delt artefaktkontekst; ved tømming gå til prosjektomfang.",
+      "requiredParameters": ["application", "moduleIdentity"],
+      "automatedTestIds": ["SpecificationScopePickerTests", "Dropdown_selection_alone_scopes_every_dashboard_section_and_clear_restores_project_population"]
+    },
+    {
+      "controlId": "ssp-feature",
+      "component": "SpecificationScopePicker",
+      "type": "select",
+      "behavior": "Velg spesifikasjonspakke eller rydd pakken og dokumentvalget.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S09"],
+      "destinationOrTransition": "Oppdater pakke innenfor valgt modul.",
+      "requiredParameters": ["application", "moduleIdentity", "specificationPackIdentity"],
+      "automatedTestIds": ["SpecificationScopePickerTests", "MultipleDocumentsPerFeatureTests"]
+    },
+    {
+      "controlId": "ssp-specification",
+      "component": "SpecificationScopePicker",
+      "type": "select",
+      "behavior": "Velg eksakt kildedokument eller rydd dokumentvalget.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S06", "S07", "S08", "S09", "S10"],
+      "destinationOrTransition": "Oppdater dokumentidentitet innenfor valgt applikasjon, modul og pakke.",
+      "requiredParameters": ["application", "sourceRegistration", "baseline", "documentIdentity"],
+      "automatedTestIds": ["SpecificationScopePickerTests", "MultipleDocumentsPerFeatureTests", "Dropdown_selection_alone_scopes_every_dashboard_section_and_clear_restores_project_population"]
+    },
+    {
+      "controlId": "mto-kpi",
+      "component": "ManualTestingOverview",
+      "type": "link",
+      "behavior": "Åpne populationen som tilsvarer KPI-flisens viste måltall.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S12"],
+      "destinationOrTransition": "Naviger til scenario- eller testplanvisning med scope og måltallsfilter.",
+      "requiredParameters": ["application", "scope", "metric", "sourceBaseline"],
+      "automatedTestIds": ["Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows", "ManualTestingWorkspaceTests"]
+    },
+    {
+      "controlId": "mto-attention-open",
+      "component": "ManualTestingOverview",
+      "type": "button",
+      "behavior": "Åpne eller lukke den konkrete oppfølgingsdrillen.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S12"],
+      "destinationOrTransition": "Vis eksakt oppfølgingspopulasjon under kortet.",
+      "requiredParameters": ["application", "scope", "followUpKey"],
+      "automatedTestIds": ["Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows", "ManualTestingWorkspaceTests"]
+    },
+    {
+      "controlId": "mto-sort",
+      "component": "ManualTestingOverview.ModuleTable",
+      "type": "button",
+      "behavior": "Sorter tabellrader stabilt etter valgt kolonne.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S12"],
+      "destinationOrTransition": "Samme tabellpopulasjon med ny sortering.",
+      "requiredParameters": ["scope", "column", "direction"],
+      "automatedTestIds": ["ManualTestingWorkspaceTests"]
+    },
+    {
+      "controlId": "mto-row-open",
+      "component": "ManualTestingOverview.ModuleTable",
+      "type": "button",
+      "behavior": "Åpne valgt modul-/gruppepopulasjon i Finn og forstå.",
+      "applicableScopes": ["S01", "S09", "S10"],
+      "destinationOrTransition": "Naviger til Discover med valgt modulidentitet.",
+      "requiredParameters": ["application", "moduleIdentity", "sourceBaseline"],
+      "automatedTestIds": ["ManualTestingWorkspaceTests"]
+    },
+    {
+      "controlId": "mto-follow-prev",
+      "component": "ManualTestingOverview.FollowUp",
+      "type": "button",
+      "behavior": "Vis forrige side i filtrert gruppeliste.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10"],
+      "destinationOrTransition": "Oppdater gruppeside uten å endre valgt foreldrescope.",
+      "requiredParameters": ["scope", "filters", "sort", "page"],
+      "automatedTestIds": ["ManualTestingWorkspaceTests"]
+    },
+    {
+      "controlId": "mto-follow-next",
+      "component": "ManualTestingOverview.FollowUp",
+      "type": "button",
+      "behavior": "Vis neste side i filtrert gruppeliste.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10"],
+      "destinationOrTransition": "Oppdater gruppeside uten å endre valgt foreldrescope.",
+      "requiredParameters": ["scope", "filters", "sort", "page"],
+      "automatedTestIds": ["ManualTestingWorkspaceTests"]
+    },
+    {
+      "controlId": "mto-readiness-open",
+      "component": "ManualTestingOverview.Readiness",
+      "type": "button",
+      "behavior": "Vis testtilfellene bak beredskapskategorien.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S12"],
+      "destinationOrTransition": "Åpne eksakt testtilfellepopulasjon for statusnøkkelen.",
+      "requiredParameters": ["application", "scope", "readinessKey"],
+      "automatedTestIds": ["ManualTestingWorkspaceTests"]
+    },
+    {
+      "controlId": "mto-bar-open",
+      "component": "ManualTestingOverview.Chart",
+      "type": "button",
+      "behavior": "Åpne drilldown for søylediagrammets viste kategori.",
+      "applicableScopes": ["S01", "S02", "S03", "S04", "S09", "S10", "S12"],
+      "destinationOrTransition": "Vis nøyaktig kategoriens records i gjeldende scope.",
+      "requiredParameters": ["application", "scope", "chartId", "barKey", "sourceBaseline"],
+      "automatedTestIds": ["Every_bar_and_follow_up_line_opens_exactly_as_many_records_as_it_shows"]
+    }
+  ],
+  "notes": [
+    "The guard compares the exact stable-ID sets, rejects duplicates in the registry, and validates required behavior-contract fields.",
+    "Only controls listed in controls have contracts in this first incremental update. Remaining controls/scope pairs are NOT VERIFIED and are enumerated as gaps in the Norwegian report."
+  ]
+}

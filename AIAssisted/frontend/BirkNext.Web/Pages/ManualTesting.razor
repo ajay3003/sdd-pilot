@@ -53,18 +53,7 @@
             @* Testoversikt redesign (2026-11-26): one toolbar for the scope, the four core figures first, then what needs follow-up, test readiness,
                modules and the rest. Widget ids, settings and figures are unchanged; only the presentation and order changed. *@
             <div class="mto-toolbar" data-testid="mto-toolbar">
-                <div class="mto-head">
-                    <div class="mtp-seg" role="radiogroup" aria-label="Tallene gjelder" data-testid="mto-level">
-                        @foreach (var (level, text, enabled) in new[] { (O.Level.Project, "Hele prosjektet", true), (O.Level.Module, "Valgt modul", _module is not null), (O.Level.Specification, "Valgt spesifikasjon", _specPath is not null) })
-                        {
-                            var l = level;
-                            <button type="button" role="radio" class="mtp-seg-btn @(_level == l ? "is-on" : null)" aria-checked="@(_level == l ? "true" : "false")" disabled="@(!enabled)"
-                                    @onclick="() => SetLevel(l)" data-level="@l" data-testid="mto-level-option">@text</button>
-                        }
-                    </div>
-                    <span class="mto-scope-chip" title="@O.ScopeLabel(CurrentScope)" data-testid="mto-scope">@O.ScopeLabel(CurrentScope)</span>
-                    @if (CanWrite && _draft is null) { <button type="button" class="msb-link msb-small mto-customize" @onclick="EnterCustomize" data-testid="mto-customize">Tilpass oversikten</button> }
-                </div>
+                @if (CanWrite && _draft is null) { <button type="button" class="msb-link msb-small mto-customize" @onclick="EnterCustomize" data-testid="mto-customize">Tilpass oversikten</button> }
                 @* SRC-001 (2026-11-27): which import the numbers come from, and a warning when a newer import of the same application exists. *@
                 @if (SourceBaseline is { } sb)
                 {
@@ -72,7 +61,11 @@
                     @if (sb.Warning is { } stale) { <p class="mt-alert msb-small mto-source-stale" role="status" data-testid="mto-source-stale">@stale</p> }
                 }
             </div>
-            @if (_overviewLoading)
+            @if (_scopeError is { } scopeError)
+            {
+                <p class="mt-alert" role="alert" data-testid="mto-scope-error">Utvalget kunne ikke leses. @scopeError <button type="button" class="msb-link" @onclick="OnScopeChangedAsync" data-testid="mto-scope-retry">Prøv igjen</button></p>
+            }
+            else if (_overviewLoading)
             {
                 <InlineLoading Text="Henter testoversikt …" Class="mt-muted" TestId="mto-loading" />
             }
@@ -80,7 +73,11 @@
             {
                 <p class="mt-alert" role="alert" data-testid="mto-error">Kunne ikke hente testoversikten. @oe <button type="button" class="msb-link" @onclick="LoadOverviewAsync" data-testid="mto-retry">Prøv igjen</button></p>
             }
-            else if (_overview is { } ov)
+            else if (_overview is { } scopeOverview && _level == O.Level.Specification && O.Of(scopeOverview, CurrentScope).Specifications.Count == 0)
+            {
+                <p class="mt-alert" role="alert" data-testid="mto-scope-invalid">Den valgte spesifikasjonen finnes ikke i oversiktens kildegrunnlag. Velg en gyldig spesifikasjon eller et bredere utvalg.</p>
+            }
+            else if (_overview is { } ov && _ws?.ProjectKey == ov.ProjectKey)
             {
                 var slice = O.Of(ov, CurrentScope);
                 var fig = O.Compute(slice, ov.Plans);
@@ -253,10 +250,20 @@
                     {
                         <section class="mto-card mto-table-card" data-testid="mto-widget" data-widget="display.moduleOverview">
                             <h3 class="mto-card-h">@(_level switch { O.Level.Project => "Oversikt per modul", O.Level.Module => "Oversikt per spesifikasjon", _ => "Oversikt per brukerhistorie" })</h3>
+                            <details class="mto-sort-secondary">
+                                <summary>Sorter etter flere måltall</summary>
+                                <div class="mto-sort-secondary-options" aria-label="Sortering etter flere måltall">
+                                    @foreach (var (col, label) in new[] { ("covered", "Med testtilfeller"), ("cases", "Testtilfeller"), ("approved", "Godkjent") })
+                                    {
+                                        var c = col;
+                                        <button type="button" class="mto-sort mto-sort-secondary-option" aria-pressed="@(_sortCol == c ? "true" : "false")" @onclick="() => SortBy(c)" data-testid="mto-sort" data-col="@c">@label @(_sortCol == c ? (_sortDesc ? "↓" : "↑") : "")</button>
+                                    }
+                                </div>
+                            </details>
                             <div class="mto-table-scroll" tabindex="0" role="region" aria-label="Tabell med tall per rad">
                             <table class="mto-table">
                                 <thead><tr>
-                                    @foreach (var (col, head) in new[] { ("name", _level switch { O.Level.Project => "Modul", O.Level.Module => "Spesifikasjon", _ => "Brukerhistorie" }), ("scenarios", "Scenarioer"), ("requirements", "Krav uten scenario"), ("covered", "Med testtilfeller"), ("share", "Dekning"), ("cases", "Testtilfeller"), ("approved", "Godkjent"), ("followup", "Trenger oppfølging") })
+                                    @foreach (var (col, head) in new[] { ("name", _level switch { O.Level.Project => "Modul", O.Level.Module => "Spesifikasjon", _ => "Brukerhistorie" }), ("scenarios", "Scenarioer"), ("requirements", "Krav uten scenario"), ("share", "Dekning"), ("followup", "Trenger oppfølging") })
                                     {
                                         var c = col;
                                         <th scope="col" aria-sort="@(_sortCol == c ? (_sortDesc ? "descending" : "ascending") : "none")">
@@ -273,19 +280,41 @@
                                         {
                                             outsideShown = true;
                                             @* Project-level audit (2026-11-27): the groups outside every module are not shown as ordinary modules. *@
-                                            <tr class="mto-group-row" data-testid="mto-outside-modules"><th colspan="12" scope="rowgroup">Utenfor modulene</th></tr>
+                                            <tr class="mto-group-row" data-testid="mto-outside-modules"><th colspan="5" scope="rowgroup">Utenfor modulene</th></tr>
                                         }
                                         <tr data-testid="mto-row" data-key="@row.Key" data-outside="@(outside ? "true" : "false")">
-                                            <td>@if (_level == O.Level.Project && row.Module is { } mod && (outside || _modules.Contains(mod)))
-                                                { <button type="button" class="msb-link" @onclick="() => OpenModuleAsync(mod)" data-testid="mto-row-open">@row.Label</button> }
-                                                else { @row.Label }
-                                                @if (outside && O.OutsideModulesWhy(row.Module) is { } why) { <span class="mt-muted msb-small mto-row-why" data-testid="mto-row-why">@why</span> }</td>
-                                            <td data-testid="mto-row-scenarios">@(row.Scenarios?.ToString() ?? "—")</td><td data-testid="mto-row-requirements" title="Krav som ikke har noe akseptansescenario ennå. De er med i sporbarheten, men telles ikke som scenarioer.">@(row.Requirements?.ToString() ?? "—")</td><td>@(row.Covered?.ToString() ?? "—")</td><td data-testid="mto-row-share" title="@(row.Scenarios is { } rs && row.Covered is { } rc ? $"{rc} av {rs} scenarioer har manuelle testtilfeller" : null)">@(row.Scenarios is { } ts && row.Covered is { } tc ? O.Share(tc, ts) : "—")</td><td>@row.Cases</td><td>@row.Approved</td><td class="@(row.FollowUp > 0 ? "mto-num-attention" : null)">@row.FollowUp</td>
+                                            <td>
+                                                <div class="mto-row-name">
+                                                    @if (_level == O.Level.Project && row.Module is { } mod && (outside || _modules.Contains(mod)))
+                                                    { <button type="button" class="msb-link mto-row-open" aria-label="Åpne @row.Label i Finn og forstå" @onclick="() => OpenModuleAsync(mod)" data-testid="mto-row-open">@row.Label</button> }
+                                                    else { <span class="mto-row-title">@row.Label</span> }
+                                                    @if (outside && O.OutsideModulesWhy(row.Module) is { } why) { <span class="mt-muted msb-small mto-row-why" data-testid="mto-row-why">@why</span> }
+                                                </div>
+                                                <details class="mto-row-details" data-testid="mto-row-details">
+                                                    <summary>Flere måltall</summary>
+                                                    <dl>
+                                                        <div><dt>Med testtilfeller</dt><dd data-testid="mto-row-covered">@(row.Covered?.ToString() ?? "—")</dd></div>
+                                                        <div><dt>Testtilfeller</dt><dd data-testid="mto-row-cases">@row.Cases</dd></div>
+                                                        <div><dt>Godkjent</dt><dd data-testid="mto-row-approved">@row.Approved</dd></div>
+                                                    </dl>
+                                                </details>
+                                            </td>
+                                            <td class="mto-num" data-testid="mto-row-scenarios">@(row.Scenarios?.ToString() ?? "—")</td>
+                                            <td class="mto-num" data-testid="mto-row-requirements" title="Krav som ikke har noe akseptansescenario ennå. De er med i sporbarheten, men telles ikke som scenarioer.">@(row.Requirements?.ToString() ?? "—")</td>
+                                            <td class="mto-num" data-testid="mto-row-share" title="@(row.Scenarios is { } rs && row.Covered is { } rc ? $"{rc} av {rs} scenarioer har manuelle testtilfeller" : null)">@(row.Scenarios is { } ts && row.Covered is { } tc ? O.Share(tc, ts) : "—")</td>
+                                            <td class="mto-num @(row.FollowUp > 0 ? "mto-num-attention" : null)" data-testid="mto-row-followup">@row.FollowUp</td>
                                         </tr>
                                     }
                                 </tbody>
                             </table>
                             </div>
+                        </section>
+                    }
+                    else if (On("display.moduleOverview"))
+                    {
+                        <section class="mto-card mto-table-card" data-testid="mto-widget" data-widget="display.moduleOverview">
+                            <h3 class="mto-card-h">@(_level switch { O.Level.Project => "Oversikt per modul", O.Level.Module => "Oversikt per spesifikasjon", _ => "Oversikt per brukerhistorie" })</h3>
+                            <p class="mto-band-empty" data-testid="mto-module-overview-empty">Ingen rader er tilgjengelige for dette utvalget.</p>
                         </section>
                     }
                 </section>
@@ -456,7 +485,7 @@
     private ManualTestingOverview? _overview;
     private ManualTestingDashboardSettings _dashboard = new();
     private bool _overviewLoading;
-    private string? _overviewError, _module, _specPath;
+    private string? _overviewError, _scopeError, _module, _specPath, _pack;
     private HashSet<string> _modules = new(StringComparer.Ordinal);
     private O.Level _level = O.Level.Project;
     private int _overviewGeneration;
@@ -466,7 +495,8 @@
     private O.Scope CurrentScope => _level switch
     {
         O.Level.Module when _module is not null => new(O.Level.Module, _module, null),
-        O.Level.Specification when _specPath is not null => new(O.Level.Specification, _module, _specPath),
+        O.Level.Specification when _specPath is not null => new(O.Level.Specification, _module, _specPath, _pack),
+        O.Level.Specification when _pack is not null => new(O.Level.Specification, _module, null, _pack),
         _ => O.Scope.Project,
     };
 
@@ -503,6 +533,8 @@
 
     // ── Follow-up workspace (UX-107, 2026-11-27) ──
     private O.FollowUpFilter _follow = new();
+    private const int FollowGroupsPerPage = 20;
+    private int _followGroupPage;
     private readonly HashSet<string> _followToggled = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _followLimit = new(StringComparer.OrdinalIgnoreCase);
     private bool _followRestored;
@@ -516,7 +548,8 @@
 
     private static string? Blank(object? v) => v?.ToString() is { Length: > 0 } t ? t : null;
 
-    private void SetFollow(O.FollowUpFilter filter) { _follow = filter; _followLimit.Clear(); _ = SaveFollowAsync(); }
+    private void SetFollow(O.FollowUpFilter filter) { _follow = filter; _followLimit.Clear(); _followGroupPage = 0; _ = SaveFollowAsync(); }
+    private void ChangeFollowPage(int delta) => _followGroupPage = Math.Max(0, _followGroupPage + delta);
 
     private void ToggleFollowGroup(string path) { if (!_followToggled.Remove(path)) _followToggled.Add(path); _ = SaveFollowAsync(); }
 
@@ -582,8 +615,9 @@
             @* UX-107 (2026-11-27): a compact follow-up workspace instead of a long expanded report — the meaning, search and filters, collapsed groups
                when the list is large, compact rows, one «Åpne i Finn og forstå» per group (for exactly the matching scenarios). *@
             var all = d.Scenarios; var filtered = O.FilterDrill(all, _follow);
-            var groups = filtered.GroupBy(x => x.Specification.Path).ToList();
-            var collapsed = groups.Count > 3 || filtered.Count > 30;
+            var groups = filtered.GroupBy(x => x.Specification.Path).OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase).ToList();
+            // Groups are collapsed by default; large populations must not flood the dashboard.
+            var collapsed = true;
             var samePriority = all.Select(x => x.Scenario.Priority).Distinct().Count() == 1;
             var moduleOptions = all.Select(x => x.Specification.Module).Distinct().Order(StringComparer.CurrentCultureIgnoreCase).ToList();
             var specOptions = all.Where(x => _follow.Module is null || x.Specification.Module == _follow.Module).Select(x => x.Specification).DistinctBy(x => x.Path).OrderBy(x => x.Module).ThenBy(x => x.Title).ToList();
@@ -600,20 +634,27 @@
             <div class="mto-follow-tools" role="search" aria-label="Søk og filtrer i listen">
                 <input type="search" class="msb-search" placeholder="Søk i tittel, US/AC eller id" aria-label="Søk i scenarioene" value="@_follow.Query"
                        @oninput="e => SetFollow(_follow with { Query = e.Value?.ToString() ?? string.Empty })" data-testid="mto-follow-search" />
-                <select class="msb-select" aria-label="Modul" @onchange="e => SetFollow(_follow with { Module = Blank(e.Value), Specification = null })" data-testid="mto-follow-module">
-                    <option value="">Alle moduler</option>
-                    @foreach (var m in moduleOptions) { <option value="@m" selected="@(_follow.Module == m)">@m</option> }
-                </select>
-                <select class="msb-select" aria-label="Spesifikasjon" @onchange="e => SetFollow(_follow with { Specification = Blank(e.Value) })" data-testid="mto-follow-spec">
-                    <option value="">Alle spesifikasjoner</option>
-                    @foreach (var sp in specOptions) { <option value="@sp.Path" selected="@(_follow.Specification == sp.Path)">@sp.Module · @O.SpecName(sp.Path)</option> }
-                </select>
+                @if (_level == O.Level.Project)
+                {
+                    <select class="msb-select" aria-label="Begrens til modul" @onchange="e => SetFollow(_follow with { Module = Blank(e.Value), Specification = null })" data-testid="mto-follow-module">
+                        <option value="">Alle moduler i utvalget</option>
+                        @foreach (var m in moduleOptions) { <option value="@m" selected="@(_follow.Module == m)">@m</option> }
+                    </select>
+                }
+                @if (_level != O.Level.Specification)
+                {
+                    <select class="msb-select" aria-label="Begrens til spesifikasjon" @onchange="e => SetFollow(_follow with { Specification = Blank(e.Value) })" data-testid="mto-follow-spec">
+                        <option value="">Alle spesifikasjoner i utvalget</option>
+                        @foreach (var sp in specOptions) { <option value="@sp.Path" selected="@(_follow.Specification == sp.Path)">@sp.Module · @O.SpecName(sp.Path)</option> }
+                    </select>
+                }
                 @if (_follow.Active) { <button type="button" class="msb-link" @onclick="() => SetFollow(new O.FollowUpFilter())" data-testid="mto-follow-reset">Nullstill filtre</button> }
                 <span class="mt-muted msb-small" role="status" aria-live="polite" data-testid="mto-follow-count">Viser @filtered.Count av @all.Count scenario@(all.Count == 1 ? "" : "er") i @groups.Count gruppe@(groups.Count == 1 ? "" : "r")</span>
             </div>
             @if (filtered.Count == 0) { <p class="mt-muted" data-testid="mto-follow-none">Ingen scenarioer passer søket og filtrene. <button type="button" class="msb-link" @onclick="() => SetFollow(new O.FollowUpFilter())">Nullstill filtre</button></p> }
+            <p class="mt-muted msb-small" data-testid="mto-follow-page-status">Side @(groups.Count == 0 ? 0 : _followGroupPage + 1) av @Math.Max(1, (int)Math.Ceiling(groups.Count / (double)FollowGroupsPerPage))</p>
             <ul class="mto-follow-groups" aria-label="Grupper">
-                @foreach (var g in groups)
+                @foreach (var g in groups.Skip(_followGroupPage * FollowGroupsPerPage).Take(FollowGroupsPerPage))
                 {
                     var spec = g.First().Specification; var ids = g.Select(x => x.Scenario.Identity).ToList(); var count = ids.Count;
                     var open = collapsed == _followToggled.Contains(spec.Path) ? true : false;
@@ -649,40 +690,51 @@
                     </li>
                 }
             </ul>
+            @if (groups.Count > FollowGroupsPerPage)
+            {
+                <nav class="mto-follow-pagination" aria-label="Sider med spesifikasjonsgrupper">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_followGroupPage == 0)" @onclick="() => ChangeFollowPage(-1)" data-testid="mto-follow-prev">Forrige</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@((_followGroupPage + 1) * FollowGroupsPerPage >= groups.Count)" @onclick="() => ChangeFollowPage(1)" data-testid="mto-follow-next">Neste</button>
+                </nav>
+            }
         }
         @foreach (var g in d.Stories.GroupBy(x => x.SpecificationPath))
         {
             var first = g.First(); var count = g.Count();
+            var storyGroupKey = "stories:" + first.SpecificationPath;
+            var storyLimit = _followLimit.GetValueOrDefault(storyGroupKey, DrillItemsPerGroup * 3);
             <div class="mto-drill-group" data-testid="mto-drill-group" data-spec="@first.SpecificationPath">
                 <div class="mto-drill-group-h"><span><b>@first.Module</b> / @O.SpecName(first.SpecificationPath) · @count brukerhistorie@(count == 1 ? "" : "r")</span>
                     <button type="button" class="btn btn-sm btn-outline-primary" disabled="@_drillBusy" @onclick="() => OpenStoriesAsync(first.Module, first.SpecificationPath, null, d.StoryStatus)" data-testid="mto-drill-open">
                         Åpne i Finn og forstå</button></div>
                 <ul class="mto-drill-list">
-                    @foreach (var st in g.Take(DrillItemsPerGroup * 3))
+                    @foreach (var st in g.OrderBy(x => x.StoryId, StringComparer.Ordinal).ThenBy(x => x.StoryKey, StringComparer.Ordinal).Take(storyLimit))
                     {
                         var story = st;
                         <li><button type="button" class="msb-link" disabled="@_drillBusy" @onclick="() => OpenStoriesAsync(story.Module, story.SpecificationPath, story.StoryKey, null)" data-testid="mto-drill-story">
                             @story.StoryId @story.Title</button>
                             <span class="mt-muted msb-small">@(story.Eligible > 0 ? $"{story.Completed} av {story.Eligible} oppgaver fullført" : "ingen oppgaver i tasks.md")</span></li>
                     }
-                    @if (count > DrillItemsPerGroup * 3) { <li class="mt-muted msb-small">… og @(count - DrillItemsPerGroup * 3) til.</li> }
                 </ul>
+                <ShowMore Shown="@Math.Min(storyLimit, count)" Total="@count" Step="15" Noun="brukerhistorier" OnMore="() => MoreInFollowGroup(storyGroupKey, storyLimit)" TestId="mto-follow-more-stories" />
             </div>
         }
         @foreach (var g in d.Cases.GroupBy(x => x.PlanId))
         {
             var first = g.First(); var count = g.Count();
+            var caseGroupKey = "cases:" + first.PlanId;
+            var caseLimit = _followLimit.GetValueOrDefault(caseGroupKey, DrillItemsPerGroup * 3);
             <div class="mto-drill-group" data-testid="mto-drill-group" data-plan="@first.PlanId">
                 <div class="mto-drill-group-h"><span><b>@first.PlanName</b> · @count testtilfelle@(count == 1 ? "" : "r")</span>
                     <a class="btn btn-sm btn-outline-primary" href="@($"{M.PlanRoute}?draft={first.PlanId}")" data-testid="mto-drill-plan">Åpne testplanen</a></div>
                 <ul class="mto-drill-list">
-                    @foreach (var c in g.Take(DrillItemsPerGroup * 3))
+                    @foreach (var c in g.OrderBy(x => x.Title, StringComparer.CurrentCultureIgnoreCase).ThenBy(x => x.CaseId, StringComparer.Ordinal).Take(caseLimit))
                     {
                         <li><a href="@($"{M.PlanRoute}?draft={c.PlanId}&case={Uri.EscapeDataString(c.CaseId)}")" data-testid="mto-drill-case">@c.Title</a>
                             <span class="mt-muted msb-small">@c.Module · @P.ReviewLabel(c.Review)@(c.Priority is { } pr ? $" · {pr}" : "")</span></li>
                     }
-                    @if (count > DrillItemsPerGroup * 3) { <li class="mt-muted msb-small">… og @(count - DrillItemsPerGroup * 3) til i testplanen.</li> }
                 </ul>
+                <ShowMore Shown="@Math.Min(caseLimit, count)" Total="@count" Step="15" Noun="testtilfeller" OnMore="() => MoreInFollowGroup(caseGroupKey, caseLimit)" TestId="mto-follow-more-cases" />
             </div>
         }
     </section>;
@@ -1154,14 +1206,23 @@
     private async Task ReadScopeAsync()
     {
         if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) is not BirkNext.Web.Services.Explorers.IArtifactExplorerContext explorer) return;
+        _scopeError = null;
+        _module = null; _specPath = null; _pack = null; _modules = [];
         try
         {
             var state = await explorer.GetStateAsync(BirkNext.Web.Services.WorkspaceArtifactType.Specification);
-            _module = string.IsNullOrEmpty(state.Module) ? null : state.Module;
+            if (state.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.Error)
+            {
+                _scopeError = state.Error ?? "Kildedokumentet er ikke tilgjengelig.";
+                return;
+            }
+            // Null means all modules. The empty string is a real identity for the project-level group.
+            _module = state.Module;
+            _pack = state.Pack;
             _specPath = state.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.Loaded ? state.Selected?.SourcePath : null;
             _modules = [.. (state.Modules ?? []).Select(m => m.Module).Where(m => m.Length > 0)];
         }
-        catch (Exception e) when (e is not OperationCanceledException) { }
+        catch (Exception e) when (e is not OperationCanceledException) { _scopeError = e.Message; }
         if (_level == O.Level.Specification && _specPath is null) _level = _module is null ? O.Level.Project : O.Level.Module;
         if (_level == O.Level.Module && _module is null) _level = O.Level.Project;
     }
@@ -1170,6 +1231,10 @@
     {
         _drill = null; _drillError = null;
         await ReadScopeAsync();
+        _level = _specPath is not null || _pack is not null ? O.Level.Specification : _module is not null ? O.Level.Module : O.Level.Project;
+        _follow = _follow with { Module = null, Specification = null };
+        _followToggled.Clear(); _followLimit.Clear(); _followGroupPage = 0;
+        _ = SaveFollowAsync();
         StateHasChanged();
     }
 
@@ -1392,7 +1457,13 @@
     private void CloseTransfer() { _transfer = null; Nav.NavigateTo(M.PlansRoute, replace: true); }
 
     /// <summary>Another project was selected: everything is read again for it (nothing of the previous project stays).</summary>
-    private void OnProjectChanged() => _ = InvokeAsync(async () => { _ws = null; _new = null; _created = null; _transfer = null; _selection = []; await LoadAsync(); StateHasChanged(); });
+    private void OnProjectChanged() => _ = InvokeAsync(async () =>
+    {
+        _ws = null; _overview = null; _overviewError = null; _module = null; _specPath = null; _pack = null; _level = O.Level.Project;
+        _follow = new(); _followToggled.Clear(); _followLimit.Clear(); _followGroupPage = 0; _followRestored = false;
+        _new = null; _created = null; _transfer = null; _selection = [];
+        await LoadAsync(); StateHasChanged();
+    });
 
     public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; }
 }

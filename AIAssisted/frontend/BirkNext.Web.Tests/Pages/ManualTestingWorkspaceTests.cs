@@ -198,7 +198,8 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.Find("[data-testid=twh-stage][data-stage=home]").GetAttribute("aria-current").Should().Be("page");
         cut.FindAll("[data-testid=mt-next]").Should().BeEmpty("«Neste steg» is removed");
         cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpis]"));
-        cut.Find("[data-testid=mto-scope]").TextContent.Should().Be("Hele prosjektet");
+        cut.FindAll("[data-testid=mto-scope]").Should().BeEmpty("the dropdowns are the sole scope controls; no repeated scope chip");
+        cut.FindAll("[data-testid=mto-level-option]").Should().BeEmpty("no redundant project/module/specification buttons");
         string Kpi(string id) => cut.Find($"[data-testid=mto-kpi][data-widget='{id}'] .mto-kpi-v").TextContent;
         Kpi("metric.scenarios").Should().Be("4");
         Kpi("metric.testCases").Should().Be("7", "the hand-written case without a source is counted, not dropped");
@@ -207,8 +208,14 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.FindAll("[data-testid=mto-kpi][data-widget='metric.testPlans']").Should().BeEmpty("off by default");
         cut.Markup.Should().NotContain("Gjennomført").And.NotContain("Bestått").And.NotContain("Feilet");
         cut.FindAll("[data-testid=mto-row]").Select(r => r.GetAttribute("data-key")).Should().Equal("Frontend", "SkoleService", "Uten modultilknytning");
-        var skole = cut.Find("[data-testid=mto-row][data-key=SkoleService]").QuerySelectorAll("td").Select(td => td.TextContent).ToList();
-        skole.Should().Equal("SkoleService", "3", "0", "1", "33 %", "5", "1", "4"); // v3: «Dekning» uses the one share policy; 2026-11-27: «Krav uten scenario» (0) after «Scenarioer»
+        var skole = cut.Find("[data-testid=mto-row][data-key=SkoleService]");
+        skole.QuerySelectorAll("td").Should().HaveCount(5, "secondary case metrics are disclosed in the first cell, not repeated in cramped columns");
+        skole.QuerySelector("[data-testid=mto-row-scenarios]")!.TextContent.Should().Be("3");
+        skole.QuerySelector("[data-testid=mto-row-requirements]")!.TextContent.Should().Be("0");
+        skole.QuerySelector("[data-testid=mto-row-share]")!.TextContent.Should().Be("33 %");
+        skole.QuerySelector("[data-testid=mto-row-followup]")!.TextContent.Should().Be("4");
+        skole.QuerySelector("[data-testid=mto-row-cases]")!.TextContent.Should().Be("5");
+        skole.QuerySelector("[data-testid=mto-row-approved]")!.TextContent.Should().Be("1");
         cut.FindAll("[data-testid=mto-widget][data-widget='chart.history']").Should().BeEmpty("optional charts are off by default");
     }
 
@@ -260,6 +267,72 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         O.SourceChanges(project).Should().ContainSingle(b => b.Key == "changed" && b.Value == 1);
         O.P1Attention(project).Select(a => a.Key).Should().Contain(["p1-uncovered", "p1-approval", "p1-ready"]);
         O.Rows(spec, O.Level.Specification).Should().ContainSingle(r => r.Label == "US1 Search" && r.Covered == 1);
+    }
+
+    [Fact]
+    public void Scope_matrix_intersects_application_module_pack_and_exact_document_without_fallback()
+    {
+        var o = Overview();
+        var project = O.Of(o, O.Scope.Project);
+        var module = O.Of(o, new O.Scope(O.Level.Module, "SkoleService", null));
+        var pack = O.Of(o, new O.Scope(O.Level.Specification, "SkoleService", null, "001-skoleservice"));
+        var document = O.Of(o, new O.Scope(O.Level.Specification, "SkoleService", Skole));
+        var projectSpecification = O.Of(o, new O.Scope(O.Level.Specification, null, Skole));
+        var invalidParent = O.Of(o, new O.Scope(O.Level.Specification, "Frontend", Skole));
+        var invalidMissingIdentity = O.Of(o, new O.Scope(O.Level.Specification, "SkoleService", null));
+
+        project.Specifications.SelectMany(x => x.Scenarios).Select(x => x.Identity).Should().Contain(["tss-1", "tss-f1"]);
+        module.Specifications.Should().ContainSingle().Which.Path.Should().Be(Skole);
+        pack.Specifications.Should().ContainSingle().Which.Path.Should().Be(Skole, "All documents in the selected package currently resolve to this source document");
+        document.Specifications.Should().ContainSingle().Which.Path.Should().Be(Skole);
+        projectSpecification.Specifications.Should().ContainSingle().Which.Path.Should().Be(Skole, "a stable exact source path is sufficient when parent-module selection is All");
+        invalidParent.Specifications.Should().BeEmpty("a child identity from another module must not override the selected parent");
+        invalidParent.Cases.Should().BeEmpty();
+        invalidMissingIdentity.Specifications.Should().BeEmpty("an empty specification scope must never broaden to all-project data");
+    }
+
+    [Fact]
+    public void Dropdown_selection_alone_scopes_every_dashboard_section_and_clear_restores_project_population()
+    {
+        Setup([Summary()], Discovery(3));
+        SetupOverview();
+        var skole = new BirkNext.Web.Services.Explorers.ExplorerArtifact("school-spec", WorkspaceArtifactType.Specification, "Skole", "spec.md", Skole,
+            BirkNext.Web.Services.Explorers.ExplorerArtifactSource.Workspace, "ProjectImport", 1, 1, "Draft", BirkNext.Web.Services.Explorers.ExplorerArtifactCurrentness.Current, null, Module: "SkoleService");
+        var front = new BirkNext.Web.Services.Explorers.ExplorerArtifact("front-spec", WorkspaceArtifactType.Specification, "Frontend", "spec.md", Front,
+            BirkNext.Web.Services.Explorers.ExplorerArtifactSource.Workspace, "ProjectImport", 1, 1, "Draft", BirkNext.Web.Services.Explorers.ExplorerArtifactCurrentness.Current, null, Module: "Frontend");
+        var modules = (IReadOnlyList<BirkNext.Web.Services.Explorers.ArtifactModuleRoleState>)
+        [new("Frontend", 1, null, null), new("SkoleService", 1, null, null)];
+        BirkNext.Web.Services.Explorers.ArtifactExplorerState State(string? module, BirkNext.Web.Services.Explorers.ExplorerArtifact? selected = null) =>
+            new(WorkspaceArtifactType.Specification, selected is null ? BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired : BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.Loaded, "library", "Library",
+                module switch { "Frontend" => [front], "SkoleService" => [skole], _ => [front, skole] }, selected,
+                Modules: modules, Module: module);
+        var current = State(null);
+        var explorer = new Mock<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>();
+        explorer.Setup(x => x.GetStateAsync(WorkspaceArtifactType.Specification, It.IsAny<CancellationToken>())).ReturnsAsync(() => current);
+        explorer.Setup(x => x.ClearSelectionAsync(It.IsAny<WorkspaceArtifactType>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        explorer.Setup(x => x.SelectModuleAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback((string? module, CancellationToken _) => current = State(module)).Returns(Task.CompletedTask);
+        explorer.Setup(x => x.Select(WorkspaceArtifactType.Specification, It.IsAny<string>(), It.IsAny<string?>()))
+            .Callback((WorkspaceArtifactType _, string id, string? _) => current = State("SkoleService", id == skole.Id ? skole : front));
+        Services.AddSingleton(explorer.Object);
+
+        var cut = Open<ManualTesting>("manual-testing");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpi][data-widget='metric.scenarios'] .mto-kpi-v").TextContent.Should().Be("4"));
+        cut.Find("[data-testid=ssp-module]").Change("SkoleService");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpi][data-widget='metric.scenarios'] .mto-kpi-v").TextContent.Should().Be("3"));
+        cut.FindAll("[data-testid=mto-row]").Select(x => x.GetAttribute("data-key")).Should().Equal(Skole);
+        cut.FindAll("[data-testid=mto-widget][data-widget='chart.priority'] [data-testid=mto-bar]").Select(x => x.GetAttribute("data-key")).Should().Contain("P1");
+        cut.Find("[data-testid=mto-widget][data-widget='chart.priority'] [data-testid=mto-bar][data-key=P1] [data-testid=mto-bar-value]").TextContent.Should().Be("2");
+
+        cut.Find("[data-testid=ssp-specification]").Change(skole.Id);
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mto-row]").Select(x => x.GetAttribute("data-key")).Should().Equal($"{Skole}|k1", $"{Skole}|k2"));
+        cut.Find("[data-testid=mto-kpi][data-widget='metric.testCases'] .mto-kpi-v").TextContent.Should().Be("5");
+
+        cut.Find("[data-testid=ssp-module]").Change("(all-modules)");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mto-kpi][data-widget='metric.scenarios'] .mto-kpi-v").TextContent.Should().Be("4"));
+        cut.FindAll("[data-testid=mto-row]").Select(x => x.GetAttribute("data-key")).Should().Contain(["Frontend", "SkoleService"]);
+        cut.FindAll("[data-testid=mto-level-option]").Should().BeEmpty();
+        cut.FindAll("[data-testid=mto-scope]").Should().BeEmpty();
     }
 
     // ── Drill-down and loading (2026-11-26) ───────────────────────────────────────────────────────────────────
@@ -331,6 +404,8 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         var drill = cut.Find("[data-testid=mto-drill]");
         drill.QuerySelector("[data-testid=mto-drill-count]")!.TextContent.Should().Be("(1)");
         // UX-107 (2026-11-27): a compact row — the title, its label (US · AC) below it, and one «Åpne» per scenario.
+        cut.Find("[data-testid=mto-follow-toggle]").Click();
+        drill = cut.Find("[data-testid=mto-drill]");
         drill.QuerySelectorAll("[data-testid=mto-drill-row] .mto-follow-title").Select(e => e.TextContent.Trim()).Should().Equal("B");
         drill.QuerySelectorAll("[data-testid=mto-drill-scenario]").Should().ContainSingle().Which.GetAttribute("aria-label").Should().Be("Åpne «B» i Finn og forstå");
 
@@ -676,7 +751,7 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         // Project-level audit (2026-11-27): sorting orders the real modules; the groups outside the modules stay in their own section below.
         cut.FindAll("[data-testid=mto-row][data-outside=false]").Select(r => r.GetAttribute("data-key")).Last().Should().Be("SkoleService");
         cut.FindAll("[data-testid=mto-row]").Select(r => r.GetAttribute("data-outside")).Should().BeInAscendingOrder(StringComparer.Ordinal, "«false» rows before «true» rows");
-        cut.Find("th[aria-sort=ascending] [data-testid=mto-sort]").GetAttribute("data-col").Should().Be("cases");
+        cut.Find("[data-testid=mto-sort][data-col=cases]").GetAttribute("aria-pressed").Should().Be("true");
     }
 
     [Fact]
@@ -716,16 +791,16 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         var project = O.Of(TileOverview(), O.Scope.Project);
         var e2e = DashboardKpiTiles.Defaults.Single();
         (e2e.Id, DashboardKpiTiles.DisplayTitle(e2e), e2e.Dimension, e2e.Metric).Should().Be(("tile.e2e", "Ende-til-ende-tester", KpiTileDimension.TestLevel, "EndToEnd"));
-        O.TileScenarios(project).Should().HaveCount(6, "4 ACs (ac-1 once although listed twice) + 2 standalone tests; the requirement and the story are not scenarios");
+        O.TileScenarios(project).Should().HaveCount(7, "source identity is scoped to its specification; same identity in another document is distinct, plus two standalone tests");
         O.TileCount(project, e2e).Should().Be(2, "the documented TEST-E tests; the acceptance scenarios state no level");
         O.TileDeclared(project, e2e).Should().Be(2, "declared by the document, not verified");
         var functional = new DashboardKpiTile("t2", "Funksjonelle", KpiTileDimension.ScenarioType, "Functional");
         var nonFunctional = new DashboardKpiTile("t3", null, KpiTileDimension.ScenarioType, "NonFunctional");
-        (O.TileCount(project, functional), O.TileCount(project, nonFunctional)).Should().Be((2, 2), "ac-1 + doc-e1; ac-2 + doc-e2 — each AC by its OWN type, US2 is never counted");
+        (O.TileCount(project, functional), O.TileCount(project, nonFunctional)).Should().Be((3, 2), "both source-scoped ac-1 records + doc-e1; ac-2 + doc-e2 — each AC by its OWN type");
         O.TileCount(project, new("t4", null, KpiTileDimension.ScenarioType, "Mixed")).Should().Be(1);
         O.TileCount(project, new("t5", null, KpiTileDimension.ScenarioType, "Unclassified")).Should().Be(1);
-        O.TileCount(project, new("t6", null, KpiTileDimension.TestLevel, "Unclassified")).Should().Be(4, "test level is independent of the type");
-        O.TileCount(project, functional with { Title = "Helt annet navn" }).Should().Be(2, "the title never changes the count");
+        O.TileCount(project, new("t6", null, KpiTileDimension.TestLevel, "Unclassified")).Should().Be(5, "test level is independent of the type and source identities are document-scoped");
+        O.TileCount(project, functional with { Title = "Helt annet navn" }).Should().Be(3, "the title never changes the count");
         O.TileCount(O.Of(TileOverview(), new O.Scope(O.Level.Module, "Frontend", null)), functional).Should().Be(1, "the scope changes the count, not the metric");
         O.TileCount(O.Of(TileOverview() with { ScenariosAvailable = false }, O.Scope.Project), e2e).Should().BeNull("unavailable is «—», never an invented 0");
         (O.TileFilter(e2e).TestLevel, O.TileFilter(e2e).ScenarioType, O.TileFilter(nonFunctional).ScenarioType, O.TileFilter(nonFunctional).TestLevel)

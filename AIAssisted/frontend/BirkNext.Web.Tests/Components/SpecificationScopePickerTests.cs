@@ -35,6 +35,7 @@ public sealed class SpecificationScopePickerTests : BunitContext
     {
         _state = state;
         _explorer.Setup(x => x.GetStateAsync(WorkspaceArtifactType.Specification, It.IsAny<CancellationToken>())).ReturnsAsync(() => _state);
+        _explorer.Setup(x => x.ClearSelectionAsync(It.IsAny<WorkspaceArtifactType>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _save.Setup(x => x.FlushAsync()).ReturnsAsync(true);
         Services.AddSingleton(_explorer.Object);
         Services.AddSingleton(_save.Object);
@@ -52,7 +53,7 @@ public sealed class SpecificationScopePickerTests : BunitContext
         var changed = 0;
         var cut = Open(State(ExplorerArtifactStatus.SelectionRequired), () => changed++);
         cut.Find("[data-testid=ssp-current]").GetAttribute("data-state").Should().Be("module");
-        cut.FindAll("[data-testid=ssp-module] option").Select(o => o.TextContent).Should().Equal("Velg modul …", "HendelseAdapter — 4 funksjoner", "SkoleService — 2 spesifikasjoner");
+        cut.FindAll("[data-testid=ssp-module] option").Select(o => o.TextContent).Should().Equal("Alle moduler", "HendelseAdapter — 4 funksjoner", "SkoleService — 2 spesifikasjoner");
         cut.FindAll("[data-testid=ssp-feature]").Should().BeEmpty("a feature list waits for the module");
 
         _state = State(ExplorerArtifactStatus.SelectionRequired, module: "HendelseAdapter", packRequired: true, packs: true);
@@ -63,7 +64,7 @@ public sealed class SpecificationScopePickerTests : BunitContext
         _save.Verify(x => x.SaveNowAsync(), Times.Never, "the auto-save already saves the change: no second full save");
         changed.Should().Be(1);
         cut.Find("[data-testid=ssp-current]").GetAttribute("data-state").Should().Be("feature");
-        cut.FindAll("[data-testid=ssp-feature] option").Select(o => o.TextContent).Should().Equal("Velg spesifikasjon …", "BiRK Hendelsesadapter (001-adapter)", "Translate HendelseAdapter (004-translate)");
+        cut.FindAll("[data-testid=ssp-feature] option").Select(o => o.TextContent).Should().Equal("Alle spesifikasjoner", "BiRK Hendelsesadapter (001-adapter)", "Translate HendelseAdapter (004-translate)");
     }
 
     [Fact]
@@ -78,7 +79,7 @@ public sealed class SpecificationScopePickerTests : BunitContext
         _explorer.Verify(x => x.SelectPackAsync("004-translate", "HendelseAdapter", It.IsAny<CancellationToken>()));
         cut.Find("[data-testid=ssp-current]").TextContent.Should().Contain("Translate HendelseAdapter").And.Contain("HendelseAdapter/specs/004-translate/spec.md");
         cut.Find("[data-testid=ssp-feature]").GetAttribute("value").Should().Be("004-translate");
-        cut.FindAll("[data-testid=ssp-specification]").Should().BeEmpty("one specification needs no third list");
+        cut.FindAll("[data-testid=ssp-specification] option").Select(o => o.TextContent).Should().Equal("Alle dokumenter", "Translate HendelseAdapter (HendelseAdapter/specs/004-translate/spec.md)");
         cut.Find("[data-testid=ssp-changed]").TextContent.Should().Contain("kom fra den forrige");
         cut.Find("[data-testid=ssp-discover]").GetAttribute("href").Should().Be("test-plan-suggestions?area=choose&discover=now", "Discover now runs it on arrival");
     }
@@ -110,7 +111,7 @@ public sealed class SpecificationScopePickerTests : BunitContext
         var other = Spec("d", "SkoleService/docs/avhengigheter.md", "Avhengigheter", "SkoleService");
         var cut = Open(State(ExplorerArtifactStatus.Loaded, [main, other], main, module: "SkoleService"));
 
-        cut.FindAll("[data-testid=ssp-specification] option").Select(o => o.TextContent).Should().HaveCount(2);
+        cut.FindAll("[data-testid=ssp-specification] option").Select(o => o.TextContent).Should().Contain("Alle spesifikasjoner").And.HaveCount(3);
         cut.Find("[data-testid=ssp-specification]").Change("d");
 
         _explorer.Verify(x => x.Select(WorkspaceArtifactType.Specification, "d", null));
@@ -125,6 +126,61 @@ public sealed class SpecificationScopePickerTests : BunitContext
         option.GetAttribute("value").Should().NotBeNullOrEmpty("an empty value would be the placeholder");
         cut.Find("[data-testid=ssp-module]").Change(option.GetAttribute("value"));
         _explorer.Verify(x => x.SelectModuleAsync(ArtifactModules.ProjectLevel, It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public void Selectors_keep_clear_options_after_a_value_is_selected()
+    {
+        var main = Spec("s", "SkoleService/specs/001-skoleservice/spec.md", "Feature Specification: SkoleService", "SkoleService");
+        var other = Spec("d", "SkoleService/docs/avhengigheter-bestilling.md", "Avhengigheter for SkoleService før go-live", "SkoleService");
+        var cut = Open(State(ExplorerArtifactStatus.Loaded, [main, other], main, module: "SkoleService"));
+
+        cut.Find("[data-testid=ssp-module]").GetAttribute("value").Should().Be("SkoleService");
+        cut.FindAll("[data-testid=ssp-module] option").First().TextContent.Should().Be("Alle moduler");
+        cut.FindAll("[data-testid=ssp-specification] option").First().TextContent.Should().Be("Alle spesifikasjoner");
+    }
+
+    [Fact]
+    public void Clearing_module_clears_specification_selection_and_returns_to_application_scope()
+    {
+        var main = Spec("s", "SkoleService/specs/001-skoleservice/spec.md", "Feature Specification: SkoleService", "SkoleService");
+        var cut = Open(State(ExplorerArtifactStatus.Loaded, [main], main, module: "SkoleService"));
+
+        cut.Find("[data-testid=ssp-module]").Change("(all-modules)");
+
+        _explorer.Verify(x => x.ClearSelectionAsync(WorkspaceArtifactType.Specification, null, null, false, It.IsAny<CancellationToken>()));
+        _explorer.Verify(x => x.SelectModuleAsync(null, It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public void Clearing_specification_preserves_module_and_clears_only_its_document_choice()
+    {
+        var main = Spec("s", "SkoleService/specs/001-skoleservice/spec.md", "Feature Specification: SkoleService", "SkoleService");
+        var other = Spec("d", "SkoleService/docs/avhengigheter-bestilling.md", "Avhengigheter for SkoleService før go-live", "SkoleService");
+        var cut = Open(State(ExplorerArtifactStatus.Loaded, [main, other], main, module: "SkoleService"));
+
+        cut.Find("[data-testid=ssp-specification]").Change("");
+
+        _explorer.Verify(x => x.ClearSelectionAsync(WorkspaceArtifactType.Specification, "SkoleService", null, true, It.IsAny<CancellationToken>()));
+        _explorer.Verify(x => x.SelectModuleAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void Clearing_feature_returns_to_module_scope()
+    {
+        var doc = Spec("h4", "HendelseAdapter/specs/004-translate/spec.md", "Translate HendelseAdapter", "HendelseAdapter");
+        var feature = Open(State(ExplorerArtifactStatus.Loaded, [doc], doc, module: "HendelseAdapter", pack: "004-translate", packs: true));
+        feature.Find("[data-testid=ssp-feature]").Change("");
+        _explorer.Verify(x => x.ClearSelectionAsync(WorkspaceArtifactType.Specification, "HendelseAdapter", null, false, It.IsAny<CancellationToken>()));
+        _explorer.Verify(x => x.SelectPackAsync(null, "HendelseAdapter", It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public void Clearing_document_preserves_its_specification_pack()
+    {
+        var docs = Open(State(ExplorerArtifactStatus.Loaded, [Main, Dependencies], Main, module: "SkoleService"));
+        docs.Find("[data-testid=ssp-specification]").Change("");
+        _explorer.Verify(x => x.ClearSelectionAsync(WorkspaceArtifactType.Specification, "SkoleService", null, true, It.IsAny<CancellationToken>()));
     }
 
     [Fact]
