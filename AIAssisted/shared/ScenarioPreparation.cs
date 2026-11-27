@@ -263,11 +263,28 @@ public static partial class ScenarioPreparationEngine
         return null;
     }
 
-    /// <summary>Where a scenario's decisions are stored: its specification (an AC) or its own test document (a standalone documented test).</summary>
+    /// <summary>The prefix of the per-source preparation documents (2026-11-27): a scenario of a source without a document of its own.</summary>
+    public const string SourceDocumentPrefix = "scenario-preparation/";
+
+    /// <summary>
+    /// Where a scenario's decisions are stored: its specification (an AC) or its own test document (a standalone documented test).
+    /// <para>2026-11-27, «Scenarioet har ingen kilde å lagre klargjøringen i»: before, every other scenario had NO document, so its readiness could
+    /// never be prepared — (1) an acceptance scenario without a user story whose specification is not under a «/specs/» folder (a root-level
+    /// <c>specs/…</c>, a pack's <c>docs/spec.md</c>), found only by that path substring; (2) every scenario of a source without documents (API
+    /// contract, UI, guide, integration journeys, existing/developer tests). Now (1) is found by its specification evidence, and (2) is stored in a
+    /// per-source document of the project (<see cref="SourceDocumentPrefix"/> + source). The earlier rules come first and are unchanged, so no
+    /// scenario's stored decisions move.</para>
+    /// </summary>
     public static string? DocumentKey(DiscoveredScenario s) =>
         s.Story?.SpecificationPath is { Length: > 0 } spec ? spec
         : s.CanonicalKey.StartsWith("testspec:", StringComparison.Ordinal) ? s.CanonicalKey["testspec:".Length..].Split('#')[0]
-        : s.Evidence.Select(e => e.Reference).FirstOrDefault(r => r.Contains("/specs/", StringComparison.OrdinalIgnoreCase))?.Split('#')[0];
+        : s.Evidence.Select(e => e.Reference).FirstOrDefault(r => r.Contains("/specs/", StringComparison.OrdinalIgnoreCase))?.Split('#')[0]
+        ?? s.Evidence.Where(e => e.Kind == "specification").Select(e => e.Reference.Split('#')[0]).FirstOrDefault(IsDocumentPath)
+        ?? (s.CapabilityId is { Length: > 0 } source ? SourceDocumentPrefix + source : null);
+
+    /// <summary>A file path (has a folder or an extension), not the bare fallback «specification» a reference carries when the file is unknown.</summary>
+    private static bool IsDocumentPath(string reference) => reference.Length is > 0 and <= 400 && !reference.Contains("..", StringComparison.Ordinal)
+        && (reference.Contains('/') || reference.Contains('\\') || reference.Contains('.'));
 
     // ── Facts from a discovered scenario and its cases (shared by every tab) ──
 

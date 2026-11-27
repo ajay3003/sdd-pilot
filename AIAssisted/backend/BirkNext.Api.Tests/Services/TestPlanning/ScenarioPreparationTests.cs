@@ -157,4 +157,26 @@ public sealed class ScenarioPreparationTests
         ScenarioPreparationEngine.Evaluate(ef, [], e2e.CandidateId, null).Criteria.Count(c => c.Applicability == CriterionApplicability.Required).Should().Be(2,
             "an E2E label proposes, it does not impose: only the two standard criteria are required until a tester decides");
     }
+
+    [Fact]
+    public void Every_scenario_has_a_document_to_store_its_preparation_in_and_existing_keys_do_not_move()
+    {
+        // 2026-11-27: «Scenarioet har ingen kilde å lagre klargjøringen i» — these had no document, so their readiness could never be prepared.
+        var rootSpec = new DiscoveredScenario { CandidateId = "r1", CapabilityId = "specification", CanonicalKey = "scenario:|AC1",
+            Evidence = [new("specification", "specs/001-x/spec.md#AC1")] };
+        ScenarioPreparationEngine.DocumentKey(rootSpec).Should().Be("specs/001-x/spec.md", "a root-level specs folder has no «/specs/»");
+        var packSpec = new DiscoveredScenario { CandidateId = "r2", CapabilityId = "specification", CanonicalKey = "scenario:M|AC2",
+            Evidence = [new("specification", "M/docs/spec.md#AC2")] };
+        ScenarioPreparationEngine.DocumentKey(packSpec).Should().Be("M/docs/spec.md");
+        var api = new DiscoveredScenario { CandidateId = "a1", CapabilityId = "api-contract", CanonicalKey = "api:GET /x", Evidence = [new("source-file", "src/Api.cs")] };
+        ScenarioPreparationEngine.DocumentKey(api).Should().Be(ScenarioPreparationEngine.SourceDocumentPrefix + "api-contract");
+        var unknownFile = new DiscoveredScenario { CandidateId = "u1", CapabilityId = "specification", CanonicalKey = "scenario:|AC3",
+            Evidence = [new("specification", "specification#AC3")] };
+        ScenarioPreparationEngine.DocumentKey(unknownFile).Should().Be(ScenarioPreparationEngine.SourceDocumentPrefix + "specification", "the bare fallback reference is not a file");
+
+        // The earlier rules come first, unchanged: a stored decision never moves to another document.
+        var legacy = new DiscoveredScenario { CandidateId = "l1", CapabilityId = "ui-source", CanonicalKey = "ui:x",
+            Evidence = [new("source-file", "M/specs/002-y/spec.md#AC1")] };
+        ScenarioPreparationEngine.DocumentKey(legacy).Should().Be("M/specs/002-y/spec.md");
+    }
 }
