@@ -798,4 +798,55 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
         (await Line("p1-approval").CountAsync()).Should().Be(0);
         Clean();
     }
+
+    // ================================================================================================ stale source version and invalid reference
+
+    [IsolatedBrowserFact]
+    public async Task STALE_01_new_source_version_flags_changed_and_removed_cases_and_a_stale_selection_never_widens()
+    {
+        _name = "STALE-01";
+        var v1 = F.CirrusV1;
+        await _s.ImportAsync(v1);
+        var seeded = await TestOverviewCaseSeeding.SeedAsync(host, _s.Page, v1);
+        var changed = seeded.Cases[F.CirrusCases.Single(c => c.Scenario.Token == "CIR-A-US1-S1")];
+        var removed = seeded.Cases[F.CirrusCases.Single(c => c.Scenario.Token == "CIR-A-US1-S2")];
+
+        // A saved selection of a document that the next version no longer has.
+        await _s.OpenOverviewAsync();
+        await _s.SelectModuleAsync(v1.ModuleKey("Core"));
+        await _s.SelectPackAsync("002-b");
+        (await _s.KpiAsync("metric.scenarios")).Should().Be(F.ScenarioProposals(v1, new F.Scope("Core", "002-b")));
+
+        await _s.ImportAsync(F.CirrusV2, asNewVersion: true);
+        await _s.OpenOverviewAsync();
+
+        // The stale reference: either the page says the specification is not in the source basis, or it shows exactly what the picker now says —
+        // never figures of a broader or different scope while 002-b is still shown as chosen.
+        var stillChosen = await _s.Page.GetByTestId("ssp-feature").CountAsync() > 0 && await _s.Page.GetByTestId("ssp-feature").InputValueAsync() == "002-b";
+        if (stillChosen) await Assertions.Expect(_s.Page.GetByTestId("mto-scope-invalid")).ToBeVisibleAsync();
+        else
+        {
+            var module = await _s.Page.GetByTestId("ssp-module").CountAsync() > 0 ? await _s.Page.GetByTestId("ssp-module").InputValueAsync() : "(all-modules)";
+            var pack = await _s.Page.GetByTestId("ssp-feature").CountAsync() > 0 ? await _s.Page.GetByTestId("ssp-feature").InputValueAsync() : "";
+            var scope = module == "(all-modules)" ? new F.Scope() : new F.Scope("Core", pack.Length > 0 ? pack : null);
+            (await _s.KpiAsync("metric.scenarios")).Should().Be(F.ScenarioProposals(F.CirrusV2, scope), $"the figures are the picker's scope ({module}/{pack}) in the new version");
+        }
+
+        // The source changes, each opening exactly its case.
+        await _s.SelectModuleAsync(null);
+        await ExpectSourceRowAsync("changed", changed);
+        await _s.OpenOverviewAsync();
+        await ExpectSourceRowAsync("removed", removed);
+        Clean();
+    }
+
+    private async Task ExpectSourceRowAsync(string key, (Guid PlanId, string CaseId) expected)
+    {
+        var row = Row("chart.sourceChanges", key);
+        await Assertions.Expect(row).ToBeVisibleAsync(new() { Timeout = 60000 });
+        (await row.InnerTextAsync()).Should().Contain("1");
+        await row.ClickAsync();
+        var result = await _s.ReadPlanSelectionAsync();
+        result.Cases.Should().BeEquivalentTo(new[] { expected }, $"«{key}» opens exactly its case");
+    }
 }

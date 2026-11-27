@@ -33,7 +33,7 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
     // ------------------------------------------------------------------ import (the supported user path)
 
     /// <summary>Imports <paramref name="app"/> through Project Import as a new application and makes it current (confirmed after a reload).</summary>
-    public async Task ImportAsync(F.Application app)
+    public async Task ImportAsync(F.Application app, bool asNewVersion = false)
     {
         await page.GotoAsync($"{host.WebUrl}/project-import?import=source", new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 120000 });
         var form = page.GetByTestId("pi-choose");
@@ -50,14 +50,27 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
         await detect.WaitForAsync(new() { Timeout = 60000 });
         if (!await detect.IsCheckedAsync() && await page.Locator("[data-testid=pi-zip-role]:checked").CountAsync() == 0) await detect.CheckAsync();
         var target = page.GetByTestId("pi-target-project");
-        if (await target.CountAsync() > 0) await target.SelectOptionAsync("new");
+        if (await target.CountAsync() > 0)
+        {
+            if (asNewVersion) await SelectByTextAsync(target, app.Name);
+            else await target.SelectOptionAsync("new");
+        }
         var chooser = page.GetByTestId("pi-choose-file");
         await chooser.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 60000 });
         await chooser.SetInputFilesAsync(new FilePayload { Name = $"{app.Name}.zip", MimeType = "application/zip", Buffer = F.Archive(app) });
         await page.GetByTestId("pi-preview").WaitForAsync(new() { Timeout = 120000 });
         var again = page.GetByTestId("pi-duplicate-import-again");
         if (await again.CountAsync() > 0) await again.ClickAsync();
-        if (await page.GetByTestId("pi-app-new").CountAsync() > 0)
+        if (asNewVersion && await page.GetByTestId("pi-app-version").CountAsync() > 0)
+        {
+            // «Ny versjon av eksisterende applikasjon», the application by name, and «Bruk denne versjonen som gjeldende kildegrunnlag».
+            await page.GetByTestId("pi-app-version").CheckAsync();
+            await SelectByTextAsync(page.GetByTestId("pi-app-select"), app.Name);
+            var current = page.GetByTestId("pi-app-current");
+            if (!await current.IsCheckedAsync()) await current.CheckAsync();
+            await Assertions.Expect(page.GetByTestId("pi-app-chosen")).ToContainTextAsync("ny versjon", new() { Timeout = 30000 });
+        }
+        else if (await page.GetByTestId("pi-app-new").CountAsync() > 0)
         {
             await page.GetByTestId("pi-app-new").CheckAsync();
             await page.GetByTestId("pi-app-chosen").WaitForAsync(new() { Timeout = 30000 });

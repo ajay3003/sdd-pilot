@@ -49,7 +49,9 @@ public static class TestOverviewFixture
     /// <summary>Oracle identity of one acceptance scenario.</summary>
     public readonly record struct Key(string SpecPath, string Token);
 
-    private static Scenario S(string token, string given, string requirement, string? then = null) =>
+    private static Scenario S(string token, string given, string requirement) => S(token, given, requirement, then: null);
+
+    private static Scenario S(string token, string given, string requirement, string? then) =>
         new(token, given, $"the tester runs check {token}", then ?? $"the result of {token} is recorded ({requirement})", [requirement]);
 
     private static Spec Feature(string app, string module, string pack, string title, IReadOnlyList<Story> stories, params string[] requirements) =>
@@ -199,7 +201,34 @@ public static class TestOverviewFixture
         new(PlanB, new("Booking/specs/001-reservations/spec.md", "AUR-BKG1-US2-S1"), CaseState.ApprovedReady),
     ];
 
-    public static IReadOnlyList<CaseFixture> CasesOf(Application app) => app == Aurora ? AuroraCases : [];
+    /// <summary>
+    /// Application C (stale source, S13/S14), used by one journey only: v1 has Core/001-a (two P1 scenarios, both with a case) and Core/002-b; v2 —
+    /// imported as a NEW VERSION and made current — changes the expected result of S1 (same Given/When: same scenario, changed source), removes S2
+    /// and removes 002-b entirely (a saved selection of it is then a stale reference).
+    /// </summary>
+    public static Application CirrusV1 { get; } = new("Cirrus", Wrapped: true,
+    [
+        Feature("Cirrus", "Core", "001-a", "Accounts",
+            [new("US1", "Open an account", "P1", [S("CIR-A-US1-S1", "a new customer", "FR-001"), S("CIR-A-US1-S2", "a returning customer", "FR-001")])], "FR-001"),
+        Feature("Cirrus", "Core", "002-b", "Statements",
+            [new("US1", "Read a statement", "P2", [S("CIR-B-US1-S1", "a monthly statement", "FR-001")])], "FR-001"),
+    ]);
+
+    public static Application CirrusV2 { get; } = new("Cirrus", Wrapped: true,
+    [
+        Feature("Cirrus", "Core", "001-a", "Accounts",
+            [new("US1", "Open an account", "P1", [S("CIR-A-US1-S1", "a new customer", "FR-001", then: "the account is opened and a welcome letter is sent (FR-001)")])], "FR-001"),
+    ]);
+
+    public const string PlanC = "Fixture C – kildeendring";
+
+    public static IReadOnlyList<CaseFixture> CirrusCases { get; } =
+    [
+        new(PlanC, new("Core/specs/001-a/spec.md", "CIR-A-US1-S1"), CaseState.Approved),
+        new(PlanC, new("Core/specs/001-a/spec.md", "CIR-A-US1-S2"), CaseState.Awaiting),
+    ];
+
+    public static IReadOnlyList<CaseFixture> CasesOf(Application app) => app == Aurora ? AuroraCases : app == CirrusV1 ? CirrusCases : [];
 
     public static IReadOnlyList<CaseFixture> CasesIn(Application app, Scope scope)
     {
