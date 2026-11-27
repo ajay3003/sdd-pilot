@@ -52,10 +52,21 @@ public sealed partial class TestPlanSuggestionService
         }
     }
 
-    /// <summary>The application's current discovery for a plan (a later import of the same application included); never a historical inspection.</summary>
+    /// <summary>The application's current discovery for a plan (a later import of the same application included); never a historical inspection.
+    /// V10 (2026-11-27): the current discovery of the plan's OWN selection (module + specification of the discovery it was made from) when one is
+    /// known. Before, the newest discovery of any selection was taken: a plan of one module, opened after the tester looked at another selection,
+    /// had its cases marked «Changed», approval refused as «source changed», and that selection's scenarios counted as «not in the plan».</summary>
     private ScenarioDiscoveryResult? CurrentFor(TestPlanDraft plan)
     {
         if (discoveries is null || plan.ProjectKey is not { } key) return null;
+        var scope = plan.DiscoveryId is { } made ? discoveries.Find(key, made)?.SelectionScope : null;
+        if (scope is not null)
+        {
+            var mine = discoveries.LatestForScope(key, scope);
+            var app = (plan.ApplicationKey ?? mine?.Basis?.ApplicationKey) is { } appKey ? discoveries.CurrentForApplication(appKey) : null;
+            if (app is not null && app.SelectionScope == scope && (mine is null || app.DiscoveredAt >= mine.DiscoveredAt)) return app;
+            if (mine is not null) return mine;
+        }
         var own = discoveries.Latest(key);
         var application = plan.ApplicationKey ?? own?.Basis?.ApplicationKey;
         var shared = application is null ? null : discoveries.CurrentForApplication(application);

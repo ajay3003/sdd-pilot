@@ -807,6 +807,28 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task V10_a_plan_is_compared_with_its_own_selections_current_discovery_not_the_newest_discovery_of_another_selection()
+    {
+        // Found by the V10 browser run (2026-11-27): a case prepared minutes earlier was «Changed» and approval refused («source-changed») because a
+        // newer discovery of ANOTHER selection (the whole module) held the same scenario with its own fingerprint, and «not in plan» counted that
+        // selection's scenarios. Same source version, nothing changed.
+        await using var db = Context();
+        var x = Services(db);
+        _discoveries.Store(Selected("d-own", DateTimeOffset.UtcNow.AddMinutes(-10), SkoleSpec, InSpec("s1", SkoleSpec, "US2", "f1"), InSpec("s2", SkoleSpec, "US2", "f2")));
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:m", DiscoveryId = "d-own", CandidateIds = ["s1"], PlanName = "Egen", CreationRequestId = "own-1" }, "t", default);
+        _discoveries.Store(Selected("d-broad", DateTimeOffset.UtcNow, "module:Skole", InSpec("s1", SkoleSpec, "US2", "f1-broad"), InSpec("s2", SkoleSpec, "US2", "f2"),
+            InSpec("o1", FrontendSpec, "US9", "g1"), InSpec("o2", FrontendSpec, "US9", "g2")));
+
+        var opened = await x.Plans.DraftAsync(plan.Id, default);
+        opened.Cases.Single().SourceState.Should().Be(CaseSourceState.Current, "compared with its own selection's discovery");
+        var status = (await x.Plans.ProjectWorkspaceAsync("import:m", null, true, default)).PlanStatus![plan.Id];
+        status.Changed.Should().Be(0);
+        status.NewScenarios.Should().Be(1, "only s2 of its own selection is not in the plan");
+        await x.Plans.ReviewAsync(plan.Id, new ReviewTestCaseRequest(opened.Revision, "s1", TestCaseReviewState.Accepted, null), "t", default);
+        (await x.Plans.DraftAsync(plan.Id, default)).Cases.Single().Review.Should().Be(TestCaseReviewState.Accepted, "approval is not refused as «source changed»");
+    }
+
+    [Fact]
     public void FUN011_an_existing_plan_whose_case_sits_in_another_suite_shows_the_scenario_in_its_planned_suite()
     {
         // Plans written before the fix: the planned item says «Komponent», the case says «Module …». Membership is the planned item's.
