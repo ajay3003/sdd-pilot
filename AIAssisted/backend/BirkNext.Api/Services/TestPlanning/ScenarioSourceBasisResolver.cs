@@ -17,7 +17,8 @@ namespace BirkNext.Api.Services.TestPlanning;
 /// sources of the basis (contracts, specifications …). A deliberate look at another version (<c>inspect</c>) is a Historical basis that never becomes
 /// the project's current one. The specification comes from the import that produced the resolved snapshot (server-held), not from the browser.
 /// </summary>
-public sealed class ScenarioSourceBasisResolver(SourceBaselineService baselines, IqrSourceStore store, SpecificationCatalogService? catalogs = null)
+public sealed class ScenarioSourceBasisResolver(SourceBaselineService baselines, IqrSourceStore store, SpecificationCatalogService? catalogs = null,
+    SpecificationProcessingRouter? router = null)
 {
     public const string Inspected = "INSPECTED";
     private IReadOnlyList<IqrSourceSnapshot>? _identities;
@@ -95,6 +96,19 @@ public sealed class ScenarioSourceBasisResolver(SourceBaselineService baselines,
         foreach (var id in resolvedIds)
             if (await store.FindSourceAnalysisAsync(id, ct) is { } snapshot) full.Add(snapshot);
 
+        // The application's configured specification format (2026-11-27): the one authoritative selection. Spec Kit (the default) leaves every
+        // branch below exactly as before; OpenSpec refuses the browser's Spec Kit reading (working draft or unverified copy) — never a silent fallback.
+        var configured = BirkNext.Specifications.SpecificationFormat.SpecKit;
+        if (router is not null)
+        {
+            try { configured = router.FormatFor(primaryKey ?? projectKey); }
+            catch (InvalidOperationException e) { throw new TestPlanException(503, "specification-format-unreadable", e.Message); }
+        }
+        var openSpecConfigured = configured == BirkNext.Specifications.SpecificationFormat.OpenSpec;
+        if (openSpecConfigured && useWorkingSpecification && browser is not null)
+            throw new TestPlanException(400, "openspec-working-draft-unsupported",
+                "Applikasjonen bruker OpenSpec. Arbeidsutkast i nettleseren tolkes med Spec Kit-parseren og kan ikke brukes; importer kilden på nytt for å lese endringer.");
+
         // The specification: the imported one that belongs to the resolved source (same import), else the project's own imported specification.
         var specifications = new List<CoverageWorkspaceEvidence>();
         var origin = SpecificationOrigin.None;
@@ -132,10 +146,22 @@ public sealed class ScenarioSourceBasisResolver(SourceBaselineService baselines,
                     Clarifications = MergeClarifications(e.Evidence.Clarifications, browser?.Clarifications),
                 });
             specFingerprint = E.Sha(string.Join("\n", specifications.Select(SpecificationEvidenceBuilder.SemanticFingerprint)));
-            if (browser is { AcceptanceScenarios.Count: > 0 } && selected.Count == 1
+            var heldOpenSpec = BirkNext.Specifications.SpecificationFormatMarker.IsOpenSpec(held.Catalog.Fingerprint);
+            if (heldOpenSpec)
+            {
+                // The browser's copy is a Spec Kit reading of an OpenSpec file: comparing it would always "differ". Say what was read instead.
+                limitations.Add($"Kildeformat OpenSpec: scenarioene er lest av OpenSpec-ruten fra den importerte kildeversjonen (katalogrevisjon {held.Catalog.Revision}). Aktive endringsforslag og arkiv er ikke med i gjeldende scenarioer.");
+                if (browser?.SpecificationArtifacts.FirstOrDefault()?.Path is { } chosenPath && selected.Count == 0)
+                    limitations.Add($"Valgt dokument ({chosenPath}) er ikke en gjeldende OpenSpec-spesifikasjon (f.eks. et forslag eller arkiv); alle gjeldende spesifikasjoner er brukt.");
+            }
+            else if (openSpecConfigured)
+                limitations.Add($"Applikasjonen er satt til OpenSpec, men gjeldende kildegrunnlag ble behandlet som Spec Kit (katalogrevisjon {held.Catalog.Revision}). Formatvalget gjelder fremtidige importer; importer kilden på nytt for OpenSpec-behandling.");
+            else if (browser is { AcceptanceScenarios.Count: > 0 } && selected.Count == 1
                 && SpecificationEvidenceBuilder.SemanticFingerprint(browser) != SpecificationEvidenceBuilder.SemanticFingerprint(selected[0].Evidence))
                 limitations.Add("Spesifikasjonen i nettleseren er en annen versjon enn den importerte. Den importerte spesifikasjonen er brukt; velg \"Bruk arbeidsutkast\" for å lese nettleserens tekst som utkast.");
         }
+        else if (openSpecConfigured && browser is { } refused && (refused.SpecificationAvailable || refused.AcceptanceScenarios.Count > 0 || refused.Requirements.Count > 0))
+            limitations.Add("Applikasjonen bruker OpenSpec, men ingen OpenSpec-behandlet spesifikasjon er importert for denne kildeversjonen. Nettleserens Spec Kit-tolkning brukes ikke som reserve; importer kilden på nytt.");
         else if (browser is { } unverified && (unverified.SpecificationAvailable || unverified.AcceptanceScenarios.Count > 0 || unverified.Requirements.Count > 0))
         {
             origin = SpecificationOrigin.BrowserUnverified;

@@ -593,6 +593,11 @@ else if (_settings is not null)
                 @* 2026-11-27: read-only audits, started only by the user (nothing runs when the section opens). *@
                 <BirkNext.Web.Components.DataQuality.DataQualityCenter />
             }
+            @if (_activeSection == "specification-format")
+            {
+                @* 2026-11-27: per-application specification format (Spec Kit default / OpenSpec); affects future imports only. *@
+                <BirkNext.Web.Components.Admin.SpecificationFormatSettingsCard />
+            }
             @if (_activeSection == "ai")
             {
                 <div class="settings-card settings-card-full-width">

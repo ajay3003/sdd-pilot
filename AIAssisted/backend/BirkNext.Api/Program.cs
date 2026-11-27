@@ -582,7 +582,9 @@ builder.Services.AddSingleton<BirkNext.Api.Services.DataQuality.DataQualityRunCo
 builder.Services.AddScoped<BirkNext.Api.Services.DataQuality.DataQualitySnapshotReader>();
 builder.Services.AddScoped(sp => new BirkNext.Api.Services.DataQuality.DataQualityEngine(
     sp.GetRequiredService<BirkNext.Api.Services.DataQuality.DataQualitySnapshotReader>(),
-    (project, ct) => sp.GetRequiredService<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>().OverviewAsync(project, ct)));
+    (project, ct) => sp.GetRequiredService<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>().OverviewAsync(project, ct),
+    // OpenSpec catalogs are reconciled by the OpenSpec route's own reference rules (2026-11-27); Spec Kit catalogs run as before.
+    async (project, ct) => await sp.GetRequiredService<BirkNext.Api.Services.Specifications.OpenSpec.OpenSpecStatusService>().ReconcileAsync(project, ct)));
 // Safe fuzzing: same public-client shape as the review engine (no cookies, no redirects, bodies decoded by ResponseBodyReader).
 builder.Services.AddHttpClient<BirkNext.Api.Services.ApiQuality.Fuzzing.IApiFuzzingService, BirkNext.Api.Services.ApiQuality.Fuzzing.ApiFuzzingService>(client =>
 {
@@ -891,6 +893,14 @@ builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.DeclaredInt
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.JourneyRequirementLinkStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.TechnicalHistory.TechnicalHistoryService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Specifications.SpecificationCatalogService>();
+// Specification format routing (2026-11-27): one authoritative per-application format (default Spec Kit) and one router; OpenSpec is a separate route.
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.Specifications.SpecificationFormatSettingsStore(
+    BirkNext.Api.Services.Specifications.SpecificationFormatSettingsStore.DefaultDirectory(sp.GetRequiredService<IHostEnvironment>())));
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.Specifications.OpenSpec.OpenSpecSourceModelStore(
+    BirkNext.Api.Services.Specifications.OpenSpec.OpenSpecSourceModelStore.DefaultDirectory(sp.GetRequiredService<IHostEnvironment>())));
+builder.Services.AddScoped<BirkNext.Api.Services.Specifications.OpenSpecProcessingRoute>();
+builder.Services.AddScoped<BirkNext.Api.Services.Specifications.SpecificationProcessingRouter>();
+builder.Services.AddScoped<BirkNext.Api.Services.Specifications.OpenSpec.OpenSpecStatusService>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyLegacyImport>();
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyMigrationReports>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunner(

@@ -46,7 +46,24 @@ public sealed class AdoTestPlanTransferService(AppDbContext db, AdoTestPlanExpor
         return db.AdoTestCaseLinks.Where(l => l.ProjectKey == key && l.Organization == d.Organization && l.AdoProject == d.Project && keys.Contains(l.CaseKey)).ToListAsync(ct);
     }
 
-    public async Task<AdoTransferPreview> PreviewAsync(AdoTransferRequest request, CancellationToken ct) => (await BuildAsync(request, ct)).Preview;
+    public async Task<AdoTransferPreview> PreviewAsync(AdoTransferRequest request, CancellationToken ct)
+    {
+        var preview = (await BuildAsync(request, ct)).Preview;
+        // OpenSpec (2026-11-27): preview only during the initial verification — the transfer is blocked, and the preview says so.
+        return await OpenSpecProjectAsync(request.ProjectKey, ct)
+            ? preview with { CanTransfer = false, Issues = [new AdoExportIssue(AdoIssueLevel.Blocking, OpenSpecPreviewOnly), .. preview.Issues] }
+            : preview;
+    }
+
+    public const string OpenSpecPreviewOnly = "Prosjektets spesifikasjon er behandlet som OpenSpec. Overføring til Azure DevOps er sperret under første verifisering av OpenSpec; bare forhåndsvisning og fileksport er tilgjengelig.";
+
+    /// <summary>True when the project's current specification catalog was produced by the OpenSpec route (its immutable marker).</summary>
+    private async Task<bool> OpenSpecProjectAsync(string projectKey, CancellationToken ct)
+    {
+        var key = TestScenarioDiscoveryService.Key(projectKey);
+        var fingerprint = await db.SpecificationCatalogs.AsNoTracking().Where(c => c.ProjectKey == key).OrderByDescending(c => c.Revision).Select(c => c.Fingerprint).FirstOrDefaultAsync(ct);
+        return BirkNext.Specifications.SpecificationFormatMarker.IsOpenSpec(fingerprint);
+    }
 
     private sealed record Built(AdoTransferPreview Preview, TestPlanDraft Plan, AdoExportPreview Export, List<AdoTestCaseLinkRecord> Links, HashSet<int> InSuite);
 
@@ -171,6 +188,12 @@ public sealed class AdoTestPlanTransferService(AppDbContext db, AdoTestPlanExpor
         if (!request.LeadApprovalDeclared)
             throw new TestPlanException(400, "lead-approval-required", "Godkjenning fra testleder kreves: bekreft at testleder har godkjent denne overføringen.");
         var lockKey = $"{TestScenarioDiscoveryService.Key(request.ProjectKey)}|{request.Destination?.Organization}|{request.Destination?.Project}";
+        if (await OpenSpecProjectAsync(request.ProjectKey, ct))
+        {
+            // No external write for an OpenSpec project (refusal recorded in the history like any other refusal before sending).
+            await RecordRefusalAsync(request, actor, Now, OpenSpecPreviewOnly, ct);
+            throw new TestPlanException(409, "openspec-preview-only", OpenSpecPreviewOnly);
+        }
         if (!Running.TryAdd(lockKey, 0)) throw new TestPlanException(409, "transfer-running", "En overføring til dette prosjektet pågår allerede. Vent til den er ferdig.");
         var started = Now;
         try { return await RunAsync(request, actor, started, ct); }

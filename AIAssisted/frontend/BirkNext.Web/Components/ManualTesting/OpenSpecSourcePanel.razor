@@ -1,0 +1,160 @@
+@using BirkNext.Specifications
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* Testoversikt (2026-11-27): the OpenSpec source status of the project — shown ONLY when the project's specification was processed as OpenSpec, the
+   application is configured as OpenSpec, or the OpenSpec route reported a problem. A Spec Kit project renders nothing here (Testoversikt unchanged).
+   Current baseline figures are the ones the dashboard counts; active proposals and archived changes are separate categories and never part of
+   coverage or readiness. Technical details (diagnostics, delta operations, source changes) are folded away. *@
+@if (_status is { } s && Relevant(s))
+{
+    <section class="mto-card osp" aria-labelledby="osp-title" data-testid="osp">
+        <div class="osp-head">
+            <h2 id="osp-title" class="osp-title">Kildegrunnlag</h2>
+            <span class="osp-pill @(s.CatalogFormat == SpecificationFormat.OpenSpec ? "is-openspec" : null)" data-testid="osp-format">Spesifikasjonsformat: @SpecificationFormatMarker.Label(s.CatalogFormat)</span>
+            @if (s.CatalogRevision is { } rev) { <span class="osp-muted" data-testid="osp-revision">gjeldende spesifikasjoner · katalogrevisjon @rev</span> }
+        </div>
+        @if (s.RouteProblem is { } problem) { <p class="osp-warn" role="alert" data-testid="osp-problem">@problem</p> }
+        @foreach (var note in s.Notes) { <p class="osp-warn" data-testid="osp-note">@note</p> }
+
+        @if (s.ModelAvailable)
+        {
+            <dl class="osp-tiles" data-testid="osp-tiles">
+                <div class="osp-tile"><dt>Gjeldende krav</dt><dd data-testid="osp-requirements">@s.CurrentRequirements</dd></div>
+                <div class="osp-tile"><dt>Gjeldende scenarioer</dt><dd data-testid="osp-scenarios">@s.CurrentScenarios</dd></div>
+                <div class="osp-tile"><dt>Krav uten scenario</dt><dd>@s.CurrentRequirementsWithoutScenarios</dd></div>
+                <div class="osp-tile osp-tile-proposed"><dt>Foreslåtte endringer <span class="osp-muted">(ikke i dekning)</span></dt><dd data-testid="osp-proposals">@s.ActiveChanges.Count</dd></div>
+                <div class="osp-tile"><dt>Arkiverte endringer <span class="osp-muted">(historikk)</span></dt><dd data-testid="osp-archived">@s.ArchivedChanges.Count</dd></div>
+            </dl>
+            @if (Errors(s) + Warnings(s) > 0)
+            {
+                <p class="osp-warn" data-testid="osp-diagnostics-summary">@Errors(s) feil og @Warnings(s) advarsler i kilden (ikke tolket innhold er listet under «Tekniske detaljer»). Se også Datakvalitet i Systeminnstillinger.</p>
+            }
+            @if (s.SchemaState == "Unknown") { <p class="osp-warn" data-testid="osp-schema">Egendefinert OpenSpec-skjema «@s.SchemaName»: strukturen er tolket etter standardformatet og er ikke verifisert.</p> }
+
+            @if (s.ActiveChanges.Count > 0)
+            {
+                <details class="osp-fold" data-testid="osp-changes">
+                    <summary>Foreslåtte endringer (@s.ActiveChanges.Count) — vises bare her, påvirker ikke gjeldende scenarioer</summary>
+                    <ul class="osp-list">
+                        @foreach (var c in s.ActiveChanges)
+                        {
+                            <li data-testid="osp-change" data-change="@c.ChangeId">
+                                <strong>@(c.Title ?? c.ChangeId)</strong> <span class="osp-muted">@c.ChangeId</span>
+                                <ul class="osp-deltas">
+                                    @foreach (var d in c.Deltas)
+                                    {
+                                        <li><span class="osp-op osp-op-@d.Operation.ToString().ToLowerInvariant()">@Op(d.Operation)</span> @d.RequirementName@(d.RenamedTo is { } to ? $" → {to}" : "") <span class="osp-muted">(@d.Capability)</span>
+                                            @if (Resolution(d.Resolution) is { } r) { <span class="osp-flag" data-testid="osp-resolution">@r</span> }</li>
+                                    }
+                                </ul>
+                            </li>
+                        }
+                    </ul>
+                </details>
+            }
+            <details class="osp-fold" data-testid="osp-source-changes" @ontoggle="LoadChangesAsync">
+                <summary>Kildeendringer (OpenSpec)</summary>
+                @if (_changesError is not null) { <p class="osp-warn" role="alert">@_changesError</p> }
+                @if (_changes is { } ch)
+                {
+                    @foreach (var n in ch.Notes) { <p class="osp-muted">@n</p> }
+                    <h3 class="osp-subtitle">Endringer i gjeldende grunnlag@(ch.PreviousRevision is { } p ? $" (revisjon {p} → {ch.CurrentRevision})" : "")</h3>
+                    @ChangeList(ch.BaselineChanges, "Ingen endringer i gjeldende grunnlag.")
+                    <h3 class="osp-subtitle">Mulig påvirkning av aktive forslag (ikke vedtatt)</h3>
+                    @ChangeList(ch.ProposedImpact, "Ingen aktive forslag.")
+                }
+                else if (_changesError is null) { <p class="osp-muted">Leser kildeendringer …</p> }
+            </details>
+            <details class="osp-fold" data-testid="osp-technical">
+                <summary>Tekniske detaljer</summary>
+                <ul class="osp-list">
+                    @foreach (var c in s.Capabilities) { <li><code>@c.Capability</code> — @c.Requirements krav, @c.Scenarios scenarioer <span class="osp-muted">@c.Path</span></li> }
+                </ul>
+                @if (s.Diagnostics.Count > 0)
+                {
+                    <ul class="osp-list osp-diags">
+                        @foreach (var d in s.Diagnostics.Take(200))
+                        {
+                            <li data-severity="@d.Severity"><span class="osp-flag">@d.Severity</span> <code>@d.Code</code> @d.Message <span class="osp-muted">@d.Path@(d.Line is { } l ? $":{l}" : "")</span></li>
+                        }
+                    </ul>
+                }
+                <p class="osp-muted">Krav- og scenarionøkler som begynner med «os:» er laget av BirkNext fra capability og navn; de er ikke ID-er fra kilden.</p>
+            </details>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public string? ProjectKey { get; set; }
+
+    private ISpecificationFormatApiService? Api => Services.GetService<ISpecificationFormatApiService>();
+    private OpenSpecSourceStatus? _status;
+    private OpenSpecSourceChangeReport? _changes;
+    private string? _changesError, _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ProjectKey is not { Length: > 0 } key || key == _loadedFor || Api is not { } api) return;
+        _loadedFor = key; _changes = null; _changesError = null;
+        // A failure to read the status hides the panel (the dashboard itself is unaffected); nothing is shown as a format it is not.
+        _status = (await api.OpenSpecStatusAsync(key)).Status;
+    }
+
+    private static bool Relevant(OpenSpecSourceStatus s) => s.CatalogFormat == SpecificationFormat.OpenSpec || s.ConfiguredFormat == SpecificationFormat.OpenSpec || s.RouteProblem is not null;
+
+    private async Task LoadChangesAsync()
+    {
+        if (_changes is not null || ProjectKey is not { } key || Api is not { } api) return;
+        (_changes, _changesError) = await api.OpenSpecSourceChangesAsync(key);
+    }
+
+    private static int Errors(OpenSpecSourceStatus s) => s.Diagnostics.Count(d => d.Severity == OpenSpecDiagnosticSeverity.Error);
+    private static int Warnings(OpenSpecSourceStatus s) => s.Diagnostics.Count(d => d.Severity == OpenSpecDiagnosticSeverity.Warning);
+
+    private static string Op(OpenSpecDeltaOperation op) => op switch
+    {
+        OpenSpecDeltaOperation.Added => "Nytt",
+        OpenSpecDeltaOperation.Modified => "Endret",
+        OpenSpecDeltaOperation.Removed => "Fjernet",
+        _ => "Nytt navn",
+    };
+
+    private static string? Resolution(string r) => r switch
+    {
+        "Conflict" => "Konflikt med annen aktiv endring",
+        "Unresolved" => "Finner ikke kravet i gjeldende grunnlag",
+        "TargetExists" => "Kravet finnes allerede",
+        _ => null,
+    };
+
+    private static string Kind(OpenSpecChangeKind k) => k switch
+    {
+        OpenSpecChangeKind.NewRequirement => "Nytt krav",
+        OpenSpecChangeKind.ModifiedRequirement => "Endret krav",
+        OpenSpecChangeKind.RemovedRequirement => "Fjernet krav",
+        OpenSpecChangeKind.RenamedRequirement => "Nytt navn på krav",
+        OpenSpecChangeKind.NewScenario => "Nytt scenario",
+        OpenSpecChangeKind.ModifiedScenario => "Endret scenario",
+        _ => "Fjernet scenario",
+    };
+
+    private RenderFragment ChangeList(List<OpenSpecSourceChange> list, string empty) => __builder =>
+    {
+        if (list.Count == 0) { <p class="osp-muted">@empty</p> return; }
+        <ul class="osp-list" data-testid="osp-change-list">
+            @foreach (var c in list)
+            {
+                <li data-kind="@c.Kind" data-prospective="@(c.Prospective ? "true" : "false")"><strong>@Kind(c.Kind)</strong> @c.Name <span class="osp-muted">@c.Evidence</span>
+                    @if (c.AffectedCases.Count > 0)
+                    {
+                        <ul class="osp-deltas">
+                            @foreach (var a in c.AffectedCases) { <li>Bør vurderes: «@a.Title» i @a.PlanName <span class="osp-muted">(@a.Evidence)</span></li> }
+                        </ul>
+                    }
+                </li>
+            }
+        </ul>
+    };
+}

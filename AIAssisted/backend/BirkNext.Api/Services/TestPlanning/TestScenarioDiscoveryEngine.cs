@@ -218,7 +218,10 @@ public static class TestScenarioDiscoveryEngine
                 CanonicalKey = $"scenario:{module}|{s.Id}", Engine = "Specification parser (acceptance scenarios)",
                 // Positional ids ("scenario-3") change when a scenario is inserted or removed; across imports a scenario is the same scenario when its
                 // file, starting situation and action are the same (a changed expected result keeps it; a removed one is gone, never "renamed").
-                SourceIdentity = SourceIdentityOf(Specification, $"situation:{SpecFile(file)}|{Situation(s.Given)}|{Situation(s.When)}"),
+                // A format route with its own named, stable scenario identity (OpenSpec, 2026-11-27) supplies it; Spec Kit evidence never does
+                // (SourceIdentityKey is null), so its identity rule below is unchanged.
+                SourceIdentity = s.SourceIdentityKey is { Length: > 0 } routed ? SourceIdentityOf(Specification, routed)
+                    : SourceIdentityOf(Specification, $"situation:{SpecFile(file)}|{Situation(s.Given)}|{Situation(s.When)}"),
                 OpenQuestions = [.. when is null ? new[] { "The scenario states no action (When): add the steps." } : [], .. then is null ? new[] { "The scenario states no outcome (Then): clarify the expected result." } : []],
             }, projectKey) with { Story = story, NumberInStory = story is null ? null : s.NumberInStory });
             list[^1] = WithClarifications(list[^1], workspace.Clarifications, [.. s.RequirementIds, s.Id, .. story?.StoryId is { } sid ? new[] { sid } : []],
@@ -235,6 +238,8 @@ public static class TestScenarioDiscoveryEngine
                 ExpectedBehaviour = statement, ExpectedBasis = statement is null ? null : $"Requirement {r.Id} statement",
                 RequirementIds = [r.Id], Evidence = [new("requirement", $"{file ?? "specification"}#{r.Id}", Clip(statement, 200))],
                 CanonicalKey = $"requirement:{module}|{r.Id}", Engine = "Specification parser (requirements)",
+                // Null for Spec Kit (Finish derives it from the canonical key, as before); a format route's own stable key otherwise.
+                SourceIdentity = r.SourceIdentityKey is { Length: > 0 } routedRequirement ? SourceIdentityOf(Specification, routedRequirement) : "",
                 OpenQuestions = ["No acceptance scenario describes how to exercise this requirement: add the steps."],
             }, projectKey));
             list[^1] = WithClarifications(list[^1], workspace.Clarifications, [r.Id], [r.Text]);

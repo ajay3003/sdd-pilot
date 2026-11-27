@@ -50,6 +50,8 @@
                and the parts System Settings → Manuell testing → Testoversikt switches on. Preparation, coverage, readiness, approval and source status
                only — never execution results. *@
             <BirkNext.Web.Components.SpecificationScopePicker @key="_pickerKey" Changed="OnScopeChangedAsync" ShowDiscoverLink="false" />
+            @* OpenSpec (2026-11-27): current / proposed / archived source status; renders nothing for a Spec Kit project. *@
+            <BirkNext.Web.Components.ManualTesting.OpenSpecSourcePanel ProjectKey="@facts.ProjectKey" />
             @* Testoversikt redesign (2026-11-26): one toolbar for the scope, the four core figures first, then what needs follow-up, test readiness,
                modules and the rest. Widget ids, settings and figures are unchanged; only the presentation and order changed. *@
             <div class="mto-toolbar" data-testid="mto-toolbar">

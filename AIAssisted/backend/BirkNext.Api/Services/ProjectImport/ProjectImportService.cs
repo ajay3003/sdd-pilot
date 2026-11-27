@@ -25,7 +25,8 @@ public sealed record ProjectImportPreviewResult(ProjectImportPreview? Preview, S
 public sealed partial class ProjectImportService(IqrSourceStore store, ProjectImportStagingStore staging, IReviewSourceEvidenceProvider sources, ILogger<ProjectImportService> logger,
     BirkNext.Api.Services.GitSources.IGitImportRecorder? gitImports = null, BirkNext.Api.Services.ImplementationGaps.ImplementationGapService? gaps = null,
     BirkNext.Api.Services.Specifications.SpecificationCatalogService? catalogs = null,
-    BirkNext.Api.Services.SystemUnderstanding.SystemGuideService? guides = null, BirkNext.Api.Services.SourceAnalysis.SourceBaselineService? baselines = null)
+    BirkNext.Api.Services.SystemUnderstanding.SystemGuideService? guides = null, BirkNext.Api.Services.SourceAnalysis.SourceBaselineService? baselines = null,
+    BirkNext.Api.Services.Specifications.SpecificationProcessingRouter? specificationRouter = null)
 {
     /// <summary>The import identity: derived from the exact archive bytes, so the same archive always has the same identity.</summary>
     public static string ImportIdFor(string sha256) => "import-" + sha256[..Math.Min(16, sha256.Length)];
@@ -113,7 +114,7 @@ public sealed partial class ProjectImportService(IqrSourceStore store, ProjectIm
             if (provenance.Git is { } git && !source.CanRetry) gitImports?.Record(git, source.SnapshotId, provenance.ImportId);
             var settled = !source.CanRetry;
             var gapEvaluationId = settled ? await ImplementationGapsAsync(staged, source, ct) : null;
-            await SpecificationCatalogAsync(staged, source, ct);
+            await SpecificationCatalogAsync(staged, source, ct, application?.ApplicationKey);
             if (settled && source.SnapshotId is { } sourceSnapshotId && guides is not null)
             {
                 // System Understanding generation is a durable job (2026-11-23): the snapshot and the captured specification are saved first; the job
@@ -149,19 +150,38 @@ public sealed partial class ProjectImportService(IqrSourceStore store, ProjectIm
 
     /// <summary>The server-held requirement catalog of this import's specification files, captured while the document text is in memory (the text
     /// itself is not kept: requirement id, file, wording and hashes are). Idempotent per content; never fails the import.</summary>
-    private async Task SpecificationCatalogAsync(StagedProjectImport staged, ProjectImportSourceResult source, CancellationToken ct)
+    private async Task SpecificationCatalogAsync(StagedProjectImport staged, ProjectImportSourceResult source, CancellationToken ct, string? applicationKey = null)
     {
         if (catalogs is null || staged.Workspace.DocumentFiles is not { Count: > 0 } documents) return;
         try
         {
-            await catalogs.CaptureAsync(staged.ImportId, staged.Workspace.Archive.Sha256, source.SnapshotId,
-                documents.Select(d => new BirkNext.Api.Services.Specifications.SpecificationCatalogService.Document(d.Path, d.Content)), ct);
+            if (specificationRouter is null)
+            {
+                await catalogs.CaptureAsync(staged.ImportId, staged.Workspace.Archive.Sha256, source.SnapshotId,
+                    documents.Select(d => new BirkNext.Api.Services.Specifications.SpecificationCatalogService.Document(d.Path, d.Content)), ct);
+                return;
+            }
+            // The application's configured specification format decides the route (2026-11-27). Spec Kit receives exactly the arguments above.
+            var outcome = await specificationRouter.CaptureAsync(new BirkNext.Api.Services.Specifications.SpecificationRouteRequest(
+                applicationKey ?? RoutingApplicationKey(staged), staged.ImportId, staged.Workspace.Archive.Sha256, source.SnapshotId,
+                [.. documents.Select(d => new BirkNext.Api.Services.Specifications.SpecificationCatalogService.Document(d.Path, d.Content))],
+                [.. (staged.Workspace.ConfigurationFiles ?? []).Select(d => new BirkNext.Api.Services.Specifications.SpecificationCatalogService.Document(d.Path, d.Content))]), ct);
+            if (outcome.Problem is not null)
+                logger.LogWarning("The specification route {Format} captured no catalog for a project import. Code {Code}", outcome.Format, outcome.ProblemCode);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             logger.LogError("The specification catalog could not be captured for a project import. Exception type {ExceptionType}", ex.GetType().Name);
         }
+    }
+
+    /// <summary>The application an import without a source snapshot belongs to: the tester's «new version of» choice, else the archive's own identity.</summary>
+    private static string? RoutingApplicationKey(StagedProjectImport staged)
+    {
+        if (staged.Application is { Mode: ProjectImportApplicationMode.NewVersion, ApplicationKey: { Length: > 0 } chosen }) return chosen;
+        try { return BirkNext.Api.Services.DependencyReview.SourceDependencyEvidenceExtractor.Identity(staged.FileName, staged.Bytes).Key; }
+        catch (Exception) { return null; }
     }
 
     /// <summary>Implementation-gap evaluation of this import's SDD documents against its snapshot, while the document text is still in memory (only the

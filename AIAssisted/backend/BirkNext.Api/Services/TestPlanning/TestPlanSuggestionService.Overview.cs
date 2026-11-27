@@ -108,10 +108,20 @@ public sealed partial class TestPlanSuggestionService
         // Project-level audit (2026-11-27): the canonical module rule (ModuleStructure, the explorers' rule) over every document of the project.
         // Before, a simpler rule («second folder is specs») put a module's own documents (HendelseService/docs/…Testspesifikasjon.md, a module's
         // requirements documents) under «Prosjektnivå», together with the project's own specs/ and loose project documents.
+        // OpenSpec (2026-11-27): a capability is not a BirkNext module, so openspec/specs/<capability>/spec.md is never module evidence (the Spec-Kit
+        // rule would make «openspec» a module). Only for a catalog the OpenSpec route produced; for Spec Kit this set is null and nothing changes.
+        var openSpecPaths = stored is { } held && BirkNext.Specifications.SpecificationFormatMarker.IsOpenSpec(held.Catalog.Fingerprint)
+            ? held.Evidence.Select(e => e.Path).ToList() : null;
+        bool IsOpenSpec(string? path) => openSpecPaths is not null && path is not null && openSpecPaths.Any(p => BirkNext.Specifications.SpecificationCatalogRules.SamePath(p, path));
         var roots = new HashSet<string>(ModuleStructure.RootsOf(specifications.Select(s => (string?)s.Path)
-            .Concat(discoveries?.Latest(key)?.Candidates.Select(c => c.Story?.SpecificationPath) ?? [])), StringComparer.Ordinal);
+            .Concat(discoveries?.Latest(key)?.Candidates.Select(c => c.Story?.SpecificationPath) ?? []).Where(p => !IsOpenSpec(p))), StringComparer.Ordinal);
         // A document's own Spec-Kit structure is module evidence too (a case's specification the catalog does not hold).
-        string ModuleFor(string path) { if (ModuleStructure.StrongRoot(path) is { } own) roots.Add(own); return ModuleStructure.OverviewModule(path, roots); }
+        string ModuleFor(string path)
+        {
+            if (IsOpenSpec(path)) return ModuleStructure.Unassigned;
+            if (ModuleStructure.StrongRoot(path) is { } own) roots.Add(own);
+            return ModuleStructure.OverviewModule(path, roots);
+        }
         specifications = [.. specifications.Select(s => s with { Module = ModuleFor(s.Path) })];
 
         // Every case of the active plans, flagged against its own source (the same per-case resolution as Planlegg og klargjør).

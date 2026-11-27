@@ -1,0 +1,251 @@
+@using BirkNext.Specifications
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* System Settings → Spesifikasjonsformat (2026-11-27): the specification format of ONE application at a time (default Spec Kit). The choice decides how
+   FUTURE imports of that application are processed; nothing is reprocessed and no plan, case, approval or execution is touched. Changing the format of
+   an application with imported data shows the impact first and needs an explicit confirmation. The server checks the permission. *@
+<section class="gsx sfx" aria-labelledby="sfx-title" data-testid="sfx">
+    <header class="gsx-header">
+        <div>
+            <h2 id="sfx-title" class="gsx-title">Spesifikasjonsformat</h2>
+            <p class="gsx-subtitle">Kildebehandling per applikasjon: hvilket spesifikasjonsformat BirkNext leser ved import. Spec Kit er standard.</p>
+        </div>
+        @if (Selected is { } shown)
+        {
+            <span class="gsx-pill @(shown.Format == SpecificationFormat.OpenSpec ? "gsx-pill-pending" : "gsx-pill-ok")" role="status" data-testid="sfx-active">Aktivt format: @SpecificationFormatMarker.Label(shown.Format)@(shown.IsDefault ? " (standard)" : "")</span>
+        }
+    </header>
+
+    @if (_view is null)
+    {
+        <p class="gsx-muted" role="status" data-testid="sfx-loading">@(_error ?? "Leser innstillingene …")</p>
+        @if (_error is not null) { <button type="button" class="btn-secondary btn-sm" @onclick="LoadAsync" data-testid="sfx-retry">Prøv igjen</button> }
+    }
+    else if (_view.Applications.Count == 0)
+    {
+        <p class="gsx-notice" data-testid="sfx-empty">Ingen applikasjon er importert ennå. Importer et prosjekt (Prosjektimport) først; da kan formatet velges her før neste import.</p>
+    }
+    else
+    {
+        @if (_message is not null) { <p class="gsx-notice" role="status" data-testid="sfx-message">@_message</p> }
+        @if (_error is not null) { <p class="gsx-error" role="alert" data-testid="sfx-error">@_error</p> }
+
+        <div class="gsx-panel">
+            <label class="gar-field">
+                <span>Applikasjon</span>
+                <select value="@_applicationKey" @onchange="e => SelectAsync(e.Value?.ToString())" disabled="@_busy" data-testid="sfx-application">
+                    @foreach (var a in _view.Applications)
+                    {
+                        <option value="@a.ApplicationKey">@a.ApplicationName — @SpecificationFormatMarker.Label(a.Format)@(a.IsDefault ? " (standard)" : "")</option>
+                    }
+                </select>
+            </label>
+            @if (Selected is { } app)
+            {
+                <p class="gsx-muted sfx-facts" data-testid="sfx-facts">@app.Imports import(er)@(app.LatestImportedAt is { } at ? $" · siste {at.ToLocalTime():yyyy-MM-dd HH:mm}" : "")@(app.UpdatedAt is { } u ? $" · format endret {u.ToLocalTime():yyyy-MM-dd HH:mm} av {app.UpdatedBy}" : " · formatet er aldri valgt eksplisitt")</p>
+            }
+        </div>
+
+        <fieldset class="gsx-panel sfx-choices" disabled="@(!_view.CanWrite || _busy)" data-testid="sfx-formats">
+            <legend class="gsx-panel-title">Format</legend>
+            @foreach (var (format, title, text) in Choices)
+            {
+                var f = format;
+                <label class="sfx-choice @(_draft == f ? "is-selected" : null)" data-testid="sfx-format-option" data-value="@f">
+                    <input type="radio" name="sfx-format" checked="@(_draft == f)" @onchange="() => ChooseAsync(f)" />
+                    <span><strong>@title</strong><span class="gsx-muted sfx-desc">@text</span></span>
+                </label>
+            }
+            @if (!_view.CanWrite) { <p class="gsx-muted" data-testid="sfx-readonly">Du kan se innstillingen, men ikke endre den (krever tilgang til systemkonfigurasjon).</p> }
+        </fieldset>
+
+        @if (_impact is { Changes: true } impact)
+        {
+            <div class="gsx-panel sfx-impact" data-testid="sfx-impact">
+                <div class="gsx-panel-head"><h3 class="gsx-panel-title">Konsekvenser av endringen</h3></div>
+                <ul class="sfx-list">
+                    @foreach (var line in impact.Consequences) { <li>@line</li> }
+                </ul>
+                @if (impact.RequiresConfirmation)
+                {
+                    <label class="sfx-confirm"><input type="checkbox" checked="@_confirmed" @onchange="e => _confirmed = e.Value is true" data-testid="sfx-confirm" />
+                        Jeg forstår at endringen gjelder fremtidige importer og ikke endrer eksisterende kildeversjoner, testplaner eller kjøringer.</label>
+                }
+            </div>
+        }
+
+        <div class="gar-actions">
+            <button type="button" class="btn-primary btn-sm" disabled="@(!CanSave)" @onclick="SaveAsync" data-testid="sfx-save">@(_busy ? "Lagrer …" : "Lagre")</button>
+            @if (_draft != Selected?.Format) { <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="Reset" data-testid="sfx-cancel">Avbryt</button> }
+        </div>
+
+        @if (Selected is { Projects.Count: > 0 } withProjects)
+        {
+            <details class="gsx-panel sfx-quality" data-testid="sfx-quality">
+                <summary class="gsx-panel-title">Datakvalitet – OpenSpec-avstemming</summary>
+                <p class="gsx-muted">Uavhengig avstemming av kilde, katalog, discovery og Testoversikt for én import. Skrivebeskyttet; ingenting kjøres før du ber om det.</p>
+                <div class="gar-inline">
+                    <select @bind="_project" data-testid="sfx-project">
+                        @foreach (var p in withProjects.Projects) { <option value="@p">@p</option> }
+                    </select>
+                    <button type="button" class="btn-secondary btn-sm" disabled="@_reconciling" @onclick="ReconcileAsync" data-testid="sfx-reconcile">@(_reconciling ? "Avstemmer …" : "Kjør avstemming")</button>
+                </div>
+                @if (_reconcileError is not null) { <p class="gsx-error" role="alert">@_reconcileError</p> }
+                @if (_report is { } r)
+                {
+                    <p class="gsx-muted" role="status" data-testid="sfx-report-overall">Samlet: <strong>@Status(r.Overall)</strong> · @SpecificationFormatMarker.Label(r.CatalogFormat)@(r.CatalogRevision is { } rev ? $" · katalogrevisjon {rev}" : "")</p>
+                    @foreach (var n in r.Notes) { <p class="gsx-notice">@n</p> }
+                    @if (r.Checks.Count > 0)
+                    {
+                        <div class="table-responsive">
+                            <table class="settings-table" data-testid="sfx-report">
+                                <thead><tr><th>Kontroll</th><th>Status</th><th>Forventet</th><th>Observert</th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in r.Checks)
+                                    {
+                                        <tr data-status="@c.Status"><th scope="row" title="@c.Detail">@c.Id · @c.Title</th><td>@Status(c.Status)</td><td>@c.Expected</td><td>@c.Observed</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    @if (_markdown is not null)
+                    {
+                        <a class="gsx-link" download="openspec-avstemming.md" href="@("data:text/markdown;charset=utf-8," + Uri.EscapeDataString(_markdown))" data-testid="sfx-export">Last ned avstemmingsrapport (.md)</a>
+                    }
+                }
+            </details>
+        }
+
+        @if (_consumers is { Count: > 0 })
+        {
+            <details class="gsx-panel" data-testid="sfx-consumers">
+                <summary class="gsx-panel-title">Støtte i BirkNext-moduler</summary>
+                <div class="table-responsive">
+                    <table class="settings-table">
+                        <thead><tr><th>Modul</th><th>Spec Kit</th><th>OpenSpec</th><th>Grunnlag</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in _consumers)
+                            {
+                                <tr><th scope="row">@c.Module</th><td>@Support(c.SpecKit)</td><td data-support="@c.OpenSpec">@Support(c.OpenSpec)</td><td>@c.Basis</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        }
+    }
+</section>
+
+@code {
+    private static readonly (SpecificationFormat Format, string Title, string Text)[] Choices =
+    [
+        (SpecificationFormat.SpecKit, "Spec Kit – eksisterende format",
+            "specs/<feature>/spec.md med User Stories, akseptansescenarioer og FR-krav. Uendret behandling; standard for alle applikasjoner."),
+        (SpecificationFormat.OpenSpec, "OpenSpec – nytt format",
+            "openspec/specs/<capability>/spec.md med «Requirement» og «Scenario». Bare gjeldende spesifikasjoner teller; aktive endringer (openspec/changes) og arkiv vises separat. Krav får BirkNext-nøkler (os:…), ikke FR-ID-er."),
+    ];
+
+    private ISpecificationFormatApiService? Api => Services.GetService<ISpecificationFormatApiService>();
+    private SpecificationFormatSettingsView? _view;
+    private List<FormatConsumerStatus>? _consumers;
+    private string? _applicationKey;
+    private SpecificationFormat _draft;
+    private SpecificationFormatImpact? _impact;
+    private bool _confirmed, _busy, _reconciling;
+    private string? _error, _message, _project, _reconcileError, _markdown;
+    private OpenSpecReconciliationReport? _report;
+
+    private SpecificationFormatApplication? Selected => _view?.Applications.FirstOrDefault(a => a.ApplicationKey == _applicationKey);
+    private bool CanSave => _view is { CanWrite: true } && !_busy && Selected is { } s && _draft != s.Format && (_impact is not { RequiresConfirmation: true } || _confirmed);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        if (Api is not { } api) { _error = "Innstillingene for spesifikasjonsformat er ikke tilgjengelige."; return; }
+        _error = null;
+        var (view, error) = await api.GetAsync();
+        _view = view; _error = error;
+        _consumers = (await api.ConsumersAsync()).Consumers;
+        if (_view is not null)
+        {
+            _applicationKey = Selected?.ApplicationKey ?? _view.Applications.FirstOrDefault()?.ApplicationKey;
+            Reset();
+        }
+    }
+
+    private Task SelectAsync(string? key)
+    {
+        _applicationKey = key;
+        _message = null;
+        Reset();
+        return Task.CompletedTask;
+    }
+
+    private void Reset()
+    {
+        _draft = Selected?.Format ?? SpecificationFormat.SpecKit;
+        _impact = null; _confirmed = false; _error = null;
+        _project = Selected?.Projects.FirstOrDefault();
+        _report = null; _markdown = null; _reconcileError = null;
+    }
+
+    private async Task ChooseAsync(SpecificationFormat format)
+    {
+        _draft = format; _confirmed = false; _message = null; _impact = null;
+        if (Api is not { } api || Selected is not { } app || format == app.Format) return;
+        var (impact, error) = await api.ImpactAsync(app.ApplicationKey, format);
+        _impact = impact; _error = error;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Api is not { } api || Selected is not { } app || !CanSave) return;
+        _busy = true; _error = null; _message = null;
+        try
+        {
+            var (view, impact, error) = await api.SaveAsync(new SaveSpecificationFormatRequest { ApplicationKey = app.ApplicationKey, Format = _draft, ConfirmImpact = _confirmed });
+            if (view is null)
+            {
+                _error = error;
+                if (impact is not null) { _impact = impact; _confirmed = false; }
+                return;
+            }
+            _view = view;
+            Reset();
+            _message = $"Lagret: {Selected?.ApplicationName} bruker nå {SpecificationFormatMarker.Label(Selected?.Format ?? SpecificationFormat.SpecKit)}. Gjelder fra neste import.";
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ReconcileAsync()
+    {
+        if (Api is not { } api || _project is not { Length: > 0 } project) return;
+        _reconciling = true; _reconcileError = null; _report = null; _markdown = null;
+        try
+        {
+            var (report, error) = await api.OpenSpecReconciliationAsync(project);
+            _report = report; _reconcileError = error;
+            if (report is { Checks.Count: > 0 }) _markdown = (await api.OpenSpecReconciliationMarkdownAsync(project)).Markdown;
+        }
+        finally { _reconciling = false; }
+    }
+
+    private static string Status(ReconciliationStatus s) => s switch
+    {
+        ReconciliationStatus.Pass => "BESTÅTT",
+        ReconciliationStatus.Fail => "FEILET",
+        ReconciliationStatus.NotVerified => "IKKE VERIFISERT",
+        _ => "IKKE AKTUELT",
+    };
+
+    private static string Support(FormatConsumerSupport s) => s switch
+    {
+        FormatConsumerSupport.Supported => "Støttet",
+        FormatConsumerSupport.PreviewOnly => "Kun forhåndsvisning",
+        FormatConsumerSupport.NotVerified => "Ikke verifisert",
+        _ => "Ikke støttet",
+    };
+}

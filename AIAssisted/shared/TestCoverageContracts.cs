@@ -144,6 +144,12 @@ public sealed record QaTestCandidate
     public CoverageDataNeed DataNeed { get; init; } = CoverageDataNeed.NotAssessed;
     /// <summary>Why the data-need state was given (the source statement), or null when not assessed.</summary>
     public string? DataNeedBasis { get; init; }
+    /// <summary>
+    /// Additive (2026-11-27, OpenSpec route): the source format's own stable logical key for this scenario (e.g. «openspec/1|os:auth/login/valid»).
+    /// Null for every Spec Kit scenario: discovery then keeps its existing identity rule unchanged. Set only by a format route that has a named,
+    /// stable scenario identity in its source, so a wording edit does not create a new identity.
+    /// </summary>
+    public string? SourceIdentityKey { get; init; }
 }
 
 /// <summary>Data need of a QA test as its source states it. Absence of a link is <see cref="NotAssessed"/>, never "no data needed".</summary>
@@ -444,7 +450,9 @@ public sealed record CoverageUserStory
     public static string KeyOf(string? specificationPath, string storyKey) => $"{(specificationPath ?? "specification").Replace('\\', '/')}#{storyKey}";
 }
 
-public sealed record CoverageRequirement(string Id, string Text, string? Priority);
+/// <param name="SourceIdentityKey">Additive (2026-11-27, OpenSpec route): the source format's own stable logical key of the requirement; null for
+/// Spec Kit (the existing requirement identity rule applies unchanged).</param>
+public sealed record CoverageRequirement(string Id, string Text, string? Priority, string? SourceIdentityKey = null);
 
 /// <summary>One project artifact a review read, bound by its content fingerprint so a stored result names exactly what it reviewed.</summary>
 public sealed record CoverageArtifactRef(string ArtifactId, string Path, string? Module, string Fingerprint);

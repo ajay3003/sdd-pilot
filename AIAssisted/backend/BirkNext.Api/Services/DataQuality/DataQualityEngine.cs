@@ -16,12 +16,14 @@ namespace BirkNext.Api.Services.DataQuality;
 /// Nothing in the business domain is written. A change of the data during the run makes it INCONCLUSIVE (never PASS).
 /// </summary>
 public sealed class DataQualityEngine(Func<string, bool, CancellationToken, Task<DataQualitySnapshot>> read, Func<string, CancellationToken, Task<string>> marker,
-    Func<string, CancellationToken, Task<ManualTestingOverview>> overview)
+    Func<string, CancellationToken, Task<ManualTestingOverview>> overview,
+    Func<string, CancellationToken, Task<BirkNext.Specifications.OpenSpecReconciliationReport?>>? openSpec = null)
 {
     public const int MaxRecordsPerCheck = 200;
 
-    public DataQualityEngine(DataQualitySnapshotReader reader, Func<string, CancellationToken, Task<ManualTestingOverview>> overview)
-        : this(reader.ReadAsync, reader.MarkerAsync, overview) { }
+    public DataQualityEngine(DataQualitySnapshotReader reader, Func<string, CancellationToken, Task<ManualTestingOverview>> overview,
+        Func<string, CancellationToken, Task<BirkNext.Specifications.OpenSpecReconciliationReport?>>? openSpec = null)
+        : this(reader.ReadAsync, reader.MarkerAsync, overview, openSpec) { }
 
     public async Task<DataQualityReport> RunAsync(string runId, string projectKey, IReadOnlyCollection<DataQualityCategory> categories, Action<DataQualityProgress> progress, CancellationToken ct)
     {
@@ -37,15 +39,37 @@ public sealed class DataQualityEngine(Func<string, bool, CancellationToken, Task
         Done("Øyeblikksbilde lest");
         checks.Add(BaselineCheck(snapshot, expected, baseline));
 
+        // OpenSpec (2026-11-27): the reference rules below are Spec Kit's (stories + numbers, FR ids, <module>/specs). For a catalog the OpenSpec route
+        // produced they would report false differences, so the OpenSpec reconciliation (its own independent reference scan) replaces them — said in
+        // the report, never silently. A Spec Kit catalog (or no OpenSpec reader) runs exactly as before.
+        BirkNext.Specifications.OpenSpecReconciliationReport? os = null;
+        if (openSpec is not null)
+        {
+            try { os = await openSpec(projectKey, ct); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                checks.Add(Check("openspec.format", DataQualityCategory.SourceImport, DataQualityStage.SourceToStored, "Spesifikasjonsformat", projectKey, "", null, null,
+                    DataQualityStatus.NotVerified, DataQualityCause.SourceUnavailable, $"Spesifikasjonsformatet kunne ikke leses ({ex.GetType().Name}); kontrollene under bruker Spec Kit-reglene."));
+            }
+        }
+        var openSpecCatalog = os is { CatalogFormat: BirkNext.Specifications.SpecificationFormat.OpenSpec };
+        if (openSpecCatalog)
+        {
+            Phase("OpenSpec-avstemming");
+            checks.AddRange(OpenSpecChecks(os!, projectKey));
+            skipped.Add("Spec Kit-referansekontrollene (kilde og import, kravidentiteter, dashbordtall) gjelder ikke en OpenSpec-katalog og er erstattet av OpenSpec-avstemmingen.");
+            Done("OpenSpec-avstemming");
+        }
+
         List<IdentityDryRunRow> identities = [];
-        if (categories.Contains(DataQualityCategory.SourceImport))
+        if (!openSpecCatalog && categories.Contains(DataQualityCategory.SourceImport))
         {
             ct.ThrowIfCancellationRequested();
             Phase("Kilde og import");
             checks.AddRange(SourceChecks(snapshot, expected));
             Done("Kilde og import");
         }
-        if (categories.Contains(DataQualityCategory.RequirementIdentity))
+        if (!openSpecCatalog && categories.Contains(DataQualityCategory.RequirementIdentity))
         {
             ct.ThrowIfCancellationRequested();
             Phase("Kravidentiteter (tørrkjøring, skriver ingenting)");
@@ -55,7 +79,7 @@ public sealed class DataQualityEngine(Func<string, bool, CancellationToken, Task
             Done("Kravidentiteter");
         }
         List<DataQualityKpiExpectation> kpis = [];
-        if (categories.Contains(DataQualityCategory.Dashboard))
+        if (!openSpecCatalog && categories.Contains(DataQualityCategory.Dashboard))
         {
             ct.ThrowIfCancellationRequested();
             Phase("Dashbord: lagrede data → API");
@@ -92,6 +116,39 @@ public sealed class DataQualityEngine(Func<string, bool, CancellationToken, Task
             RunId = runId, ProjectKey = projectKey, Baseline = baseline, SnapshotMarker = Sha(snapshot.Marker), Consistent = consistent, StartedAt = started, FinishedAt = DateTimeOffset.UtcNow,
             Categories = [.. categories], Checks = checks, Identities = identities, Kpis = kpis, Skipped = skipped, FollowUps = followUps,
         };
+    }
+
+    // ---- OpenSpec ----
+
+    /// <summary>The OpenSpec reconciliation's checks as Data Quality checks (status mapped one to one; NOT VERIFIED stays NOT VERIFIED).</summary>
+    internal static IEnumerable<DataQualityCheck> OpenSpecChecks(BirkNext.Specifications.OpenSpecReconciliationReport report, string projectKey)
+    {
+        yield return Check("openspec.format", DataQualityCategory.SourceImport, DataQualityStage.SourceToStored, "Spesifikasjonsformat", projectKey,
+            "Katalogen er produsert av OpenSpec-ruten (fingeravtrykk «os1-…»); gjeldende grunnlag = openspec/specs.", "OpenSpec", "OpenSpec",
+            DataQualityStatus.Pass, DataQualityCause.None, $"OpenSpec-katalog, revisjon {report.CatalogRevision?.ToString() ?? "–"}. Forslag og arkiv er telt separat.");
+        foreach (var c in report.Checks)
+        {
+            var (category, stage) = c.Id switch
+            {
+                var id when id.StartsWith("D04") => (DataQualityCategory.RequirementIdentity, DataQualityStage.Identity),
+                var id when id.StartsWith("D07") || id.StartsWith("D08") => (DataQualityCategory.Dashboard, DataQualityStage.StoredToApi),
+                _ => (DataQualityCategory.SourceImport, DataQualityStage.SourceToStored),
+            };
+            var status = c.Status switch
+            {
+                BirkNext.Specifications.ReconciliationStatus.Pass => DataQualityStatus.Pass,
+                BirkNext.Specifications.ReconciliationStatus.Fail => DataQualityStatus.Fail,
+                _ => DataQualityStatus.NotVerified,
+            };
+            var cause = status switch
+            {
+                DataQualityStatus.Pass => DataQualityCause.None,
+                DataQualityStatus.Fail => category == DataQualityCategory.RequirementIdentity ? DataQualityCause.AmbiguousIdentity
+                    : category == DataQualityCategory.Dashboard ? DataQualityCause.IncorrectAggregation : DataQualityCause.IncorrectImport,
+                _ => c.Id == "S00" ? DataQualityCause.UnsupportedSource : DataQualityCause.SourceUnavailable,
+            };
+            yield return Check("openspec." + c.Id, category, stage, c.Title, projectKey, c.Detail, c.Expected, c.Observed, status, cause, c.Detail);
+        }
     }
 
     // ---- baseline ----

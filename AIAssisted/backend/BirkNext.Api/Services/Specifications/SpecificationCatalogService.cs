@@ -95,6 +95,52 @@ public sealed class SpecificationCatalogService(AppDbContext db, TimeProvider? c
         throw new InvalidOperationException("The specification catalog could not be saved.");
     }
 
+    /// <summary>
+    /// Captures a catalog another format route already read (2026-11-27, OpenSpec): the same append-only, idempotent-per-content revision rule as
+    /// <see cref="CaptureAsync"/>, which stays the Spec Kit route unchanged. The route's fingerprint carries its marker
+    /// (<see cref="SpecificationFormatMarker"/>), so the same archive captured by two routes is two revisions and no revision is reinterpreted.
+    /// </summary>
+    public async Task<SpecificationCatalogView?> CaptureRoutedAsync(string importId, string? archiveSha256, Guid? snapshotId, List<SpecificationDocumentRef> refs,
+        List<SpecificationRequirementEntry> entries, List<StoredSpecificationEvidence> evidence, string fingerprint, CancellationToken ct)
+    {
+        if (refs.Count == 0) return null;
+        if (fingerprint.Length is 0 or > 64) throw new ArgumentException("A catalog fingerprint is 1–64 characters.", nameof(fingerprint));
+        var key = ProjectKeyOf(importId);
+        if (await db.SpecificationCatalogs.AsNoTracking().FirstOrDefaultAsync(c => c.ProjectKey == key && c.Fingerprint == fingerprint, ct) is { } same) return View(same);
+        var evidenceJson = JsonSerializer.Serialize(evidence, Json);
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var latest = await db.SpecificationCatalogs.Where(c => c.ProjectKey == key).MaxAsync(c => (int?)c.Revision, ct) ?? 0;
+            var record = new SpecificationCatalogRecord
+            {
+                Id = Guid.NewGuid(), ProjectKey = key, Revision = latest + 1, Fingerprint = fingerprint, ArchiveSha256 = archiveSha256, SnapshotId = snapshotId,
+                CapturedAt = Now, DocumentsJson = JsonSerializer.Serialize(refs, Json), EntriesJson = JsonSerializer.Serialize(entries.Take(MaxRequirements).ToList(), Json),
+                EvidenceJson = evidenceJson,
+            };
+            db.SpecificationCatalogs.Add(record);
+            try { await db.SaveChangesAsync(ct); return View(record); }
+            catch (DbUpdateException)
+            {
+                db.Entry(record).State = EntityState.Detached;
+                if (await db.SpecificationCatalogs.AsNoTracking().FirstOrDefaultAsync(c => c.ProjectKey == key && c.Fingerprint == fingerprint, ct) is { } won) return View(won);
+            }
+        }
+        throw new InvalidOperationException("The specification catalog could not be saved.");
+    }
+
+    /// <summary>Every catalog revision of a project, newest first (bounded), for comparing two OpenSpec baselines.</summary>
+    public async Task<List<SpecificationCatalogView>> AllRevisionsAsync(string projectKey, int max, CancellationToken ct) =>
+        [.. (await db.SpecificationCatalogs.AsNoTracking().Where(c => c.ProjectKey == projectKey).OrderByDescending(c => c.Revision).Take(Math.Clamp(max, 1, 200)).ToListAsync(ct)).Select(View)];
+
+    /// <summary>The stored evidence of one catalog revision (null when none was kept).</summary>
+    public async Task<List<StoredSpecificationEvidence>?> EvidenceOfAsync(Guid catalogId, CancellationToken ct)
+    {
+        var row = await db.SpecificationCatalogs.AsNoTracking().FirstOrDefaultAsync(c => c.Id == catalogId, ct);
+        if (row is null) return null;
+        var json = row.EvidenceJson ?? await db.SpecificationCatalogEvidence.AsNoTracking().Where(e => e.CatalogId == row.Id).Select(e => e.EvidenceJson).FirstOrDefaultAsync(ct);
+        return json is null ? null : JsonSerializer.Deserialize<List<StoredSpecificationEvidence>>(json, Json) ?? [];
+    }
+
     public async Task<SpecificationCatalogView?> CurrentAsync(string projectKey, CancellationToken ct) =>
         await db.SpecificationCatalogs.AsNoTracking().Where(c => c.ProjectKey == projectKey).OrderByDescending(c => c.Revision).FirstOrDefaultAsync(ct) is { } r ? View(r) : null;
 

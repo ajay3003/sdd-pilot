@@ -69,6 +69,8 @@ builder.Services.AddHttpClient<ITranslationSettingsApiService, TranslationSettin
 builder.Services.AddHttpClient<IDataQualityApiService, DataQualityApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITechnicalHistoryApiService, TechnicalHistoryApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISpecificationCatalogApiService, SpecificationCatalogApiService>(client => client.BaseAddress = backendBase);
+// System Settings → Spesifikasjonsformat and the read-only OpenSpec views (2026-11-27).
+builder.Services.AddHttpClient<ISpecificationFormatApiService, SpecificationFormatApiService>(client => client.BaseAddress = backendBase);
 // Plan & prepare → Export to Azure DevOps: offline XLSX / CSV import files (no Azure DevOps connection).
 builder.Services.AddHttpClient<IAdoExportApiService, AdoExportApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IAdoTestPlansApiService, AdoTestPlansApiService>(client => client.BaseAddress = backendBase);
