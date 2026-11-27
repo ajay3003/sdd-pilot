@@ -65,6 +65,12 @@
                     <span class="mto-scope-chip" title="@O.ScopeLabel(CurrentScope)" data-testid="mto-scope">@O.ScopeLabel(CurrentScope)</span>
                     @if (CanWrite && _draft is null) { <button type="button" class="msb-link msb-small mto-customize" @onclick="EnterCustomize" data-testid="mto-customize">Tilpass oversikten</button> }
                 </div>
+                @* SRC-001 (2026-11-27): which import the numbers come from, and a warning when a newer import of the same application exists. *@
+                @if (SourceBaseline is { } sb)
+                {
+                    <p class="mt-muted msb-small mto-source" data-testid="mto-source">Kildegrunnlag: <span data-testid="mto-source-text">@sb.Text</span></p>
+                    @if (sb.Warning is { } stale) { <p class="mt-alert msb-small mto-source-stale" role="status" data-testid="mto-source-stale">@stale</p> }
+                }
             </div>
             @if (_overviewLoading)
             {
@@ -502,6 +508,10 @@
     private bool _followRestored;
 
     /// <summary>Follow-up lists open right under «Viktig å følge opp»; a chart's own list opens next to its chart.</summary>
+    private ManualTestingSourceBaseline.Baseline? SourceBaseline =>
+        ServiceProvider.GetService(typeof(IWorkspaceSessionService)) is IWorkspaceSessionService session
+            ? ManualTestingSourceBaseline.Of(_ws?.ProjectKey, session.SddLifecycle.ProjectImports) : null;
+
     private static bool IsFollowUpDrill(string chart) => chart is "panel.p1Attention" or "chart.blockers" or "chart.sourceChanges" or "chart.scenarioReadiness" or "tile";
 
     private static string? Blank(object? v) => v?.ToString() is { Length: > 0 } t ? t : null;

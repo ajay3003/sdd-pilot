@@ -318,6 +318,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
             await Step(warnings, "security classification test contexts", () => { services.GetService<ClassificationTestContextStore>()?.ClearAll(); return Task.CompletedTask; });
             await Step(warnings, "staged project imports", () => { services.GetService<BirkNext.Api.Services.ProjectImport.ProjectImportStagingStore>()?.Clear(); return Task.CompletedTask; });
             await Step(warnings, "browser diagnostic results", () => { services.GetService<BrowserAutomationEvidenceStore>()?.Clear(); return Task.CompletedTask; });
+            await Step(warnings, "data quality diagnostics", () => { services.GetService<BirkNext.Api.Services.DataQuality.DataQualityRunStore>()?.ClearAll(); return Task.CompletedTask; });
             await Step(warnings, "performance reachability checks", () => { services.GetService<PerformanceTestProviderRegistry>()?.ClearReachability(); return Task.CompletedTask; });
             await Step(warnings, "review caches", () => { (services.GetService<IMemoryCache>() as MemoryCache)?.Compact(1.0); return Task.CompletedTask; });
             // Reset everything only: the system default test plan destination and unchecked creates (the connections stay).

@@ -1,0 +1,370 @@
+@using BirkNext.DataQuality
+@using BirkNext.Web.Services
+@implements IDisposable
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+
+@* System Settings → Data Quality (2026-11-27): user-initiated, read-only audits. Nothing runs when the section opens; nothing in the business
+   domain is written. The page asks the server for the independent reference and the stored → API checks, and computes the API → UI stage
+   itself with the production dashboard code. *@
+<div class="settings-card settings-card-full-width dq" data-testid="dq">
+    <div class="settings-card-title">Data Quality</div>
+    <p class="dq-lead">Kontrollerer et importert prosjekt uten å endre det: dashbordtallene mot en uavhengig referanseberegning, kravidentiteter
+        (tørrkjøring av v2 — ingenting migreres) og lagret kildetekst mot importens tolkning. Kontrollen startes bare av deg.</p>
+
+    @if (_forbidden)
+    {
+        <p class="dq-msg dq-msg-warn" role="alert" data-testid="dq-forbidden">Du har ikke tilgang til datakvalitetskontroller. Det krever samme tilgang som å endre systeminnstillinger.</p>
+    }
+    else if (_api is null)
+    {
+        <p class="dq-msg" data-testid="dq-unavailable">Datakvalitetskontroller er ikke tilgjengelige i denne installasjonen.</p>
+    }
+    else
+    {
+        <section class="dq-setup" aria-label="Velg hva som skal kontrolleres" data-testid="dq-setup">
+            <div class="dq-field">
+                <label for="dq-project">Prosjekt</label>
+                <select id="dq-project" value="@_project" @onchange="e => ChooseProject(e.Value?.ToString())" disabled="@Running" data-testid="dq-project">
+                    <option value="">Velg prosjekt …</option>
+                    @foreach (var p in _projects) { <option value="@p.ProjectKey">@p.Name</option> }
+                </select>
+            </div>
+            <div class="dq-field">
+                <span class="dq-label" id="dq-baseline-label">Kildegrunnlag</span>
+                <span class="dq-baseline" aria-labelledby="dq-baseline-label" data-testid="dq-baseline">@BaselineText</span>
+            </div>
+            <fieldset class="dq-categories" disabled="@Running">
+                <legend>Kontroller</legend>
+                @foreach (var (category, label, hint) in Categories)
+                {
+                    var c = category;
+                    <label class="dq-check"><input type="checkbox" checked="@_categories.Contains(c)" @onchange="e => Toggle(c, e.Value is true)" data-testid="dq-category" data-category="@c" />
+                        <span><strong>@label</strong> <span class="dq-muted">@hint</span></span></label>
+                }
+            </fieldset>
+            <div class="dq-actions">
+                <button type="button" class="btn btn-primary" disabled="@(Running || string.IsNullOrEmpty(_project) || _categories.Count == 0)" @onclick="StartAsync" data-testid="dq-start">Start kontroll</button>
+                <span class="dq-muted" data-testid="dq-workload">@Workload</span>
+            </div>
+        </section>
+
+        @if (_error is { } error) { <p class="dq-msg dq-msg-warn" role="alert" data-testid="dq-error">@error</p> }
+
+        @if (_run is { } run)
+        {
+            <section class="dq-progress" aria-live="polite" data-testid="dq-progress" data-state="@run.State">
+                <div><strong>@StateText(run.State)</strong> · @run.Progress.Phase</div>
+                <div class="dq-muted">@run.Progress.ChecksCompleted kontroller fullført · @run.Progress.ChecksFailed feilet · @Elapsed(run)</div>
+                @if (run.State == DataQualityRunState.Running)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelAsync" data-testid="dq-cancel">Avbryt</button>
+                }
+                @if (run.Error is { } runError) { <p class="dq-msg" data-testid="dq-run-error">@runError</p> }
+            </section>
+
+            @if (run.Report is { } report)
+            {
+                <section class="dq-summary" aria-label="Resultat" data-testid="dq-summary">
+                    @foreach (var s in Statuses)
+                    {
+                        <span class="dq-badge dq-@s.ToString().ToLowerInvariant()" data-testid="dq-count" data-status="@s">@StatusText(s) <strong>@report.Count(s)</strong></span>
+                    }
+                    <span class="dq-muted">Kildegrunnlag: @report.Baseline.Label · @report.FinishedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")@(report.Consistent ? "" : " · data ble endret under kjøringen")</span>
+                    <span class="dq-downloads">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick='() => DownloadAsync("md")' data-testid="dq-download-md">Last ned Markdown</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick='() => DownloadAsync("json")' data-testid="dq-download-json">Last ned JSON</button>
+                    </span>
+                </section>
+
+                <section class="dq-results" aria-label="Kontroller" data-testid="dq-results">
+                    <div class="dq-filters">
+                        <input type="search" placeholder="Søk i kontroller og poster …" aria-label="Søk i kontroller" value="@_search" @oninput="e => _search = e.Value?.ToString() ?? string.Empty" data-testid="dq-search" />
+                        <select aria-label="Status" value="@(_status?.ToString() ?? "")" @onchange="e => _status = Enum.TryParse<DataQualityStatus>(e.Value?.ToString(), out var st) ? st : null" data-testid="dq-filter-status">
+                            <option value="">Alle statuser</option>
+                            @foreach (var s in Statuses) { <option value="@s">@StatusText(s)</option> }
+                        </select>
+                        <select aria-label="Kategori" value="@(_category?.ToString() ?? "")" @onchange="e => _category = Enum.TryParse<DataQualityCategory>(e.Value?.ToString(), out var c) ? c : null" data-testid="dq-filter-category">
+                            <option value="">Alle kategorier</option>
+                            @foreach (var (c, label, _) in Categories) { <option value="@c">@label</option> }
+                        </select>
+                    </div>
+                    <table class="dq-table">
+                        <thead><tr><th>Status</th><th>Kontroll</th><th>Steg</th><th>Forventet</th><th>Faktisk</th><th>Diff</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var c in VisibleChecks(report))
+                            {
+                                var check = c; var open = _open.Contains(check.Id);
+                                <tr data-testid="dq-check" data-id="@check.Id" data-status="@check.Status">
+                                    <td><span class="dq-badge dq-@check.Status.ToString().ToLowerInvariant()">@StatusText(check.Status)</span></td>
+                                    <td>@check.Metric<div class="dq-muted">@check.Scope</div></td>
+                                    <td>@StageText(check.Stage)</td>
+                                    <td>@(check.Expected ?? "—")</td><td>@(check.Actual ?? "—")</td><td>@(check.Difference ?? "—")</td>
+                                    <td><button type="button" class="msb-link" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleOpen(check.Id)" data-testid="dq-check-toggle">@(open ? "Skjul" : $"Detaljer ({check.Records.Count + check.RecordsOmitted})")</button></td>
+                                </tr>
+                                @if (open)
+                                {
+                                    <tr class="dq-detail" data-testid="dq-check-detail"><td colspan="7">
+                                        <p>@check.Explanation</p>
+                                        <p class="dq-muted"><strong>Telleregel:</strong> @check.Contract@(check.Cause == DataQualityCause.None ? "" : $" · Årsak: {CauseText(check.Cause)}")</p>
+                                        @if (check.Records.Count > 0)
+                                        {
+                                            <ul class="dq-records">
+                                                @foreach (var r in check.Records.Where(r => MatchesSearch(r)).Take(_recordLimit))
+                                                {
+                                                    <li data-testid="dq-record"><strong>@r.Kind</strong>: <code>@r.Key</code>@(r.Path is { } p && p != r.Key ? $" · {p}" : "")@(r.Text is { } t ? $" — {t}" : "")</li>
+                                                }
+                                            </ul>
+                                            @if (check.Records.Count(MatchesSearch) > _recordLimit) { <button type="button" class="msb-link" @onclick="() => _recordLimit += 100" data-testid="dq-more-records">Vis flere</button> }
+                                            @if (check.RecordsOmitted > 0) { <p class="dq-muted">@check.RecordsOmitted flere poster er bare i JSON-rapporten.</p> }
+                                        }
+                                    </td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </section>
+
+                @if (report.Kpis.Count > 0)
+                {
+                    <section class="dq-ui" aria-label="Dashbord-tall i nettleseren" data-testid="dq-ui">
+                        <h3>Dashbord-tall: API → visning</h3>
+                        <p class="dq-muted">Nettleseren regner ut tallene med dashbordets egen kode fra samme API-svar, og sammenligner med referansen. Et tall som er galt både i API og visning, fanges fordi referansen regnes ut fra lagrede data.</p>
+                        @if (_ui is null) { <p class="dq-muted" data-testid="dq-ui-pending">@(_uiError ?? "Henter dashbordets tall …")</p> }
+                        else
+                        {
+                            <table class="dq-table">
+                                <thead><tr><th>Status</th><th>Tall</th><th>Forventet (referanse)</th><th>Vist i dashbordet</th><th>Telleregel</th></tr></thead>
+                                <tbody>
+                                    @foreach (var u in _ui)
+                                    {
+                                        <tr data-testid="dq-ui-row" data-id="@u.Kpi.Id" data-status="@u.Status">
+                                            <td><span class="dq-badge dq-@u.Status.ToString().ToLowerInvariant()">@StatusText(u.Status)</span></td>
+                                            <td>@u.Kpi.Metric</td><td>@(u.Kpi.Expected?.ToString() ?? "—")</td><td>@(u.Actual?.ToString() ?? "—")</td><td class="dq-muted">@u.Kpi.Contract</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </section>
+                }
+
+                @if (report.Identities.Count > 0)
+                {
+                    var affected = report.Identities.Where(i => i.Resolution != IdentityResolution.NotAffected && (_resolution is null || i.Resolution == _resolution)
+                        && (_search.Length == 0 || $"{i.RequirementId} {i.SpecificationPath} {i.V1} {i.V2}".Contains(_search, StringComparison.OrdinalIgnoreCase))).ToList();
+                    <section class="dq-identities" aria-label="Kravidentiteter" data-testid="dq-identities">
+                        <h3>Kravidentiteter (tørrkjøring — ingenting endres)</h3>
+                        <div class="dq-filters">
+                            <select aria-label="Oppløsning" value="@(_resolution?.ToString() ?? "")" @onchange="e => _resolution = Enum.TryParse<IdentityResolution>(e.Value?.ToString(), out var r) ? r : null" data-testid="dq-filter-resolution">
+                                <option value="">Alle berørte</option>
+                                <option value="@IdentityResolution.Unique">Entydig (UNIQUE)</option>
+                                <option value="@IdentityResolution.Ambiguous">Tvetydig (AMBIGUOUS)</option>
+                                <option value="@IdentityResolution.Unresolved">Uløst (UNRESOLVED)</option>
+                            </select>
+                            <span class="dq-muted" data-testid="dq-identity-count">@affected.Count berørt · @report.Identities.Count(i => i.Resolution == IdentityResolution.NotAffected) ikke berørt</span>
+                        </div>
+                        <table class="dq-table">
+                            <thead><tr><th>Status</th><th>Krav</th><th>Spesifikasjon</th><th>v1</th><th>v2 (foreslått)</th><th>Dok.</th><th>Relasjoner</th></tr></thead>
+                            <tbody>
+                                @foreach (var i in affected.Take(_identityLimit))
+                                {
+                                    <tr data-testid="dq-identity" data-resolution="@i.Resolution" title="@i.Note">
+                                        <td><span class="dq-badge dq-@ResolutionClass(i.Resolution)">@ResolutionText(i.Resolution)</span></td>
+                                        <td>@(i.RequirementId.Length > 0 ? i.RequirementId : "—")</td><td class="dq-path">@i.SpecificationPath</td>
+                                        <td><code>@i.V1</code></td><td><code>@(i.V2.Length > 0 ? i.V2 : "—")</code></td><td>@i.DocumentsWithSameV1</td>
+                                        <td class="dq-muted">@i.TestCases.Count testtilfeller · @i.PlanItems.Count planposter · @i.ReadinessDecisions.Count vurderinger · @i.Approvals.Count godkjenninger · @i.Executions.Count gjennomføringer</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        @if (affected.Count > _identityLimit) { <button type="button" class="msb-link" @onclick="() => _identityLimit += 100" data-testid="dq-more-identities">Vis flere (@(affected.Count - _identityLimit) til)</button> }
+                    </section>
+                }
+
+                @if (report.Skipped.Count + report.FollowUps.Count > 0)
+                {
+                    <section class="dq-followups" data-testid="dq-followups">
+                        @if (report.Skipped.Count > 0) { <h3>Ikke kontrollert</h3><ul>@foreach (var s in report.Skipped) { <li>@s</li> }</ul> }
+                        @if (report.FollowUps.Count > 0) { <h3>Anbefalt oppfølging</h3><ul>@foreach (var s in report.FollowUps) { <li>@s</li> }</ul> }
+                    </section>
+                }
+            }
+        }
+
+        <section class="dq-recent" aria-label="Siste kontroller" data-testid="dq-recent">
+            <h3>Siste kontroller</h3>
+            @if (_recent.Count == 0) { <p class="dq-muted" data-testid="dq-recent-empty">Ingen kontroller er kjørt ennå.</p> }
+            else
+            {
+                <ul>
+                    @foreach (var r in _recent)
+                    {
+                        var id = r.RunId;
+                        <li data-testid="dq-recent-run"><button type="button" class="msb-link" disabled="@Running" @onclick="() => OpenAsync(id)">@r.StartedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm") · @r.ProjectKey</button>
+                            <span class="dq-muted">@StateText(r.State) · @r.Pass PASS · @r.Fail FAIL · @r.Warning WARNING · @r.Inconclusive INCONCLUSIVE · @r.NotVerified NOT VERIFIED</span></li>
+                    }
+                </ul>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    /// <summary>Poll interval while a run is in progress (tests set it to zero).</summary>
+    [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    private static readonly (DataQualityCategory Category, string Label, string Hint)[] Categories =
+    [
+        (DataQualityCategory.Dashboard, "Dashbord-tall", "lagrede data → API → visning, mot en uavhengig referanse"),
+        (DataQualityCategory.RequirementIdentity, "Kravidentiteter", "delte v1-identiteter, tvetydige relasjoner, simulert v2"),
+        (DataQualityCategory.SourceImport, "Kilde og import", "lagret kildetekst lest på nytt med en egen referanseleser"),
+    ];
+    private static readonly DataQualityStatus[] Statuses = [DataQualityStatus.Pass, DataQualityStatus.Fail, DataQualityStatus.Warning, DataQualityStatus.Inconclusive, DataQualityStatus.NotVerified];
+
+    private IDataQualityApiService? _api;
+    private List<DataQualityProjectOption> _projects = [];
+    private List<DataQualityRunSummary> _recent = [];
+    private readonly HashSet<DataQualityCategory> _categories = [DataQualityCategory.Dashboard, DataQualityCategory.RequirementIdentity, DataQualityCategory.SourceImport];
+    private readonly HashSet<string> _open = new(StringComparer.Ordinal);
+    private string? _project, _error, _uiError;
+    private bool _forbidden;
+    private DataQualityRun? _run;
+    private List<DataQualityUiStage.Comparison>? _ui;
+    private string _search = string.Empty;
+    private DataQualityStatus? _status;
+    private DataQualityCategory? _category;
+    private IdentityResolution? _resolution;
+    private int _recordLimit = 100, _identityLimit = 100;
+    private CancellationTokenSource? _poll;
+
+    private bool Running => _run?.State == DataQualityRunState.Running;
+
+    private string BaselineText => _projects.FirstOrDefault(p => p.ProjectKey == _project) is { } p
+        ? p.Baselines.FirstOrDefault() is { } b ? $"Nyeste spesifikasjonskatalog: {b.Label} (samme grunnlag som dashbordet bruker)" : "Ingen spesifikasjonskatalog — scenarioer kan ikke kontrolleres."
+        : "Velg et prosjekt.";
+
+    private string Workload => _categories.Count == 0 ? "Velg minst én kontroll."
+        : _categories.Contains(DataQualityCategory.SourceImport) ? "Omfang: tyngre — leser all lagret kildetekst i grunnlaget. Kjøres på serveren; andre kan bruke BirkNext imens."
+        : "Omfang: middels — leser prosjektets lagrede poster én gang. Kjøres på serveren.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _api = Services.GetService<IDataQualityApiService>();
+        if (_api is null) return;
+        var (projects, error, forbidden) = await _api.ProjectsAsync();
+        _forbidden = forbidden;
+        if (forbidden) return;
+        _projects = projects ?? []; _error = error;
+        _project = _projects.Count == 1 ? _projects[0].ProjectKey : null;
+        var (recent, _) = await _api.RecentAsync();
+        _recent = recent ?? [];
+    }
+
+    private void ChooseProject(string? key) => _project = string.IsNullOrEmpty(key) ? null : key;
+    private void Toggle(DataQualityCategory c, bool on) { if (on) _categories.Add(c); else _categories.Remove(c); }
+    private void ToggleOpen(string id) { if (!_open.Remove(id)) _open.Add(id); _recordLimit = 100; }
+
+    private async Task StartAsync()
+    {
+        if (_api is null || _project is null) return;
+        _error = null; _ui = null; _uiError = null; _open.Clear();
+        var (run, error) = await _api.StartAsync(new DataQualityRunRequest(_project, [.. _categories]));
+        if (run is null) { _error = error ?? "Kontrollen kunne ikke startes."; return; }
+        _run = run;
+        await PollAsync(run.RunId);
+    }
+
+    private async Task OpenAsync(string runId)
+    {
+        if (_api is null) return;
+        var (run, error) = await _api.GetAsync(runId);
+        if (run is null) { _error = error ?? "Kontrollen finnes ikke lenger."; return; }
+        _run = run; _ui = null; _uiError = null; _open.Clear(); _project = run.ProjectKey;
+        if (run.State == DataQualityRunState.Running) await PollAsync(runId);
+        else await UiStageAsync();
+    }
+
+    private async Task PollAsync(string runId)
+    {
+        _poll?.Cancel(); _poll = new CancellationTokenSource();
+        var ct = _poll.Token;
+        while (!ct.IsCancellationRequested && _run?.State == DataQualityRunState.Running && _api is not null)
+        {
+            try { await Task.Delay(PollInterval, ct); } catch (TaskCanceledException) { return; }
+            var (run, error) = await _api.GetAsync(runId, ct);
+            if (run is not null) _run = run; else if (error is not null) { _error = error; break; }
+            StateHasChanged();
+        }
+        if (_run is { State: not DataQualityRunState.Running })
+        {
+            await UiStageAsync();
+            var (recent, _) = await _api!.RecentAsync();
+            _recent = recent ?? _recent;
+        }
+    }
+
+    /// <summary>API → UI: the production dashboard calculation over the same API response, compared with the reference; the values are kept with the run.</summary>
+    private async Task UiStageAsync()
+    {
+        if (_run?.Report is not { Kpis.Count: > 0 } report || _api is null) return;
+        if (Services.GetService<ITestPlanSuggestionsApiService>() is not { } plans) { _uiError = "Dashbordets data kan ikke leses her: API → visning er ikke kontrollert (NOT VERIFIED)."; return; }
+        var (overview, error) = await plans.OverviewAsync(report.ProjectKey);
+        if (overview is null) { _uiError = $"Dashbordets data kunne ikke hentes ({error ?? "ukjent feil"}): API → visning er ikke kontrollert (NOT VERIFIED)."; return; }
+        _ui = DataQualityUiStage.Compare(overview, report.Kpis);
+        var (updated, _) = await _api.UiValuesAsync(report.RunId, [.. _ui.Select(u => new DataQualityUiValue(u.Kpi.Id, u.Actual))]);
+        if (updated is not null) _run = updated;
+    }
+
+    private async Task CancelAsync()
+    {
+        if (_api is null || _run is null) return;
+        var (run, _) = await _api.CancelAsync(_run.RunId);
+        if (run is not null) _run = run;
+    }
+
+    private async Task DownloadAsync(string format)
+    {
+        if (_api is null || _run is null) return;
+        var (text, error) = await _api.ReportAsync(_run.RunId, format);
+        if (text is null) { _error = error; return; }
+        await JS.InvokeVoidAsync("downloadTextFile", $"birknext-data-quality-{_run.RunId}.{format}", text, format == "md" ? "text/markdown;charset=utf-8" : "application/json;charset=utf-8");
+    }
+
+    private IEnumerable<DataQualityCheck> VisibleChecks(DataQualityReport r) => r.Checks.Where(c => (_status is null || c.Status == _status) && (_category is null || c.Category == _category)
+        && (_search.Length == 0 || c.Metric.Contains(_search, StringComparison.OrdinalIgnoreCase) || c.Explanation.Contains(_search, StringComparison.OrdinalIgnoreCase) || c.Records.Any(MatchesSearch)));
+
+    private bool MatchesSearch(DataQualityRecord r) => _search.Length == 0 || $"{r.Kind} {r.Key} {r.Path} {r.Text}".Contains(_search, StringComparison.OrdinalIgnoreCase);
+
+    private static string Elapsed(DataQualityRun run) => $"{((run.FinishedAt ?? DateTimeOffset.UtcNow) - run.StartedAt).TotalSeconds:0} s";
+
+    public static string StatusText(DataQualityStatus s) => s switch
+    {
+        DataQualityStatus.Pass => "PASS", DataQualityStatus.Fail => "FAIL", DataQualityStatus.Warning => "WARNING", DataQualityStatus.Inconclusive => "INCONCLUSIVE", _ => "NOT VERIFIED",
+    };
+    private static string StateText(DataQualityRunState s) => s switch
+    {
+        DataQualityRunState.Running => "Kjører", DataQualityRunState.Completed => "Ferdig", DataQualityRunState.Cancelled => "Avbrutt", _ => "Feilet",
+    };
+    private static string StageText(DataQualityStage s) => s switch
+    {
+        DataQualityStage.SourceToStored => "Kilde → lagret", DataQualityStage.StoredToApi => "Lagret → API", DataQualityStage.ApiToUi => "API → visning", _ => "Identitet",
+    };
+    private static string CauseText(DataQualityCause c) => c switch
+    {
+        DataQualityCause.IncorrectImport => "feil import", DataQualityCause.IncorrectAggregation => "feil aggregering", DataQualityCause.IncorrectFrontendDisplay => "feil visning",
+        DataQualityCause.StaleData => "utdatert grunnlag", DataQualityCause.WrongScopeOrBaseline => "feil omfang eller grunnlag", DataQualityCause.AmbiguousIdentity => "tvetydig identitet",
+        DataQualityCause.UnsupportedSource => "kilde som ikke støttes", DataQualityCause.MismatchedDrilldown => "avvikende detaljvisning", DataQualityCause.SourceUnavailable => "kilden er ikke tilgjengelig",
+        DataQualityCause.ParserRuleDifference => "ulike leseregler", DataQualityCause.ConcurrentChange => "data endret under kjøringen", _ => "—",
+    };
+    private static string ResolutionText(IdentityResolution r) => r switch
+    {
+        IdentityResolution.Unique => "UNIQUE", IdentityResolution.Ambiguous => "AMBIGUOUS", IdentityResolution.Unresolved => "UNRESOLVED", _ => "NOT AFFECTED",
+    };
+    private static string ResolutionClass(IdentityResolution r) => r switch
+    {
+        IdentityResolution.Unique => "pass", IdentityResolution.Ambiguous => "warning", IdentityResolution.Unresolved => "fail", _ => "notverified",
+    };
+
+    public void Dispose() { _poll?.Cancel(); _poll?.Dispose(); }
+}

@@ -87,8 +87,10 @@ public sealed partial class TestPlanSuggestionService
         {
             var decisions = typeDecisions.GetValueOrDefault(StoryGroupingService.NormalizePath(spec.Path));
             var requirementTexts = spec.Evidence.Requirements.GroupBy(r => r.Id, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Text, StringComparer.OrdinalIgnoreCase);
-            var scenarios = D.FromSpecification(key, spec.Evidence).Candidates
-                .Where(c => c.CapabilityId == D.Specification && c.SourceIdentity.Length > 0)
+            // Twins (same Given/When, different Then) are separated by the same rule as discovery before de-duplication (Data Quality finding
+            // 2026-11-27: one scenario of each twin pair was missing here, and a case for a twin carries the separated identity).
+            var scenarios = D.SeparateTwins(D.FromSpecification(key, spec.Evidence).Candidates
+                    .Where(c => c.CapabilityId == D.Specification && c.SourceIdentity.Length > 0))
                 .DistinctBy(c => c.SourceIdentity, StringComparer.Ordinal)
                 .Select(c =>
                 {

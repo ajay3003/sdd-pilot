@@ -2425,15 +2425,24 @@
     private readonly HashSet<string> _revealed = new(StringComparer.Ordinal);
     private string? _revealKey, _focusPending;
 
+    /// <summary>V11 (2026-11-27): a search or filter with at most this many results shows them directly: every group opens (grouping stays).</summary>
+    public const int SmallResultOpensGroups = 25;
+
     private void EnsureRevealed(IReadOnlyList<ScenarioGrouping.Group> tree)
     {
-        var key = _filter.Identities is { Length: > 0 } ids ? $"{string.Join(",", ids)}|{_gPrimary}|{_gSecondary}" : null;
+        // A Testoversikt selection (V10 P1), or a filtered result small enough to read at once (V11: «Ende til ende» gave 11 results behind
+        // several collapsed groups). An explicit close during that result is respected (see ToggleGroup).
+        var small = S.HasFilters(_filter) && Count(tree) is var n and > 0 and <= SmallResultOpensGroups;
+        var key = _filter.Identities is { Length: > 0 } ids ? $"{string.Join(",", ids)}|{_gPrimary}|{_gSecondary}"
+            : small ? $"small|{System.Text.Json.JsonSerializer.Serialize(_filter)}|{_gPrimary}|{_gSecondary}" : null;
         if (key == _revealKey) return;
         _revealKey = key; _revealed.Clear();
         if (key is null) return;
         void Add(IEnumerable<ScenarioGrouping.Group> groups) { foreach (var g in groups) { _revealed.Add(g.Path); Add(g.Children); } }
         Add(tree);
     }
+
+    private static int Count(IReadOnlyList<ScenarioGrouping.Group> tree) => tree.Sum(g => g.Children.Count > 0 ? Count(g.Children) : g.Items.Count);
 
     /// <summary>The selection's scenarios that the other filters (added after the drill-down) hide: shown as a conflict, never as an empty result.</summary>
     private int SelectionHiddenByFilters(string[] wanted)
@@ -2672,7 +2681,9 @@
     private RenderFragment Row(S.Item i) => __builder =>
     {
         var selected = _selected.Contains(i.Id);
-                        <li id="@($"msb-row-{i.Id}")" role="option" aria-selected="@(selected ? "true" : "false")" class="msb-row mtw-ac-row @(i.Id == _active ? "is-active" : null) @(selected ? "is-selected" : null) @(S.InActivePlan(i) ? "is-in-plan" : null)"
+                        @* tabindex -1: a row can receive focus from code (focus returns to it after «Lukk»; a Testoversikt selection focuses it) without
+                           becoming a separate Tab stop. Without it, focus() on the <li> did nothing in a real browser (V12 browser check). *@
+                        <li id="@($"msb-row-{i.Id}")" tabindex="-1" role="option" aria-selected="@(selected ? "true" : "false")" class="msb-row mtw-ac-row @(i.Id == _active ? "is-active" : null) @(selected ? "is-selected" : null) @(S.InActivePlan(i) ? "is-in-plan" : null)"
                             data-testid="mtd-scenario" data-id="@i.Id" data-relevance="@i.Relevance" @onclick="() => OpenRowAsync(i.Id)">
                             <input type="checkbox" class="msb-check" checked="@selected" aria-label="@($"Velg {i.Title}")" @onclick:stopPropagation="true"
                                    @onchange="() => ToggleAsync(i.Id)" data-testid="mtd-select" />

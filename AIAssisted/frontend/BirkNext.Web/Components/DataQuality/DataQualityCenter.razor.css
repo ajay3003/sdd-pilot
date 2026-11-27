@@ -1,0 +1,33 @@
+/* System Settings → Data Quality (2026-11-27). Existing design tokens with fallbacks; status is always text + colour, never colour alone. */
+.dq { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.dq-lead, .dq-muted { color: var(--clr-text-muted, #57606a); }
+.dq-muted { font-size: .85rem; }
+.dq-msg { padding: .5rem .75rem; border-radius: .375rem; background: var(--clr-surface-muted, #f6f8fa); }
+.dq-msg-warn { border-left: 3px solid var(--clr-warning, #9a6700); }
+.dq-setup { display: grid; grid-template-columns: minmax(12rem, 22rem) 1fr; gap: .75rem 1.25rem; align-items: start; }
+.dq-field { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.dq-field label, .dq-label { font-weight: 600; }
+.dq-baseline { overflow-wrap: anywhere; }
+.dq-categories { grid-column: 1 / -1; border: 1px solid var(--clr-border, #d0d7de); border-radius: .375rem; padding: .5rem .75rem; margin: 0; }
+.dq-categories legend { font-weight: 600; font-size: .9rem; padding: 0 .25rem; width: auto; float: none; margin: 0; }
+.dq-check { display: flex; gap: .5rem; align-items: baseline; padding: .2rem 0; }
+.dq-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+.dq-progress { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; padding: .5rem .75rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: .375rem; }
+.dq-summary { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.dq-downloads { margin-left: auto; display: flex; gap: .5rem; flex-wrap: wrap; }
+.dq-badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .78rem; font-weight: 600; border: 1px solid transparent; white-space: nowrap; }
+.dq-pass { background: var(--clr-success-subtle, #dafbe1); color: var(--clr-success, #1a7f37); border-color: currentColor; }
+.dq-fail { background: var(--clr-danger-subtle, #ffebe9); color: var(--clr-danger, #cf222e); border-color: currentColor; }
+.dq-warning { background: var(--clr-warning-subtle, #fff8c5); color: var(--clr-warning, #9a6700); border-color: currentColor; }
+.dq-inconclusive, .dq-notverified { background: var(--clr-surface-muted, #f6f8fa); color: var(--clr-text-muted, #57606a); border-color: currentColor; }
+.dq-filters { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .5rem; }
+.dq-filters input[type=search] { flex: 1 1 16rem; min-width: 0; }
+.dq-results, .dq-ui, .dq-identities { overflow-x: auto; }
+.dq-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.dq-table th, .dq-table td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--clr-border, #d0d7de); vertical-align: top; }
+.dq-table th { font-weight: 600; white-space: nowrap; }
+.dq-detail td { background: var(--clr-surface-muted, #f6f8fa); }
+.dq-records { margin: .25rem 0; padding-left: 1.25rem; max-height: 24rem; overflow-y: auto; }
+.dq-path, .dq-records code, .dq-table code { overflow-wrap: anywhere; font-size: .8rem; }
+.dq h3 { font-size: 1rem; margin: .25rem 0 .5rem; }
+@media (max-width: 40rem) { .dq-setup { grid-template-columns: 1fr; } .dq-downloads { margin-left: 0; } }

@@ -14,6 +14,18 @@ public interface IAiaCertificateFetcher
 }
 
 /// <summary>
+/// V11 (2026-11-27): the fetcher a SINGLETON holds. It asks the service provider for the typed <see cref="HttpAiaCertificateFetcher"/> on each use,
+/// so the HTTP handler is created through IHttpClientFactory only when a chain is repaired, and rotates as the factory intends. Before, the
+/// singleton <c>PerformanceTestProviderRegistry</c> resolved the typed client at startup: every API host created a handler whose factory
+/// tracking entry (and its timer) kept the whole host reachable after disposal — about 11.7 MB per disposed test host, measured.
+/// </summary>
+public sealed class OnDemandAiaCertificateFetcher(IServiceProvider services) : IAiaCertificateFetcher
+{
+    public Task<byte[]?> FetchAsync(Uri uri, CancellationToken ct) =>
+        Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<IAiaCertificateFetcher>(services).FetchAsync(uri, ct);
+}
+
+/// <summary>
 /// HTTP(S) AIA fetcher: http/https only, at most <see cref="MaxRedirects"/> redirects (each re-checked), <see cref="MaxBytes"/> bytes, a 10 s timeout,
 /// no cookies or credentials. The body is only ever parsed as certificate data — never executed or stored as is.
 /// </summary>

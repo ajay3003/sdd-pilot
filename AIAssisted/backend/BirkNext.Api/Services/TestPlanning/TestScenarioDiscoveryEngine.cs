@@ -250,6 +250,17 @@ public static class TestScenarioDiscoveryEngine
     /// <summary>A specification file path as an identity part: the same file whatever module scope or path spelling the reader used.</summary>
     private static string SpecFile(string? path) => (path ?? "").Replace('\\', '/').Trim().TrimStart('/').ToLowerInvariant();
 
+    /// <summary>
+    /// Two scenarios of one file with the same situation (same Given and When, different outcomes) keep distinct identities, in their order. They
+    /// are told apart by their expected result (never by position, which shifts when one is removed); only identical twins get an ordinal.
+    /// The ONE rule for discovery and Testoversikt (Data Quality finding 2026-11-27: the overview de-duplicated twins by their shared situation
+    /// identity, so one scenario of each pair was missing from Testoversikt and a case prepared for a twin never matched its row).
+    /// </summary>
+    public static List<DiscoveredScenario> SeparateTwins(IEnumerable<DiscoveredScenario> candidates) =>
+        [.. candidates.GroupBy(c => c.SourceIdentity, StringComparer.Ordinal).SelectMany(g => g.Count() == 1 || g.Key.Length == 0 ? g
+            : g.Select(c => c with { SourceIdentity = $"{c.SourceIdentity}|{TwinSuffix(c.ExpectedBehaviour)}" })
+               .GroupBy(c => c.SourceIdentity, StringComparer.Ordinal).SelectMany(t => t.Select((c, i) => i == 0 ? c : c with { SourceIdentity = $"{c.SourceIdentity}#{i + 1}" })))];
+
     /// <summary>The suffix that tells two scenarios with the same situation apart: their expected result.</summary>
     public static string TwinSuffix(string? expected) => E.Sha(Situation(expected))[..12];
 
@@ -752,11 +763,7 @@ public static class TestScenarioDiscoveryEngine
             RequirementIds = [.. a.RequirementIds.Concat(b.RequirementIds).Distinct(StringComparer.OrdinalIgnoreCase)],
             ScopeKeys = [.. a.ScopeKeys.Concat(b.ScopeKeys).Distinct(StringComparer.Ordinal)],
         })).Select(c => c with { SnapshotKey = c.SnapshotKey.Length > 0 ? c.SnapshotKey : snapshotKey }).ToList();
-        // Two scenarios of one file with the same situation (different outcomes) keep distinct identities, in their order.
-        // They are told apart by their expected result (never by position, which shifts when one is removed); only identical twins get an ordinal.
-        merged = [.. merged.GroupBy(c => c.SourceIdentity, StringComparer.Ordinal).SelectMany(g => g.Count() == 1 || g.Key.Length == 0 ? g
-            : g.Select(c => c with { SourceIdentity = $"{c.SourceIdentity}|{TwinSuffix(c.ExpectedBehaviour)}" })
-               .GroupBy(c => c.SourceIdentity, StringComparer.Ordinal).SelectMany(t => t.Select((c, i) => i == 0 ? c : c with { SourceIdentity = $"{c.SourceIdentity}#{i + 1}" })))];
+        merged = SeparateTwins(merged);
         // Cross-source consolidation: exact duplicates merged (evidence kept), equivalent/related/variant noted, conflicting expected results recorded.
         merged = ScenarioConsolidation.Apply(merged);
         var byRequirement = links.GroupBy(l => Norm(l.RequirementId)).ToDictionary(g => g.Key, g => g.Select(l => l.Test).ToList(), StringComparer.Ordinal);

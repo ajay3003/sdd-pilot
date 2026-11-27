@@ -576,6 +576,13 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.ApiQuality.Security.IAuthor
     client.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "BirkNextDiagnostic");
 }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.None, PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
 builder.Services.AddSingleton<BirkNext.Api.Services.ApiQuality.Fuzzing.ApiFuzzingRunCoordinator>();
+// System Settings → Data Quality (2026-11-27): read-only audits; runs and reports live in a bounded diagnostics store, never in the business domain.
+builder.Services.AddSingleton<BirkNext.Api.Services.DataQuality.DataQualityRunStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.DataQuality.DataQualityRunCoordinator>();
+builder.Services.AddScoped<BirkNext.Api.Services.DataQuality.DataQualitySnapshotReader>();
+builder.Services.AddScoped(sp => new BirkNext.Api.Services.DataQuality.DataQualityEngine(
+    sp.GetRequiredService<BirkNext.Api.Services.DataQuality.DataQualitySnapshotReader>(),
+    (project, ct) => sp.GetRequiredService<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>().OverviewAsync(project, ct)));
 // Safe fuzzing: same public-client shape as the review engine (no cookies, no redirects, bodies decoded by ResponseBodyReader).
 builder.Services.AddHttpClient<BirkNext.Api.Services.ApiQuality.Fuzzing.IApiFuzzingService, BirkNext.Api.Services.ApiQuality.Fuzzing.ApiFuzzingService>(client =>
 {
@@ -677,7 +684,8 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.PerformanceTests.IAiaCertif
     .ConfigurePrimaryHttpMessageHandler(BirkNext.Api.Services.PerformanceTests.HttpAiaCertificateFetcher.Handler);
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestProviderRegistry>(sp => new BirkNext.Api.Services.PerformanceTests.PerformanceTestProviderRegistry(
     sp.GetServices<BirkNext.Api.Services.PerformanceTests.IPerformanceTestProvider>(), sp.GetService<BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions>(),
-    sp.GetService<BirkNext.Api.Services.PerformanceTests.PerformanceLocalExecutionStore>(), sp.GetService<BirkNext.Api.Services.PerformanceTests.IAiaCertificateFetcher>()));
+    // V11: the singleton gets an on-demand fetcher, never the typed HttpClient itself (a captured typed client kept every test host alive).
+    sp.GetService<BirkNext.Api.Services.PerformanceTests.PerformanceLocalExecutionStore>(), new BirkNext.Api.Services.PerformanceTests.OnDemandAiaCertificateFetcher(sp)));
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestReadinessService>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceReadinessCheckService>();
 builder.Services.AddScoped<BirkNext.Api.Services.PerformanceTests.PerformanceScenarioSources>();

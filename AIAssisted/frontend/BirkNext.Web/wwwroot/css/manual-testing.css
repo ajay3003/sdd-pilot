@@ -1438,6 +1438,10 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .mtp-planned-view-label { font-size: .75rem; color: var(--clr-text-muted, #57606a); }
 .mtp-planned-create { display: inline-flex; align-items: center; gap: .4rem; padding-left: .75rem; border-left: 1px solid var(--clr-border, #d0d7de); }
 
+/* SRC-001 (2026-11-27): the source version behind Testoversikt. */
+.mto-source { margin: .25rem 0 0; overflow-wrap: anywhere; }
+.mto-source-stale { margin: .25rem 0 0; }
+
 /* V12 (2026-11-27, MT-7): the three row states are independent and each visible on its own — opened (accent bar on the left), selected for a
    bulk action (a dashed outline + the ticked checkbox), already in an active test plan (tinted background + the plan line's text). Before,
    «selected» was bold text only. */

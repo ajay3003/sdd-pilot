@@ -66,6 +66,7 @@ builder.Services.AddSingleton<AutoTranslationRegistry>();
 // Testgjennomføring i BirkNext (optional, 2026-11-25): records what a tester did in a run; Azure DevOps Test Plans stays the default.
 builder.Services.AddHttpClient<IManualTestRunsApiService, ManualTestRunsApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITranslationSettingsApiService, TranslationSettingsApiService>(client => client.BaseAddress = backendBase);
+builder.Services.AddHttpClient<IDataQualityApiService, DataQualityApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITechnicalHistoryApiService, TechnicalHistoryApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISpecificationCatalogApiService, SpecificationCatalogApiService>(client => client.BaseAddress = backendBase);
 // Plan & prepare → Export to Azure DevOps: offline XLSX / CSV import files (no Azure DevOps connection).

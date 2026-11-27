@@ -588,6 +588,11 @@ else if (_settings is not null)
             {
                 <BirkNext.Web.Components.Admin.TranslationSettingsCard />
             }
+            @if (_activeSection == "data-quality")
+            {
+                @* 2026-11-27: read-only audits, started only by the user (nothing runs when the section opens). *@
+                <BirkNext.Web.Components.DataQuality.DataQualityCenter />
+            }
             @if (_activeSection == "ai")
             {
                 <div class="settings-card settings-card-full-width">

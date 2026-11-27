@@ -370,6 +370,7 @@ public sealed class DiscoverWorkspaceTests : BunitContext
         cut.Find("[data-testid=mtd-drawer-close]").Click();
         cut.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "msb-row-US1-AS1",
             "closing returns focus to the scenario's row"));
+        cut.Find("#msb-row-US1-AS1").GetAttribute("tabindex").Should().Be("-1", "a list item can only receive focus from code with a tabindex");
 
         cut.Find("[data-testid=mtd-scenario][data-id='US1-AS2'] [data-testid=mtd-show-details]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").GetAttribute("data-open").Should().Be("true"));

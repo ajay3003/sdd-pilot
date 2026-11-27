@@ -309,7 +309,8 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
         cut.Find("[data-testid=mtd-selection-summary]").TextContent.Should().Contain("2 valgt totalt · 2 i gjeldende visning");
 
         cut.Find("[data-testid=mtd-search]").Input("search field");
-        Groups(cut).Should().Equal(("US1 — Search for a Child", "1", "0"));
+        // V11 (2026-11-27): a filtered result this small opens its groups, so the story's child group is visible too (intended change).
+        Groups(cut).Should().Equal(("US1 — Search for a Child", "1", "0"), ("Funksjonelle", "1", "1"));
         cut.Find("[data-testid=mtd-selection-summary]").TextContent.Should().Contain("2 valgt totalt · 0 i gjeldende visning · 2 utenfor gjeldende filter", "a filter never drops a selection");
 
         cut.Find("[data-testid=mtd-search]").Input("");
@@ -374,6 +375,28 @@ public sealed class DiscoverStoryStatusAndTypeTests : BunitContext
         var cut = Open(View(), filter: ScenarioBrowserPresentation.FromOverview([gone.SourceIdentity], "P1 uten testtilfeller"));
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-overview-selection-missing]").TextContent.Should().Contain("finnes ikke i gjeldende kildeversjon"));
         cut.Find("[data-testid=mtd-overview-selection]").TextContent.Should().Contain("0 av 1 scenario");
+    }
+
+    [Fact]
+    public void V11_a_small_filtered_result_is_shown_directly_with_its_groups_open_and_grouping_kept()
+    {
+        // V11 (2026-11-27): filtering by «Ende til ende» gave 11 results behind several collapsed groups. A filtered result of at most 25 opens its
+        // groups (the default grouping stays); without a filter the groups start collapsed as before.
+        FlatList = false;
+        var cut = Open(View(), filter: new ScenarioBrowserPresentation.Filter(All: true, Query: "search"));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-scenario]").Should().NotBeEmpty("the filtered scenarios are listed without opening any group"));
+        cut.Find("[data-testid=mtd-group-tree]").GetAttribute("data-primary").Should().Be("Story");
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]").Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "true");
+    }
+
+    [Fact]
+    public void V11_without_a_filter_the_groups_start_collapsed_as_before()
+    {
+        FlatList = false;
+        var cut = Open(View(), filter: new ScenarioBrowserPresentation.Filter(All: true));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-sgroup-toggle]").Should().NotBeEmpty());
+        cut.FindAll("[data-testid=mtd-sgroup-toggle]").Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "false");
+        cut.FindAll("[data-testid=mtd-scenario]").Should().BeEmpty();
     }
 
     [Fact]
