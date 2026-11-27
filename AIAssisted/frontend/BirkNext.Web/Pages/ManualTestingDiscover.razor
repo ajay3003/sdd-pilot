@@ -137,6 +137,7 @@
                     <select class="msb-select mtw-story-select" aria-label="Brukerhistorie" @onchange="e => SelectStory(Opt(e))" data-testid="mtd-story-select">
                         <option value="" selected="@(_filter.Story is null)">Alle scenarioer (@allView.Shown.Count)</option>
                         @foreach (var st in railStories) { <option value="@st.Key" selected="@(_filter.Story == st.Key)">@st.Label — @st.Title</option> }
+                        @foreach (var ul in UnloadedStories(railStories)) { <option value="@ul.Key" selected="@(_filter.Story == ul.Key)">@(ul.StoryId ?? "US") — @ul.Title (ikke lastet inn)</option> }
                     </select>
                     <ul class="mtw-story-list">
                         <li><button type="button" class="mtw-story is-all @(_filter.Story is null ? "is-current" : null)" aria-pressed="@(_filter.Story is null ? "true" : "false")"
@@ -175,6 +176,21 @@
                             @foreach (var st in railStories) { <li>@StoryButton((st, showTechnical))</li> }
                         }
                     </ul>
+                    @if (UnloadedStories(railStories) is { Count: > 0 } unloaded)
+                    {
+                        @* 2026-11-27: user stories whose scenarios are all beyond the loaded window. Choosing one searches its scenarios on the server. *@
+                        <span class="mtw-h mtw-unloaded-h" data-testid="mtd-unloaded-stories-h">Ikke lastet inn (@unloaded.Count)</span>
+                        <ul class="mtw-story-list" data-testid="mtd-unloaded-stories">
+                            @foreach (var ul in unloaded)
+                            {
+                                var key = ul.Key;
+                                <li><button type="button" class="mtw-story @(_filter.Story == key ? "is-current" : null)" aria-pressed="@(_filter.Story == key ? "true" : "false")"
+                                            @onclick="() => SelectStory(key)" data-testid="mtd-story" data-story="@key" data-unloaded="true">
+                                    <span class="mtw-story-title">@(ul.StoryId is { } sid ? $"{sid} — " : "")@ul.Title</span>
+                                    <span class="mtw-story-meta">Scenarioene hentes når du velger historien</span></button></li>
+                            }
+                        </ul>
+                    }
                     @if (_groupInputs.Count > 0 && _groupError is null && _groupDoc is not null)
                     {
                         var queue = G.ReviewQueue(_profiles).Count;
@@ -2171,6 +2187,10 @@
     private (string Id, int Items, PreparedCaseTraceView? Trace, List<ProjectRequirementOption>? Catalog, List<W.RequirementLink> Links)? _linksMemo;
 
     /// <summary>A user story group (null = «Alle scenarioer»): a filter of the one list. The open scenario stays open.</summary>
+    /// <summary>User stories of the scenarios not loaded that have no loaded scenario at all (2026-11-27): offered so a story filter can reach them.</summary>
+    private List<BirkNext.TestCoverage.CoverageUserStory> UnloadedStories(IReadOnlyCollection<W.StoryEntry> rail) =>
+        _ws?.Discovery?.NotKeptFacets is { } f ? [.. f.Stories.Where(st => rail.All(r => r.Key != st.Key) && _items.All(i => i.Candidate.Story?.Key != st.Key))] : [];
+
     private void SelectStory(string? key)
     {
         _storyDetails = false;

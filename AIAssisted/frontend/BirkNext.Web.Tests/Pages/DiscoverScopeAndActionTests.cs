@@ -503,4 +503,27 @@ public sealed class DiscoverScopeAndActionTests : BunitContext
         cut.InvokeAsync(() => cut.Instance.OnLayoutWidth(false));
         cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-detail]").HasAttribute("hidden").Should().BeTrue("back to a closed drawer when narrow"));
     }
+
+    [Fact]
+    public void A_user_story_whose_scenarios_are_all_beyond_the_window_is_offered_and_choosing_it_searches_the_server()
+    {
+        // 2026-11-27: US120 has no loaded scenario. It is listed under «Ikke lastet inn»; choosing it asks the server for exactly that story.
+        _notKept = 100;
+        var far = new CoverageUserStory { Key = "us-120", StoryId = "US120", Title = "Siste historie", Ordinal = 120 };
+        _notKeptFacets = new([], [], [], [], [far], false, false);
+        var asked = new List<ScenarioSearchFilter?>();
+        _api.Setup(x => x.SearchDiscoveryAsync("library", It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<ScenarioSearchFilter?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string?, string, int, int, ScenarioSearchFilter?, CancellationToken>((_, _, _, _, _, f, _) => asked.Add(f))
+            .ReturnsAsync((string _, string? _, string q, int skip, int _, ScenarioSearchFilter? _, CancellationToken _) =>
+                (new ScenarioSearchPage("d1", q, 100, skip, [C("c-far", "AC 1 i siste historie") with { Story = far }]), (string?)null));
+        var cut = Open(MainPath, Spec1, Spec2);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mtd-unloaded-stories] [data-testid=mtd-story][data-story=us-120]"));
+        cut.Find("[data-testid=mtd-unloaded-stories-h]").TextContent.Should().Contain("Ikke lastet inn (1)");
+
+        cut.Find("[data-testid=mtd-unloaded-stories] [data-testid=mtd-story][data-story=us-120]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mtd-beyond-row]").Should().ContainSingle(), TimeSpan.FromSeconds(5));
+        asked.Should().ContainSingle().Which!.Story.Should().Be("us-120");
+        cut.Find("[data-testid=mtd-beyond]").TextContent.Should().Contain("(100)");
+    }
 }
+
