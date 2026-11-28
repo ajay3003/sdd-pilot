@@ -65,13 +65,22 @@ public sealed partial class TestPlanSuggestionService
         var row = await Row(planId, ct);
         if (row.Lifecycle != ActiveState) throw new TestPlanException(409, "plan-archived", "Testplanen er arkivert. Gjenopprett den for å registrere resultater.");
         var plan = Read(row);
-        if (Occurrences(plan).All(o => o.Key != request.OccurrenceKey)) throw new TestPlanException(404, "occurrence-unknown", "Scenarioet finnes ikke i denne testplanen.");
+        var occurrence = Occurrences(plan).FirstOrDefault(o => o.Key == request.OccurrenceKey) ?? throw new TestPlanException(404, "occurrence-unknown", "Scenarioet finnes ikke i denne testplanen.");
+        // Technical Testing V2 (2026-11-28): a result for ONE case of the occurrence; the case must belong to it (never another plan's or scenario's case).
+        var caseId = string.IsNullOrWhiteSpace(request.CaseId) ? null : request.CaseId.Trim();
+        if (caseId is not null && !occurrence.CaseIds.Contains(caseId, StringComparer.Ordinal))
+            throw new TestPlanException(404, "case-unknown", "Testtilfellet hører ikke til dette scenarioet i testplanen.");
+        var evidence = request.Evidence?.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()[..Math.Min(x.Trim().Length, 500)]).Take(20).ToList();
+        if (new[] { request.Comment, request.Environment, request.Actual, request.Expected }.Concat(evidence ?? []).Any(TechnicalCaseTemplates.LooksLikeSecret))
+            throw new TestPlanException(400, "secret-value", "Et felt ser ut som et passord, token eller en nøkkel. Oppgi en referanse (logg-ID, korrelasjons-ID) i stedet.");
         var latest = (await EventsAsync(planId, ct)).GetValueOrDefault(request.OccurrenceKey)?.FirstOrDefault();
         if (latest?.Id != request.ExpectedLatestEventId)
             throw new TestPlanException(409, "stale-result", "Et nyere resultat er registrert for scenarioet. Last inn på nytt; kommentaren din er beholdt.");
         var comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim()[..Math.Min(request.Comment.Trim().Length, 2000)];
         var defect = string.IsNullOrWhiteSpace(request.DefectReference) ? null : request.DefectReference.Trim()[..Math.Min(request.DefectReference.Trim().Length, 300)];
-        var e = new ScenarioExecutionEvent(Guid.NewGuid(), request.Status, comment, defect, actor, Now);
+        static string? Cut(string? v, int max) => string.IsNullOrWhiteSpace(v) ? null : v.Trim()[..Math.Min(v.Trim().Length, max)];
+        var e = new ScenarioExecutionEvent(Guid.NewGuid(), request.Status, comment, defect, actor, Now, caseId, Cut(request.Environment, 200), row.Revision,
+            Cut(request.Expected, 4000), Cut(request.Actual, 4000), evidence is { Count: > 0 } ? evidence : null);
         db.ManualTestRuns.Add(new ManualTestRunRecord
         {
             Id = e.Id, ProjectKey = plan.ProjectKey ?? plan.GuideKey, DraftId = planId, CaseId = OccurrencePrefix + request.OccurrenceKey,

@@ -197,7 +197,14 @@ public sealed record ManualTestingOverview
     public List<OverviewStoryStatus> Stories { get; init; } = [];
     /// <summary>False when the project's import holds no task lines at all (story status is then unknown, never zero).</summary>
     public bool StoryStatusAvailable { get; init; }
+    /// <summary>Technical Testing V2 (2026-11-28): the testers' explicit Manuell/Teknisk/Begge choices of this project (Finn og forstå, stored per
+    /// specification document), with the scenario's source identity when the project's current discovery still holds the candidate.</summary>
+    public List<OverviewMethodDecision> MethodDecisions { get; init; } = [];
 }
+
+/// <summary>One explicit method choice (audit: who and when). <see cref="SourceIdentity"/> is null when the candidate it was made for is not in the
+/// project's current discovery (a legacy decision: kept, shown, never guessed onto another scenario).</summary>
+public sealed record OverviewMethodDecision(string SpecificationPath, string CandidateId, string? SourceIdentity, ScenarioTestKind Kind, string By, DateTimeOffset At);
 
 /// <summary>One user story's task status, compact (the details are read on demand from the story-status endpoint).</summary>
 public sealed record OverviewStoryStatus(string StoryKey, string StoryId, string Title, string SpecificationPath, string Module, UserStoryTaskStatus Status, int Completed, int Eligible,
@@ -245,6 +252,10 @@ public sealed record OverviewCase
     public bool MissingSteps { get; init; }
     public CaseSourceState? SourceState { get; init; }
     public ScenarioTestKind? TestKind { get; init; }
+    /// <summary>Technical Testing V2 (2026-11-28): the latest recorded result that applies to THIS case in its plan — a result recorded for the case
+    /// itself, or for its scenario occurrence as a whole; null = not run. Never inferred from source or code-test evidence.</summary>
+    public ScenarioExecutionStatus? Execution { get; init; }
+    public DateTimeOffset? ExecutedAt { get; init; }
     public TranslationState Translation { get; init; }
     public TranslationOrigin? TranslationOrigin { get; init; }
 }

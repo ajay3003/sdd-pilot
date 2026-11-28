@@ -469,7 +469,11 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         var pairs = e.Steps?.Select((s, i) => (Step: s, Expected: e.StepExpected is { } x && i < x.Count ? x[i] : null)).Where(p => !string.IsNullOrWhiteSpace(p.Step)).Take(50).ToList();
         var steps = pairs?.Select(p => T(p.Step, 2000)!).ToList();
         var stepExpected = pairs is { Count: > 0 } && e.StepExpected is not null ? pairs.Select(p => T(p.Expected, 2000)).ToList() : null;
-        var template = e.TemplateValues?.Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value)).Take(20)
+        // Technical Testing V2 (2026-11-28): technical case details live here («tech.*», TechnicalCaseTemplates) — room for them beside other template
+        // values, and never a credential (refused, not silently dropped, so the tester knows why).
+        if (e.TemplateValues?.Values.FirstOrDefault(TechnicalCaseTemplates.LooksLikeSecret) is not null || TechnicalCaseTemplates.LooksLikeSecret(e.EnvironmentPrerequisites))
+            throw new TestPlanException(400, "secret-value", "Et felt ser ut som et passord, token eller en nøkkel. Beskriv tilgangen (for eksempel rollen) i stedet; hemmeligheter lagres aldri i et testtilfelle.");
+        var template = e.TemplateValues?.Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value)).Take(40)
             .ToDictionary(kv => kv.Key.Trim()[..Math.Min(kv.Key.Trim().Length, 60)], kv => T(kv.Value, 1000)!, StringComparer.Ordinal);
         return new TestCaseEdits
         {

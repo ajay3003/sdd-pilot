@@ -120,9 +120,17 @@ public sealed partial class TestPlanSuggestionService
         var revisions = new List<OverviewRevision>();
         // Scenario-level execution per plan (one query for every active plan; read-only).
         var draftIds = workspace.Drafts.Select(d => d.Id).ToList();
-        var latestByPlan = (await db.ManualTestRuns.AsNoTracking().Where(r => draftIds.Contains(r.DraftId) && r.CaseId.StartsWith("occ:")).ToListAsync(ct))
+        var runRows = await db.ManualTestRuns.AsNoTracking().Where(r => draftIds.Contains(r.DraftId) && r.CaseId.StartsWith("occ:")).ToListAsync(ct);
+        var latestByPlan = runRows
             .GroupBy(r => (r.DraftId, Key: r.CaseId[4..]))
             .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.CompletedAt ?? r.StartedAt).ThenByDescending(r => r.Id).First().Outcome);
+        // Technical Testing V2 (2026-11-28): the recorded events per occurrence, to give each case its own latest result (a result for the case, or
+        // for the whole occurrence). Unreadable rows are skipped.
+        var eventsByOccurrence = runRows
+            .Select(r => { try { return (r.DraftId, Key: r.CaseId[4..], Event: System.Text.Json.JsonSerializer.Deserialize<ScenarioExecutionEvent>(r.ContentJson, BirkNext.Api.Services.TestPlanning.TestPlanSuggestionEngine.Json)); } catch (System.Text.Json.JsonException) { return (r.DraftId, Key: r.CaseId[4..], Event: (ScenarioExecutionEvent?)null); } })
+            .Where(x => x.Event is not null)
+            .GroupBy(x => (x.DraftId, x.Key))
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Event!).OrderByDescending(x => x.At).ThenByDescending(x => x.Id).ToList());
         foreach (var summary in workspace.Drafts)
         {
             TestPlanDraft plan;
@@ -134,6 +142,10 @@ public sealed partial class TestPlanSuggestionService
             var status = workspace.PlanStatus?.GetValueOrDefault(summary.Id) ?? await StatusAsync(plan, ct);
             var uncompared = status.NewerSources.Count > 0;
             var parents = plan.Cases.Where(c => c.Source.Kind != ScenarioSourceKind.Manual).ToDictionary(c => c.Source.ScenarioId, StringComparer.Ordinal);
+            var occurrenceOf = Occurrences(plan).SelectMany(o => o.CaseIds.Select(id => (Case: id, o.Key))).GroupBy(x => x.Case, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First().Key, StringComparer.Ordinal);
+            ScenarioExecutionEvent? LatestFor(string caseId) => occurrenceOf.TryGetValue(caseId, out var occ) && eventsByOccurrence.TryGetValue((plan.Id, occ), out var list)
+                ? list.FirstOrDefault(x => x.CaseId is null || string.Equals(x.CaseId, caseId, StringComparison.Ordinal)) : null;
             foreach (var c in active)
             {
                 var own = c.Source.Kind == ScenarioSourceKind.Manual && c.ScenarioKey is { } parentKey && parents.TryGetValue(parentKey, out var parent) ? parent : c;
@@ -150,6 +162,7 @@ public sealed partial class TestPlanSuggestionService
                     NoTestData = c.TestData.Count == 0, Hindrance = !string.IsNullOrWhiteSpace(c.Edits.BlockedBy), MissingSteps = c.EffectiveSteps.Count == 0,
                     SourceState = uncompared && c.Source.Kind == ScenarioSourceKind.ProjectDiscovery && c.SourceState is null or CaseSourceState.Current ? CaseSourceState.NotCompared : c.SourceState,
                     TestKind = c.Edits.TestKind,
+                    Execution = LatestFor(c.Source.ScenarioId)?.Status, ExecutedAt = LatestFor(c.Source.ScenarioId)?.At,
                     Translation = ScenarioPlanning.StateOf(c), TranslationOrigin = c.Translation(ScenarioPlanning.Norwegian)?.Origin,
                 });
             }
@@ -170,9 +183,31 @@ public sealed partial class TestPlanSuggestionService
 
         return new ManualTestingOverview
         {
+            MethodDecisions = await MethodDecisionsAsync(key, ct),
             ProjectKey = key, ComputedAt = Now, ScenariosAvailable = specifications.Count > 0, Specifications = specifications, Cases = cases, Plans = plans,
             RecentRevisions = [.. revisions.OrderByDescending(r => r.SavedAt).Take(10)],
         };
+    }
+
+    /// <summary>
+    /// Technical Testing V2 (2026-11-28): every explicit Manuell/Teknisk/Begge choice of the project's specification documents (Finn og forstå), newest
+    /// per scenario, with the scenario's source identity from the project's current discovery. A choice whose candidate is not in that discovery is
+    /// returned without an identity (kept and shown, never mapped by title). Read-only.
+    /// </summary>
+    internal async Task<List<OverviewMethodDecision>> MethodDecisionsAsync(string key, CancellationToken ct)
+    {
+        var identities = (discoveries?.Latest(key)?.Candidates ?? []).GroupBy(c => c.CandidateId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().SourceIdentity, StringComparer.Ordinal);
+        var list = new List<OverviewMethodDecision>();
+        foreach (var row in await db.StoryGroupings.AsNoTracking().Where(r => r.ProjectKey == key).ToListAsync(ct))
+        {
+            StoryGroupingDocument? doc;
+            try { doc = System.Text.Json.JsonSerializer.Deserialize<StoryGroupingDocument>(row.ContentJson, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)); }
+            catch (System.Text.Json.JsonException) { continue; }
+            foreach (var d in (doc?.TestKinds ?? []).GroupBy(k => k.ScenarioId, StringComparer.Ordinal).Select(g => g.Last()).Where(d => d.Kind is not null))
+                list.Add(new(row.SpecificationPath, d.ScenarioId, identities.TryGetValue(d.ScenarioId, out var id) && id.Length > 0 ? id : null, d.Kind!.Value, d.By, d.At));
+        }
+        return list;
     }
 
     private static PlanExecutionCounts ExecutionCounts(TestPlanDraft plan, IReadOnlyDictionary<(Guid, string), string> latest)

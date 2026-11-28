@@ -263,7 +263,16 @@ public static class ManualRunRules
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ScenarioExecutionStatus { NotRun, Passed, Failed, Blocked }
 
-public sealed record ScenarioExecutionEvent(Guid Id, ScenarioExecutionStatus Status, string? Comment, string? DefectReference, string By, DateTimeOffset At);
+/// <param name="CaseId">Technical Testing V2 (2026-11-28): the case this result is for; null = the scenario occurrence as a whole (every case of it).
+/// The occurrence's status stays its latest event of either kind (plan summaries unchanged); a case's status is its latest event for itself or for
+/// the whole occurrence.</param>
+/// <param name="Environment">The environment the test ran in (a name, never a credential).</param>
+/// <param name="PlanRevision">The plan revision (and with it the case revision) the result was recorded against.</param>
+/// <param name="Expected">The expected result as the tester saw it.</param>
+/// <param name="Actual">The actual result.</param>
+/// <param name="Evidence">References to evidence (log ids, correlation ids, file names) — never tokens or secrets.</param>
+public sealed record ScenarioExecutionEvent(Guid Id, ScenarioExecutionStatus Status, string? Comment, string? DefectReference, string By, DateTimeOffset At,
+    string? CaseId = null, string? Environment = null, int? PlanRevision = null, string? Expected = null, string? Actual = null, List<string>? Evidence = null);
 
 /// <summary>One scenario of a plan to execute: its key in the plan (scenario:{id} or case:{id} for a hand-written case without a scenario), what to
 /// test, the optional cases, and its own execution status and history in THIS plan.</summary>
@@ -308,7 +317,8 @@ public sealed record PlanExecutionView
 
 /// <summary>Record one scenario result in a plan. <see cref="ExpectedLatestEventId"/> is the latest event the tester saw (null = none): a newer
 /// result recorded meanwhile is a conflict (409), never overwritten silently.</summary>
-public sealed record RecordScenarioResultRequest(string OccurrenceKey, ScenarioExecutionStatus Status, string? Comment, string? DefectReference, Guid? ExpectedLatestEventId);
+public sealed record RecordScenarioResultRequest(string OccurrenceKey, ScenarioExecutionStatus Status, string? Comment, string? DefectReference, Guid? ExpectedLatestEventId,
+    string? CaseId = null, string? Environment = null, string? Expected = null, string? Actual = null, List<string>? Evidence = null);
 
 public sealed record DuplicatePlanRequest(string PlanName, string? SprintLabel = null, string? CreationRequestId = null);
 
