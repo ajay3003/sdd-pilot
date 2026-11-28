@@ -1,6 +1,7 @@
 # Testoversikt: scope, navigasjon og regresjonsvern
 
 Oppdatert 2026-11-27 (kveld): isolert nettleserverifisering, scope-lekkasje, P1-/klargjøringsnavigasjon og prosessvurdering.
+**Siste status 2026-11-28: se kap. 13.**
 Tidligere checkpoint: `1f12ada6` («testoverview: checkpoint scope and navigation hardening»).
 
 ## 1. Kort oppsummert
@@ -12,7 +13,10 @@ Tidligere checkpoint: `1f12ada6` («testoverview: checkpoint scope and navigatio
 | P1-oppfølging og «Start vurdering» som lange inline-lister | **Fjernet**: navigerer til Finn og forstå med eksakt populasjon |
 | Uavhengig orakel (forventede ID-er beregnet fra fixture, ikke fra produksjonskode) | **Bygget**; brukt i alle nettleserreiser |
 | Nettleserreiser B01–B24 + P1-SCOPE + READY | Kjørt i isolert host, se kap. 7 |
-| Testplaner/testtilfeller i fixture (godkjent, klar, kildeendret, E2E-plan) | **Ikke bygget**: tilhørende kontroller er NOT VERIFIED |
+| Testplaner/testtilfeller i fixture | **Bygget 2026-11-28** (kap. 13): 2 planer, 8 tilfeller i alle tilstander via ekte plan-API. Kildeendret tilfelle: se DEF-V12-01 |
+| Oppfølging av testtilfeller (godkjenning, ikke klar, blokkert, kildeendring) | **Navigerer til Planlegg og klargjør** med eksakt (plan, testtilfelle)-utvalg (kap. 13) |
+| Runner-skript | `AIAssisted/scripts/run-testoverview-browser-verification.ps1` (kap. 13) |
+| Åpent avvik DEF-V12-01 | Planer/tilfeller følger ikke applikasjonen til en nyere import (kap. 13.6) |
 | PostgreSQL-spesifikk dekning | Ja: hosten bruker ekte PostgreSQL (midlertidig database), ikke EF InMemory |
 
 **Anbefaling: fortsatt NO-GO for full V12-aksept**, men nå av smale og navngitte grunner (kap. 10), ikke av manglende infrastruktur.
@@ -198,3 +202,117 @@ Ikke del av denne commiten (vurderes i worktree-revisjonen):
 Kjøring 3 ble fullført etter commit: **36/36 bestått** (se kap. 7).
 
 Ingen push.
+
+## 13. Oppdatering 2026-11-28: testtilfelle-navigasjon, fullstendig fixture og runner
+
+Commits: `4bc0ab3a`, `73fa2439` og sluttcommiten med denne rapporten. Ingen push.
+
+### 13.1 Runner-skript (løst)
+
+Meldingen viste til `scripts/run-testoverview-browser-verification.ps1`, som ikke fantes. Løst med alternativ A: `AIAssisted/scripts/run-testoverview-browser-verification.ps1`.
+
+- Bygger testprosjektet til en egen `--artifacts-path`, og nekter mapper inne i API- eller Web-prosjektet.
+- Krever en lokal PostgreSQL-server på 5432. Mangler den, avslutter skriptet med kode 2 (NOT VERIFIED).
+- Peker hosten på byggets `staticwebassets.runtime.json` og kjører `Category=IsolatedBrowser`.
+- Exit-koder: 0 = alt bestått, 1 = en reise feilet, 2 = forutsetning mangler.
+- Isolasjon håndheves fortsatt inne i hosten, og den lukker ved feil (kap. 3).
+- Ingen Docker eller Podman, intet internett, og ingen kjørende BirkNext.
+
+### 13.2 Fixture-poster (nye)
+
+`TestOverviewCaseSeeding` lager testdataene gjennom de samme API-kallene sidene bruker: oppdagelse lagret av Finn og forstå, `project-drafts`, `review` og lagring av redigeringer. Kallene går via nettleserkonteksten, slik at Local Tester Mode-autorisasjonen gjelder. Hver tilstand verifiseres ved seeding.
+
+| Plan | Testtilfelle (scenario) | Tilstand |
+|---|---|---|
+| Fixture A | Booking/001 AUR-BKG1-US1-S1 (P1) | godkjent + klar |
+| Fixture A | Booking/001 AUR-BKG1-US1-S2 (P1) | venter på godkjenning |
+| Fixture A | Booking/001 AUR-SHARED-S1 (P1) | venter (samme tittel som i Billing) |
+| Fixture A | Billing/001 AUR-SHARED-S1 (P1) | godkjent, ikke klar |
+| Fixture A | Billing/001 AUR-BIL1-US2-S1 (P2) | trenger avklaring |
+| Fixture B | Booking/002 AUR-BKG2-US1-S1 (P1) | blokkert (registrert hindring) |
+| Fixture B | specs/001-platform AUR-PLT1-US1-S1 (P1) | venter |
+| Fixture B | Booking/001 AUR-BKG1-US2-S1 (P2) | godkjent + klar |
+| Fixture C (Cirrus v1) | Core/001-a CIR-A-US1-S1 / S2 | godkjent / venter |
+
+Oraklet er utvidet med disse beregningene: dekket, P1 uten testtilfelle, gap per prioritet, tilfeller i scope, godkjent, klar og planer i scope. Alt er beregnet fra fixturen, ikke fra produksjonsaggregering. Det finnes ingen E2E-plan i fixturen. E2E-flisen er bare verifisert for tom populasjon (deaktivert knapp).
+
+### 13.3 Navigasjonskontrakt for testtilfeller
+
+**Én regel:** et tall eller en handling åpner arbeidsvisningen med eksakt populasjon, i samme scope.
+
+- **Testtilfeller** («venter på godkjenning», «ikke klare», «kildeendring», «Testbarhet og blokkeringer», «Kildeendringer»):
+  - Testoversikt skriver `CaseSelection(label, [(planId, caseId)…])` til `sessionStorage mtp-cases.<prosjekt>` og åpner `manual-testing/plan?draft=<første plan>`.
+  - Planlegg og klargjør anvender utvalget selv (`P.Rows(..., onlyCases)`). Tellede tekniske tilfeller vises, og tilfeller som er borte telles (`mtp-overview-selection-missing`).
+  - Andre planer i utvalget navngis med egne knapper. Utvalget kan fjernes og overlever omlasting.
+- **Scenarioer:** uendret, går til Finn og forstå (kap. 6).
+- **Skillet holdes:** scenarioklargjøring (Finn og forstå) er ikke det samme som testtilfellets klarhet (Planlegg og klargjør), og godkjenning er ikke det samme som kjøring.
+- Inline sakslister er fjernet fra Testoversikt. Diagramlistene for prioritet og manglende dekning er beholdt (P2, se 13.8).
+
+### 13.4 Kontroll × scope
+
+`interaction-inventory.json` har nå `controlScopeCoverage` (kontroll → scope → tester). En ny vakt (`Every_test_the_inventory_maps_a_control_and_scope_to_exists`) feiler hvis inventaret nevner en test som ikke finnes. Den fant straks én foreldet referanse.
+
+**Tomme celler er kjente manglende par** (NOT VERIFIED):
+
+- p1-uncovered S09/S14
+- p1-approval S03/S14
+- p1-ready S03/S04
+- p1-source S01/S14
+- chart.blockers S02–S04
+- chart.sourceChanges S01/S14 (DEF-V12-01)
+- readiness S04
+
+### 13.5 Identitetsavstemming
+
+**Fremgangsmåte:**
+
+- For hver oppfølgingskategori sammenlignes oraklets forventede ID-er med tallet og med destinasjonens faktiske ID-er.
+- Scenarioer sammenlignes som tokens med multiplisitet. Testtilfeller sammenlignes som (plan-ID, case-ID) fra API-et.
+
+**Negative tilfeller som er med:**
+
+- Samme tittel (AUR-SHARED-S1) i to dokumenter med ulik case-tilstand. Bare Booking-tilfellet er med i «venter på godkjenning».
+- «US1 · AC 1» og FR-001 i over 20 dokumenter (P1-SCOPE-10).
+- Tilfeller fra en annen applikasjon telles aldri (CASE-06).
+
+### 13.6 Bekreftede avvik og observasjoner
+
+**DEF-V12-01 (åpen, ikke rettet):**
+
+- **Funnet:** når en applikasjon får en nyere import («Ny versjon av eksisterende applikasjon», med teksten «Planer følger applikasjonen og sammenlignes med den nye versjonen») og arbeidsflaten byttes til den, viser Testoversikt 0 testtilfeller og ingen testplan. Den eldre importen viste planen «Fixture C» med 2 tilfeller.
+- **Følge:** scenarioet med testtilfelle telles som udekket, og ingen kildeendring vises.
+- **Rotårsak:** antatt i eierskapet til planer (per import kontra per applikasjon), utenfor Testoversikt. Ikke rettet uten avklaring.
+- **Status:** reisen `STALE_02` er SKIPPED med avviksreferansen, aldri bestått.
+
+**Riktig oppførsel verifisert (STALE-01):**
+
+- Etter en ny import blir arbeidsflaten på importen den viser og sier fra (`mto-source-stale`). Tallene er fortsatt den viste importens.
+- Etter bytte vises en spesifikasjon som ikke lenger finnes, aldri med bredere tall.
+
+**Observasjoner (ikke utredet):**
+
+- **Historikk:** i én kjøring havnet et andre tilbake-steg i en kjede med flere steg på importsiden (P1-SCOPE-05–07). Tømmetrinnene navigerer nå direkte. Fram og tilbake dekkes av P1-SCOPE-12, B23 og CASE-02.
+- **Lenkeklikk:** i én av fem fullkjøringer ble et klikk på «Scenarioforslag» rett etter et scope-bytte ignorert mens siden tegnet seg på nytt (B23). Testen prøver nå inntil tre ganger. En tester kan oppleve det samme.
+
+### 13.7 Testresultater (faktisk kjørt)
+
+| Kjøring | Resultat |
+|---|---|
+| Hele frontendsuiten, `-c V12Verify -p:DefineConstants="DEBUG;TRACE"` (standard mappedybde, egne bin/obj, ingen lås på utviklerinstansen) | **9 950 / 9 950 bestått.** De 70 tidligere stifeilene og R06 er løst uten testendringer. |
+| Målrettede frontendtester (ManualTesting, TestOverview, ScenarioBrowser, PlanPrepare) | 251 / 251 |
+| Inventarvakter | 2 / 2 |
+| Isolert nettleser via runner-skriptet (kjøring 11) | 42 bestått, 1 feilet (B23, ignorert klikk, se 13.6), 1 hoppet over (STALE-02 / DEF-V12-01) |
+| **Isolert nettleser, sluttkjøring via runner-skriptet** (kjøring 12) | **43 / 43 bestått, 1 hoppet over** (STALE-02 / DEF-V12-01), exit 0 |
+| Backend: `Services.TestPlanning`, `ProjectImport`, `TestIsolationTests`, `TestPostgresGuardTests` (isolert testdatabase) | **733 / 733 bestått** |
+
+**Hvorfor 70 frontendtester feilet før:** de leter etter kildefiler med fast relativ dybde fra `bin/Debug/net8.0`, og `--artifacts-path` endrer dybden. Konfigurasjonen over gir samme dybde.
+
+### 13.8 Gjenstår og GO/NO-GO
+
+1. DEF-V12-01: kildeendrede testtilfeller kan ikke verifiseres i nettleser før planer følger applikasjonen til en ny import.
+2. De manglende kontroll × scope-parene i 13.4.
+3. P2: diagramlistene for prioritet og manglende dekning åpnes fortsatt inne på siden. Navigasjon til Finn og forstå med filter er ikke laget.
+4. Full backendsuite er ikke kjørt (bare relevante delsett).
+5. Ustabil navigasjon i nettleser (13.6) er ikke utredet.
+
+**Beslutning: NO-GO for full V12-aksept.** UI- og navigasjonsverifiseringen er nå omfattende og kjørbar med ett skript. Hovedhinderet er DEF-V12-01, et dataeierskapsavvik som påvirker hva testere ser etter en ny import.

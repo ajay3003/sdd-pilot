@@ -35,6 +35,8 @@ public static partial class TestOverviewCaseSeeding
         for (var attempt = 0; attempt < 60 && discovery is null; attempt++)
         {
             discovery = await GetAsync<ScenarioDiscoveryResult>(host, page, $"api/test-plan-suggestions/discover/last?projectKey={Uri.EscapeDataString(key)}");
+            // A stored result without specification scenarios is not the one Finn og forstå is computing now: wait for it.
+            if (discovery is not null && !discovery.Candidates.Any(c => c.CapabilityId == TestScenarioDiscoveryEngineIds.Specification)) discovery = null;
             if (discovery is null) await page.WaitForTimeoutAsync(2000);
         }
         if (discovery is null) throw new InvalidOperationException("No stored discovery for the fixture project after opening Finn og forstå.");

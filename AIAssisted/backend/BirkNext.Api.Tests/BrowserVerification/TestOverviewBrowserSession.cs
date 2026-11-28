@@ -25,7 +25,7 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
         return session;
     }
 
-    [GeneratedRegex(@"\b(?:AUR|BOR)-[A-Z0-9]+-(?:US\d+-)?S\d+\b|\bAUR-SHARED-S1\b")]
+    [GeneratedRegex(@"\b(?:AUR|BOR|CIR)-[A-Z0-9]+-(?:US\d+-)?S\d+\b|\bAUR-SHARED-S1\b")]
     private static partial Regex TokenRe();
 
     public static IEnumerable<string> Tokens(string text) => TokenRe().Matches(text).Select(m => m.Value);
@@ -252,7 +252,7 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
     /// scenario (groups expanded, «vis flere» pressed), with multiplicity — the same token in two documents is two rows.</summary>
     public async Task<DiscoverResult> ReadDiscoverAsync()
     {
-        await page.WaitForURLAsync(u => u.Contains("/manual-testing/discover", StringComparison.Ordinal), new() { Timeout = 60000 });
+        await page.WaitForURLAsync(u => u.Contains("/manual-testing/discover", StringComparison.Ordinal), new() { Timeout = 60000, WaitUntil = WaitUntilState.Commit });
         var banner = page.GetByTestId("mtd-overview-selection");
         await banner.WaitForAsync(new() { Timeout = 180000 });
         await Assertions.Expect(page.GetByTestId("mtd-loading")).ToHaveCountAsync(0, new() { Timeout = 180000 });
@@ -276,7 +276,7 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
     /// <summary>Planlegg og klargjør after a Testoversikt case hand-over: every (plan, case) the selection shows, visiting each named plan.</summary>
     public async Task<PlanResult> ReadPlanSelectionAsync()
     {
-        await page.WaitForURLAsync(u => u.Contains("/manual-testing/plan?draft=", StringComparison.Ordinal), new() { Timeout = 60000 });
+        await page.WaitForURLAsync(u => u.Contains("/manual-testing/plan?draft=", StringComparison.Ordinal), new() { Timeout = 60000, WaitUntil = WaitUntilState.Commit });
         var banner = page.GetByTestId("mtp-overview-selection");
         await banner.WaitForAsync(new() { Timeout = 180000 });
         var total = int.Parse(await banner.GetAttributeAsync("data-total") ?? "0");
@@ -344,7 +344,7 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
     public static string Normalize(string path)
     {
         var p = path.Replace('\\', '/').TrimStart('/');
-        foreach (var app in new[] { "Aurora/", "Borealis/" }) if (p.StartsWith(app, StringComparison.Ordinal)) return p[app.Length..];
+        foreach (var app in new[] { "Aurora/", "Borealis/", "Cirrus/" }) if (p.StartsWith(app, StringComparison.Ordinal)) return p[app.Length..];
         return p;
     }
 }
