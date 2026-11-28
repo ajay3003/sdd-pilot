@@ -2,15 +2,20 @@ using System.Text.Json.Serialization;
 
 namespace BirkNext.TestPlanning;
 
-// ── Test work classification and the E2E rules (2026-11-28) ──────────────────────────────────────────────────────────────────────────────────
-// Manual Testing and Technical Testing read ONE candidate inventory (TestScenarioDiscoveryEngine) and ONE plan/case store. This file decides, per
-// candidate, which kind of test work it is and whether it is an end-to-end flow — from what the producers already recorded (capability, candidate
-// type, evidence kind, contract type) and from a reviewer's explicit Manual/Technical decision. Never from a title, a file name or the source
-// technology alone: a GraphQL call can be part of a manual end-to-end process, and a frontend check can be purely technical.
-// Two separate, versioned rule sets: E2ERules (is it end-to-end, and how is it executed?) and TestWorkClassifier (which work category, which
-// workspace shows it by default). Pure and offline; nothing is persisted, moved or hidden — the views filter, the records stay where they are.
+// ── Test work classification and the E2E rules (v1 2026-11-28, v2 2026-11-28) ───────────────────────────────────────────────────────────────
+// Manual Testing and Technical Testing read ONE candidate inventory (TestScenarioDiscoveryEngine) and ONE plan/case store. Three INDEPENDENT
+// assessments per candidate, each from what the producers already recorded (capability, candidate type, steps, expected behaviour, evidence kind,
+// contract type) — never from a title, a file name or the source technology alone:
+//   1. WHAT is tested (TestSubject): business or technical end-to-end, REST, GraphQL, integration, business, other technical.
+//   2. HOW it can be tested (method): the rules PROPOSE Manual / Technical / Both; a person's explicit choice (Finn og forstå) DECIDES. A choice that
+//      differs from the proposal is kept and shown as a deviation — never silently undone, never an error.
+//   3. HOW CERTAIN (E2EStatus): Confirmed only with evidence of a start trigger, a cross-boundary chain, an observable outcome and a source
+//      relationship. A person's method choice never promotes a candidate to Confirmed.
+// Precedence: source evidence → deterministic rules → the person's method choice → audit (who, when) → renewed review when the source changes.
+// Pure and offline; nothing is persisted, moved or hidden — the workspaces filter, the records stay where they are. The generic Spec Kit parser is
+// not involved.
 
-/// <summary>The kind of test work, as the two workspaces sort it.</summary>
+/// <summary>The kind of test work, as the two workspaces sort it (WHAT combined with HOW).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TestWorkCategory
 {
@@ -19,6 +24,10 @@ public enum TestWorkCategory
     TechnicalOther,
     NeedsClassification,
 }
+
+/// <summary>WHAT is tested, independent of how and of how certain.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestSubject { BusinessE2E, TechnicalE2E, RestApi, GraphQl, Integration, Business, OtherTechnical, Unknown }
 
 /// <summary>Whether a candidate is an end-to-end flow, by the evidence behind it.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -32,128 +41,195 @@ public enum TestExecutionStyle { Manual, Technical, Hybrid }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TechnicalSurface { None, Rest, GraphQl, Messaging, Ui }
 
-/// <param name="Status">End-to-end status.</param>
-/// <param name="Execution">How it is executed.</param>
+/// <summary>The four facts an end-to-end flow needs. Confirmed requires all four, with a PROVEN cross-boundary chain.</summary>
+/// <param name="CrossBoundaryProven">The evidence itself is a chain through two or more systems (not only declared or suggested).</param>
+public sealed record E2EEvidence(bool Trigger, bool CrossBoundary, bool CrossBoundaryProven, bool Outcome, bool Source)
+{
+    public IEnumerable<string> Missing()
+    {
+        if (!Trigger) yield return "startpunkt (handling eller utløser)";
+        if (!CrossBoundary) yield return "behandling på tvers av systemgrenser";
+        if (!Outcome) yield return "observerbart sluttresultat";
+        if (!Source) yield return "kildekobling";
+    }
+}
+
+/// <param name="Status">End-to-end status (certainty).</param>
+/// <param name="Execution">How it is executed: the person's choice when made, otherwise the proposal.</param>
+/// <param name="Proposed">What the rules propose, independent of any choice.</param>
+/// <param name="Decided">The person's explicit choice, or null.</param>
 /// <param name="Reasons">Why, in plain words: each recorded fact the result rests on (explainable, testable).</param>
 public sealed record E2EAssessment(E2EStatus Status, TestExecutionStyle Execution, IReadOnlyList<string> Reasons, string RuleVersion)
 {
+    public TestExecutionStyle Proposed { get; init; } = Execution;
+    public ScenarioTestKind? Decided { get; init; }
+    public E2EEvidence? Evidence { get; init; }
     public bool IsE2E => Status is E2EStatus.Confirmed or E2EStatus.Candidate;
+    /// <summary>The person chose another method than the rules propose (kept, shown; never undone).</summary>
+    public bool Deviates => Decided is not null && Execution != Proposed;
 }
 
 public sealed record TestWorkClassification(TestWorkCategory Category, E2EAssessment E2E, TechnicalSurface Surface, ScenarioOwnershipInfo Ownership, string RuleVersion)
 {
-    /// <summary>Shown by default in Manual Testing (manual business, manual E2E, hybrid).</summary>
+    public TestSubject Subject { get; init; } = TestSubject.Unknown;
+    /// <summary>Shown in Manual Testing: manual business, manual E2E and hybrid work (and what still needs classification — see <see cref="TechnicalDefault"/>).</summary>
     public bool ManualDefault => Category is TestWorkCategory.ManualBusiness or TestWorkCategory.ManualE2E or TestWorkCategory.Hybrid;
-    /// <summary>Shown by default in Technical Testing (every technical category, hybrid, and what still needs classification).</summary>
+    /// <summary>Shown in Technical Testing: every technical category, hybrid, and what still needs classification (never hidden from both).</summary>
     public bool TechnicalDefault => Category is not (TestWorkCategory.ManualBusiness or TestWorkCategory.ManualE2E);
 }
 
 /// <summary>
 /// E2E rules, version <see cref="RuleVersion"/>. Status:
 /// <list type="bullet">
-/// <item><b>Confirmed</b>: the evidence itself is a chain through two or more systems — a declared integration journey (a person declared the component
-/// chain) or a System Understanding guide scenario whose steps run through more than one system.</item>
-/// <item><b>Candidate</b>: an end-to-end flow is documented or suggested but the boundary is not proven — a test specification's declared
-/// end-to-end test (TEST-E-…), a user flow found in the UI source, an existing test or developer messaging test of type BusinessE2E/Integration.</item>
-/// <item><b>NotE2E</b>: one operation, one page or one acceptance scenario that states no system boundary.</item>
+/// <item><b>Confirmed</b>: the evidence itself is a chain through two or more systems — a declared integration journey or a System Understanding
+/// guide scenario whose steps run through more than one system — AND it has a start trigger, an observable outcome and a source reference.</item>
+/// <item><b>Candidate</b>: an end-to-end flow is declared or suggested (a test specification's TEST-E, a UI user flow, an existing or developer test
+/// through messaging/several components), or a proven chain lacks a trigger or an outcome.</item>
+/// <item><b>NotE2E</b>: one operation, one page, one acceptance scenario that states no system boundary. A contract operation (REST or GraphQL) alone
+/// is never end-to-end; a code test reference alone is never an executed test.</item>
 /// <item><b>NeedsClarification</b>: a producer the rules do not know.</item>
 /// </list>
-/// Execution: a reviewer's explicit Manual/Technical/Both decision wins; otherwise the ownership rule's workspaces — a flow with a manual and a
-/// technical workspace is Hybrid when it is end-to-end, else it is executed in its primary workspace.
 /// </summary>
 public static class E2ERules
 {
-    public const string RuleVersion = "e2e-rules/1";
+    public const string RuleVersion = "e2e-rules/2";
     public const string TestSpecification = "test-specification";
+
+    private static bool HasTrigger(DiscoveredScenario c) =>
+        c.Steps.Any(s => !string.IsNullOrWhiteSpace(s.Action)) || c.Template.Any(t => t.Key is "when" or "operation" or "trigger" && !string.IsNullOrWhiteSpace(t.Value));
+
+    public static E2EEvidence EvidenceOf(DiscoveredScenario c)
+    {
+        var proven = c.CapabilityId == ScenarioOwnership.IntegrationJourneys
+            || c.CapabilityId == ScenarioOwnership.SystemGuide && c.Type == ScenarioCandidateType.BusinessE2E;
+        var declared = c.CapabilityId == TestSpecification && c.Type == ScenarioCandidateType.BusinessE2E
+            || c.CapabilityId == ScenarioOwnership.UiSource && c.Type == ScenarioCandidateType.BusinessE2E
+            || c.CapabilityId == ScenarioOwnership.DeveloperTests && c.Type == ScenarioCandidateType.Integration
+            || c.CapabilityId == ScenarioOwnership.ExistingTests && c.Type is ScenarioCandidateType.BusinessE2E or ScenarioCandidateType.Integration;
+        return new(HasTrigger(c), proven || declared, proven, !string.IsNullOrWhiteSpace(c.ExpectedBehaviour), c.Evidence.Count > 0);
+    }
+
+    private static bool Known(string capability) => capability is ScenarioOwnership.Specification or ScenarioOwnership.SystemGuide or ScenarioOwnership.UiSource
+        or ScenarioOwnership.ApiContract or ScenarioOwnership.IntegrationJourneys or ScenarioOwnership.DeveloperTests or ScenarioOwnership.ExistingTests or TestSpecification;
 
     public static E2EAssessment Assess(DiscoveredScenario c, ScenarioTestKind? reviewed = null)
     {
         var reasons = new List<string>();
-        var ownership = ScenarioOwnership.Of(c);
+        var evidence = EvidenceOf(c);
         E2EStatus status;
-        switch (c.CapabilityId)
+        if (!Known(c.CapabilityId))
         {
-            case ScenarioOwnership.IntegrationJourneys:
-                status = E2EStatus.Confirmed;
-                reasons.Add("Declared integration journey: a component chain through two or more systems.");
-                break;
-            case ScenarioOwnership.SystemGuide when c.Type == ScenarioCandidateType.BusinessE2E:
-                status = E2EStatus.Confirmed;
-                reasons.Add("Guide scenario whose steps run through more than one system.");
-                break;
-            case TestSpecification when c.Type == ScenarioCandidateType.BusinessE2E:
-                status = E2EStatus.Candidate;
-                reasons.Add("Declared end-to-end in a test specification document; the boundary is declared, not verified.");
-                break;
-            case ScenarioOwnership.UiSource when c.Type == ScenarioCandidateType.BusinessE2E:
-                status = E2EStatus.Candidate;
-                reasons.Add("User flow found in the UI source; the systems behind it are not shown by this evidence.");
-                break;
-            case ScenarioOwnership.DeveloperTests when c.Type == ScenarioCandidateType.Integration:
-            case ScenarioOwnership.ExistingTests when c.Type is ScenarioCandidateType.BusinessE2E or ScenarioCandidateType.Integration:
-                status = E2EStatus.Candidate;
-                reasons.Add("An existing automated test through messaging or several components; an end-to-end boundary is suggested, not proven.");
-                break;
-            case ScenarioOwnership.Specification or ScenarioOwnership.SystemGuide or ScenarioOwnership.UiSource or ScenarioOwnership.ApiContract
-                or ScenarioOwnership.DeveloperTests or ScenarioOwnership.ExistingTests or TestSpecification:
-                status = E2EStatus.NotE2E;
-                reasons.Add(c.CapabilityId switch
+            status = E2EStatus.NeedsClarification;
+            reasons.Add($"Kilden «{c.CapabilityId}» er ukjent for E2E-reglene.");
+        }
+        else if (evidence.CrossBoundaryProven && evidence.Trigger && evidence.Outcome && evidence.Source)
+        {
+            status = E2EStatus.Confirmed;
+            reasons.Add(c.CapabilityId == ScenarioOwnership.IntegrationJourneys
+                ? "Deklarert integrasjonsreise: en komponentkjede gjennom to eller flere systemer, med startpunkt, sluttresultat og kilde."
+                : "Guidescenario der stegene går gjennom mer enn ett system, med startpunkt, sluttresultat og kilde.");
+        }
+        else if (evidence.CrossBoundary)
+        {
+            status = E2EStatus.Candidate;
+            reasons.Add(evidence.CrossBoundaryProven ? "Kjede gjennom flere systemer, men bevis mangler for: " + string.Join(", ", evidence.Missing()) + "."
+                : c.CapabilityId switch
                 {
-                    ScenarioOwnership.ApiContract => "One operation of one service's contract.",
-                    ScenarioOwnership.UiSource => "One page or function of one application.",
-                    ScenarioOwnership.Specification => "An acceptance scenario that states no system boundary.",
-                    TestSpecification => "A documented test that does not declare the end-to-end level.",
-                    _ => "The evidence names one component.",
+                    TestSpecification => "Erklært ende-til-ende i et testspesifikasjonsdokument; grensen er erklært, ikke verifisert.",
+                    ScenarioOwnership.UiSource => "Brukerflyt funnet i UI-kilden; systemene bak den vises ikke av dette beviset.",
+                    _ => "En eksisterende automatisert test gjennom meldinger eller flere komponenter; grensen er antydet, ikke bevist.",
                 });
-                break;
-            default:
-                status = E2EStatus.NeedsClarification;
-                reasons.Add($"The producer \"{c.CapabilityId}\" is not known to the E2E rules.");
-                break;
-        }
-
-        TestExecutionStyle execution;
-        if (reviewed is { } decision)
-        {
-            execution = decision switch { ScenarioTestKind.Manual => TestExecutionStyle.Manual, ScenarioTestKind.Technical => TestExecutionStyle.Technical, _ => TestExecutionStyle.Hybrid };
-            reasons.Add($"Reviewed decision: {decision}.");
-        }
-        else if (c.CapabilityId == TestSpecification)
-        {
-            // A documented module test is written for technical execution (adapter → API → messages); a person can still run it as a manual E2E.
-            execution = status == E2EStatus.NotE2E ? TestExecutionStyle.Technical : TestExecutionStyle.Hybrid;
-            reasons.Add("A module's test specification: technical execution, a manual end-to-end variant is possible.");
         }
         else
         {
-            var both = ownership.Primary is not null && ownership.Secondary is not null && ownership.Primary != ownership.Secondary;
-            var endToEnd = status is E2EStatus.Confirmed or E2EStatus.Candidate;
-            execution = both && endToEnd ? TestExecutionStyle.Hybrid
-                : ownership.Primary == TestingWorkspace.TechnicalTesting ? TestExecutionStyle.Technical : TestExecutionStyle.Manual;
+            status = E2EStatus.NotE2E;
+            reasons.Add(c.CapabilityId switch
+            {
+                ScenarioOwnership.ApiContract => "Én operasjon i én tjenestes kontrakt (REST eller GraphQL) — en kontrakttest, ikke E2E.",
+                ScenarioOwnership.UiSource => "Én side eller funksjon i én applikasjon.",
+                ScenarioOwnership.Specification => "Et akseptansescenario som ikke oppgir noen systemgrense.",
+                TestSpecification => "En dokumentert test som ikke erklærer ende-til-ende-nivå.",
+                _ => "Beviset nevner én komponent.",
+            });
         }
-        return new(status, execution, reasons, RuleVersion);
+
+        var proposed = Propose(c, status);
+        var execution = reviewed switch
+        {
+            ScenarioTestKind.Manual => TestExecutionStyle.Manual,
+            ScenarioTestKind.Technical => TestExecutionStyle.Technical,
+            ScenarioTestKind.Both => TestExecutionStyle.Hybrid,
+            _ => proposed,
+        };
+        if (reviewed is { } decision)
+            reasons.Add(execution == proposed ? $"Personens valg: {StoryGroupingEngine.TestKindLabel(decision)} (samme som forslaget)."
+                : $"Personens valg: {StoryGroupingEngine.TestKindLabel(decision)}. Reglene foreslår {Label(proposed).ToLowerInvariant()}; valget gjelder.");
+        return new(status, execution, reasons, RuleVersion) { Proposed = proposed, Decided = reviewed, Evidence = evidence };
     }
+
+    /// <summary>The proposed method: an end-to-end flow with a manual and a technical workspace is both; otherwise the primary workspace. A module's
+    /// test specification is technical (both when it declares end-to-end).</summary>
+    private static TestExecutionStyle Propose(DiscoveredScenario c, E2EStatus status)
+    {
+        var endToEnd = status is E2EStatus.Confirmed or E2EStatus.Candidate;
+        if (c.CapabilityId == TestSpecification) return endToEnd ? TestExecutionStyle.Hybrid : TestExecutionStyle.Technical;
+        var ownership = ScenarioOwnership.Of(c);
+        var both = ownership.Primary is not null && ownership.Secondary is not null && ownership.Primary != ownership.Secondary;
+        return both && endToEnd ? TestExecutionStyle.Hybrid
+            : ownership.Primary == TestingWorkspace.TechnicalTesting ? TestExecutionStyle.Technical : TestExecutionStyle.Manual;
+    }
+
+    public static string Label(TestExecutionStyle style) => style switch
+    {
+        TestExecutionStyle.Manual => "Manuell",
+        TestExecutionStyle.Technical => "Teknisk",
+        _ => "Manuell og teknisk",
+    };
 }
 
 /// <summary>Work classification, version <see cref="RuleVersion"/>, on top of <see cref="E2ERules"/> and <see cref="ScenarioOwnership"/>.</summary>
 public static class TestWorkClassifier
 {
-    public const string RuleVersion = "test-work/1";
+    public const string RuleVersion = "test-work/2";
 
     /// <summary>The surface the evidence names: a contract operation's recorded contract type (OpenAPI → REST, GraphQL schema/operations →
     /// GraphQL), a messaging integration, or a UI source finding.</summary>
     public static TechnicalSurface SurfaceOf(DiscoveredScenario c)
     {
         if (c.CapabilityId == ScenarioOwnership.ApiContract)
+        {
             foreach (var e in c.Evidence.Where(e => e.Kind == "contract-operation"))
             {
                 if (e.Detail?.StartsWith("GraphQl", StringComparison.Ordinal) == true) return TechnicalSurface.GraphQl;
                 if (e.Detail?.StartsWith("OpenApi", StringComparison.Ordinal) == true) return TechnicalSurface.Rest;
             }
-        if (c.CapabilityId == ScenarioOwnership.ApiContract) return TechnicalSurface.Rest; // a contract operation without a recorded type: REST is the analyzer's default
+            return TechnicalSurface.Rest; // a contract operation without a recorded type: REST is the analyzer's default
+        }
         if (c.Type == ScenarioCandidateType.Integration || c.CapabilityId == ScenarioOwnership.IntegrationJourneys) return TechnicalSurface.Messaging;
         if (c.CapabilityId == ScenarioOwnership.UiSource) return TechnicalSurface.Ui;
         return TechnicalSurface.None;
+    }
+
+    /// <summary>WHAT is tested, from the evidence alone (not from the method and not from certainty beyond E2E eligibility).</summary>
+    public static TestSubject SubjectOf(DiscoveredScenario c, E2EStatus status, TechnicalSurface surface)
+    {
+        if (status == E2EStatus.NeedsClarification) return TestSubject.Unknown;
+        if (status is E2EStatus.Confirmed or E2EStatus.Candidate)
+            // A guide or UI user flow is a business process; a journey, a module test specification or a messaging test is a technical chain.
+            return c.CapabilityId is ScenarioOwnership.SystemGuide or ScenarioOwnership.UiSource ? TestSubject.BusinessE2E : TestSubject.TechnicalE2E;
+        return surface switch
+        {
+            TechnicalSurface.GraphQl => TestSubject.GraphQl,
+            TechnicalSurface.Rest => TestSubject.RestApi,
+            TechnicalSurface.Messaging => TestSubject.Integration,
+            _ => ScenarioOwnership.Of(c).Purpose switch
+            {
+                ScenarioPurpose.BusinessFunctional or ScenarioPurpose.UiFunctional or ScenarioPurpose.BusinessEndToEnd => TestSubject.Business,
+                ScenarioPurpose.IntegrationFunctional => TestSubject.Integration,
+                ScenarioPurpose.Unclassified => c.CapabilityId == E2ERules.TestSpecification ? TestSubject.OtherTechnical : TestSubject.Unknown,
+                _ => TestSubject.OtherTechnical,
+            },
+        };
     }
 
     public static TestWorkClassification Classify(DiscoveredScenario c, ScenarioTestKind? reviewed = null)
@@ -161,23 +237,19 @@ public static class TestWorkClassifier
         var e2e = E2ERules.Assess(c, reviewed);
         var ownership = ScenarioOwnership.Of(c);
         var surface = SurfaceOf(c);
-        var category = e2e.Status == E2EStatus.NeedsClarification && reviewed is null ? TestWorkCategory.NeedsClassification
-            : e2e.IsE2E ? e2e.Execution switch
-            {
-                TestExecutionStyle.Hybrid => TestWorkCategory.Hybrid,
-                TestExecutionStyle.Technical => TestWorkCategory.TechnicalE2E,
-                _ => TestWorkCategory.ManualE2E,
-            }
+        var subject = SubjectOf(c, e2e.Status, surface);
+        var category = subject == TestSubject.Unknown && reviewed is null ? TestWorkCategory.NeedsClassification
             : e2e.Execution == TestExecutionStyle.Hybrid ? TestWorkCategory.Hybrid
-            : e2e.Execution == TestExecutionStyle.Manual ? TestWorkCategory.ManualBusiness
-            : surface switch
+            : e2e.Execution == TestExecutionStyle.Manual ? e2e.IsE2E ? TestWorkCategory.ManualE2E : TestWorkCategory.ManualBusiness
+            : e2e.IsE2E ? TestWorkCategory.TechnicalE2E
+            : subject switch
             {
-                TechnicalSurface.GraphQl => TestWorkCategory.TechnicalGraphQl,
-                TechnicalSurface.Rest => TestWorkCategory.TechnicalApi,
-                TechnicalSurface.Messaging => TestWorkCategory.TechnicalIntegration,
-                _ => ownership.Purpose is ScenarioPurpose.IntegrationFunctional ? TestWorkCategory.TechnicalIntegration : TestWorkCategory.TechnicalOther,
+                TestSubject.GraphQl => TestWorkCategory.TechnicalGraphQl,
+                TestSubject.RestApi => TestWorkCategory.TechnicalApi,
+                TestSubject.Integration => TestWorkCategory.TechnicalIntegration,
+                _ => TestWorkCategory.TechnicalOther,
             };
-        return new(category, e2e, surface, ownership, RuleVersion);
+        return new(category, e2e, surface, ownership, RuleVersion) { Subject = subject };
     }
 
     public static string Label(TestWorkCategory category) => category switch
@@ -191,6 +263,18 @@ public static class TestWorkClassifier
         TestWorkCategory.Hybrid => "Manuell og teknisk",
         TestWorkCategory.TechnicalOther => "Annen teknisk",
         _ => "Må klassifiseres",
+    };
+
+    public static string Label(TestSubject subject) => subject switch
+    {
+        TestSubject.BusinessE2E => "Forretnings-E2E",
+        TestSubject.TechnicalE2E => "Teknisk E2E",
+        TestSubject.RestApi => "REST/API",
+        TestSubject.GraphQl => "GraphQL",
+        TestSubject.Integration => "Integrasjon",
+        TestSubject.Business => "Forretningsfunksjon",
+        TestSubject.OtherTechnical => "Annen teknisk",
+        _ => "Ukjent",
     };
 
     public static string Label(E2EStatus status) => status switch
