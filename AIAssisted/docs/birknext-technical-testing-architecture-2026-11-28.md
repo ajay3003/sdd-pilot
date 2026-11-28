@@ -121,3 +121,106 @@ Tallene viser kildebevis og forberedelse, med eksakte poster bak hvert tall.
 Samme flyt kan ha en manuell og en teknisk testvariant i samme plan. Varianten skilles på testtilfellets `TestKind`, ikke ved å kopiere planen.
 
 Tekniske felt (mål, inngangsoperasjon, autentisering, nedstrøms forventning, observerbarhet, feil og retry) finnes allerede delvis i kandidatenes maler (`Template`: operation, input, expected-response, schema, errors). Egne felt på tekniske testtilfeller er neste steg.
+
+## 8. V2 (2026-11-28): presedens, populasjoner, scope, testtilfeller og utførelse
+
+### 8.1 Tre uavhengige vurderinger (`e2e-rules/2`, `test-work/2`)
+
+| Vurdering | Verdier | Grunnlag |
+|---|---|---|
+| **Hva** testes (`TestSubject`) | Forretnings-E2E, teknisk E2E, REST/API, GraphQL, integrasjon, forretningsfunksjon, annen teknisk, ukjent | Evidensen: kapabilitet, kandidattype og kontrakttype. Teknologien alene avgjør aldri E2E. |
+| **Hvordan** (`Proposed`, `Decided`, `Execution`) | Manuell, teknisk eller begge | Reglene foreslår. Personens valg avgjør. Et avvik vises (`Deviates`) og angres aldri. |
+| **Hvor sikkert** (`E2EStatus` + `E2EEvidence`) | Bekreftet, kandidat, ikke E2E eller må avklares | Bekreftet krever **startpunkt, kryssing av systemgrense, observerbart utfall og kildekobling**, med en *bevist* kjede (deklarert reise eller guideflyt gjennom flere systemer). Mangler noe, blir det kandidat med de manglende punktene navngitt. |
+
+**Presedens:**
+
+1. Kildebevis
+2. Deterministiske regler
+3. Personens metodevalg
+4. Revisjon (hvem og når, `OverviewMethodDecision`)
+5. Ny vurdering når kilden endres
+
+Et metodevalg gjør **aldri** en kandidat til bekreftet E2E. En API- eller GraphQL-kontrakt alene, en frontendkomponent alene eller en kodetest alene er aldri E2E eller en kjøring.
+
+### 8.2 Personens valg (Manuell, Teknisk eller Begge)
+
+- **Lagring:** StoryGrouping-dokumentet per spesifikasjon og import (`TestKinds`), med kandidat-ID som nøkkel. Det har hvem og når, og er versjonert med dokumentets revisjon.
+- **Leses nå av begge arbeidsflatene:** Testoversikt-svaret har `MethodDecisions` med kildeidentiteten fra prosjektets gjeldende scenarioforslag.
+- **Eldre valg:** et valg uten identitet, der kandidaten ikke lenger finnes, blir ikke koblet til noe.
+- **Begrensning (åpen):** valgene følger ikke med til en ny import. De er lagret per import med kandidat-ID. Se implementasjonsdokumentet.
+
+### 8.3 Populasjonskontrakter
+
+| Arbeidsflate | Før V2 | Fra V2 |
+|---|---|---|
+| **Manual Testoversikt** | Alle scenarioer i lagrede spesifikasjoner og alle testtilfeller i aktive planer | Det samme, men uten rent teknisk arbeid (`O.ForManual`): testtilfeller med type «Teknisk», scenarioer valgt «Teknisk» (og deres testtilfeller uten egen type), og dokumenterte modultester uten erklært E2E. «Begge», hybride flyter og uklassifiserte eldre poster blir. Plankort viser planens egne totaler (planer er felles). |
+| **Teknisk testoversikt** | (V1) prosjektets tekniske kandidater og testtilfeller | Tekniske og hybride kandidater, samt testtilfeller med type «Teknisk» eller uten type med teknisk eller hybrid scenario. Testtilfeller med type «Manuell» aldri. |
+
+**Fem ting skilles alltid:**
+
+- unike flyter (én per kildeidentitet)
+- scenarioforslag
+- forberedte testtilfeller
+- planlagte forekomster
+- registrerte resultater
+
+Ett fysisk testtilfelle telles én gang per tall.
+
+### 8.4 Scope
+
+Teknisk testoversikt og Finn og analyser bruker **samme velger og samme scope-kontrakt** som Testoversikt (`SpecificationScopePicker`, `TestScopeReader`, `O.Scope`).
+
+**Kandidatenes kildefiler:**
+
+- spesifikasjonen til brukerhistorien
+- stidelen av hver evidensreferanse
+
+Modulen bestemmes av den kanoniske modulregelen (`ModuleStructure`).
+
+**Medlemskap:**
+
+| Nivå | En kandidat er med når … |
+|---|---|
+| Prosjekt | Alltid |
+| Modul | Minst én av filene ligger i modulen. **En flyt på tvers av moduler er med i hver modul den berører**, telles én gang per scope og merkes «på tvers av moduler». Den eies aldri av én modul. |
+| Spesifikasjon | En fil i pakken (og i modulen når den er valgt) |
+| Dokument | Nøyaktig den filen |
+
+Et ugyldig eller utdatert valg gir en tom liste og en melding, aldri en bredere populasjon.
+
+**Testtilfeller i scope:** samme utsnitt som Testoversikt (`O.Of`).
+
+### 8.5 Teknisk testtilfelle
+
+Et teknisk testtilfelle er et vanlig testtilfelle i den felles planen. Detaljene lagres i `TemplateValues` under `tech.*` (`shared/TechnicalCaseTemplates.cs`, `technical-case/1`). Det gir samme lagring, revisjon og historikk som andre felt.
+
+- **Felt:** testmål, system, startpunkt, rute eller operasjon, autentisering, miljø, testdata, inndata, avhengigheter, respons, tilstand etterpå, hendelser og meldinger, lagring, observerbarhet, korrelasjon, opprydding, feil og retry, kildebevis.
+- **Maler** per type (REST, GraphQL, integrasjon, teknisk E2E, hybrid, annen) bestemmer hva som vises først. Resten ligger under «Avanserte tekniske detaljer». Ingen felt er påkrevd.
+- **Manuelle testtilfeller ser aldri feltene.**
+- **Hemmeligheter:** en verdi som ser ut som et passord, token eller en nøkkel, avvises av serveren (400 `secret-value`) og varsles i skjemaet.
+
+### 8.6 Utførelse per testtilfelle
+
+Samme hendelsesmodell som før (`ScenarioExecutionEvent`, `occ:`-poster), med valgfrie felt:
+
+- `CaseId`
+- `Environment`
+- `PlanRevision`
+- `Expected`, `Actual`
+- `Evidence`
+
+**Status per testtilfelle** er siste hendelse for testtilfellet selv eller for hele forekomsten.
+
+**Status per forekomst** og planens sammendrag er uendret: siste hendelse av begge typer. Statusmodellen er den eksisterende (Ikke kjørt, Bestått, Feilet, Blokkert). «Pågår» og «Ikke aktuelt» finnes ikke i modellen og er ikke lagt til.
+
+Ingenting kjøres av BirkNext. «Bestått» utledes aldri av kildebevis.
+
+### 8.7 Integration Testing
+
+Deklarerte reiser er **bekreftet teknisk E2E** i den felles regelmotoren. Det finnes ingen egen E2E-definisjon. Knutepunktet lenker til:
+
+- Finn og analyser (bekreftede flyter)
+- Teknisk testoversikt
+- Testplaner
+
+Diagnostikk, topologi, suiter og IQR er uendret.
