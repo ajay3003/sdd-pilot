@@ -129,6 +129,10 @@ public sealed partial class TestPlanSuggestionService
             try { plan = await DraftAsync(summary.Id, ct); }
             catch (TestPlanException) { continue; }
             var active = plan.Cases.Where(c => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)).ToList();
+            // DEF-V12-01 (2026-11-28): a newer source version of the application that no discovery has compared the plan with yet. Its cases are
+            // then «Ikke sammenlignet» — never «i samsvar» with a version nobody compared them with (a change or removal already found is kept).
+            var status = workspace.PlanStatus?.GetValueOrDefault(summary.Id) ?? await StatusAsync(plan, ct);
+            var uncompared = status.NewerSources.Count > 0;
             var parents = plan.Cases.Where(c => c.Source.Kind != ScenarioSourceKind.Manual).ToDictionary(c => c.Source.ScenarioId, StringComparer.Ordinal);
             foreach (var c in active)
             {
@@ -144,7 +148,8 @@ public sealed partial class TestPlanSuggestionService
                     Review = c.Review, Ready = c.Testability.Ready,
                     MissingExpected = c.Missing.Any(m => m.StartsWith("Expected result: NEEDS", StringComparison.Ordinal)),
                     NoTestData = c.TestData.Count == 0, Hindrance = !string.IsNullOrWhiteSpace(c.Edits.BlockedBy), MissingSteps = c.EffectiveSteps.Count == 0,
-                    SourceState = c.SourceState, TestKind = c.Edits.TestKind,
+                    SourceState = uncompared && c.Source.Kind == ScenarioSourceKind.ProjectDiscovery && c.SourceState is null or CaseSourceState.Current ? CaseSourceState.NotCompared : c.SourceState,
+                    TestKind = c.Edits.TestKind,
                     Translation = ScenarioPlanning.StateOf(c), TranslationOrigin = c.Translation(ScenarioPlanning.Norwegian)?.Origin,
                 });
             }

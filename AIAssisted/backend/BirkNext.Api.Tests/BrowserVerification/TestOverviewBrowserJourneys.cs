@@ -863,20 +863,85 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
     }
 
     /// <summary>
-    /// DEF-V12-01 (found 2026-11-28 by STALE-01's first version): after switching to the newer import of the same application (imported as «Ny
-    /// versjon», which promises «Planer følger applikasjonen og sammenlignes med den nye versjonen»), Testoversikt showed 0 test cases and no test
-    /// plan, while the older import showed plan «Fixture C» with 2 cases; the scenario that has a case was counted as uncovered and no source change
-    /// appeared. Root cause (plan ownership per import vs per application) is outside Testoversikt and not fixed here. Reported SKIPPED, never passed.
+    /// DEF-V12-01 (found 2026-11-28 by STALE-01): after switching to a newer import, Testoversikt showed 0 test cases and no plan. Fixed for imports with
+    /// source (the server records the application at import: «Ny versjon av eksisterende applikasjon»): the project now learns its application from its
+    /// own import record, not only from a discovery. Dorado carries a minimal .NET project for that reason. A documents-only import (Cirrus) gets no
+    /// server-side application at all — that remains open (see the V12 report). The whole V1 → V2 lifecycle runs on Dorado alone, independent of order.
     /// </summary>
-    [Fact(Skip = "Known defect DEF-V12-01: plans/cases do not follow an application to its newer import in Testoversikt (see the V12 report).")]
-    [Trait("Category", "IsolatedBrowser")]
-    public async Task STALE_02_cases_follow_the_new_version_and_source_changes_open_exactly_their_cases()
+    [IsolatedBrowserFact]
+    public async Task STALE_02_DEF_V12_01_plans_and_cases_follow_the_application_to_its_new_version_with_exact_identities()
     {
         _name = "STALE-02";
-        var seeded = await TestOverviewCaseSeeding.SeedAsync(host, _s.Page, F.CirrusV1);
-        await ExpectSourceRowAsync("changed", seeded.Cases[F.CirrusCases.Single(c => c.Scenario.Token == "CIR-A-US1-S1")]);
+        var v1 = F.DoradoV1;
+        await _s.ImportAsync(v1);
+        var seeded = await TestOverviewCaseSeeding.SeedAsync(host, _s.Page, v1);
+        (Guid PlanId, string CaseId) Of(string token) => seeded.Cases[F.DoradoCases.Single(c => c.Scenario.Token == token)];
+        var all = F.DoradoCases.Select(c => seeded.Cases[c]).ToHashSet();
+        all.Select(c => c.PlanId).Distinct().Should().ContainSingle("one plan holds the three cases");
+
         await _s.OpenOverviewAsync();
-        await ExpectSourceRowAsync("removed", seeded.Cases[F.CirrusCases.Single(c => c.Scenario.Token == "CIR-A-US1-S2")]);
+        (await _s.KpiAsync("metric.testCases")).Should().Be(3, "V1 shows its plan's three cases");
+
+        // V2 as a new version of Dorado, made current; then switch to it (Project Import → «Show Dorado's documents» of the newest import).
+        await _s.ImportAsync(F.DoradoV2, asNewVersion: true);
+        await _s.UseImportAsync("Dorado", newest: true);
+        await Assertions.Expect(_s.Page.GetByTestId("mto-source-stale")).ToHaveCountAsync(0, new() { Timeout = 60000 });
+        if (await _s.Page.GetByTestId("ssp-module").CountAsync() > 0) await _s.SelectModuleAsync(null);
+
+        // A/B/M: the plan and exactly its three cases, before anyone compared them with V2 — shown as «Ikke sammenlignet ennå», never as in line.
+        (await _s.KpiAsync("metric.testCases")).Should().Be(3, "DEF-V12-01-A/B: the plan and its cases follow the application to V2");
+        await Assertions.Expect(Row("chart.sourceChanges", "notCompared")).ToBeVisibleAsync(new() { Timeout = 60000 });
+        (await Row("chart.sourceChanges", "notCompared").InnerTextAsync()).Should().Contain("3");
+        await Row("chart.sourceChanges", "notCompared").ClickAsync();
+        var uncompared = await _s.ReadPlanSelectionAsync();
+        uncompared.Cases.Should().BeEquivalentTo(all, "DEF-V12-01-N: the follow-up opens exactly the three cases in Planlegg og klargjør");
+        uncompared.Missing.Should().BeFalse();
+
+        // The tester compares: Finn og forstå at project scope over V2.
+        await _s.Page.GotoAsync($"{host.WebUrl}/manual-testing/discover", new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 120000 });
+        await _s.Page.GetByTestId("mtd").WaitForAsync(new() { Timeout = 120000 });
+        await Assertions.Expect(_s.Page.GetByTestId("mtd-loading")).ToHaveCountAsync(0, new() { Timeout = 240000 });
+
+        // C/D/E/O: unchanged stays covered; changed and removed are flagged, each opening exactly its case; nothing is left «not compared».
+        await _s.OpenOverviewAsync();
+        await Assertions.Expect(Row("chart.sourceChanges", "changed")).ToBeVisibleAsync(new() { Timeout = 120000 });
+        (await Row("chart.sourceChanges", "notCompared").CountAsync()).Should().Be(0, "V2 is compared now");
+        (await _s.KpiAsync("metric.testCases")).Should().Be(3, "DEF-V12-01-E: the removed scenario's case is still there");
+        await ExpectSourceRowAsync("changed", Of("DOR-A-US1-S1"));
+        await _s.OpenOverviewAsync();
+        await ExpectSourceRowAsync("removed", Of("DOR-A-US1-S3"));
+        // The P1 follow-up «må gjennomgås etter kildeendring» (p1-source, S01/S14): exactly the changed and the removed P1 case.
+        await _s.OpenOverviewAsync();
+        await Assertions.Expect(Line("p1-source")).ToBeVisibleAsync(new() { Timeout = 60000 });
+        await Line("p1-source").ClickAsync();
+        (await _s.ReadPlanSelectionAsync()).Cases.Should().BeEquivalentTo(new[] { Of("DOR-A-US1-S1"), Of("DOR-A-US1-S3") }, "p1-source opens exactly its cases");
+
+        // J/K/L: the specification and document scopes count the cases of that specification only (the module is implied: one module).
+        await _s.OpenOverviewAsync();
+        if (await _s.Page.GetByTestId("ssp-module").CountAsync() > 0) await _s.SelectModuleAsync(v1.ModuleKey("Core"));
+        await _s.SelectPackAsync("002-b");
+        (await _s.KpiAsync("metric.testCases") ?? 0).Should().Be(0, "DEF-V12-01-K: 002-b has no case; 001-a's never leak into it");
+        await _s.SelectPackAsync("001-a");
+        (await _s.KpiAsync("metric.testCases")).Should().Be(3, "DEF-V12-01-K");
+        if (await _s.Page.GetByTestId("ssp-specification").CountAsync() > 0)
+        {
+            // The list also offers the older import's copy under the SAME label (reported as DEF-V12-03); the current import's own document is the
+            // option without an «@import-» prefix.
+            await _s.Page.GetByTestId("ssp-specification").SelectOptionAsync("workspace:Dorado/Core/specs/001-a/spec.md");
+            await _s.WaitForFiguresAsync();
+            (await _s.KpiAsync("metric.testCases")).Should().Be(3, "DEF-V12-01-L: the document scope");
+        }
+
+        // Q: reload keeps the scope and the figures.
+        await _s.Page.ReloadAsync(new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+        await _s.WaitForFiguresAsync();
+        (await _s.Page.GetByTestId("ssp-feature").InputValueAsync()).Should().Contain("001-a", "DEF-V12-01-Q");
+        (await _s.KpiAsync("metric.testCases")).Should().Be(3, "DEF-V12-01-Q");
+
+        // P (the earlier import stays viewable, unchanged) is verified in the backend lifecycle test
+        // (SourceDrivenPlanningTests.DEF_V12_01_…: the V1 overview still shows the plan, revision unchanged). In the browser, «Show this package» on
+        // the older Dorado import kept showing V2 even after the workspace save was confirmed (reported as an open observation in the V12 report);
+        // it is not asserted here rather than passed by a weaker check.
         Clean();
     }
 

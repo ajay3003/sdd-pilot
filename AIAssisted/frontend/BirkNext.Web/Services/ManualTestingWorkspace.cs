@@ -126,11 +126,32 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
         {
             if (services.GetService(typeof(ProjectEvidence.IProjectEvidenceService)) is not ProjectEvidence.IProjectEvidenceService evidence) return [];
             var view = evidence.Peek();
-            var bound = ProjectEvidence.ProjectEvidenceResolver.BoundSnapshots(view.Project).ToList();
+            // DEF-V12-04 (2026-11-28): the Target Environment project's bound sources belong to ITS application; a shown import of another
+            // application never borrows them (its discovery read the other application's specification).
+            var bound = EnvironmentProjectIsShown(services, view) ? ProjectEvidence.ProjectEvidenceResolver.BoundSnapshots(view.Project).ToList() : [];
             if (ResolveSnapshot(services).Id is { } main && !bound.Contains(main)) bound.Insert(0, main);
             return bound;
         }
         catch (InvalidOperationException) { return []; }
+    }
+
+    /// <summary>
+    /// DEF-V12-04 (2026-11-28): whether the Target Environment project's packages may stand in for the shown import — only when no import is shown,
+    /// the shown import IS that project's main import, or both imports belong to the same project in the Project list (the tester's own grouping).
+    /// Before, a documents-only import (no snapshot of its own) took the environment project's main snapshot, which can be another application:
+    /// its «Finn og forstå» then stored the other application's scenarios under its own project key.
+    /// </summary>
+    private static bool EnvironmentProjectIsShown(IServiceProvider services, ProjectEvidence.ProjectEvidenceView view)
+    {
+        var scope = (services.GetService(typeof(IArtifactExplorerContext)) as IArtifactExplorerContext)?.CurrentScope;
+        if (scope is not { } s || !s.StartsWith("import:", StringComparison.Ordinal)) return true;
+        var shown = s["import:".Length..];
+        if (view.Main?.ImportId is not { } mainImport || mainImport == shown) return true;
+        if (services.GetService(typeof(IWorkspaceSessionService)) is not IWorkspaceSessionService session) return false;
+        var imports = session.SddLifecycle.ProjectImports;
+        var a = imports.FirstOrDefault(i => i.ImportId == shown)?.ApplicationId;
+        var b = imports.FirstOrDefault(i => i.ImportId == mainImport)?.ApplicationId;
+        return a is { Length: > 0 } && a == b;
     }
 
     /// <summary>The project's snapshot: the imported package of the current workspace scope, else the project evidence's main package. Never the
@@ -144,7 +165,7 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
             var scope = (services.GetService(typeof(IArtifactExplorerContext)) as IArtifactExplorerContext)?.CurrentScope;
             if (scope is { } s && s.StartsWith("import:", StringComparison.Ordinal) && view.Packages.FirstOrDefault(p => p.ImportId == s["import:".Length..]) is { SnapshotId: { } imported } package)
                 return (imported, $"Imported package {package.DisplayName}");
-            if (view.Main?.SnapshotId is { } main) return (main, $"Project evidence: {view.Main.DisplayName}");
+            if (view.Main?.SnapshotId is { } main && EnvironmentProjectIsShown(services, view)) return (main, $"Project evidence: {view.Main.DisplayName}");
         }
         catch (InvalidOperationException) { }
         return (null, null);

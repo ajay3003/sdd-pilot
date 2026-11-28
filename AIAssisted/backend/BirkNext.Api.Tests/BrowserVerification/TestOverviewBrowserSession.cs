@@ -25,7 +25,7 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
         return session;
     }
 
-    [GeneratedRegex(@"\b(?:AUR|BOR|CIR)-[A-Z0-9]+-(?:US\d+-)?S\d+\b|\bAUR-SHARED-S1\b")]
+    [GeneratedRegex(@"\b(?:AUR|BOR|CIR|DOR)-[A-Z0-9]+-(?:US\d+-)?S\d+\b|\bAUR-SHARED-S1\b")]
     private static partial Regex TokenRe();
 
     public static IEnumerable<string> Tokens(string text) => TokenRe().Matches(text).Select(m => m.Value);
@@ -61,6 +61,8 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
         await page.GetByTestId("pi-preview").WaitForAsync(new() { Timeout = 120000 });
         var again = page.GetByTestId("pi-duplicate-import-again");
         if (await again.CountAsync() > 0) await again.ClickAsync();
+        // An archive with source gets the server's application choice; «Ny versjon» must then be offered (never silently a new application).
+        if (asNewVersion && app.WithSource) await page.GetByTestId("pi-app-version").WaitForAsync(new() { Timeout = 60000 });
         if (asNewVersion && await page.GetByTestId("pi-app-version").CountAsync() > 0)
         {
             // «Ny versjon av eksisterende applikasjon», the application by name, and «Bruk denne versjonen som gjeldende kildegrunnlag».
@@ -91,6 +93,23 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
         await UseAsync(app);
     }
 
+    /// <summary>
+    /// A project or package choice is saved by the workspace auto-save (an HTTP call after the click). A full page load before that call finished
+    /// restored the previous choice (DEF-V12-01 investigation, 2026-11-28: STALE-01 seeded the previous project; «show the older import» never
+    /// stuck). Waits for the save response; a choice that needs no save (already current) is not waited for longer than the timeout.
+    /// </summary>
+    private Task ClickAndWaitForSaveAsync(ILocator target) => SaveAfterAsync(() => target.ClickAsync());
+
+    private async Task SaveAfterAsync(Func<Task> action)
+    {
+        try
+        {
+            await page.RunAndWaitForResponseAsync(action, r => r.Request.Method != "GET" && r.Url.Contains("api/workspace-persistence/", StringComparison.Ordinal)
+                && (r.Url.Contains("auto-save", StringComparison.Ordinal) || r.Url.Contains("save-current", StringComparison.Ordinal)), new() { Timeout = 30000 });
+        }
+        catch (TimeoutException) { }
+    }
+
     /// <summary>Makes an already imported application current through the shared project selector (the switch every page uses).</summary>
     public async Task UseAsync(F.Application app)
     {
@@ -102,8 +121,8 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
         for (var attempt = 0; attempt < 120; attempt++)
         {
             if (await current.CountAsync() > 0) break;
-            if (await use.CountAsync() > 0) { await use.ClickAsync(); break; }
-            if (await selector.CountAsync() > 0) { await SelectByTextAsync(selector.First, app.Name); break; }
+            if (await use.CountAsync() > 0) { await ClickAndWaitForSaveAsync(use.First); break; }
+            if (await selector.CountAsync() > 0) { await SaveAfterAsync(() => SelectByTextAsync(selector.First, app.Name)); break; }
             await page.WaitForTimeoutAsync(1000);
         }
         await Assertions.Expect(page.GetByTestId("pi-current-name").Or(page.GetByTestId("pi-application-name")).First).ToContainTextAsync(app.Name, new() { Timeout = 120000 });
@@ -115,6 +134,30 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
     {
         await page.GotoAsync($"{host.WebUrl}/manual-testing", new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 120000 });
         await WaitForFiguresAsync();
+    }
+
+    /// <summary>
+    /// Shows one import of an application in the workspace (Project Import → «Show this package»): the NEWEST one (Testoversikt then says nothing
+    /// about a newer import) or an OLDER one (it does). Import rows differ only by a minute-resolution date, so the row is chosen by what the page
+    /// then shows, never by its position. Throws when no row gives the wanted state.
+    /// </summary>
+    public async Task UseImportAsync(string application, bool newest)
+    {
+        var seen = new List<string>();
+        for (var attempt = 0; attempt < 6; attempt++)
+        {
+            await page.GotoAsync($"{host.WebUrl}/project-import", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+            var buttons = page.Locator($"[data-testid=pi-previous-use][aria-label=\"Show {application}'s documents\"]");
+            await buttons.First.WaitForAsync(new() { Timeout = 120000 });
+            var count = await buttons.CountAsync();
+            if (count == 0) continue; // the list re-rendered between the wait and the count
+            await ClickAndWaitForSaveAsync(buttons.Nth(attempt % count));
+            await OpenOverviewAsync();
+            var stale = await page.GetByTestId("mto-source-stale").CountAsync() > 0;
+            if (stale != newest) return;
+            seen.Add($"attempt {attempt}: {count} button(s), clicked #{attempt % count}, shown «{(await page.GetByTestId("mto-source-text").CountAsync() > 0 ? await page.GetByTestId("mto-source-text").InnerTextAsync() : "?")}», stale={stale}");
+        }
+        throw new InvalidOperationException($"No import of {application} could be shown as the {(newest ? "newest" : "older")} one: {string.Join(" | ", seen)}");
     }
 
     public async Task WaitForFiguresAsync()
@@ -344,7 +387,7 @@ public sealed partial class TestOverviewBrowserSession(IsolatedBrowserHost host,
     public static string Normalize(string path)
     {
         var p = path.Replace('\\', '/').TrimStart('/');
-        foreach (var app in new[] { "Aurora/", "Borealis/", "Cirrus/" }) if (p.StartsWith(app, StringComparison.Ordinal)) return p[app.Length..];
+        foreach (var app in new[] { "Aurora/", "Borealis/", "Cirrus/", "Dorado/" }) if (p.StartsWith(app, StringComparison.Ordinal)) return p[app.Length..];
         return p;
     }
 }

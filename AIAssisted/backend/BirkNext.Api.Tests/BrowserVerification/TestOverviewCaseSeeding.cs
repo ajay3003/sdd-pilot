@@ -50,7 +50,7 @@ public static partial class TestOverviewCaseSeeding
         foreach (var plan in F.CasesOf(app).GroupBy(c => c.Plan))
         {
             var chosen = plan.Select(c => byKey.TryGetValue(c.Scenario, out var d) ? d
-                : throw new InvalidOperationException($"Scenario {c.Scenario} is not in the stored discovery ({byKey.Count} known).")).ToList();
+                : throw new InvalidOperationException($"Scenario {c.Scenario} is not in the stored discovery ({byKey.Count} known: {string.Join(", ", byKey.Keys)}; project {key}).")).ToList();
             var draft = await SendAsync<TestPlanDraft>(host, page, "POST", "api/test-plan-suggestions/project-drafts", new CreateProjectTestPlanRequest
             {
                 ProjectKey = key, DiscoveryId = discovery.DiscoveryId, CandidateIds = [.. chosen.Select(d => d.CandidateId)], PlanName = plan.Key,

@@ -69,10 +69,13 @@ public static class ManualTestingOverviewPresentation
             [.. o.Specifications.Where(x => SamePath(x.Path, s.SpecificationPath) && (s.Module is null || x.Module == ScopeModuleName(s.Module)))],
             [.. o.Cases.Where(c => SamePath(c.SpecificationPath, s.SpecificationPath) && (s.Module is null || c.Module == ScopeModuleName(s.Module)))], o.ScenariosAvailable)
             { Stories = [.. o.Stories.Where(x => SamePath(x.SpecificationPath, s.SpecificationPath) && (s.Module is null || x.Module == ScopeModuleName(s.Module)))], StoriesAvailable = o.StoryStatusAvailable },
+        // DEF-V12-01 follow-up (2026-11-28): a module of null is «all modules» here too (one module is implied and the picker shows none), the same rule
+        // as the path branch above. Before, null became «Prosjektnivå», so a specification with several documents (another import's copy listed beside
+        // the current one) was reported as not in the source basis.
         Level.Specification when s.SpecificationPack is not null => new(
-            [.. o.Specifications.Where(x => x.Module == ScopeModuleName(s.Module) && string.Equals(Explorers.ArtifactModules.FeatureOf(x.Path), s.SpecificationPack, StringComparison.OrdinalIgnoreCase))],
-            [.. o.Cases.Where(c => c.Module == ScopeModuleName(s.Module) && string.Equals(Explorers.ArtifactModules.FeatureOf(c.SpecificationPath), s.SpecificationPack, StringComparison.OrdinalIgnoreCase))], o.ScenariosAvailable)
-            { Stories = [.. o.Stories.Where(x => x.Module == ScopeModuleName(s.Module) && string.Equals(Explorers.ArtifactModules.FeatureOf(x.SpecificationPath), s.SpecificationPack, StringComparison.OrdinalIgnoreCase))], StoriesAvailable = o.StoryStatusAvailable },
+            [.. o.Specifications.Where(x => (s.Module is null || x.Module == ScopeModuleName(s.Module)) && string.Equals(Explorers.ArtifactModules.FeatureOf(x.Path), s.SpecificationPack, StringComparison.OrdinalIgnoreCase))],
+            [.. o.Cases.Where(c => (s.Module is null || c.Module == ScopeModuleName(s.Module)) && string.Equals(Explorers.ArtifactModules.FeatureOf(c.SpecificationPath), s.SpecificationPack, StringComparison.OrdinalIgnoreCase))], o.ScenariosAvailable)
+            { Stories = [.. o.Stories.Where(x => (s.Module is null || x.Module == ScopeModuleName(s.Module)) && string.Equals(Explorers.ArtifactModules.FeatureOf(x.SpecificationPath), s.SpecificationPack, StringComparison.OrdinalIgnoreCase))], StoriesAvailable = o.StoryStatusAvailable },
         Level.Specification => new([], [], o.ScenariosAvailable) { StoriesAvailable = o.StoryStatusAvailable },
         _ => new(o.Specifications, o.Cases, o.ScenariosAvailable) { Stories = o.Stories, StoriesAvailable = o.StoryStatusAvailable },
     };
@@ -194,6 +197,8 @@ public static class ManualTestingOverviewPresentation
             ("changed", "Kilden er endret", s.Cases.Count(c => c.SourceState == CaseSourceState.Changed), DeliveryDashboardTone.Review),
             ("removed", "Kilden er fjernet", s.Cases.Count(c => c.SourceState == CaseSourceState.Removed), DeliveryDashboardTone.Blocker),
             ("unavailable", "Kunne ikke sammenlignes", s.Cases.Count(c => c.SourceState == CaseSourceState.SourceUnavailable), DeliveryDashboardTone.Neutral),
+            // DEF-V12-01 (2026-11-28): not compared with the current source version yet (a newer import nobody has compared the plan with).
+            ("notCompared", "Ikke sammenlignet ennå", s.Cases.Count(c => c.SourceState == CaseSourceState.NotCompared), DeliveryDashboardTone.Neutral),
         }.Where(x => x.Item3 > 0).Select(x => Bar(x.Item1, x.Item2, x.Item3, x.Item4, $"{x.Item3} testtilfeller"))];
 
     /// <summary>Saved cases by their chosen test type (the persisted classification; «Ikke angitt» when none was chosen).</summary>
@@ -389,6 +394,7 @@ public static class ManualTestingOverviewPresentation
             ("chart.sourceChanges", "changed") => Cases("Testtilfeller der kilden er endret", x => x.SourceState == CaseSourceState.Changed),
             ("chart.sourceChanges", "removed") => Cases("Testtilfeller der kilden er fjernet", x => x.SourceState == CaseSourceState.Removed),
             ("chart.sourceChanges", "unavailable") => Cases("Testtilfeller som ikke kunne sammenlignes", x => x.SourceState == CaseSourceState.SourceUnavailable),
+            ("chart.sourceChanges", "notCompared") => Cases("Testtilfeller som ikke er sammenlignet med gjeldende kildeversjon", x => x.SourceState == CaseSourceState.NotCompared),
             ("chart.manualTechnical", "manual") => Cases("Manuelle testtilfeller", x => x.TestKind == ScenarioTestKind.Manual),
             ("chart.manualTechnical", "technical") => Cases("Tekniske testtilfeller", x => x.TestKind == ScenarioTestKind.Technical),
             ("chart.manualTechnical", "unset") => Cases("Testtilfeller uten valgt testtype", x => x.TestKind is null or ScenarioTestKind.Both),

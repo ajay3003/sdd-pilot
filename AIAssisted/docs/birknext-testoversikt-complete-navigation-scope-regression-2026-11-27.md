@@ -277,7 +277,7 @@ Oraklet er utvidet med disse beregningene: dekket, P1 uten testtilfelle, gap per
 
 ### 13.6 Bekreftede avvik og observasjoner
 
-**DEF-V12-01 (åpen, ikke rettet):**
+**DEF-V12-01 (rettet for importer med kildekode 2026-11-28, se kapittel 14):**
 
 - **Funnet:** når en applikasjon får en nyere import («Ny versjon av eksisterende applikasjon», med teksten «Planer følger applikasjonen og sammenlignes med den nye versjonen») og arbeidsflaten byttes til den, viser Testoversikt 0 testtilfeller og ingen testplan. Den eldre importen viste planen «Fixture C» med 2 tilfeller.
 - **Følge:** scenarioet med testtilfelle telles som udekket, og ingen kildeendring vises.
@@ -316,3 +316,113 @@ Oraklet er utvidet med disse beregningene: dekket, P1 uten testtilfelle, gap per
 5. Ustabil navigasjon i nettleser (13.6) er ikke utredet.
 
 **Beslutning: NO-GO for full V12-aksept.** UI- og navigasjonsverifiseringen er nå omfattende og kjørbar med ett skript. Hovedhinderet er DEF-V12-01, et dataeierskapsavvik som påvirker hva testere ser etter en ny import.
+
+## 14. Oppdatering 2026-11-28 (2): DEF-V12-01 rettet, nye avvik funnet
+
+### 14.1 Reprodusert før retting
+
+**Reproduksjon i backend:** `SourceDrivenPlanningTests.DEF_V12_01_…`, mot en egen midlertidig PostgreSQL-database.
+
+- **V1:** plan P1 med tilfellene A, B og C. A og B er godkjent, og A har ett resultat.
+- **V2:** ny versjon av samme applikasjon, valgt som gjeldende. Ingen har kjørt Finn og forstå på den.
+- **Før retting:** `OverviewAsync("import:v2")` ga tom `Plans`. Dette er samme symptom som i nettleseren.
+
+**Faktiske identiteter i nettleser-fixturen,** lest fra kjøringsdatabasen:
+
+- Hver import har sin egen prosjektnøkkel: `import:import-<SHA-prefiks>`.
+- Planene lagres med `GuideKey = project:<importnøkkel>` og `ApplicationKey` fra scenarioforslagets kildegrunnlag.
+- Fixture-ZIP-ene med bare dokumenter hadde katalogen `SnapshotId` tom og grunnlaget `DocumentsOnly`. Applikasjonsnøkkelen ble da prosjektnøkkelen selv.
+
+### 14.2 Rotårsak og eierskapsmodell
+
+| Spørsmål | Svar (kodested) |
+|---|---|
+| A. Eies planen av applikasjonen? | Delvis. `TestPlanDraft.ApplicationKey` kommer fra scenarioforslagets `Basis.ApplicationKey` (`ScenarioSourceBasisResolver.ResolveAsync`). |
+| B. Eies den av importen? | Ja, lagringseier. `GuideKey = ProjectOwner(projectKey)` og `ProjectKey = import:<id>`. |
+| C. Har testtilfellet en import-ID? | Det har `Source.Owner` (prosjektnøkkel) og en kildeidentitet (`Generated.SourceIdentity`, `tss-…`) som er stabil på tvers av importer. |
+| D. Filtrerer Testoversikt på import i stedet for applikasjon? | Ja, når applikasjonen er ukjent. `ProjectWorkspaceAsync` fant applikasjonen bare via prosjektets siste scenarioforslag (`discoveries.Latest(key)`). En ny import uten Finn og forstå fant derfor ingen applikasjon og ingen tidligere planer. **Dette er rotårsaken.** |
+| E. Er kildeidentitetene stabile? | Ja, for samme Given/When. Tvillinger skilles med utfallssuffiks (`CandidateIndex.Find`). |
+| F. Finnes scenarioet i ny versjon? | Ja, via kildeidentiteten, etter at ny versjon er sammenlignet. |
+| G. Endret eller fjernet? | `FlagProject` / `Absence`: Endret, Fjernet (bare ved fullstendig sammenligning), Kilde mangler, Ikke sammenlignet. |
+| H. API | `GET api/test-plan-suggestions/project/overview` og `GET …/project`. Begge går via `ProjectWorkspaceAsync`. |
+| I. Persistens, spørring, identitet eller UI? | **Spørring.** Persistens og identiteter var riktige. |
+
+### 14.3 Retting (ingen skjemaendring, ingen migrering)
+
+**1. `ImportedApplicationAsync`** (`TestPlanSuggestionService.cs`)
+
+- Prosjektets applikasjon hentes fra importens egen registrering: katalogens `SnapshotId` → kildeversjonens repository-identitet. Det er valget «Ny applikasjon» eller «Ny versjon av …» fra importen.
+- Rekkefølgen er scenarioforslag → importregistrering → egne planer.
+- Ingenting utledes fra navn, tittel eller US-, AC- eller FR-nummer.
+- Planene flyttes, kopieres og skrives ikke om.
+
+**2. Ikke sammenlignet ennå** (`TestPlanSuggestionService.Overview.cs`)
+
+- Finnes det en nyere kildeversjon som planen ikke er sammenlignet med (`NewerSources`), vises tilfellenes «i samsvar» som `NotCompared`.
+- Endret, Fjernet og Kilde mangler beholdes.
+- Ny rad i Kildeendringer: «Ikke sammenlignet ennå». Den åpner nøyaktig de tilfellene i Planlegg og klargjør.
+
+**3. DEF-V12-02, pakkevalg med underforstått modul** (`ManualTestingOverviewPresentation.Of`)
+
+- `null` (alle moduler) ble lest som «Prosjektnivå» i pakkegrenen.
+- Med to dokumenter i samme pakke meldte siden derfor «finnes ikke i kildegrunnlaget».
+- Nå gjelder samme regel som i stigrenen.
+
+**4. DEF-V12-04, kryssapplikasjonslekkasje i Finn og forstå** (`ManualTestingWorkspace`)
+
+- En import med bare dokumenter tok målmiljøets hovedpakke som kildeversjon. Hørte den pakken til en annen applikasjon, leste serveren den applikasjonens spesifikasjon.
+- **Bevis:** STALE-01 fikk Dorados `DOR-…`-scenarioer under Cirrus' nøkkel.
+- **Nå:** miljøprosjektets pakker brukes bare for prosjektets egen import, eller for en import som ligger i samme prosjekt i prosjektlisten.
+
+**Livsløp før og etter:**
+
+| | Før | Etter |
+|---|---|---|
+| Ny versjon, ikke sammenlignet | 0 planer, 0 tilfeller | Planen og alle tilfeller vises, som «Ikke sammenlignet ennå» |
+| Etter Finn og forstå på ny versjon | Planen vises | Uendret, Endret og Fjernet per tilfelle |
+| Eldre import | Planen vises | Samme plan og samme revisjon |
+
+### 14.4 Åpne punkter
+
+- **DEF-V12-03 (UX):** dokumentvelgeren viser V1- og V2-kopien av samme dokument med identisk tekst.
+- **Dokumentimporter uten kildekode:** de får ingen applikasjonsidentitet på serveren, og valget «Ny versjon» vises ikke. Planer følger derfor ikke en ren dokumentimport. Å rette det krever at importens applikasjonsvalg lagres uten kildeversjon. Det er en skjema- eller produktbeslutning.
+- **Kravsporbarhet:** `PreparedCaseTraceability.Build` leser bevisst bare importens egne planer. Ikke endret, fordi det endrer dekningssemantikk.
+- **Eldre versjon med kildekode:** «Show this package» viste fortsatt V2. P er derfor bare verifisert i backend.
+- **Testverktøy:** importbyttet navigerte før autolagringen var ferdig. Verktøyet venter nå på lagringen.
+
+### 14.5 Automatiske tester
+
+| ID | Hvor |
+|---|---|
+| DEF-V12-01-A, B, C, D, E, F, G, H, I, M, P | Backend `DEF_V12_01_plans_and_cases_follow_the_application_…` (V1 → V2 → V3 → V4 + applikasjon B, eksakte plan- og case-ID-er, persisterte rader) |
+| A, B, C, D, E, K, L, M, N, O, Q (+ p1-source) | Nettleser `STALE_02_DEF_V12_01_…` (Dorado med kildekode, Ny versjon) |
+| R | STALE-01 |
+| J | N/A i fixturen (én underforstått modul). Modulscope er dekket av B02, B09 og P1-SCOPE-02. |
+| Ikke sammenlignet ennå, pakke uten modul | Frontend `DEF_V12_01_cases_not_compared_…`, `A_pack_scope_with_an_implied_module_…` |
+| DEF-V12-04 | Frontend `ManualTestingWorkspaceSnapshotIsolationTests` (3) |
+
+Kontroll × scope: `chart.sourceChanges` og `p1-source` S01/S14 er dekket.
+
+**Fortsatt tomme celler:**
+
+- p1-uncovered S09/S14
+- p1-approval S03/S14
+- p1-ready S03/S04
+- chart.blockers S02–S04
+- readiness S04
+
+### 14.6 Resultater i denne runden
+
+| Kjøring | Resultat |
+|---|---|
+| Hele frontendsuiten (V12Verify), før de nye testene | 9 950 / 9 950 bestått |
+| Nye frontendtester (5) | 5 / 5 bestått |
+| Backend DEF-V12-01 livsløp | Bestått etter retting. Feilet før retting (reprodusert). |
+| Nettleser STALE-01 + STALE-02, siste fullførte kjøring | STALE-01 bestått. STALE-02 bestått til og med Q; P er tatt ut, se 14.4. |
+| Hele den isolerte nettleserpakken, og backend TestPlanning/ProjectImport/isolasjon/Specifications | **Startet, men ikke ferdig ved commit (brukeren ba om commit uten å vente). NOT VERIFIED i denne committen.** STALE-02 med p1-source-steget er ikke kjørt ennå. |
+
+**Beslutning: NO-GO.**
+
+- Full nettleser- og backendkjøring av denne endringen er ikke bekreftet.
+- Dokumentimporter følger fortsatt ikke applikasjonen.
+- Kontroll × scope-hull gjenstår.

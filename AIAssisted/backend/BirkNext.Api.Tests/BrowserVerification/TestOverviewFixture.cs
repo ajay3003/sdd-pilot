@@ -32,7 +32,10 @@ public static class TestOverviewFixture
 
     /// <param name="Wrapped">The ZIP holds one top folder named after the application (as most downloaded archives do). The canonical module rule
     /// then sees that folder as a module root: modules are «Aurora/Booking» and the project's own specs/ is the module «Aurora».</param>
-    public sealed record Application(string Name, bool Wrapped, IReadOnlyList<Spec> Specs)
+    /// <param name="WithSource">The ZIP also holds a minimal .NET project (DEF-V12-01): Project Import then creates a Source Analysis snapshot, so the
+    /// import gets the server-side application identity and the «Ny versjon av eksisterende applikasjon» choice. Without it (documents only) the
+    /// server records no application for the import.</param>
+    public sealed record Application(string Name, bool Wrapped, IReadOnlyList<Spec> Specs, bool WithSource = false)
     {
         public IEnumerable<string> Modules => Specs.Select(s => s.Module).Where(m => m.Length > 0 && m != UnassignedModule).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal);
 
@@ -141,12 +144,20 @@ public static class TestOverviewFixture
         return b.ToString();
     }
 
-    /// <summary>The ZIP the browser imports (Spec Kit documents only: no source, no secrets).</summary>
+    /// <summary>The ZIP the browser imports (Spec Kit documents; with <see cref="Application.WithSource"/> one minimal .NET project; no secrets).</summary>
     public static byte[] Archive(Application app)
     {
         using var buffer = new MemoryStream();
         using (var zip = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
         {
+            if (app.WithSource)
+            {
+                var root = app.Wrapped ? $"{app.Name}/" : "";
+                Write(zip, $"{root}src/{app.Name}.Api/{app.Name}.Api.csproj",
+                    "<Project Sdk=\"Microsoft.NET.Sdk.Web\">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n  </PropertyGroup>\n</Project>\n");
+                Write(zip, $"{root}src/{app.Name}.Api/Program.cs",
+                    "var app = WebApplication.CreateBuilder(args).Build();\napp.MapGet(\"/orders\", () => \"ok\");\napp.Run();\n");
+            }
             foreach (var spec in app.Specs)
             {
                 Write(zip, app.ArchivePath(spec), Markdown(spec));
@@ -228,7 +239,37 @@ public static class TestOverviewFixture
         new(PlanC, new("Core/specs/001-a/spec.md", "CIR-A-US1-S2"), CaseState.Awaiting),
     ];
 
-    public static IReadOnlyList<CaseFixture> CasesOf(Application app) => app == Aurora ? AuroraCases : app == CirrusV1 ? CirrusCases : [];
+    /// <summary>
+    /// Application D (DEF-V12-01, 2026-11-28): one journey only. V1 has Core/001-a with three P1 scenarios (each with a case) and Core/002-b with one
+    /// scenario and no case. V2 — imported as a NEW VERSION and made current — keeps S2 unchanged, changes the expected result of S1 (same
+    /// Given/When: the same scenario, changed source) and removes S3. The plan and its three cases must follow the application to V2.
+    /// </summary>
+    public static Application DoradoV1 { get; } = new("Dorado", Wrapped: true, WithSource: true, Specs:
+    [
+        Feature("Dorado", "Core", "001-a", "Orders",
+            [new("US1", "Place an order", "P1", [S("DOR-A-US1-S1", "a new order", "FR-001"), S("DOR-A-US1-S2", "a repeated order", "FR-001"), S("DOR-A-US1-S3", "a cancelled order", "FR-001")])], "FR-001"),
+        Feature("Dorado", "Core", "002-b", "Invoices",
+            [new("US1", "Send an invoice", "P2", [S("DOR-B-US1-S1", "a monthly invoice", "FR-001")])], "FR-001"),
+    ]);
+
+    public static Application DoradoV2 { get; } = new("Dorado", Wrapped: true, WithSource: true, Specs:
+    [
+        Feature("Dorado", "Core", "001-a", "Orders",
+            [new("US1", "Place an order", "P1", [S("DOR-A-US1-S1", "a new order", "FR-001", then: "the order is placed and a confirmation is sent (FR-001)"), S("DOR-A-US1-S2", "a repeated order", "FR-001")])], "FR-001"),
+        Feature("Dorado", "Core", "002-b", "Invoices",
+            [new("US1", "Send an invoice", "P2", [S("DOR-B-US1-S1", "a monthly invoice", "FR-001")])], "FR-001"),
+    ]);
+
+    public const string PlanD = "Fixture D – ny versjon";
+
+    public static IReadOnlyList<CaseFixture> DoradoCases { get; } =
+    [
+        new(PlanD, new("Core/specs/001-a/spec.md", "DOR-A-US1-S1"), CaseState.Approved),
+        new(PlanD, new("Core/specs/001-a/spec.md", "DOR-A-US1-S2"), CaseState.ApprovedReady),
+        new(PlanD, new("Core/specs/001-a/spec.md", "DOR-A-US1-S3"), CaseState.Awaiting),
+    ];
+
+    public static IReadOnlyList<CaseFixture> CasesOf(Application app) => app == Aurora ? AuroraCases : app == CirrusV1 ? CirrusCases : app == DoradoV1 ? DoradoCases : [];
 
     public static IReadOnlyList<CaseFixture> CasesIn(Application app, Scope scope)
     {

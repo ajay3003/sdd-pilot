@@ -308,6 +308,35 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         O.Rows(spec, O.Level.Specification).Should().ContainSingle(r => r.Label == "US1 Search" && r.Covered == 1);
     }
 
+    /// <summary>DEF-V12-01 (2026-11-28): cases nobody compared with the current source version yet are counted as «Ikke sammenlignet ennå», and the
+    /// row opens exactly those cases (never «in line», never mixed with changed/removed).</summary>
+    [Fact]
+    public void DEF_V12_01_cases_not_compared_with_the_new_version_get_their_own_row_and_drill_to_exactly_them()
+    {
+        var o = Overview() with
+        {
+            Cases = [.. Overview().Cases.Select(c => c.CaseId is "s1-1" or "s1-2" ? c with { SourceState = CaseSourceState.NotCompared } : c)],
+        };
+        var project = O.Of(o, new O.Scope(O.Level.Project, null, null));
+        O.SourceChanges(project).Select(b => (b.Key, b.Value)).Should().Equal(("changed", 1), ("notCompared", 2));
+        O.DrillDown(project, O.Level.Project, "chart.sourceChanges", "notCompared")!.Cases.Select(c => c.CaseId).Should().Equal("s1-1", "s1-2");
+        O.DrillDown(project, O.Level.Project, "chart.sourceChanges", "changed")!.Cases.Select(c => c.CaseId).Should().Equal("f1");
+    }
+
+    /// <summary>DEF-V12-01 follow-up (2026-11-28): a specification pack chosen while the module is implied (null = all modules, as for a document) counts
+    /// that pack's specifications and cases — it is never read as «Prosjektnivå» and reported as not in the source basis.</summary>
+    [Fact]
+    public void A_pack_scope_with_an_implied_module_counts_that_pack_and_only_that_pack()
+    {
+        var o = Overview();
+        var implied = O.Of(o, new O.Scope(O.Level.Specification, null, null, "001-skoleservice"));
+        implied.Specifications.Select(x => x.Path).Should().Equal(Skole);
+        implied.Cases.Select(c => c.CaseId).Should().Equal("s1-1", "s1-2", "s1-3", "s1-4", "s1-5");
+        O.Of(o, new O.Scope(O.Level.Specification, "SkoleService", null, "001-skoleservice")).Cases.Should().HaveCount(5, "an explicit module still applies");
+        O.Of(o, new O.Scope(O.Level.Specification, "Frontend", null, "001-skoleservice")).Specifications.Should().BeEmpty("another module's pack never matches");
+        O.Of(o, new O.Scope(O.Level.Specification, "", null, "001-skoleservice")).Specifications.Should().BeEmpty("the empty string is the project level, not «all»");
+    }
+
     [Fact]
     public void Scope_matrix_intersects_application_module_pack_and_exact_document_without_fallback()
     {

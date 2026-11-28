@@ -592,6 +592,19 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         return await BirkNext.Api.Services.IntegrationSuites.IntegrationRequirementTrace.WithIntegrationAsync(view, projectKey.Trim(), requirementLinks, declaredJourneys, integrationSuites, ct);
     }
 
+    /// <summary>
+    /// DEF-V12-01 (2026-11-28): the application of a project (one import) as its OWN import recorded it — the source snapshot the import produced,
+    /// stored with the import's specification catalog, and that snapshot's repository identity (the «Ny applikasjon» / «Ny versjon av …» choice made
+    /// at import). Before, only the project's latest discovery told its application, so a newer import nobody had run «Finn og forstå» on showed none
+    /// of the application's plans. Null when the import recorded no snapshot (nothing is guessed from names, titles or numbers).
+    /// </summary>
+    private async Task<string?> ImportedApplicationAsync(string projectKey, CancellationToken ct)
+    {
+        if (specificationCatalogs is null || await specificationCatalogs.CurrentAsync(projectKey, ct) is not { SnapshotId: { } snapshotId }) return null;
+        var snapshot = (await baselines.SnapshotsAsync(ct)).FirstOrDefault(s => s.Id == snapshotId);
+        return snapshot is null ? null : SourceBaselineService.KeyOf(snapshot);
+    }
+
     /// <summary>The project's plans and snapshots (only this project's), Test Data options and the Critical E2E flows of its environment.</summary>
     public async Task<TestPlanWorkspace> ProjectWorkspaceAsync(string projectKey, string? environmentId, bool canWrite, CancellationToken ct)
     {
@@ -603,7 +616,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         // The application's plans from earlier imports of it (a newer import continues them) and the current basis of the application.
         if (discoveryStore is not null) await discoveryStore.RestoreAsync(key, null, ct);
         var current = discoveries?.Latest(key);
-        var application = current?.Basis?.ApplicationKey ?? drafts.Select(d => d.ApplicationKey).FirstOrDefault(a => a is not null);
+        var application = current?.Basis?.ApplicationKey ?? await ImportedApplicationAsync(key, ct) ?? drafts.Select(d => d.ApplicationKey).FirstOrDefault(a => a is not null);
         if (application is not null)
         {
             if (discoveryStore is not null) await discoveryStore.RestoreApplicationAsync(application, ct);

@@ -31,7 +31,7 @@ namespace BirkNext.Api.Tests.Services.TestPlanning;
 /// removed, new, conflicting), historical inspection that never moves the current discovery, Refresh that never rolls back, and every manual case
 /// and old revision kept.
 /// </summary>
-public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
+public sealed partial class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
 {
     private const string Repository = "repo:m2lb-synthetic";
     private const string SpecPath = "specs/001-intake/spec.md";

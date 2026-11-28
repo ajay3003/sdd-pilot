@@ -181,8 +181,8 @@
       "S04": []
     },
     "mto-attention-open (p1-source)": {
-      "S01": [],
-      "S14": []
+      "S01": ["STALE_02_DEF_V12_01_plans_and_cases_follow_the_application_to_its_new_version_with_exact_identities"],
+      "S14": ["STALE_02_DEF_V12_01_plans_and_cases_follow_the_application_to_its_new_version_with_exact_identities"]
     },
     "mto-bar-open (chart.blockers)": {
       "S01": ["CASE_03_blockers_hindrance_and_clarification"],
@@ -191,8 +191,8 @@
       "S04": []
     },
     "mto-bar-open (chart.sourceChanges)": {
-      "S01": [],
-      "S14": []
+      "S01": ["STALE_02_DEF_V12_01_plans_and_cases_follow_the_application_to_its_new_version_with_exact_identities"],
+      "S14": ["STALE_02_DEF_V12_01_plans_and_cases_follow_the_application_to_its_new_version_with_exact_identities"]
     },
     "mto-bar-open (chart.priority / chart.coverageGaps)": {
       "S01": ["B19_chart_bars_open_exactly_their_records", "B20_pagination_and_show_more", "B24_duplicate_display_ids_stay_separate"],
