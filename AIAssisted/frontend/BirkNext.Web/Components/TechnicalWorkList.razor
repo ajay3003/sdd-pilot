@@ -1,0 +1,79 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using D = BirkNext.Web.Services.TechnicalTestingDashboard
+@inject IServiceProvider ServiceProvider
+
+@* Finn og analyser (2026-11-28): exactly the candidates behind one Teknisk testoversikt figure (?work=…), each with its classification and the
+   evidence it rests on. The same inventory and rules as the overview, so the list and the figure never disagree. Paged; never an endless list. *@
+<section class="mt-card twl" data-testid="twl" data-work="@Work" aria-labelledby="twl-h">
+    <h2 class="mt-h" id="twl-h">@(_figure?.Label ?? "Teknisk testarbeid")</h2>
+    @if (_loading)
+    {
+        <p class="mt-muted" role="status" data-testid="twl-loading">Henter scenarioforslag …</p>
+    }
+    else if (_figure is null)
+    {
+        <p class="mt-muted" data-testid="twl-unknown">Ukjent utvalg. <a href="@TechnicalTestingPresentation.HomeRoute">Tilbake til Teknisk testoversikt</a></p>
+    }
+    else
+    {
+        <p class="mt-muted" data-testid="twl-total" data-total="@_figure.Value">@_figure.Value @_figure.Detail · regler @E2ERules.RuleVersion, @TestWorkClassifier.RuleVersion</p>
+        <ul class="twl-list" data-testid="twl-list">
+            @foreach (var w in _figure.Candidates.Take(_shown))
+            {
+                var c = w.Classification;
+                <li data-testid="twl-item" data-candidate="@w.Candidate.CandidateId" data-identity="@w.Candidate.SourceIdentity" data-category="@c.Category" data-e2e="@c.E2E.Status">
+                    <strong>@w.Candidate.Title</strong>
+                    <span class="twl-tags">
+                        <span class="mt-chip">@TestWorkClassifier.Label(c.Category)</span>
+                        <span class="mt-chip">@TestWorkClassifier.Label(c.E2E.Status)</span>
+                        <span class="mt-chip">@D.Label(c.E2E.Execution)</span>
+                        @if (c.Surface != TechnicalSurface.None) { <span class="mt-chip">@D.Label(c.Surface)</span> }
+                    </span>
+                    <details class="twl-why">
+                        <summary>Hvorfor</summary>
+                        <ul>
+                            @foreach (var r in c.E2E.Reasons) { <li>@r</li> }
+                            <li>@c.Ownership.Basis</li>
+                            @foreach (var e in w.Candidate.Evidence.Take(3)) { <li class="mt-muted">@e.Reference</li> }
+                        </ul>
+                    </details>
+                </li>
+            }
+        </ul>
+        @if (_figure.Candidates.Count > _shown)
+        {
+            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _shown += PageSize" data-testid="twl-more">Vis flere (@(_figure.Candidates.Count - _shown) til)</button>
+        }
+    }
+</section>
+
+@code {
+    private const int PageSize = 25;
+    [Parameter] public string? ProjectKey { get; set; }
+    [Parameter] public string? Work { get; set; }
+
+    private bool _loading = true;
+    private int _shown = PageSize;
+    private string? _loadedFor;
+    private D.Figure? _figure;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{ProjectKey}|{Work}";
+        if (_loadedFor == key && !_loading) return;
+        _loadedFor = key; _loading = true; _figure = null; _shown = PageSize;
+        try
+        {
+            if (ProjectKey is not { Length: > 0 } project || Work is null || ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) return;
+            var (snapshot, _) = ManualTestingWorkspace.ResolveSnapshot(ServiceProvider);
+            var (last, _) = await api.LastDiscoveryAsync(project, snapshot);
+            if (last is null && snapshot is not null) (last, _) = await api.LastDiscoveryAsync(project, null);
+            var candidates = last?.ProjectKey == project ? last.Candidates : [];
+            var figure = D.Build(candidates, []).Find(Work);
+            _figure = figure is { OpensCases: false } ? figure : null;
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _figure = null; }
+        finally { _loading = false; }
+    }
+}

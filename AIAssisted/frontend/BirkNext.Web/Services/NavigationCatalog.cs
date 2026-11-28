@@ -494,7 +494,18 @@ public static class WorkspaceViews
         CreateManualTesting(),
         Groups(WorkspaceView.TechnicalTester, "Technical Testing", "Assess and verify frontends, APIs, contracts, integrations, E2E flows and performance.", "technical-testing",
         [
-            new("tt-workspace", "Technical Testing", "nav-icon-workflow", ["technical-testing", "technical-testing/assess", "technical-testing/configure", "technical-testing/verify", "technical-testing/integrations"]),
+            // Technical Testing (2026-11-28): the same four-step shape as Manual Testing, plus Integrasjonstesting as the technical specialist area.
+            // «Verify & investigate» stays a sub-workflow (opened from Teknisk testoversikt and Testplaner), never a second results menu.
+            new("tt-workspace", "Technical Testing", "nav-icon-workflow",
+                [TechnicalTestingPresentation.HomeRoute, TechnicalTestingPresentation.AssessRoute, TechnicalTestingPresentation.ConfigureRoute, TechnicalTestingPresentation.PlansRoute,
+                 TechnicalTestingPresentation.VerifyRoute, TechnicalTestingPresentation.IntegrationsRoute],
+                [
+                    new(TechnicalTestingPresentation.HomeRoute, TechnicalTestingPresentation.HomeRoute, "Teknisk testoversikt", "technical E2E flows, API/GraphQL and integration work, prepared and executed"),
+                    new(TechnicalTestingPresentation.AssessRoute, TechnicalTestingPresentation.AssessRoute, "Finn og analyser", "which flows, operations and integrations exist, from source evidence"),
+                    new(TechnicalTestingPresentation.ConfigureRoute, TechnicalTestingPresentation.ConfigureRoute, "Planlegg og klargjør", "environment, authentication, data and dependencies the technical tests need"),
+                    new(TechnicalTestingPresentation.PlansRoute, TechnicalTestingPresentation.HomeRoute, "Testplaner", "the shared test plans, seen from their technical cases"),
+                    new(TechnicalTestingPresentation.IntegrationsRoute, TechnicalTestingPresentation.IntegrationsRoute, "Integrasjonstesting", "topology, journeys, suites and integration quality review"),
+                ]),
             new("tt-context", "Project & environment", "nav-icon-import", ["sources", "system-understanding", NavigationCatalog.TargetEnvironmentsRoute]),
             new("tt-contracts", "Frontend, APIs & contracts", "nav-icon-task-alignment", ["frontend-quality-review", "api-quality-review/contracts", "api-quality-review", "schema-studio"]),
             new("tt-integration", "Integration & E2E", "nav-icon-source-analysis", ["integration-suites", "critical-e2e-regression", "integration-quality-review", "integration-journeys", "integration-topology"]),

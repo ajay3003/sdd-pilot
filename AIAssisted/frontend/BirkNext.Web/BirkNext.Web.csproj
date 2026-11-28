@@ -160,6 +160,7 @@
     <Compile Include="../../shared/DataQualityContracts.cs" Link="Models/DataQualityContracts.cs" />
     <Compile Include="../../shared/ScenarioDiscoveryWire.cs" Link="Models/ScenarioDiscoveryWire.cs" />
     <Compile Include="../../shared/ScenarioOwnershipContracts.cs" Link="Models/ScenarioOwnershipContracts.cs" />
+    <Compile Include="../../shared/TestWorkClassification.cs" Link="Models/TestWorkClassification.cs" />
     <Compile Include="../../shared/ContractTestDataContracts.cs" Link="Models/ContractTestDataContracts.cs" />
     <Compile Include="../../shared/PerformanceLocalExecutionContracts.cs" Link="Models/PerformanceLocalExecutionContracts.cs" />
     <Compile Include="../../shared/PerformanceResourceContracts.cs" Link="Models/PerformanceResourceContracts.cs" />

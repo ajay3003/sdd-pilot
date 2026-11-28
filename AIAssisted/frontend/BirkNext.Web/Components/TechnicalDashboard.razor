@@ -1,0 +1,85 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using D = BirkNext.Web.Services.TechnicalTestingDashboard
+@inject IServiceProvider ServiceProvider
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+@* Teknisk testoversikt (2026-11-28): compact figures over the shared inventory and plans. Candidate figures open Finn og analyser filtered to exactly
+   those candidates; case figures open Planlegg og klargjør with exactly those cases (the same selection contract as Testoversikt). Discovered and
+   automated are static evidence; execution is shown where it was recorded (Verify & investigate, the plans), never inferred. *@
+<section class="mt-card ttd" data-testid="ttd" aria-labelledby="ttd-h">
+    <h2 class="mt-h" id="ttd-h">Teknisk testarbeid</h2>
+    @if (_loading)
+    {
+        <p class="mt-muted" role="status" data-testid="ttd-loading">Henter scenarioforslag og testplaner …</p>
+    }
+    else if (_error is { } error)
+    {
+        <p class="mt-alert" role="alert" data-testid="ttd-error">@error</p>
+    }
+    else if (_dashboard is { } d)
+    {
+        @if (!_discovered)
+        {
+            <p class="mt-muted" data-testid="ttd-no-discovery">Ingen scenarioforslag er laget for prosjektet ennå. <a href="@TechnicalTestingPresentation.AssessRoute">Finn og analyser</a></p>
+        }
+        <div class="ttd-kpis" data-testid="ttd-kpis">
+            @foreach (var f in d.Discovered.Concat(d.Prepared))
+            {
+                <div class="ttd-kpi" data-testid="ttd-kpi" data-key="@f.Key" data-value="@f.Value">
+                    @if (f.Value == 0)
+                    {
+                        <span class="ttd-value">0</span>
+                    }
+                    else if (f.OpensCases)
+                    {
+                        <button type="button" class="ttd-value ttd-open" data-testid="ttd-open" data-destination="plan" @onclick="() => OpenCasesAsync(f)">@f.Value</button>
+                    }
+                    else
+                    {
+                        <a class="ttd-value ttd-open" href="@D.Href(f.Key)" data-testid="ttd-open" data-destination="assess">@f.Value</a>
+                    }
+                    <span class="ttd-label">@f.Label</span>
+                    <span class="mt-muted ttd-detail">@f.Detail</span>
+                </div>
+            }
+        </div>
+        <p class="mt-muted mt-boundary" data-testid="ttd-boundary">Funnet og automatisert er kildebevis, ikke kjøringer. Resultater: <a href="@TechnicalTestingPresentation.VerifyRoute">Verifiser og undersøk</a> · <a href="@TechnicalTestingPresentation.PlansRoute">Testplaner</a></p>
+    }
+</section>
+
+@code {
+    [Parameter] public string? ProjectKey { get; set; }
+
+    private bool _loading = true, _discovered;
+    private string? _error, _loadedFor;
+    private D.Dashboard? _dashboard;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == ProjectKey && !_loading) return;
+        _loadedFor = ProjectKey;
+        _loading = true; _error = null; _dashboard = null; _discovered = false;
+        try
+        {
+            if (ProjectKey is not { Length: > 0 } project || ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) return;
+            var (snapshot, _) = ManualTestingWorkspace.ResolveSnapshot(ServiceProvider);
+            var (last, _) = await api.LastDiscoveryAsync(project, snapshot);
+            if (last is null && snapshot is not null) (last, _) = await api.LastDiscoveryAsync(project, null);
+            var candidates = last?.ProjectKey == project ? last.Candidates : [];
+            _discovered = candidates.Count > 0;
+            var (overview, overviewError) = await api.OverviewAsync(project);
+            if (overview is null && overviewError is not null) { _error = "Testplanene kunne ikke leses: " + overviewError; return; }
+            _dashboard = D.Build(candidates, overview?.ProjectKey == project ? overview.Cases : []);
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _error = "Teknisk testoversikt kunne ikke leses."; }
+        finally { _loading = false; }
+    }
+
+    private async Task OpenCasesAsync(D.Figure figure)
+    {
+        if (ProjectKey is not { } project || figure.Cases.Count == 0) return;
+        await ManualTestingDrillNavigation.OpenCasesAsync(JS, Nav, project, figure.Label, [.. figure.Cases.Select(c => new PlanPreparePresentation.CaseRef(c.PlanId, c.CaseId))]);
+    }
+}

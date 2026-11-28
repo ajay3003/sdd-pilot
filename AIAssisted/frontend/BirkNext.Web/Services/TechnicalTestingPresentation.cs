@@ -49,6 +49,8 @@ public static class TechnicalTestingPresentation
     public const string AssessRoute = "technical-testing/assess";
     public const string ConfigureRoute = "technical-testing/configure";
     public const string VerifyRoute = "technical-testing/verify";
+    public const string PlansRoute = "technical-testing/plans";
+    public const string IntegrationsRoute = "technical-testing/integrations";
     public const string TargetEnvironmentsRoute = "admin/system-settings?section=target-environments";
 
     public static readonly IReadOnlyList<WorkspaceStage> Stages =

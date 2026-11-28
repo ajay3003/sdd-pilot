@@ -1,0 +1,7 @@
+.ttd { margin: 1rem 0; }
+.ttd-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.6rem; margin: 0.5rem 0 0.6rem; }
+.ttd-kpi { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.6rem 0.75rem; border: 1px solid var(--border-color, #d8dde6); border-radius: 0.5rem; min-width: 0; }
+.ttd-value { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.ttd-open { background: none; border: 0; padding: 0; text-align: left; color: var(--link-color, #1d5fbf); cursor: pointer; text-decoration: underline; text-underline-offset: 0.15em; }
+.ttd-label { font-weight: 650; overflow-wrap: anywhere; }
+.ttd-detail { font-size: 0.82rem; overflow-wrap: anywhere; }

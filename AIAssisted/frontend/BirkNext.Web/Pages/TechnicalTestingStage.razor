@@ -57,6 +57,11 @@
         {
             <p class="mt-muted" data-testid="tt-none">No technical area applies to this project's evidence. <a href="@($"{T.AssessRoute}")">Discover &amp; assess</a> shows what was found and what is missing.</p>
         }
+        @if (_stage.Id == "assess" && WorkFilter is { } work)
+        {
+            @* A Teknisk testoversikt figure opened here (?work=…): exactly its candidates first, the areas below. *@
+            <BirkNext.Web.Components.TechnicalWorkList ProjectKey="@facts.ProjectKey" Work="@work" />
+        }
         <div class="mt-grid" data-testid="tt-areas">
             @foreach (var area in shown)
             {
@@ -85,6 +90,10 @@
     private bool _loading = true;
     private TechnicalTestingWorkspace.Snapshot? _ws;
     private ICurrentWorkspaceProjection? _projection;
+    /// <summary>The Teknisk testoversikt figure to list (?work=…), or null.</summary>
+    private string? WorkFilter => new Uri(Navigation.Uri).Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+        .Select(p => p.Split('=', 2)).Where(p => p.Length == 2 && p[0] == "work").Select(p => Uri.UnescapeDataString(p[1])).FirstOrDefault(v => v.Length > 0);
+
     /// <summary>"assess", "configure" or "verify" (the last segment of the stage's route).</summary>
     [Parameter] public string? StageSlug { get; set; }
 

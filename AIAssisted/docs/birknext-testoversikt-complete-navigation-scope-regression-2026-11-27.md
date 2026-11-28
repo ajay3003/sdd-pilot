@@ -419,7 +419,9 @@ Kontroll × scope: `chart.sourceChanges` og `p1-source` S01/S14 er dekket.
 | Nye frontendtester (5) | 5 / 5 bestått |
 | Backend DEF-V12-01 livsløp | Bestått etter retting. Feilet før retting (reprodusert). |
 | Nettleser STALE-01 + STALE-02, siste fullførte kjøring | STALE-01 bestått. STALE-02 bestått til og med Q; P er tatt ut, se 14.4. |
-| Hele den isolerte nettleserpakken, og backend TestPlanning/ProjectImport/isolasjon/Specifications | **Startet, men ikke ferdig ved commit (brukeren ba om commit uten å vente). NOT VERIFIED i denne committen.** STALE-02 med p1-source-steget er ikke kjørt ennå. |
+| Hele den isolerte nettleserpakken, kjørt etter commit `6c88f6b4` (bygget før p1-source-steget i STALE-02) | 43 bestått, 1 feilet: B23 tilbake/fram, tidsavbrudd ved navigering (kjent ustabilitet, 13.6). STALE-01 og STALE-02 bestått. |
+| Backend TestPlanning, ProjectImport, isolasjon og Specifications, kjørt etter commit | **763 / 763 bestått** |
+| (Ved commit `6c88f6b4`) | **Startet, men ikke ferdig ved commit (brukeren ba om commit uten å vente). NOT VERIFIED i denne committen.** STALE-02 med p1-source-steget er ikke kjørt ennå. |
 
 **Beslutning: NO-GO.**
 
