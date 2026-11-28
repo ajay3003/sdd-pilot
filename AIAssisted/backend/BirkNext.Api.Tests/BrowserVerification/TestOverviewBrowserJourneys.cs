@@ -126,10 +126,19 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
         }
     }
 
+    /// <summary>
+    /// The browser's back (-1) or forward (+1) button. B23 investigation (2026-11-28): <c>Layout/WorkspaceSaveIndicator.razor</c> registers a
+    /// LocationChangingHandler on every page, so Blazor answers a browser history step by undoing it and redoing it once the handlers have approved
+    /// (NavigationManager popstate interception). Playwright's GoBack/GoForward wait for the history navigation they started; with that undo/redo
+    /// the wait intermittently never completed («waiting for navigation until "Commit"», 60 s). The same user action is taken with history.go,
+    /// and every caller then waits for the resulting ADDRESS — what a tester sees — instead of Playwright's navigation bookkeeping.
+    /// </summary>
+    private Task HistoryAsync(int delta) => _s.Page.EvaluateAsync($"() => history.go({delta})");
+
     /// <summary>Back from Finn og forstå to Testoversikt (browser history).</summary>
     private async Task BackToOverviewAsync()
     {
-        await _s.Page.GoBackAsync(new() { WaitUntil = WaitUntilState.Commit });
+        await HistoryAsync(-1);
         await _s.Page.WaitForURLAsync(u => u.EndsWith("/manual-testing", StringComparison.Ordinal), new() { Timeout = 60000, WaitUntil = WaitUntilState.Commit });
         await _s.WaitForFiguresAsync();
     }
@@ -518,12 +527,12 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
         var overview = _s.Page.Url;
         await ClickAwayAsync(_s.Page.Locator("[data-testid=mto-kpi][data-widget='metric.scenarios']"), overview);
         var destination = _s.Page.Url;
-        await _s.Page.GoBackAsync(new() { WaitUntil = WaitUntilState.Commit });
+        await HistoryAsync(-1);
         await _s.Page.WaitForURLAsync(u => u == overview, new() { Timeout = 60000, WaitUntil = WaitUntilState.Commit });
         await _s.WaitForFiguresAsync();
         (await _s.Page.GetByTestId("ssp-module").InputValueAsync()).Should().Be(A.ModuleKey("Billing"));
         await ExpectFiguresAsync(A, new F.Scope("Billing"));
-        await _s.Page.GoForwardAsync(new() { WaitUntil = WaitUntilState.Commit });
+        await HistoryAsync(1);
         await _s.Page.WaitForURLAsync(u => u == destination, new() { Timeout = 60000, WaitUntil = WaitUntilState.Commit });
         Clean();
     }
@@ -650,7 +659,7 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
         await BackToOverviewAsync();
         (await _s.Page.GetByTestId("ssp-module").InputValueAsync()).Should().Be(A.ModuleKey("Billing"));
         await ExpectFiguresAsync(A, new F.Scope("Billing"));
-        await _s.Page.GoForwardAsync(new() { WaitUntil = WaitUntilState.Commit });
+        await HistoryAsync(1);
         var forward = await _s.ReadDiscoverAsync();
         forward.Tokens.Should().BeEquivalentTo(expected.Select(k => k.Token));
         Clean();
@@ -757,7 +766,7 @@ public sealed class TestOverviewBrowserJourneys(IsolatedBrowserHost host) : IAsy
         var expected = F.CasesOf(A).Where(c => P1(c) && !F.IsReady(c.State)).Select(c => _seeded.Cases[c]).ToHashSet();
         await _s.Page.ReloadAsync(new() { WaitUntil = WaitUntilState.DOMContentLoaded });
         (await _s.ReadPlanSelectionAsync()).Cases.Should().BeEquivalentTo(expected, "a reload keeps the hand-over");
-        await _s.Page.GoBackAsync(new() { WaitUntil = WaitUntilState.Commit });
+        await HistoryAsync(-1);
         await _s.Page.WaitForURLAsync(u => u.EndsWith("/manual-testing", StringComparison.Ordinal), new() { Timeout = 60000, WaitUntil = WaitUntilState.Commit });
         await _s.WaitForFiguresAsync();
         await ExpectFiguresAsync(A, new F.Scope());
