@@ -46,6 +46,40 @@
                     @if (r.Technical.Count > 0)
                     {
                         <button type="button" class="btn btn-secondary btn-sm" data-testid="ttp-technical" @onclick="() => OpenTechnicalAsync(r)">Åpne de @r.Technical.Count tekniske testtilfellene</button>
+                        <details class="ttp-cases" data-testid="ttp-cases">
+                            <summary>Resultat per teknisk testtilfelle</summary>
+                            <ul>
+                                @foreach (var c in r.Technical)
+                                {
+                                    <li data-testid="ttp-case" data-case="@c.CaseId" data-execution="@(c.Execution?.ToString() ?? "NotRun")">
+                                        <span>@c.Title</span>
+                                        <span class="mt-chip">@Status(c.Execution)</span>
+                                        @if (c.ExecutedAt is { } at) { <span class="mt-muted">@at.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span> }
+                                        @if (_recording == (r.Plan.Id, c.CaseId))
+                                        {
+                                            <div class="ttp-record" data-testid="ttp-record-form">
+                                                <label>Resultat <select @bind="_status" data-testid="ttp-record-status">
+                                                    <option value="@ScenarioExecutionStatus.Passed">Bestått</option>
+                                                    <option value="@ScenarioExecutionStatus.Failed">Feilet</option>
+                                                    <option value="@ScenarioExecutionStatus.Blocked">Blokkert</option>
+                                                </select></label>
+                                                <label>Miljø <input @bind="_environment" data-testid="ttp-record-environment" placeholder="for eksempel QA" /></label>
+                                                <label>Faktisk resultat <input @bind="_actual" data-testid="ttp-record-actual" /></label>
+                                                <label>Bevis (logg- eller korrelasjons-ID) <input @bind="_evidence" data-testid="ttp-record-evidence" /></label>
+                                                <label>Feilreferanse <input @bind="_defect" data-testid="ttp-record-defect" /></label>
+                                                <button type="button" class="btn btn-primary btn-sm" data-testid="ttp-record-save" @onclick="() => SaveResultAsync(r, c)">Lagre resultat</button>
+                                                <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _recording = null">Avbryt</button>
+                                                @if (_recordError is { } re) { <p class="mt-alert" role="alert" data-testid="ttp-record-error">@re</p> }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="msb-link" data-testid="ttp-record" @onclick="() => StartRecording(r, c)">Registrer resultat</button>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        </details>
                     }
                 </li>
             }
@@ -82,7 +116,7 @@
             if (last is null && snapshot is not null) (last, _) = await api.LastDiscoveryAsync(project, null);
             var (overview, error) = await api.OverviewAsync(project);
             if (overview is null) { _error = error is null ? null : "Testplanene kunne ikke leses: " + error; return; }
-            var technical = D.TechnicalCases(overview.Cases, D.Classify(last?.ProjectKey == project ? last.Candidates : []));
+            var technical = D.TechnicalCases(overview.Cases, D.Classify(last?.ProjectKey == project ? last.Candidates : [], D.Decisions(overview.MethodDecisions)));
             _rows = [.. overview.Plans.Select(p =>
             {
                 var mine = technical.Where(c => c.PlanId == p.Id).ToList();
@@ -91,6 +125,39 @@
         }
         catch (Exception e) when (e is not OperationCanceledException) { _error = "Testplanene kunne ikke leses."; }
         finally { _loading = false; }
+    }
+
+    private (Guid, string)? _recording;
+    private ScenarioExecutionStatus _status = ScenarioExecutionStatus.Passed;
+    private string? _environment, _actual, _evidence, _defect, _recordError;
+
+    private static string Status(ScenarioExecutionStatus? s) => s switch
+    {
+        ScenarioExecutionStatus.Passed => "Bestått",
+        ScenarioExecutionStatus.Failed => "Feilet",
+        ScenarioExecutionStatus.Blocked => "Blokkert",
+        _ => "Ikke kjørt",
+    };
+
+    private void StartRecording(Row r, OverviewCase c)
+    {
+        _recording = (r.Plan.Id, c.CaseId); _status = ScenarioExecutionStatus.Passed; _environment = _actual = _evidence = _defect = _recordError = null;
+    }
+
+    /// <summary>Records a result for THIS case (Technical Testing V2): the case's scenario occurrence in the plan, scoped to the case, against the
+    /// occurrence's latest result (a newer result recorded meanwhile is refused, never overwritten). Nothing is executed here.</summary>
+    private async Task SaveResultAsync(Row r, OverviewCase c)
+    {
+        _recordError = null;
+        if (ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) return;
+        var (view, error) = await api.ExecutionAsync(r.Plan.Id);
+        var occurrence = view?.Occurrences.FirstOrDefault(o => o.CaseIds.Contains(c.CaseId));
+        if (occurrence is null) { _recordError = error ?? "Testtilfellet finnes ikke lenger i planen."; return; }
+        var (_, saveError) = await api.RecordResultAsync(r.Plan.Id, new RecordScenarioResultRequest(occurrence.Key, _status, null, _defect, occurrence.Latest?.Id,
+            CaseId: c.CaseId, Environment: _environment, Expected: null, Actual: _actual, Evidence: string.IsNullOrWhiteSpace(_evidence) ? null : [_evidence]));
+        if (saveError is not null) { _recordError = saveError; return; }
+        _recording = null;
+        await LoadAsync();
     }
 
     private async Task OpenTechnicalAsync(Row r)

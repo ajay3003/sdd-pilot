@@ -17,7 +17,7 @@
     }
     else
     {
-        <p class="mt-muted" data-testid="twl-total" data-total="@_figure.Value">@_figure.Value @_figure.Detail · regler @E2ERules.RuleVersion, @TestWorkClassifier.RuleVersion</p>
+        <p class="mt-muted" data-testid="twl-total" data-total="@_figure.Value" data-scope="@TestScopeReader.Describe(_scope)">@_figure.Value @_figure.Detail · @TestScopeReader.Describe(_scope) · regler @E2ERules.RuleVersion, @TestWorkClassifier.RuleVersion</p>
         <ul class="twl-list" data-testid="twl-list">
             @foreach (var w in _figure.Candidates.Take(_shown))
             {
@@ -29,11 +29,14 @@
                         <span class="mt-chip">@TestWorkClassifier.Label(c.E2E.Status)</span>
                         <span class="mt-chip">@D.Label(c.E2E.Execution)</span>
                         @if (c.Surface != TechnicalSurface.None) { <span class="mt-chip">@D.Label(c.Surface)</span> }
+                        @if (w.CrossModule) { <span class="mt-chip" data-testid="twl-cross-module" title="@string.Join(", ", w.Modules)">på tvers av moduler</span> }
+                        @if (c.E2E.Deviates) { <span class="mt-chip" data-testid="twl-deviation">valgt: @D.Label(c.E2E.Execution) (forslag: @D.Label(c.E2E.Proposed))</span> }
                     </span>
                     <details class="twl-why">
                         <summary>Hvorfor</summary>
                         <ul>
                             @foreach (var r in c.E2E.Reasons) { <li>@r</li> }
+                            @if (c.E2E.Evidence is { } ev && ev.Missing().ToList() is { Count: > 0 } missing) { <li>Mangler bevis for: @string.Join(", ", missing)</li> }
                             <li>@c.Ownership.Basis</li>
                             @foreach (var e in w.Candidate.Evidence.Take(3)) { <li class="mt-muted">@e.Reference</li> }
                         </ul>
@@ -57,6 +60,7 @@
     private int _shown = PageSize;
     private string? _loadedFor;
     private D.Figure? _figure;
+    private BirkNext.Web.Services.ManualTestingOverviewPresentation.Scope _scope = BirkNext.Web.Services.ManualTestingOverviewPresentation.Scope.Project;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -70,7 +74,12 @@
             var (last, _) = await api.LastDiscoveryAsync(project, snapshot);
             if (last is null && snapshot is not null) (last, _) = await api.LastDiscoveryAsync(project, null);
             var candidates = last?.ProjectKey == project ? last.Candidates : [];
-            var figure = D.Build(candidates, []).Find(Work);
+            // The same scope, decisions and rules as the figure that opened this list (V2): never a broader population.
+            var read = await TestScopeReader.ReadAsync(ServiceProvider);
+            _scope = read.Scope;
+            var (overview, _) = await api.OverviewAsync(project);
+            var ov = overview?.ProjectKey == project ? overview : new ManualTestingOverview { ProjectKey = project };
+            var figure = D.Build(candidates, [], D.Decisions(ov.MethodDecisions), _scope, ov.Specifications.Select(x => x.Path)).Find(Work);
             _figure = figure is { OpensCases: false } ? figure : null;
         }
         catch (Exception e) when (e is not OperationCanceledException) { _figure = null; }

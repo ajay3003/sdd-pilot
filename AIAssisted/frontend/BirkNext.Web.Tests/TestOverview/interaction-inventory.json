@@ -4,7 +4,7 @@
   "guardedSources": [
     {
       "path": "AIAssisted/frontend/BirkNext.Web/Pages/ManualTesting.razor",
-      "testIds": ["mt", "mt-error", "mt-new-plan", "mt-new-plan-cancel", "mt-new-plan-create", "mt-new-plan-done", "mt-new-plan-e2e-candidates", "mt-new-plan-empty", "mt-new-plan-error", "mt-new-plan-form", "mt-new-plan-from-template", "mt-new-plan-methods", "mt-new-plan-name", "mt-new-plan-open", "mt-new-plan-preview", "mt-new-plan-scenario-only", "mt-new-plan-scenario-only-label", "mt-new-plan-selection", "mt-new-plan-structure", "mt-new-plan-structure-grouping", "mt-new-plan-suite", "mt-new-plan-template", "mt-new-plan-template-note", "mt-new-plan-template-preview", "mt-new-plan-template-suite", "mt-new-plan-why", "mt-no-project", "mt-no-project-link", "mto-action-empty", "mto-attention-open", "mto-band", "mto-bar", "mto-bar-empty", "mto-bar-open", "mto-custom", "mto-custom-cancel", "mto-custom-catalog", "mto-custom-group", "mto-customize", "mto-custom-leave", "mto-custom-leave-discard", "mto-custom-leave-save", "mto-custom-leave-stay", "mto-custom-reset", "mto-custom-reset-confirm", "mto-custom-reset-yes", "mto-custom-save", "mto-custom-state", "mto-custom-tile", "mto-custom-tile-add", "mto-custom-tile-edit", "mto-custom-tile-remove", "mto-custom-widget", "mto-drill", "mto-drill-case", "mto-drill-close", "mto-drill-count", "mto-drill-empty", "mto-drill-error", "mto-drill-group", "mto-drill-narrow", "mto-drill-open", "mto-drill-plan", "mto-drill-row", "mto-drill-scenario", "mto-drill-story", "mto-error", "mto-follow-count", "mto-follow-module", "mto-follow-n", "mto-follow-next", "mto-follow-none", "mto-follow-page-status", "mto-follow-prev", "mto-follow-reset", "mto-follow-search", "mto-follow-spec", "mto-follow-toggle", "mto-follow-why", "mto-history-unavailable", "mto-kpi", "mto-kpis", "mto-kpis-secondary", "mto-meter", "mto-module-overview-empty", "mto-outside-modules", "mto-plan-card", "mto-plan-exec", "mto-plan-exec-h", "mto-plan-no-exec", "mto-plan-open", "mto-plan-open-items", "mto-plan-prep", "mto-plan-structure", "mto-readiness", "mto-readiness-count", "mto-readiness-none", "mto-readiness-open", "mto-retry", "mto-row", "mto-row-approved", "mto-row-cases", "mto-row-covered", "mto-row-details", "mto-row-followup", "mto-row-open", "mto-row-requirements", "mto-row-scenarios", "mto-row-share", "mto-row-why", "mto-scope-error", "mto-scope-invalid", "mto-scope-retry", "mto-show-all", "mto-slot-down", "mto-slot-hide", "mto-slot-tools", "mto-slot-up", "mto-sort", "mto-source", "mto-source-stale", "mto-source-text", "mto-tile", "mto-tile-breakdown", "mto-tile-count", "mto-tile-error", "mto-tile-explain", "mto-tile-metric", "mto-tile-notice", "mto-tile-open", "mto-tile-title", "mto-toolbar", "mto-widget", "mt-plan-actions", "mt-retry", "mt-transfer", "mt-transfer-close", "mt-transfer-error", "mt-transfer-panel", "mt-transfer-plan"]
+      "testIds": ["mt", "mt-error", "mt-new-plan", "mt-new-plan-cancel", "mt-new-plan-create", "mt-new-plan-done", "mt-new-plan-e2e-candidates", "mt-new-plan-empty", "mt-new-plan-error", "mt-new-plan-form", "mt-new-plan-from-template", "mt-new-plan-methods", "mt-new-plan-name", "mt-new-plan-open", "mt-new-plan-preview", "mt-new-plan-scenario-only", "mt-new-plan-scenario-only-label", "mt-new-plan-selection", "mt-new-plan-structure", "mt-new-plan-structure-grouping", "mt-new-plan-suite", "mt-new-plan-template", "mt-new-plan-template-note", "mt-new-plan-template-preview", "mt-new-plan-template-suite", "mt-new-plan-why", "mt-no-project", "mt-no-project-link", "mt-plan-actions", "mt-retry", "mt-transfer", "mt-transfer-close", "mt-transfer-error", "mt-transfer-panel", "mt-transfer-plan", "mto-action-empty", "mto-attention-open", "mto-band", "mto-bar", "mto-bar-empty", "mto-bar-open", "mto-custom", "mto-custom-cancel", "mto-custom-catalog", "mto-custom-group", "mto-custom-leave", "mto-custom-leave-discard", "mto-custom-leave-save", "mto-custom-leave-stay", "mto-custom-reset", "mto-custom-reset-confirm", "mto-custom-reset-yes", "mto-custom-save", "mto-custom-state", "mto-custom-tile", "mto-custom-tile-add", "mto-custom-tile-edit", "mto-custom-tile-remove", "mto-custom-widget", "mto-customize", "mto-drill", "mto-drill-case", "mto-drill-close", "mto-drill-count", "mto-drill-empty", "mto-drill-error", "mto-drill-group", "mto-drill-narrow", "mto-drill-open", "mto-drill-plan", "mto-drill-row", "mto-drill-scenario", "mto-drill-story", "mto-e2e", "mto-e2e-figure", "mto-e2e-open", "mto-error", "mto-follow-count", "mto-follow-module", "mto-follow-n", "mto-follow-next", "mto-follow-none", "mto-follow-page-status", "mto-follow-prev", "mto-follow-reset", "mto-follow-search", "mto-follow-spec", "mto-follow-toggle", "mto-follow-why", "mto-history-unavailable", "mto-kpi", "mto-kpis", "mto-kpis-secondary", "mto-meter", "mto-module-overview-empty", "mto-outside-modules", "mto-plan-card", "mto-plan-exec", "mto-plan-exec-h", "mto-plan-no-exec", "mto-plan-open", "mto-plan-open-items", "mto-plan-prep", "mto-plan-structure", "mto-readiness", "mto-readiness-count", "mto-readiness-none", "mto-readiness-open", "mto-retry", "mto-row", "mto-row-approved", "mto-row-cases", "mto-row-covered", "mto-row-details", "mto-row-followup", "mto-row-open", "mto-row-requirements", "mto-row-scenarios", "mto-row-share", "mto-row-why", "mto-scope-error", "mto-scope-invalid", "mto-scope-retry", "mto-show-all", "mto-slot-down", "mto-slot-hide", "mto-slot-tools", "mto-slot-up", "mto-sort", "mto-source", "mto-source-stale", "mto-source-text", "mto-tile", "mto-tile-breakdown", "mto-tile-count", "mto-tile-error", "mto-tile-explain", "mto-tile-metric", "mto-tile-notice", "mto-tile-open", "mto-tile-title", "mto-toolbar", "mto-widget"]
     },
     {
       "path": "AIAssisted/frontend/BirkNext.Web/Components/SpecificationScopePicker.razor",
@@ -131,6 +131,16 @@
       "applicableScopes": ["S01", "S02", "S03", "S04", "S07", "S08", "S09", "S10", "S11", "S12", "S13", "S14"],
       "requiredParameters": ["application", "scope", "tileId", "identities"],
       "automatedTestIds": ["T03_the_normal_view_has_no_tile_menus_and_the_default_tile_shows_its_count_and_meaning", "B17_KPI_tile_and_scenario_KPI_navigation"]
+    },
+    {
+      "controlId": "mto-e2e-open",
+      "component": "ManualTesting",
+      "type": "button",
+      "behavior": "Manuell E2E (V2 2026-11-28): et tall åpner nøyaktig sine poster — flyter i Finn og forstå (identiteter), testtilfeller i Planlegg og klargjør (plan/case-ID).",
+      "applicableScopes": ["S01", "S02", "S03", "S04"],
+      "destinationOrTransition": "Flyter: manual-testing/discover med identitetsfilter. Testtilfeller: manual-testing/plan med eksakt utvalg.",
+      "requiredParameters": ["application", "scope", "figureKey"],
+      "automatedTestIds": ["Manual_E2E_figures_count_only_manual_or_both_flows_and_their_manual_cases"]
     }
   ],
   "notes": [
@@ -223,6 +233,12 @@
       "S01": ["CASE_01_P1_awaiting_approval_project", "CASE_02_P1_not_ready_project_and_reload_back"],
       "S02": ["CASE_04_module_scope_narrows_case_follow_ups"],
       "S04": ["CASE_05_specification_and_document_scope"]
+    },
+    "mto-e2e-open": {
+      "S01": ["Manual_E2E_figures_count_only_manual_or_both_flows_and_their_manual_cases"],
+      "S02": [],
+      "S03": [],
+      "S04": []
     }
   }
 }

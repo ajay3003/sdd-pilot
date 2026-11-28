@@ -84,6 +84,32 @@ public static class ManualTestingOverviewPresentation
     private static HashSet<string> CoveredKeys(IEnumerable<OverviewCase> cases) =>
         [.. cases.Where(c => c.ScenarioIdentity is not null).Select(c => Key(c.SpecificationPath, c.ScenarioIdentity!))];
 
+    /// <summary>
+    /// Manual Testoversikt population (Technical Testing V2, 2026-11-28). Before: every scenario of the stored specifications and every saved case of
+    /// the active plans. Now the same, minus technical-only work:
+    /// <list type="bullet">
+    /// <item>a case the tester typed «Teknisk»;</item>
+    /// <item>a scenario (and its cases without a type of their own) a tester decided «Teknisk» in Finn og forstå;</item>
+    /// <item>a documented module test that does not declare end-to-end (technical by the E2E rules; a declared TEST-E stays — it is hybrid).</item>
+    /// </list>
+    /// «Manuell», «Begge», hybrid flows and unclassified legacy records stay (they never vanish from both workspaces). Plans stay shared; a plan
+    /// card's own totals are the plan's. Nothing is deleted or moved: the filter is the view's.
+    /// </summary>
+    public static ManualTestingOverview ForManual(ManualTestingOverview o)
+    {
+        var technical = o.MethodDecisions.Where(d => d.Kind == ScenarioTestKind.Technical && d.SourceIdentity is not null)
+            .Select(d => Key(d.SpecificationPath, d.SourceIdentity!)).ToHashSet(StringComparer.Ordinal);
+        bool TechnicalOnly(OverviewSpecification spec, OverviewScenario sc) =>
+            technical.Contains(Key(spec.Path, sc.Identity)) || sc.Standalone && sc.Level != ScenarioTestLevel.EndToEnd;
+        var hidden = o.Specifications.SelectMany(spec => spec.Scenarios.Where(sc => TechnicalOnly(spec, sc)).Select(sc => Key(spec.Path, sc.Identity))).ToHashSet(StringComparer.Ordinal);
+        return o with
+        {
+            Specifications = [.. o.Specifications.Select(spec => spec with { Scenarios = [.. spec.Scenarios.Where(sc => !TechnicalOnly(spec, sc))] })],
+            Cases = [.. o.Cases.Where(c => c.TestKind != ScenarioTestKind.Technical
+                && !(c.TestKind is null && c.ScenarioIdentity is { } id && hidden.Contains(Key(c.SpecificationPath, id))))],
+        };
+    }
+
     private static string Key(string? path, string identity) => $"{(path ?? "").Replace('\\', '/').Trim('/').ToLowerInvariant()}|{identity}";
 
     private static bool IsCovered(OverviewSpecification spec, OverviewScenario sc, HashSet<string> covered) => covered.Contains(Key(spec.Path, sc.Identity));

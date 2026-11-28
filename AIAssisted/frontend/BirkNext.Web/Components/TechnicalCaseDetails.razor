@@ -1,0 +1,59 @@
+@using BirkNext.TestPlanning
+@using T = BirkNext.TestPlanning.TechnicalCaseTemplates
+
+@* Technical case details (Technical Testing V2, 2026-11-28): shown only for a case typed «Teknisk». The test type chooses a short template; every
+   other field stays available under «Avanserte tekniske detaljer». Nothing is required. Values are descriptions and references — never a password,
+   token or key (the server refuses one). Saved with the case (same save, revision and history). *@
+<section class="tcd" data-testid="tcd" aria-labelledby="tcd-h-@Form.CaseId">
+    <h4 class="mtp-ctx-label" id="tcd-h-@Form.CaseId">Tekniske detaljer</h4>
+    <label class="msb-small"><span class="mtp-ctx-label">Testtype</span>
+        <select class="msb-select" disabled="@Readonly" data-testid="tcd-type" @onchange="e => Set(TypeKey, e.Value?.ToString())">
+            <option value="" selected="@(Type is null)">Ikke valgt</option>
+            @foreach (var t in T.Templates.Keys)
+            {
+                <option value="@t" selected="@(Type == t)">@TestWorkClassifier.Label(t)</option>
+            }
+        </select></label>
+    @foreach (var f in Primary)
+    {
+        @Field(f)
+    }
+    <details class="tcd-advanced" data-testid="tcd-advanced">
+        <summary>Avanserte tekniske detaljer</summary>
+        @foreach (var f in Advanced)
+        {
+            @Field(f)
+        }
+    </details>
+    @if (T.LooksLikeSecretAny(Form.Technical.Values))
+    {
+        <p class="mt-alert msb-small" role="alert" data-testid="tcd-secret">Et felt ser ut som et passord, token eller en nøkkel. Beskriv tilgangen i stedet; hemmeligheter lagres aldri.</p>
+    }
+</section>
+
+@code {
+    private const string TypeKey = "type";
+    [Parameter, EditorRequired] public BirkNext.Web.Services.PlanPreparePresentation.CaseForm Form { get; set; } = default!;
+    [Parameter] public bool Readonly { get; set; }
+    /// <summary>The type the classification suggests for the case's scenario (pre-selects the template until a type is chosen).</summary>
+    [Parameter] public TestWorkCategory? Suggested { get; set; }
+
+    private TestWorkCategory? Type => Form.Technical.TryGetValue(TypeKey, out var v) && Enum.TryParse<TestWorkCategory>(v, out var t) ? t : Suggested is { } s && T.Templates.ContainsKey(s) ? s : null;
+    private IReadOnlyList<T.Field> Primary => T.For(Type ?? TestWorkCategory.TechnicalOther);
+    private IEnumerable<T.Field> Advanced => T.Fields.Where(f => Primary.All(p => p.Key != f.Key));
+
+    private void Set(string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) Form.Technical.Remove(key);
+        else Form.Technical[key] = value;
+    }
+
+    private RenderFragment Field(T.Field f) => __builder =>
+    {
+        <label class="tcd-field" data-testid="tcd-field" data-key="@f.Key"><span class="mtp-ctx-label">@f.Label</span>
+            <textarea class="mtp-lcell mtp-auto" rows="1" disabled="@Readonly" value="@(Form.Technical.GetValueOrDefault(f.Key) ?? "")"
+                      @oninput="e => Set(f.Key, e.Value?.ToString())" data-testid="tcd-input" data-key="@f.Key"></textarea>
+            <span class="mt-muted msb-small">@f.Help</span>
+        </label>
+    };
+}

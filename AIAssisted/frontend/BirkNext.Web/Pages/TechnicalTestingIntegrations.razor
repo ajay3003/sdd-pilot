@@ -59,6 +59,12 @@
                                 <div data-testid="itx-count" data-entity="@c.Entity"><dt>@c.Entity</dt><dd><a href="@c.Href"><strong>@c.Value</strong></a> <span class="mt-muted">@c.Detail</span></dd></div>
                             }
                         </dl>
+                        @* Technical Testing V2 (2026-11-28): declared journeys are confirmed technical E2E flows in the shared E2E rules (one definition of
+                           E2E); their prepared cases, plans and results are in Technical Testing — never a second plan or E2E model here. *@
+                        <p class="mt-muted" data-testid="itx-e2e-links">Integrasjonsreiser som E2E-flyter:
+                            <a href="@BirkNext.Web.Services.TechnicalTestingDashboard.Href(BirkNext.Web.Services.TechnicalTestingDashboard.E2EConfirmed)" data-testid="itx-e2e-flows">Finn og analyser</a> ·
+                            <a href="@BirkNext.Web.Services.TechnicalTestingPresentation.HomeRoute" data-testid="itx-e2e-overview">Teknisk testoversikt</a> ·
+                            <a href="@BirkNext.Web.Services.TechnicalTestingPresentation.PlansRoute" data-testid="itx-e2e-plans">Testplaner</a></p>
                     </section>
                     break;
 

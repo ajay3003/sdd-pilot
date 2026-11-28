@@ -1,0 +1,4 @@
+.tcd { display: grid; gap: 0.4rem; margin: 0.6rem 0; padding: 0.6rem 0.75rem; border: 1px dashed var(--border-color, #c9d1dc); border-radius: 0.5rem; }
+.tcd-field { display: flex; flex-direction: column; gap: 0.15rem; }
+.tcd-advanced { margin-top: 0.3rem; }
+.tcd-advanced > .tcd-field { margin-top: 0.4rem; }

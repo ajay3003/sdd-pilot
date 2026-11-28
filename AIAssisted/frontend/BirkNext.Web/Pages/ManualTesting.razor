@@ -127,6 +127,26 @@
                     @Kpi("metric.nonFunctionalScenarios", "Ikke-funksjonelle scenarioer", O.ScenariosOfType(slice, ScenarioRequirementType.NonFunctional), "Blandede scenarioer telles ikke her", explain)
                 </section>
 
+                @* Technical Testing V2 (2026-11-28): manual E2E — flows a person executes (manual or both), by certainty, and the manual population's cases
+                   of those flows. Compact; every figure opens exactly its records (flows → Finn og forstå by identity, cases → Planlegg og klargjør). *@
+                @if (_ws?.Discovery is { } e2eDiscovery && TechnicalTestingDashboard.ManualE2E(e2eDiscovery.Candidates, slice.Cases, TechnicalTestingDashboard.Decisions(ov.MethodDecisions), CurrentScope, ov.Specifications.Select(x => x.Path)) is { } e2e
+                    && e2e.Any(f => f.Value > 0))
+                {
+                    <section class="mto-e2e" aria-labelledby="mto-e2e-h" data-testid="mto-e2e">
+                        <h2 class="mto-band-h" id="mto-e2e-h">Manuell E2E</h2>
+                        <ul class="mto-e2e-list">
+                            @foreach (var f in e2e)
+                            {
+                                <li data-testid="mto-e2e-figure" data-key="@f.Key" data-value="@f.Value">
+                                    @if (f.Value > 0) { <button type="button" class="msb-link mto-e2e-v" data-testid="mto-e2e-open" data-destination="@(f.OpensCases ? "plan" : "discover")" @onclick="() => OpenManualE2EAsync(f)">@f.Value</button> }
+                                    else { <span class="mto-e2e-v">0</span> }
+                                    <span>@f.Label</span>
+                                </li>
+                            }
+                        </ul>
+                    </section>
+                }
+
                 @* UX-107–111 (2026-11-27): «Testplaner og mer innsikt» directly after the key figures — the plans and the scenarios' readiness are
                    visible without scrolling past follow-up lists. Order: key figures → this → «Viktig å følge opp» → modules and detailed analysis. *@
                 @if (On("panel.testPlans") && ov.Plans.Count > 0 || On("chart.scenarioReadiness") || On("panel.recentChanges") && ov.RecentRevisions.Count > 0)
@@ -529,6 +549,17 @@
     /// exactly the source identities the metric counted — never a broader filter — plus the priority when the metric is about P1. When an identity
     /// is not in Finn og forstå's current result, that page says so (mtd-overview-selection-missing); it never shows other scenarios instead.
     /// </summary>
+    /// <summary>A manual E2E figure: its flows in Finn og forstå (exact identities), or its cases in Planlegg og klargjør (exact plan/case ids).</summary>
+    private async Task OpenManualE2EAsync(TechnicalTestingDashboard.Figure f)
+    {
+        if (_ws?.ProjectKey is not { } projectKey) return;
+        if (f.OpensCases)
+            await ManualTestingDrillNavigation.OpenCasesAsync(JS, Nav, projectKey, $"Manuell E2E: {f.Label}", [.. f.Cases.Select(c => new P.CaseRef(c.PlanId, c.CaseId))]);
+        else
+            await ManualTestingDrillNavigation.OpenFilteredAsync(JS, Nav, projectKey,
+                BirkNext.Web.Services.ScenarioBrowserPresentation.FromOverview(f.Candidates.Select(w => w.Candidate.SourceIdentity), $"Manuell E2E: {f.Label}"));
+    }
+
     private async Task OpenInDiscoverAsync(O.Slice slice, string chart, string key)
     {
         if (_drillBusy || _ws?.ProjectKey is not { } projectKey) return;
@@ -1232,7 +1263,8 @@
             var (settings, _) = await settingsTask;
             await scopeTask;
             if (generation != _overviewGeneration) return;
-            _overview = overview; _overviewError = overview is null ? error ?? "Ukjent feil." : null;
+            // Technical Testing V2 (2026-11-28): the manual population — technical-only work is in Teknisk testoversikt (see O.ForManual).
+            _overview = overview is null ? null : O.ForManual(overview); _overviewError = overview is null ? error ?? "Ukjent feil." : null;
             _dashboard = settings ?? new();
             // UX-107: coming back from Finn og forstå restores the open follow-up list, its filters and open groups.
             if (overview is not null) await RestoreFollowAsync();

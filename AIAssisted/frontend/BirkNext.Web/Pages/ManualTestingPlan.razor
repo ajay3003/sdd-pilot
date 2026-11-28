@@ -704,6 +704,11 @@
                                         </select></label>
                                     <span class="mt-muted msb-small">Testmetode: @(_form.TestKind switch { ScenarioTestKind.Manual => "Manuell", ScenarioTestKind.Technical => "Teknisk", _ => "ikke angitt" })</span>
                                 </div>
+                                @if (_form.TestKind == ScenarioTestKind.Technical)
+                                {
+                                    @* Technical Testing V2: technical details only for a technical case; a manual case never sees them. *@
+                                    <BirkNext.Web.Components.TechnicalCaseDetails Form="_form" Readonly="readonlyCase" />
+                                }
                                 @if (showO || showN)
                                 {
                                     @if (compare)

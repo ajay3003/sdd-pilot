@@ -5,3 +5,4 @@
 .ttd-open { background: none; border: 0; padding: 0; text-align: left; color: var(--link-color, #1d5fbf); cursor: pointer; text-decoration: underline; text-underline-offset: 0.15em; }
 .ttd-label { font-weight: 650; overflow-wrap: anywhere; }
 .ttd-detail { font-size: 0.82rem; overflow-wrap: anywhere; }
+.ttd-group { font-size: 0.95rem; margin: 0.8rem 0 0.2rem; }

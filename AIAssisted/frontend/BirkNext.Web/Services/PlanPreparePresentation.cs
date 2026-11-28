@@ -286,6 +286,9 @@ public static partial class PlanPreparePresentation
         public string EnvironmentPrerequisites { get; set; } = "";
         /// <summary>What stops the test from starting now (responsible / note included as the tester writes it); empty = nothing recorded.</summary>
         public string BlockedBy { get; set; } = "";
+        /// <summary>Technical Testing V2 (2026-11-28): the technical details of a technical case («tech.*» template values, TechnicalCaseTemplates),
+        /// key without prefix → value. Shown only for a case typed «Teknisk»; never required.</summary>
+        public Dictionary<string, string> Technical { get; set; } = new(StringComparer.Ordinal);
         public List<StepRow> Steps { get; set; } = [];
         /// <summary>Linked Test Data assets (immutable asset ids; values are never copied).</summary>
         public List<string> TestDataAssetIds { get; set; } = [];
@@ -329,6 +332,8 @@ public static partial class PlanPreparePresentation
             ObservationMethod = c.Edits.ObservationMethod ?? "",
             EnvironmentPrerequisites = c.Edits.EnvironmentPrerequisites ?? "",
             BlockedBy = c.Edits.BlockedBy ?? "",
+            Technical = (c.Edits.TemplateValues ?? []).Where(kv => kv.Key.StartsWith(TechnicalCaseTemplates.Prefix, StringComparison.Ordinal))
+                .ToDictionary(kv => kv.Key[TechnicalCaseTemplates.Prefix.Length..], kv => kv.Value, StringComparer.Ordinal),
             Steps = [.. c.EffectiveSteps.Select((s, i) => new StepRow { Action = s, Expected = c.EffectiveStepExpected.ElementAtOrDefault(i) ?? "" })],
         };
 
@@ -417,8 +422,21 @@ public static partial class PlanPreparePresentation
                 ObservationMethod = Blank(ObservationMethod),
                 EnvironmentPrerequisites = Blank(EnvironmentPrerequisites),
                 BlockedBy = Blank(BlockedBy),
+                TemplateValues = WithTechnical(saved.Edits.TemplateValues, Technical),
             };
         }
+
+        /// <summary>The case's template values with its «tech.*» part replaced by the form's (other template values kept; blanks dropped).</summary>
+        private static Dictionary<string, string>? WithTechnical(Dictionary<string, string>? existing, Dictionary<string, string> technical)
+        {
+            var merged = (existing ?? []).Where(kv => !kv.Key.StartsWith(TechnicalCaseTemplates.Prefix, StringComparison.Ordinal))
+                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+            foreach (var (k, v) in technical) if (!string.IsNullOrWhiteSpace(v)) merged[TechnicalCaseTemplates.Prefix + k] = v.Trim();
+            return merged.Count > 0 ? merged : null;
+        }
+
+        private static string TechnicalKey(Dictionary<string, string> t) =>
+            string.Join("|", t.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value.Trim()}"));
 
         /// <summary>Whether the form differs from the saved case (what "unsaved changes" means).</summary>
         public bool IsDirty(TestCaseDraft saved)
@@ -435,6 +453,7 @@ public static partial class PlanPreparePresentation
                 || !string.Equals(ObservationMethod.Trim(), now.ObservationMethod.Trim(), StringComparison.Ordinal)
                 || !string.Equals(EnvironmentPrerequisites.Trim(), now.EnvironmentPrerequisites.Trim(), StringComparison.Ordinal)
                 || !string.Equals(BlockedBy.Trim(), now.BlockedBy.Trim(), StringComparison.Ordinal)
+                || TechnicalKey(Technical) != TechnicalKey(now.Technical)
                 || !TestDataAssetIds.Order(StringComparer.Ordinal).SequenceEqual(now.TestDataAssetIds.Order(StringComparer.Ordinal))
                 || !Kept.Select(s => (s.Action.Trim(), s.Expected.Trim())).SequenceEqual(now.Kept.Select(s => (s.Action.Trim(), s.Expected.Trim())))
                 || !ReferenceEquals(ToTranslation(saved), saved.Translation(ScenarioPlanning.Norwegian));

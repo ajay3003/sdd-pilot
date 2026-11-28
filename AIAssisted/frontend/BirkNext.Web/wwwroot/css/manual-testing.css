@@ -1495,3 +1495,9 @@ td .mtp-preview-og { display: block; margin-top: .15rem; }
 .mtp-req-levels .msb-status, .mtw-impl-compact .msb-status { font-size: 0.72rem; }
 /* Empty states: one dashed, muted box wherever a list or panel has nothing to show. */
 .msb-empty, .mto-band-empty, .mtp-lang-empty { margin: 0.5rem 0; padding: 0.6rem 0.85rem; border: 1px dashed var(--msb-border, #d0d7de); border-radius: var(--msb-radius, 6px); color: var(--clr-text-muted, #57606a); }
+
+/* Technical Testing V2 (2026-11-28): compact manual E2E figures on Testoversikt. */
+.mto-e2e { margin: 1rem 0; }
+.mto-e2e-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; }
+.mto-e2e-list li { display: flex; gap: 0.35rem; align-items: baseline; }
+.mto-e2e-v { font-weight: 700; font-size: 1.1rem; }
